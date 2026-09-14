@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
-export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
+export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKey }) => {
   const { currentUser } = useAuth();
   const [complaints, setComplaints] = useState([]);
   const [technicians, setTechnicians] = useState([]);
@@ -63,7 +63,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
   useEffect(() => {
     fetchComplaints();
     fetchTechnicians();
-  }, [statusFilter, productFilter, priorityFilter, technicianFilter]);
+  }, [statusFilter, productFilter, priorityFilter, technicianFilter, refreshKey]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();

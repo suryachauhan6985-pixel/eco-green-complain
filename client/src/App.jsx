@@ -207,6 +207,7 @@ function AppContent() {
         {currentTab === 'complaints' && (
           <ComplaintList
             key={`comp-${refreshKey}`}
+            refreshKey={refreshKey}
             onSelectComplaint={(id) => setSelectedComplaintId(id)}
             onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
           />

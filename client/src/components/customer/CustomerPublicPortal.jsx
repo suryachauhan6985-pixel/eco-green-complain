@@ -395,23 +395,9 @@ export const CustomerPublicPortal = ({
           </div>
 
           <div className="flex items-center gap-3">
-            {onExitStandalone ? (
-              <button
-                onClick={onExitStandalone}
-                className="text-xs font-bold text-slate-600 hover:text-emerald-700 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
-              >
-                <span>Staff Portal</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <a
-                href="/"
-                className="text-xs font-bold text-slate-600 hover:text-emerald-700 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
-              >
-                <span>Staff Portal</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </a>
-            )}
+            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+              Official Tracking Portal
+            </span>
           </div>
         </header>
 

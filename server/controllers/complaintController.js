@@ -6,22 +6,25 @@ function generateTicketId() {
   const currentYear = new Date().getFullYear();
   const prefix = `EGS-${currentYear}-`;
 
-  const lastTicket = db.prepare(`
+  const rows = db.prepare(`
     SELECT ticket_id FROM complaints 
-    WHERE ticket_id LIKE ? 
-    ORDER BY id DESC 
-    LIMIT 1
-  `).get(`${prefix}%`);
+    WHERE ticket_id LIKE ?
+  `).all(`${prefix}%`);
 
-  let nextNumber = 101; // start from 000101
-  if (lastTicket && lastTicket.ticket_id) {
-    const parts = lastTicket.ticket_id.split('-');
-    const lastNum = parseInt(parts[2], 10);
-    if (!isNaN(lastNum)) {
-      nextNumber = lastNum + 1;
+  let maxNumber = 100; // start counting from 100 so next is at least 101
+  for (const r of rows) {
+    if (r.ticket_id) {
+      const parts = r.ticket_id.split('-');
+      if (parts.length >= 3) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num) && num > maxNumber) {
+          maxNumber = num;
+        }
+      }
     }
   }
 
+  const nextNumber = maxNumber + 1;
   const paddedNum = String(nextNumber).padStart(6, '0');
   return `${prefix}${paddedNum}`;
 }

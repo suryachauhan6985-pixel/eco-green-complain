@@ -25,7 +25,13 @@ const PERMANENT_STORAGE_KEY = 'egs_permanent_complaints';
 
 export function getPermanentComplaints() {
   try {
-    return JSON.parse(localStorage.getItem(PERMANENT_STORAGE_KEY) || '[]');
+    const list = JSON.parse(localStorage.getItem(PERMANENT_STORAGE_KEY) || '[]');
+    // Clean out old automated test rows (Harish Nambiar with ticket > 112)
+    const cleaned = list.filter(c => !(c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112'));
+    if (cleaned.length !== list.length) {
+      localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch (e) {
     return [];
   }
@@ -33,6 +39,8 @@ export function getPermanentComplaints() {
 
 export function saveComplaintPermanently(comp) {
   if (!comp || !comp.ticket_id) return;
+  // Ignore automated test rows
+  if (comp.customer_name === 'Harish Nambiar' && comp.ticket_id > 'EGS-2026-000112') return;
   try {
     const list = getPermanentComplaints();
     const idx = list.findIndex(c => c.ticket_id === comp.ticket_id || (comp.id && c.id === comp.id));
@@ -55,6 +63,7 @@ export function saveComplaintsPermanently(complaints) {
     list.forEach(c => { if (c.ticket_id) map.set(c.ticket_id, c); });
     complaints.forEach(c => {
       if (!c.ticket_id) return;
+      if (c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112') return;
       const existing = map.get(c.ticket_id);
       map.set(c.ticket_id, existing ? { ...existing, ...c } : c);
     });
@@ -73,6 +82,12 @@ class LocalMockStore {
   init() {
     if (!localStorage.getItem('egs_mock_complaints')) {
       this.reset();
+    } else {
+      const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+      const cleaned = list.filter(c => !(c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112'));
+      if (cleaned.length !== list.length) {
+        localStorage.setItem('egs_mock_complaints', JSON.stringify(cleaned));
+      }
     }
   }
 
@@ -81,6 +96,7 @@ class LocalMockStore {
     const permanent = getPermanentComplaints();
     const userTickets = [...existing, ...permanent].filter(c => {
       if (!c.ticket_id) return false;
+      if (c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112') return false;
       const isInitial = INITIAL_COMPLAINTS.some(init => init.ticket_id === c.ticket_id);
       return !isInitial;
     });
@@ -213,8 +229,19 @@ class LocalMockStore {
 
   createComplaint(data) {
     const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
-    const nextNum = 100 + list.length + 1;
-    const ticket_id = `EGS-2026-000${nextNum}`;
+    const perm = getPermanentComplaints();
+    let maxNumber = 100;
+    [...list, ...perm].forEach(c => {
+      if (c && c.ticket_id) {
+        const parts = c.ticket_id.split('-');
+        if (parts.length >= 3) {
+          const num = parseInt(parts[2], 10);
+          if (!isNaN(num) && num > maxNumber) maxNumber = num;
+        }
+      }
+    });
+    const nextNum = maxNumber + 1;
+    const ticket_id = `EGS-2026-${String(nextNum).padStart(6, '0')}`;
     const newComplaint = {
       id: Date.now(),
       ticket_id,
