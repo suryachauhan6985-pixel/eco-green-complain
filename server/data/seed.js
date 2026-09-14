@@ -51,7 +51,7 @@ async function seedDatabase(forceReset = false) {
   insertTemplate.run(
     'complaint_registered',
     'Complaint Registered Notification',
-    `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}\n⏱️ *Expected Response:* Within 24-48 Hours\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`,
+    `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`,
     `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
     `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly. You can track your complaint status live at any time.`
   );
@@ -59,9 +59,9 @@ async function seedDatabase(forceReset = false) {
   insertTemplate.run(
     'technician_assigned',
     'Technician Assigned Notification',
-    `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📞 *Phone:* {{technician_phone}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease ensure site access for the installation area.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
+    `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
     `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
-    `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nContact Phone: {{technician_phone}}\nExpected Visit Date: {{expected_visit_date}}\n\nOur technician will contact you prior to visiting the site.`
+    `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nExpected Visit Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
   );
 
   insertTemplate.run(

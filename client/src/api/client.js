@@ -165,13 +165,23 @@ class LocalMockStore {
       customer_phone: data.get ? data.get('customer_phone') : data.customer_phone,
       customer_email: data.get ? data.get('customer_email') : data.customer_email,
       customer_address: data.get ? data.get('customer_address') : data.customer_address,
+      city: data.get ? data.get('city') : data.city,
+      consumer_no: data.get ? data.get('consumer_no') : data.consumer_no,
+      order_no: data.get ? data.get('order_no') : data.order_no,
+      location_url: data.get ? data.get('location_url') : data.location_url,
+      is_in_warranty: (data.get ? data.get('is_in_warranty') : data.is_in_warranty) !== undefined ? Number(data.get ? data.get('is_in_warranty') : data.is_in_warranty) : 1,
+      estimated_charges: Number((data.get ? data.get('estimated_charges') : data.estimated_charges) || 0),
+      notify_charges: (data.get ? data.get('notify_charges') : data.notify_charges) ? 1 : 0,
+      payment_collected: 0,
+      payment_status: Number((data.get ? data.get('estimated_charges') : data.estimated_charges) || 0) > 0 ? 'Unpaid' : 'Not Applicable',
       product_type: data.get ? data.get('product_type') : data.product_type,
       product_serial: data.get ? data.get('product_serial') : data.product_serial,
       installation_id: data.get ? data.get('installation_id') : data.installation_id,
       issue_category: data.get ? data.get('issue_category') : data.issue_category,
       issue_description: data.get ? data.get('issue_description') : data.issue_description,
       priority: (data.get ? data.get('priority') : data.priority) || 'Medium',
-      status: 'Registered',
+      status: 'Unassigned',
+      status_updated_at: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
     list.unshift(newComplaint);
@@ -179,6 +189,10 @@ class LocalMockStore {
 
     // Also add simulated notification
     const notifs = JSON.parse(localStorage.getItem('egs_mock_notifications') || '[]');
+    let chargesText = '';
+    if (newComplaint.notify_charges && newComplaint.estimated_charges > 0) {
+      chargesText = `\nEstimated Service Charges: ₹${newComplaint.estimated_charges}`;
+    }
     notifs.unshift({
       id: Date.now(),
       complaint_id: newComplaint.id,
@@ -186,7 +200,7 @@ class LocalMockStore {
       channel: 'whatsapp',
       recipient: newComplaint.customer_phone,
       template_key: 'complaint_registered',
-      rendered_content: `☀️ *Eco Green Solar Support*\n\nDear ${newComplaint.customer_name}, your complaint ${newComplaint.ticket_id} for ${newComplaint.product_type} has been registered.\n\nExpected Response: Within 24-48 Hours.\nTrack status: http://localhost:5173/track/${newComplaint.ticket_id}`,
+      rendered_content: `☀️ *Eco Green Solar Support*\n\nDear ${newComplaint.customer_name}, your complaint ${newComplaint.ticket_id} for ${newComplaint.product_type} has been registered.${chargesText}\nTrack status: http://localhost:5173/track/${newComplaint.ticket_id}`,
       status: 'sent',
       provider: 'SIMULATED',
       created_at: new Date().toISOString()
@@ -194,6 +208,53 @@ class LocalMockStore {
     localStorage.setItem('egs_mock_notifications', JSON.stringify(notifs));
 
     return newComplaint;
+  }
+
+  updateComplaint(id, data) {
+    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const comp = list.find(c => String(c.id) === String(id));
+    if (comp) {
+      const getVal = (k) => data.get ? data.get(k) : data[k];
+      const fields = [
+        'customer_name', 'customer_phone', 'customer_email', 'customer_address',
+        'city', 'consumer_no', 'order_no', 'location_url',
+        'product_type', 'product_serial', 'installation_id',
+        'issue_category', 'issue_description', 'priority', 'status'
+      ];
+      fields.forEach(f => {
+        const v = getVal(f);
+        if (v !== undefined) comp[f] = v;
+      });
+      if (getVal('is_in_warranty') !== undefined) {
+        comp.is_in_warranty = Number(getVal('is_in_warranty'));
+      }
+      if (getVal('estimated_charges') !== undefined) {
+        comp.estimated_charges = Number(getVal('estimated_charges'));
+      }
+      if (getVal('notify_charges') !== undefined) {
+        comp.notify_charges = getVal('notify_charges') ? 1 : 0;
+      }
+      localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
+    }
+    return comp;
+  }
+
+  recordPayment(id, { payment_collected, payment_notes, payment_method }) {
+    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const comp = list.find(c => String(c.id) === String(id));
+    if (comp) {
+      comp.payment_collected = Number(payment_collected || 0);
+      const est = Number(comp.estimated_charges || 0);
+      if (comp.payment_collected >= est && est > 0) {
+        comp.payment_status = 'Collected';
+      } else if (comp.payment_collected > 0) {
+        comp.payment_status = 'Partially Paid';
+      } else {
+        comp.payment_status = est > 0 ? 'Unpaid' : 'Not Applicable';
+      }
+      localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
+    }
+    return comp;
   }
 
   assignTechnician(id, techId, expectedDate) {
@@ -208,6 +269,7 @@ class LocalMockStore {
       comp.technician_phone = tech?.phone;
       comp.expected_visit_date = expectedDate;
       comp.assigned_at = new Date().toISOString();
+      comp.status_updated_at = new Date().toISOString();
       localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
     }
     return comp;
@@ -218,6 +280,7 @@ class LocalMockStore {
     const comp = list.find(c => String(c.id) === String(id));
     if (comp && status) {
       comp.status = status;
+      comp.status_updated_at = new Date().toISOString();
       localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
     }
     return comp;
@@ -231,6 +294,7 @@ class LocalMockStore {
       comp.resolution_notes = formData.get ? formData.get('resolution_notes') : formData.resolution_notes;
       comp.spare_parts_used = formData.get ? formData.get('spare_parts_used') : formData.spare_parts_used;
       comp.resolved_at = new Date().toISOString();
+      comp.status_updated_at = new Date().toISOString();
       localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
     }
     return comp;
@@ -242,6 +306,7 @@ class LocalMockStore {
     if (comp) {
       comp.status = 'Closed';
       comp.closed_at = new Date().toISOString();
+      comp.status_updated_at = new Date().toISOString();
       localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
     }
     return comp;
@@ -429,9 +494,22 @@ function fallbackHandler(endpoint, options) {
         return { message: 'Thank you for your feedback!' };
       }
 
+      if (endpoint.includes('/payment')) {
+        const id = endpoint.split('/')[2];
+        const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
+        const comp = mockStore.recordPayment(id, body);
+        return { message: 'Payment recorded successfully', complaint: comp };
+      }
+
       // Create complaint
       const comp = mockStore.createComplaint(options.body);
       return { message: 'Complaint registered successfully', complaint: comp };
+    }
+
+    if (method === 'PUT') {
+      const id = endpoint.split('/')[2];
+      const comp = mockStore.updateComplaint(id, options.body);
+      return { message: 'Complaint updated successfully', complaint: comp };
     }
   }
 
@@ -526,6 +604,14 @@ export const api = {
   createComplaint: (formData) => request('/complaints', {
     method: 'POST',
     body: formData
+  }),
+  updateComplaint: (id, data) => request(`/complaints/${id}`, {
+    method: 'PUT',
+    body: data instanceof FormData ? data : JSON.stringify(data)
+  }),
+  recordPayment: (id, paymentData) => request(`/complaints/${id}/payment`, {
+    method: 'POST',
+    body: JSON.stringify(paymentData)
   }),
   publicRegister: (formData) => request('/complaints/public-register', {
     method: 'POST',

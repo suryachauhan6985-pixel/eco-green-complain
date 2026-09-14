@@ -92,6 +92,8 @@ app.get('/api/complaints', authenticateToken, complaintController.listComplaints
 app.get('/api/complaints/customer-history', authenticateToken, complaintController.getCustomerHistory);
 app.get('/api/complaints/:id', authenticateToken, complaintController.getComplaintById);
 app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), complaintController.createComplaint);
+app.put('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.updateComplaint);
+app.post('/api/complaints/:id/payment', authenticateToken, complaintController.recordPayment);
 app.post('/api/complaints/:id/assign', authenticateToken, requireRole('admin', 'staff'), complaintController.assignTechnician);
 app.post('/api/complaints/:id/note', authenticateToken, complaintController.addTimelineNote);
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), complaintController.resolveComplaint);

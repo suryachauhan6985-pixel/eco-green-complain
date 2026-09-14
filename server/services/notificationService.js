@@ -61,6 +61,10 @@ class NotificationService extends EventEmitter {
       technician_phone: data?.technician_phone || '',
       expected_visit_date: data?.expected_visit_date || 'Within 24-48 Hours',
       notes: data?.notes || '',
+      estimated_charges: complaint?.estimated_charges || data?.estimated_charges || 0,
+      charges_line: (complaint?.notify_charges || data?.notify_charges) && (complaint?.estimated_charges || data?.estimated_charges) > 0
+        ? `\n💰 *Estimated Service Charge:* ₹${complaint?.estimated_charges || data?.estimated_charges}`
+        : '',
       feedback_url: `${process.env.APP_URL || 'http://localhost:5173'}/track/${complaint?.ticket_id || ''}`,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
       ...data

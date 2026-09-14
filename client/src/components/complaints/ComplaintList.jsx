@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   Search, Filter, Plus, Download, RefreshCw, Sun, Droplets, Wind, 
   User, Calendar, Clock, ChevronRight, AlertCircle, CheckCircle2, Wrench,
-  MessageCircle, MapPin
+  MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee
 } from 'lucide-react';
 
 export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
@@ -13,12 +13,32 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // View Mode: 'list' (default) or 'card' - persisted in localStorage
+  const [viewMode, setViewMode] = useState(() => {
+    return localStorage.getItem('egs_complaints_view_mode') || 'list';
+  });
+
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+    localStorage.setItem('egs_complaints_view_mode', mode);
+  };
+
   // Filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [productFilter, setProductFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [technicianFilter, setTechnicianFilter] = useState('');
+
+  const formatStageAge = (dateStr) => {
+    if (!dateStr) return '';
+    const diffMs = Math.max(0, new Date() - new Date(dateStr));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const days = Math.floor(diffHours / 24);
+    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  };
 
   const fetchComplaints = async () => {
     try {
@@ -64,7 +84,33 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
     return <Wind className="w-4 h-4 text-teal-500" />;
   };
 
-  const statusPills = ['all', 'Registered', 'Assigned', 'In Progress', 'Resolved', 'Closed', 'Reopened'];
+  const statusPills = ['all', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened'];
+
+  const getStatusBadgeStyle = (status) => {
+    switch (status) {
+      case 'Resolved':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'Closed':
+        return 'bg-slate-100 text-slate-800 border-slate-200';
+      case 'In Progress':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'On Hold':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'Assigned':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      case 'Reopened':
+        return 'bg-rose-100 text-rose-800 border-rose-200';
+      case 'Registered':
+      case 'Unassigned':
+      default:
+        return 'bg-amber-100 text-amber-900 border-amber-200';
+    }
+  };
+
+  const getDisplayStatus = (status) => {
+    if (!status || status === 'Registered') return 'Unassigned';
+    return status;
+  };
 
   return (
     <div className="space-y-4">
@@ -76,7 +122,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search by Ticket ID (e.g. EGS-2026-000101), Phone, or Name..."
+              placeholder="Search Ticket ID, Customer, Phone, City, Consumer No..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full text-xs pl-9 pr-20 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
@@ -98,8 +144,38 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
             </button>
           </form>
 
-          {/* Action Buttons */}
+          {/* Action & View Mode Toggle Buttons */}
           <div className="flex items-center gap-2">
+            {/* View Mode Toggle (List vs Card) */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => handleViewModeChange('list')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  viewMode === 'list'
+                    ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="List View (Default)"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">List</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleViewModeChange('card')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  viewMode === 'card'
+                    ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Card View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Cards</span>
+              </button>
+            </div>
+
             <button
               onClick={fetchComplaints}
               title="Refresh list"
@@ -152,7 +228,6 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
             className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
           >
             <option value="all">All Priorities</option>
-            <option value="Urgent">Urgent Priority</option>
             <option value="High">High Priority</option>
             <option value="Medium">Medium Priority</option>
             <option value="Low">Low Priority</option>
@@ -192,7 +267,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
         </div>
       </div>
 
-      {/* Complaints Table / List */}
+      {/* Complaints Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
@@ -205,12 +280,171 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
             <h4 className="text-sm font-bold text-slate-700">No complaints found</h4>
             <p className="text-xs text-slate-500 mt-1">Try adjusting your filters or search keywords</p>
           </div>
+        ) : viewMode === 'list' ? (
+          /* COMPACT LIST / TABLE VIEW */
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3 px-4">Ticket & Product</th>
+                  <th className="py-3 px-4">Customer & Location</th>
+                  <th className="py-3 px-4">Status & Stage Age</th>
+                  <th className="py-3 px-4">Priority & Warranty</th>
+                  <th className="py-3 px-4">Assigned Tech</th>
+                  <th className="py-3 px-4">Charges</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {complaints.map((c) => {
+                  const displayStatus = getDisplayStatus(c.status);
+                  const stageAge = formatStageAge(c.status_updated_at || c.created_at);
+                  const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
+                  const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
+                    `Namaste ${c.customer_name},\nRegarding your Eco Green Solar ticket (${c.ticket_id}).\nStatus: ${displayStatus}.\nEco Green Solar Support.`
+                  )}`;
+
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => onSelectComplaint(c.id)}
+                      className="hover:bg-emerald-50/40 cursor-pointer transition-colors group"
+                    >
+                      {/* Ticket & Product */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 shrink-0">
+                            {getProductIcon(c.product_type)}
+                          </div>
+                          <div>
+                            <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 block">
+                              {c.ticket_id}
+                            </span>
+                            <span className="text-[10px] text-slate-500 truncate block max-w-[140px]">
+                              {c.product_type}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Customer & Location */}
+                      <td className="py-3 px-4">
+                        <div>
+                          <span className="font-bold text-slate-900 block truncate max-w-[160px]">
+                            {c.customer_name}
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-mono block">
+                            📞 {c.customer_phone}
+                          </span>
+                          {(c.city || c.customer_address) && (
+                            <span className="text-[10px] text-slate-400 truncate block max-w-[180px]">
+                              📍 {c.city || c.customer_address}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Status & Stage Duration */}
+                      <td className="py-3 px-4">
+                        <div>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getStatusBadgeStyle(displayStatus)}`}>
+                            {displayStatus}
+                          </span>
+                          <span className="text-[10px] text-slate-500 block mt-0.5 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-slate-400" />
+                            {stageAge}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Priority & Warranty */}
+                      <td className="py-3 px-4">
+                        <div className="space-y-1">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            c.priority === 'High' ? 'bg-amber-100 text-amber-800' :
+                            c.priority === 'Medium' ? 'bg-blue-100 text-blue-800' :
+                            'bg-slate-100 text-slate-700'
+                          }`}>
+                            {c.priority}
+                          </span>
+                          {c.is_in_warranty !== undefined && (
+                            <span className={`block text-[10px] font-semibold ${
+                              c.is_in_warranty ? 'text-emerald-700' : 'text-rose-600'
+                            }`}>
+                              {c.is_in_warranty ? '● In Warranty' : '● Out of Warranty'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Assigned Tech */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1 text-slate-700">
+                          <Wrench className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span className="truncate max-w-[120px] font-medium">
+                            {c.technician_name || <em className="text-amber-600 font-normal">Unassigned</em>}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Charges & Payment */}
+                      <td className="py-3 px-4">
+                        {c.estimated_charges > 0 ? (
+                          <div>
+                            <span className="font-bold text-slate-900 block">
+                              ₹{c.estimated_charges}
+                            </span>
+                            <span className={`text-[10px] font-bold ${
+                              c.payment_status === 'Collected' ? 'text-emerald-600' :
+                              c.payment_status === 'Partially Paid' ? 'text-blue-600' :
+                              'text-amber-600'
+                            }`}>
+                              {c.payment_status || 'Unpaid'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Free / In-Wty</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          {cleanPhone && (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Chat on WhatsApp"
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => onSelectComplaint(c.id)}
+                            className="p-1.5 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-slate-100 transition-colors"
+                            title="Open Details"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
+          /* CARD GRID VIEW */
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3.5 bg-slate-100/60">
             {complaints.map((c) => {
+              const displayStatus = getDisplayStatus(c.status);
+              const stageAge = formatStageAge(c.status_updated_at || c.created_at);
               const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
               const waMessage = encodeURIComponent(
-                `Namaste ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${c.status}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
+                `Namaste ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${displayStatus}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
               );
               const waUrl = `https://wa.me/${cleanPhone}?text=${waMessage}`;
 
@@ -239,20 +473,13 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                          c.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' :
-                          c.status === 'Closed' ? 'bg-slate-200 text-slate-800' :
-                          c.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                          c.status === 'Assigned' ? 'bg-amber-100 text-amber-800' :
-                          c.status === 'Reopened' ? 'bg-rose-100 text-rose-800' :
-                          'bg-yellow-100 text-yellow-900'
-                        }`}>
-                          {c.status}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getStatusBadgeStyle(displayStatus)}`}>
+                          {displayStatus}
                         </span>
 
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          c.priority === 'Urgent' ? 'bg-red-100 text-red-700' :
                           c.priority === 'High' ? 'bg-amber-100 text-amber-700' :
+                          c.priority === 'Medium' ? 'bg-blue-100 text-blue-700' :
                           'bg-slate-100 text-slate-600'
                         }`}>
                           {c.priority}
@@ -270,9 +497,13 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-emerald-800/80 font-medium truncate mt-0.5">
-                      {c.product_type} {c.product_serial ? `• SN: ${c.product_serial}` : ''}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-emerald-800/80 font-medium truncate mt-0.5">
+                      <span className="truncate">{c.product_type} {c.city ? `• ${c.city}` : ''}</span>
+                      <span className="text-[10px] text-slate-400 font-normal shrink-0 flex items-center gap-0.5">
+                        <Clock className="w-2.5 h-2.5" />
+                        {stageAge}
+                      </span>
+                    </div>
 
                     {/* Issue Summary Box */}
                     <div className="text-xs text-slate-600 line-clamp-2 mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
@@ -305,9 +536,6 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                         </a>
                       )}
 
-                      <span className="text-[11px] text-slate-400">
-                        {new Date(c.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                      </span>
                       <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
                     </div>
                   </div>

@@ -440,17 +440,17 @@ export const INITIAL_TEMPLATES = [
     id: 1,
     template_key: 'complaint_registered',
     name: 'Complaint Registered Notification',
-    whatsapp_body: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}\n⏱️ *Expected Response:* Within 24-48 Hours\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`,
+    whatsapp_body: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`,
     email_subject: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
-    email_body: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
+    email_body: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}{{charges_line}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
   },
   {
     id: 2,
     template_key: 'technician_assigned',
     name: 'Technician Assigned Notification',
-    whatsapp_body: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📞 *Phone:* {{technician_phone}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease ensure site access for the installation area.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Scheduled Date:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
     email_subject: `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
-    email_body: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nContact Phone: {{technician_phone}}\nExpected Visit Date: {{expected_visit_date}}\n\nOur technician will contact you prior to visiting the site.`
+    email_body: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nScheduled Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
   },
   {
     id: 3,

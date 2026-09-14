@@ -62,9 +62,9 @@ function listComplaints(req, res) {
     }
 
     if (search) {
-      query += ` AND (c.ticket_id LIKE ? OR c.customer_name LIKE ? OR c.customer_phone LIKE ? OR c.product_serial LIKE ?) `;
+      query += ` AND (c.ticket_id LIKE ? OR c.customer_name LIKE ? OR c.customer_phone LIKE ? OR c.product_serial LIKE ? OR c.city LIKE ? OR c.consumer_no LIKE ? OR c.order_no LIKE ?) `;
       const term = `%${search}%`;
-      params.push(term, term, term, term);
+      params.push(term, term, term, term, term, term, term);
     }
 
     if (status && status !== 'all') {
@@ -214,6 +214,13 @@ async function createComplaint(req, res) {
       customer_phone,
       customer_email,
       customer_address,
+      city,
+      consumer_no,
+      order_no,
+      location_url,
+      is_in_warranty,
+      estimated_charges = 0,
+      notify_charges = 0,
       product_type,
       product_serial,
       installation_id,
@@ -231,12 +238,24 @@ async function createComplaint(req, res) {
     const actorName = req.user ? req.user.name : 'Customer (Online Self-Service)';
     const actorRole = req.user ? req.user.role : 'customer';
 
+    const cleanCharges = parseFloat(estimated_charges) || 0;
+    const shouldNotifyCharges = (notify_charges === 'true' || notify_charges === 1 || notify_charges === true || notify_charges === '1') ? 1 : 0;
+    const warrantyVal = (is_in_warranty === 'true' || is_in_warranty === 1 || is_in_warranty === true || is_in_warranty === '1') ? 1 : 0;
+
     const insertStmt = db.prepare(`
       INSERT INTO complaints (
         ticket_id, customer_name, customer_phone, customer_email, customer_address,
+        city, consumer_no, order_no, location_url, is_in_warranty,
+        estimated_charges, notify_charges, payment_collected, payment_status,
         product_type, product_serial, installation_id, issue_category, issue_description,
-        priority, status, registered_by_user_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Registered', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        priority, status, registered_by_user_id, created_at, status_updated_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, 0, 'Unpaid',
+        ?, ?, ?, ?, ?,
+        ?, 'Unassigned', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
     `);
 
     const result = insertStmt.run(
@@ -245,6 +264,13 @@ async function createComplaint(req, res) {
       customer_phone.trim(),
       customer_email ? customer_email.trim() : null,
       customer_address.trim(),
+      city ? city.trim() : null,
+      consumer_no ? consumer_no.trim() : null,
+      order_no ? order_no.trim() : null,
+      location_url ? location_url.trim() : null,
+      warrantyVal,
+      cleanCharges,
+      shouldNotifyCharges,
       product_type,
       product_serial ? product_serial.trim() : null,
       installation_id ? installation_id.trim() : null,
@@ -270,7 +296,7 @@ async function createComplaint(req, res) {
     // Initial timeline record
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
-      VALUES (?, 'Registered', ?, ?, ?, 1, CURRENT_TIMESTAMP)
+      VALUES (?, 'Unassigned', ?, ?, ?, 1, CURRENT_TIMESTAMP)
     `).run(complaintId, `Complaint registered for ${product_type}. Issue: ${issue_category}`, actorName, actorRole);
 
     // Auto-dispatch WhatsApp & Email notification asynchronously
@@ -282,9 +308,11 @@ async function createComplaint(req, res) {
         ticket_id: ticketId,
         product_type,
         issue_category,
-        status: 'Registered / Open',
+        status: 'Unassigned',
         phone: customer_phone,
-        email: customer_email
+        email: customer_email,
+        estimated_charges: cleanCharges,
+        notify_charges: shouldNotifyCharges
       }
     });
 
@@ -296,6 +324,158 @@ async function createComplaint(req, res) {
   } catch (err) {
     console.error('Create complaint error:', err);
     res.status(500).json({ error: 'Failed to register complaint: ' + err.message });
+  }
+}
+
+async function updateComplaint(req, res) {
+  try {
+    const { id } = req.params;
+    const existing = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const {
+      customer_name,
+      customer_phone,
+      customer_email,
+      customer_address,
+      city,
+      consumer_no,
+      order_no,
+      location_url,
+      is_in_warranty,
+      estimated_charges,
+      notify_charges,
+      product_type,
+      product_serial,
+      installation_id,
+      issue_category,
+      issue_description,
+      priority
+    } = req.body;
+
+    const warrantyVal = is_in_warranty !== undefined
+      ? ((is_in_warranty === 'true' || is_in_warranty === 1 || is_in_warranty === true || is_in_warranty === '1') ? 1 : 0)
+      : existing.is_in_warranty;
+
+    const cleanCharges = estimated_charges !== undefined ? parseFloat(estimated_charges) || 0 : existing.estimated_charges;
+    const shouldNotifyCharges = notify_charges !== undefined
+      ? (notify_charges === 'true' || notify_charges === 1 || notify_charges === true || notify_charges === '1' ? 1 : 0)
+      : existing.notify_charges;
+
+    db.prepare(`
+      UPDATE complaints SET
+        customer_name = ?,
+        customer_phone = ?,
+        customer_email = ?,
+        customer_address = ?,
+        city = ?,
+        consumer_no = ?,
+        order_no = ?,
+        location_url = ?,
+        is_in_warranty = ?,
+        estimated_charges = ?,
+        notify_charges = ?,
+        product_type = ?,
+        product_serial = ?,
+        installation_id = ?,
+        issue_category = ?,
+        issue_description = ?,
+        priority = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      customer_name !== undefined ? customer_name.trim() : existing.customer_name,
+      customer_phone !== undefined ? customer_phone.trim() : existing.customer_phone,
+      customer_email !== undefined ? (customer_email ? customer_email.trim() : null) : existing.customer_email,
+      customer_address !== undefined ? customer_address.trim() : existing.customer_address,
+      city !== undefined ? (city ? city.trim() : null) : existing.city,
+      consumer_no !== undefined ? (consumer_no ? consumer_no.trim() : null) : existing.consumer_no,
+      order_no !== undefined ? (order_no ? order_no.trim() : null) : existing.order_no,
+      location_url !== undefined ? (location_url ? location_url.trim() : null) : existing.location_url,
+      warrantyVal,
+      cleanCharges,
+      shouldNotifyCharges,
+      product_type || existing.product_type,
+      product_serial !== undefined ? (product_serial ? product_serial.trim() : null) : existing.product_serial,
+      installation_id !== undefined ? (installation_id ? installation_id.trim() : null) : existing.installation_id,
+      issue_category || existing.issue_category,
+      issue_description !== undefined ? issue_description.trim() : existing.issue_description,
+      priority || existing.priority,
+      id
+    );
+
+    const actorName = req.user ? req.user.name : 'Supervisor';
+    const actorRole = req.user ? req.user.role : 'staff';
+
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
+      VALUES (?, 'Details Updated', 'Complaint parameters and customer details updated', ?, ?, 0, CURRENT_TIMESTAMP)
+    `).run(id, actorName, actorRole);
+
+    const updated = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ?
+    `).get(id);
+
+    res.json({ message: 'Complaint updated successfully', complaint: updated });
+  } catch (err) {
+    console.error('Update complaint error:', err);
+    res.status(500).json({ error: 'Failed to update complaint: ' + err.message });
+  }
+}
+
+async function recordPayment(req, res) {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const { payment_collected, payment_mode = 'Cash / UPI', notes = '' } = req.body;
+    const amount = parseFloat(payment_collected) || 0;
+    const estimated = parseFloat(complaint.estimated_charges) || 0;
+
+    let paymentStatus = 'Collected';
+    if (amount === 0) {
+      paymentStatus = 'Unpaid';
+    } else if (estimated > 0 && amount < estimated) {
+      paymentStatus = 'Partially Paid';
+    }
+
+    db.prepare(`
+      UPDATE complaints SET
+        payment_collected = ?,
+        payment_status = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(amount, paymentStatus, id);
+
+    const actorName = req.user ? req.user.name : 'Field Technician';
+    const actorRole = req.user ? req.user.role : 'technician';
+
+    const noteText = `Payment of ₹${amount} recorded via ${payment_mode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''} ${notes ? `• ${notes}` : ''}`;
+
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
+      VALUES (?, 'Payment Recorded', ?, ?, ?, 0, CURRENT_TIMESTAMP)
+    `).run(id, noteText, actorName, actorRole);
+
+    const updated = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ?
+    `).get(id);
+
+    res.json({ message: 'Payment recorded successfully', complaint: updated });
+  } catch (err) {
+    console.error('Record payment error:', err);
+    res.status(500).json({ error: 'Failed to record payment: ' + err.message });
   }
 }
 
@@ -325,6 +505,7 @@ async function assignTechnician(req, res) {
           expected_visit_date = ?, 
           status = 'Assigned', 
           assigned_at = CURRENT_TIMESTAMP, 
+          status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(technician_id, expected_visit_date || null, id);
@@ -345,14 +526,13 @@ async function assignTechnician(req, res) {
         customer_name: complaint.customer_name,
         ticket_id: complaint.ticket_id,
         technician_name: technician.name,
-        technician_phone: technician.phone,
         expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
       }
     });
 
     // 2. Notify Technician via WhatsApp (Direct dispatch)
     if (technician.phone) {
-      const techMsg = `🛠️ *New Job Assignment*\n\nHello ${technician.name}, you have been assigned ticket *${complaint.ticket_id}*.\n\n👤 *Customer:* ${complaint.customer_name}\n📞 *Phone:* ${complaint.customer_phone}\n📍 *Address:* ${complaint.customer_address}\n🔧 *Product:* ${complaint.product_type}\n⚠️ *Issue:* ${complaint.issue_category} - ${complaint.issue_description}\n🚨 *Priority:* ${complaint.priority}\n📅 *Expected Visit:* ${expected_visit_date || 'Immediate'}\n\nPlease check your Eco Green technician portal for details.`;
+      const techMsg = `🛠️ *New Job Assignment*\n\nHello ${technician.name}, you have been assigned ticket *${complaint.ticket_id}*.\n\n👤 *Customer:* ${complaint.customer_name}\n📞 *Phone:* ${complaint.customer_phone}\n📍 *Address:* ${complaint.customer_address}${complaint.city ? ` (${complaint.city})` : ''}\n🔧 *Product:* ${complaint.product_type}\n⚠️ *Issue:* ${complaint.issue_category} - ${complaint.issue_description}\n🚨 *Priority:* ${complaint.priority}\n📅 *Expected Visit:* ${expected_visit_date || 'Immediate'}${complaint.location_url ? `\n🗺️ *Location:* ${complaint.location_url}` : ''}\n\nPlease check your Eco Green technician portal for details.`;
 
       notificationService.dispatchAsync({
         complaintId: id,
@@ -389,10 +569,18 @@ async function addTimelineNote(req, res) {
 
     const performer = req.user ? req.user.name : 'Service Staff';
     const role = req.user ? req.user.role : 'staff';
+
+    // Requirement 10: Role-based status transition restrictions for field visits
+    if (role === 'technician' && status) {
+      if (!['In Progress', 'On Hold'].includes(status)) {
+        return res.status(400).json({ error: 'Technicians can only update status to In Progress or On Hold in visit notes' });
+      }
+    }
+
     const newStatus = status || complaint.status;
 
     if (status && status !== complaint.status) {
-      db.prepare('UPDATE complaints SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+      db.prepare('UPDATE complaints SET status = ?, status_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
     }
 
     db.prepare(`
@@ -449,6 +637,7 @@ async function resolveComplaint(req, res) {
           spare_parts_used = ?,
           closing_photo_url = COALESCE(?, closing_photo_url),
           resolved_at = CURRENT_TIMESTAMP,
+          status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(resolution_notes, spare_parts_used || null, photoUrl, id);
@@ -500,6 +689,7 @@ async function closeComplaint(req, res) {
       UPDATE complaints 
       SET status = 'Closed',
           closed_at = CURRENT_TIMESTAMP,
+          status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(id);
@@ -543,6 +733,7 @@ async function reopenComplaint(req, res) {
       UPDATE complaints 
       SET status = 'Reopened',
           closed_at = null,
+          status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(id);
@@ -606,6 +797,8 @@ module.exports = {
   getCustomerHistory,
   trackTicket,
   createComplaint,
+  updateComplaint,
+  recordPayment,
   assignTechnician,
   addTimelineNote,
   resolveComplaint,

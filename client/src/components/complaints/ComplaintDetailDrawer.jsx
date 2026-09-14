@@ -4,10 +4,11 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
-  History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight 
+  History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
+  Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert
 } from 'lucide-react';
 
-const STATUS_ORDER = ['Registered', 'Assigned', 'In Progress', 'Resolved', 'Closed'];
+const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
 export const ComplaintDetailDrawer = ({ 
   complaintId, 
@@ -45,6 +46,21 @@ export const ComplaintDetailDrawer = ({
 
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
+
+  // Edit Complaint Modal State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState({});
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Payment Recording State
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+  const [paymentData, setPaymentData] = useState({
+    payment_collected: '',
+    payment_method: 'Cash',
+    payment_notes: ''
+  });
+  const [showUnderpaidWarning, setShowUnderpaidWarning] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
 
   const fetchTicketDetails = async () => {
     if (!complaintId) return;
@@ -167,13 +183,88 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
-  const handleResendNotif = async (logId) => {
+  const formatStageAge = (dateStr) => {
+    if (!dateStr) return '';
+    const diffMs = Math.max(0, new Date() - new Date(dateStr));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const days = Math.floor(diffHours / 24);
+    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  };
+
+  const openEditModal = () => {
+    if (!ticket) return;
+    setEditFormData({
+      customer_name: ticket.customer_name || '',
+      customer_phone: ticket.customer_phone || '',
+      customer_email: ticket.customer_email || '',
+      customer_address: ticket.customer_address || '',
+      city: ticket.city || '',
+      consumer_no: ticket.consumer_no || '',
+      order_no: ticket.order_no || '',
+      location_url: ticket.location_url || '',
+      is_in_warranty: ticket.is_in_warranty !== undefined ? ticket.is_in_warranty : 1,
+      estimated_charges: ticket.estimated_charges !== undefined ? ticket.estimated_charges : 0,
+      notify_charges: ticket.notify_charges === 1,
+      product_type: ticket.product_type || 'Solar Rooftop Systems',
+      product_serial: ticket.product_serial || '',
+      installation_id: ticket.installation_id || '',
+      issue_category: ticket.issue_category || '',
+      issue_description: ticket.issue_description || '',
+      priority: ticket.priority || 'Medium',
+      status: ticket.status === 'Registered' ? 'Unassigned' : (ticket.status || 'Unassigned')
+    });
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
     try {
-      await api.resendNotification(logId);
+      setSavingEdit(true);
+      await api.updateComplaint(ticket.id, editFormData);
       await fetchTicketDetails();
-      alert('Notification resent successfully!');
+      setIsEditing(false);
+      if (onComplaintUpdated) onComplaintUpdated();
+      alert('Complaint details updated successfully!');
     } catch (err) {
-      alert('Failed to resend: ' + err.message);
+      alert('Failed to update complaint: ' + err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const openPaymentModal = () => {
+    setPaymentData({
+      payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
+      payment_method: 'Cash',
+      payment_notes: ''
+    });
+    setShowUnderpaidWarning(false);
+    setIsRecordingPayment(true);
+  };
+
+  const handleRecordPaymentSubmit = async (forceSubmit = false) => {
+    const entered = Number(paymentData.payment_collected || 0);
+    const expected = Number(ticket.estimated_charges || 0);
+
+    if (!forceSubmit && expected > 0 && entered < expected) {
+      setShowUnderpaidWarning(true);
+      return;
+    }
+
+    try {
+      setSavingPayment(true);
+      await api.recordPayment(ticket.id, paymentData);
+      await fetchTicketDetails();
+      setIsRecordingPayment(false);
+      setShowUnderpaidWarning(false);
+      if (onComplaintUpdated) onComplaintUpdated();
+      alert('Payment collected recorded successfully!');
+    } catch (err) {
+      alert('Failed to record payment: ' + err.message);
+    } finally {
+      setSavingPayment(false);
     }
   };
 
@@ -199,15 +290,20 @@ export const ComplaintDetailDrawer = ({
                   ticket?.status === 'Resolved' ? 'bg-emerald-600 text-white' :
                   ticket?.status === 'Closed' ? 'bg-slate-700 text-slate-200' :
                   ticket?.status === 'In Progress' ? 'bg-blue-600 text-white' :
-                  ticket?.status === 'Assigned' ? 'bg-amber-600 text-white' :
+                  ticket?.status === 'On Hold' ? 'bg-purple-600 text-white' :
+                  ticket?.status === 'Assigned' ? 'bg-indigo-600 text-white' :
                   ticket?.status === 'Reopened' ? 'bg-rose-600 text-white' :
-                  'bg-yellow-500 text-slate-950'
+                  'bg-amber-500 text-slate-950'
                 }`}>
-                  {ticket?.status}
+                  {ticket?.status === 'Registered' ? 'Unassigned' : ticket?.status}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  {formatStageAge(ticket?.status_updated_at || ticket?.created_at)}
                 </span>
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                  ticket?.priority === 'Urgent' ? 'bg-red-500/20 text-red-300 border border-red-500/40' :
                   ticket?.priority === 'High' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                  ticket?.priority === 'Medium' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
                   'bg-slate-800 text-slate-300'
                 }`}>
                   {ticket?.priority} Priority
@@ -218,15 +314,28 @@ export const ComplaintDetailDrawer = ({
               </h3>
             </div>
 
-            {/* High-visibility Close Button on both Mobile & PC */}
-            <button 
-              onClick={onClose}
-              className="p-1.5 sm:p-2 bg-slate-800 hover:bg-slate-700 active:bg-rose-600 border border-slate-700 rounded-xl text-slate-200 hover:text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
-              title="Close Ticket Window"
-            >
-              <X className="w-5 h-5 text-rose-400 stroke-[2.5]" />
-              <span className="text-xs font-bold text-white pr-0.5">Close</span>
-            </button>
+            {/* Action & Close Buttons */}
+            <div className="flex items-center gap-2 shrink-0">
+              {['admin', 'staff'].includes(currentUser?.role) && ticket && (
+                <button
+                  onClick={openEditModal}
+                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                  title="Edit all complaint details"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Edit Details</span>
+                </button>
+              )}
+
+              <button 
+                onClick={onClose}
+                className="p-1.5 sm:p-2 bg-slate-800 hover:bg-slate-700 active:bg-rose-600 border border-slate-700 rounded-xl text-slate-200 hover:text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                title="Close Ticket Window"
+              >
+                <X className="w-5 h-5 text-rose-400 stroke-[2.5]" />
+                <span className="text-xs font-bold text-white pr-0.5">Close</span>
+              </button>
+            </div>
           </div>
 
           {/* Sub Navigation Tabs */}
@@ -319,12 +428,109 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-slate-800">{ticket.customer_email || 'Not provided'}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[11px]">Installation ID / Serial:</span>
-                          <span className="font-mono text-slate-800">{ticket.product_serial || ticket.installation_id || 'N/A'}</span>
+                          <span className="text-slate-400 block text-[11px]">City / Village:</span>
+                          <span className="text-slate-800 font-medium">{ticket.city || 'Not specified'}</span>
                         </div>
                         <div className="sm:col-span-2">
-                          <span className="text-slate-400 block text-[11px]">Address:</span>
+                          <span className="text-slate-400 block text-[11px]">Installation Address:</span>
                           <span className="text-slate-800">{ticket.customer_address}</span>
+                        </div>
+
+                        {/* Customer Location URL Map Button */}
+                        {ticket.location_url && (
+                          <div className="sm:col-span-2 pt-1">
+                            <a
+                              href={ticket.location_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors shadow-2xs"
+                            >
+                              <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                              Open Customer Site Location on Google Maps
+                              <ExternalLink className="w-3 h-3 text-blue-500" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* System & Warranty Status Card */}
+                    <div className="bg-white rounded-xl p-4 border border-slate-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-emerald-700" />
+                          System & Warranty Information
+                        </h4>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 border ${
+                          ticket.is_in_warranty 
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                            : 'bg-rose-50 text-rose-800 border-rose-200'
+                        }`}>
+                          {ticket.is_in_warranty ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> : <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />}
+                          {ticket.is_in_warranty ? 'IN WARRANTY' : 'OUT OF WARRANTY'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-700">
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Consumer No:</span>
+                          <span className="font-mono font-semibold text-slate-800">{ticket.consumer_no || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Order No:</span>
+                          <span className="font-mono font-semibold text-slate-800">{ticket.order_no || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Product Serial:</span>
+                          <span className="font-mono text-slate-800">{ticket.product_serial || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Installation ID:</span>
+                          <span className="font-mono text-slate-800">{ticket.installation_id || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Estimated Charges & Payment Collection Card */}
+                    <div className="bg-amber-50/60 rounded-xl p-4 border border-amber-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
+                          Service Charges & Payment Collection
+                        </h4>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                          ticket.payment_status === 'Collected' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                          ticket.payment_status === 'Partially Paid' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                          'bg-amber-100 text-amber-900 border-amber-200'
+                        }`}>
+                          {ticket.payment_status || 'Unpaid'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-800 my-2">
+                        <div className="bg-white p-2.5 rounded-lg border border-amber-100">
+                          <span className="text-[11px] text-slate-500 block">Quoted Service Charge:</span>
+                          <strong className="text-base font-black text-slate-900">₹{ticket.estimated_charges || 0}</strong>
+                          {ticket.notify_charges === 1 && (
+                            <span className="text-[10px] text-emerald-700 block font-semibold">✓ Customer Notified</span>
+                          )}
+                        </div>
+
+                        <div className="bg-white p-2.5 rounded-lg border border-amber-100">
+                          <span className="text-[11px] text-slate-500 block">Payment Collected:</span>
+                          <strong className="text-base font-black text-emerald-700">₹{ticket.payment_collected || 0}</strong>
+                          <span className="text-[10px] text-slate-500 block">Status: {ticket.payment_status || 'Unpaid'}</span>
+                        </div>
+
+                        <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex flex-col justify-center">
+                          <button
+                            type="button"
+                            onClick={openPaymentModal}
+                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            Record Payment Collected
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -484,7 +690,10 @@ export const ComplaintDetailDrawer = ({
                               onChange={(e) => setFollowUpStatus(e.target.value)}
                               className="text-xs px-2 py-1 bg-white border border-slate-300 rounded font-medium"
                             >
-                              {STATUS_ORDER.concat(['On Hold']).map((s) => (
+                              {(currentUser?.role === 'technician'
+                                ? ['In Progress', 'On Hold']
+                                : STATUS_ORDER
+                              ).map((s) => (
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
@@ -742,6 +951,351 @@ export const ComplaintDetailDrawer = ({
           </div>
         </div>
       </div>
+      {/* EDIT COMPLAINT MODAL */}
+      {isEditing && (
+        <div className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-sm">Edit Ticket Details ({ticket.ticket_id})</h3>
+              </div>
+              <button 
+                onClick={() => setIsEditing(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
+              {/* Customer Contact */}
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">Customer Information</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Customer Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editFormData.customer_name || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, customer_name: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Phone Number *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editFormData.customer_phone || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, customer_phone: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Email Address</label>
+                    <input
+                      type="email"
+                      value={editFormData.customer_email || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, customer_email: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">City / Village</label>
+                    <input
+                      type="text"
+                      value={editFormData.city || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">Installation Address</label>
+                  <input
+                    type="text"
+                    value={editFormData.customer_address || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, customer_address: e.target.value })}
+                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-blue-600" />
+                    Customer Location Map URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://maps.google.com/..."
+                    value={editFormData.location_url || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, location_url: e.target.value })}
+                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              {/* System & Warranty */}
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">System & Warranty Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Consumer No.</label>
+                    <input
+                      type="text"
+                      value={editFormData.consumer_no || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, consumer_no: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Order No. (Excel)</label>
+                    <input
+                      type="text"
+                      value={editFormData.order_no || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, order_no: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Product Serial / Inverter Sr</label>
+                    <input
+                      type="text"
+                      value={editFormData.product_serial || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, product_serial: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Warranty Status</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, is_in_warranty: 1 })}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border ${
+                          editFormData.is_in_warranty === 1
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        In Warranty
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, is_in_warranty: 0 })}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border ${
+                          editFormData.is_in_warranty === 0
+                            ? 'bg-rose-600 text-white border-rose-700'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        Out of Warranty
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Service Charges & Priority */}
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">Charges & Priority</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Estimated Charges (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="50"
+                      value={editFormData.estimated_charges || 0}
+                      onChange={(e) => setEditFormData({ ...editFormData, estimated_charges: Number(e.target.value) })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Priority Level</label>
+                    <select
+                      value={editFormData.priority || 'Medium'}
+                      onChange={(e) => setEditFormData({ ...editFormData, priority: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                    >
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">Detailed Issue Description</label>
+                  <textarea
+                    rows={2}
+                    value={editFormData.issue_description || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, issue_description: e.target.value })}
+                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50"
+                >
+                  {savingEdit ? 'Saving Changes...' : 'Save All Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECORD PAYMENT MODAL */}
+      {isRecordingPayment && (
+        <div className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="px-5 py-4 bg-emerald-800 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <IndianRupee className="w-5 h-5 text-amber-300" />
+                <h3 className="font-bold text-sm">Record Payment Collected</h3>
+              </div>
+              <button 
+                onClick={() => { setIsRecordingPayment(false); setShowUnderpaidWarning(false); }}
+                className="p-1 text-emerald-200 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Quoted Service Charge</span>
+                  <strong className="text-base font-black text-slate-900">₹{ticket.estimated_charges || 0}</strong>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Current Status</span>
+                  <span className="font-bold text-amber-700">{ticket.payment_status || 'Unpaid'}</span>
+                </div>
+              </div>
+
+              {/* Warning box if entered amount is less than estimated */}
+              {showUnderpaidWarning && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs space-y-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    Warning: Partial Payment Amount
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    The entered amount of <strong>₹{paymentData.payment_collected || 0}</strong> is lower than the quoted service charge of <strong>₹{ticket.estimated_charges || 0}</strong>.
+                  </p>
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowUnderpaidWarning(false)}
+                      className="px-2.5 py-1 bg-white border border-amber-300 rounded text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Change Amount
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRecordPaymentSubmit(true)}
+                      disabled={savingPayment}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold"
+                    >
+                      {savingPayment ? 'Saving...' : 'Confirm & Save Partial'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Payment Amount Collected (₹) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-500">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="50"
+                    required
+                    placeholder="Enter amount collected from customer"
+                    value={paymentData.payment_collected}
+                    onChange={(e) => setPaymentData({ ...paymentData, payment_collected: e.target.value })}
+                    className="w-full text-xs pl-7 pr-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Payment Method *
+                </label>
+                <select
+                  value={paymentData.payment_method}
+                  onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium"
+                >
+                  <option value="Cash">Cash to Technician</option>
+                  <option value="UPI">UPI / QR Code</option>
+                  <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                  <option value="Cheque">Cheque</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Payment Notes / Reference No. (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., UTR / UPI transaction ID, Receipt #104"
+                  value={paymentData.payment_notes}
+                  onChange={(e) => setPaymentData({ ...paymentData, payment_notes: e.target.value })}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              {!showUnderpaidWarning && (
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecordingPayment(false)}
+                    className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRecordPaymentSubmit(false)}
+                    disabled={savingPayment || !paymentData.payment_collected}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 disabled:opacity-50"
+                  >
+                    {savingPayment ? 'Saving...' : 'Record Payment'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
