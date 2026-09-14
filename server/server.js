@@ -52,15 +52,35 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
+// Health check handler for UptimeRobot & automated monitors (keeps Render free tier awake 24/7)
+function healthHandler(req, res) {
+  let dbStatus = 'connected';
+  try {
+    db.prepare('SELECT 1').get();
+  } catch (e) {
+    dbStatus = 'error: ' + e.message;
+  }
+
+  const uptimeSeconds = Math.floor(process.uptime());
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const seconds = uptimeSeconds % 60;
+  const uptimeHuman = `${hours > 0 ? hours + 'h ' : ''}${minutes}m ${seconds}s`;
+
+  res.status(dbStatus === 'connected' ? 200 : 503).json({
+    status: dbStatus === 'connected' ? 'ok' : 'degraded',
     service: 'Eco Green Solar CMS API',
+    uptime: uptimeHuman,
+    uptime_seconds: uptimeSeconds,
+    database: dbStatus,
     timestamp: new Date().toISOString(),
     version: '1.0.0'
   });
-});
+}
+
+// Support GET and HEAD for /health, /api/health, and /ping
+app.get(['/health', '/api/health', '/ping'], healthHandler);
+app.head(['/health', '/api/health', '/ping'], (req, res) => res.status(200).end());
 
 // Demo Data Reset Endpoint
 app.post('/api/demo/reset', async (req, res) => {
