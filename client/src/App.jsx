@@ -11,7 +11,6 @@ import { CustomerPublicPortal } from './components/customer/CustomerPublicPortal
 import { AnalyticsDashboard } from './components/admin/AnalyticsDashboard';
 import { TemplateManager } from './components/admin/TemplateManager';
 import { StaffTechnicianManager } from './components/admin/StaffTechnicianManager';
-import { WhatsAppGatewayModal } from './components/admin/WhatsAppGatewayModal';
 import { OnboardingTour } from './components/common/OnboardingTour';
 import { LoginPage } from './components/auth/LoginPage';
 import { api } from './api/client';
@@ -73,31 +72,8 @@ function AppContent() {
   // Modals & Drawers state (MUST be declared before early returns per React Rules of Hooks)
   const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
-  const [isWhatsAppGatewayOpen, setIsWhatsAppGatewayOpen] = useState(false);
-  const [whatsAppStatus, setWhatsAppStatus] = useState({ isConnected: false, status: 'checking' });
   const [selectedComplaintId, setSelectedComplaintId] = useState(null);
   const [historyPhone, setHistoryPhone] = useState(null);
-
-  // Poll WhatsApp Gateway status periodically
-  useEffect(() => {
-    let isMounted = true;
-    const fetchStatus = async () => {
-      try {
-        const res = await api.getWhatsAppStatus();
-        if (isMounted && res) {
-          setWhatsAppStatus(res);
-        }
-      } catch (err) {
-        // Ignored if offline
-      }
-    };
-    fetchStatus();
-    const timer = setInterval(fetchStatus, 8000);
-    return () => {
-      isMounted = false;
-      clearInterval(timer);
-    };
-  }, []);
 
   // Onboarding Tour state
   const [isTourOpen, setIsTourOpen] = useState(() => {
@@ -179,8 +155,6 @@ function AppContent() {
           onToggleNotificationDrawer={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
           onOpenTour={() => setIsTourOpen(true)}
           onReloadDemoData={handleReloadDemoData}
-          onOpenWhatsAppGateway={() => setIsWhatsAppGatewayOpen(true)}
-          whatsAppStatus={whatsAppStatus}
         />
       </div>
 
@@ -378,12 +352,6 @@ function AppContent() {
         isOpen={Boolean(historyPhone)}
         onClose={() => setHistoryPhone(null)}
         onSelectTicket={(ticketId) => setSelectedComplaintId(ticketId)}
-      />
-
-      <WhatsAppGatewayModal
-        isOpen={isWhatsAppGatewayOpen}
-        onClose={() => setIsWhatsAppGatewayOpen(false)}
-        onStatusChange={(newStatus) => setWhatsAppStatus(newStatus)}
       />
 
       <NotificationDrawer

@@ -377,93 +377,32 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       </div>
                     )}
 
-                    {whatsAppStatus?.isConnected ? (
-                      /* OFFICE GATEWAY CONNECTED: 1-CLICK BACKGROUND SEND */
-                      <div className="space-y-2 pt-1">
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                          {directSent ? (
-                            <div className="flex-1 px-4 py-3 bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                              <span>Delivered to Customer from Office WhatsApp (+91 7878444414)!</span>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleDirectSendWhatsApp(createdTicket.customer_phone, finalWaText)}
-                              disabled={directSending}
-                              className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-700/25 transition-all hover:scale-[1.01] active:scale-[0.99]"
-                            >
-                              {directSending ? (
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <MessageCircle className="w-4 h-4" />
-                              )}
-                              <span>{directSending ? 'Sending in background...' : '⚡ Send Directly via Office WhatsApp (+91 7878444414)'}</span>
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(finalWaText);
-                              setCopiedWaMsg(true);
-                              setTimeout(() => setCopiedWaMsg(false), 2500);
-                            }}
-                            className="px-3.5 py-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>{copiedWaMsg ? 'Copied!' : 'Copy Text'}</span>
-                          </button>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
-                          <span className="flex items-center gap-1 text-emerald-700 font-semibold">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
-                            Gateway Connected (Zero Popups)
-                          </span>
-                          <a
-                            href={finalWaUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-slate-500 hover:text-emerald-700 underline flex items-center gap-1"
-                          >
-                            <span>Manual Fallback Link</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <a
+                          href={finalWaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-700/25 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>Send WhatsApp Message to Customer</span>
+                          <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(finalWaText);
+                            setCopiedWaMsg(true);
+                            setTimeout(() => setCopiedWaMsg(false), 2500);
+                          }}
+                          className="px-3.5 py-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{copiedWaMsg ? 'Message Copied!' : 'Copy Text'}</span>
+                        </button>
                       </div>
-                    ) : (
-                      /* GATEWAY OFFLINE: MANUAL LINK WITH SCAN PROMPT */
-                      <div className="space-y-2 pt-1">
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                          <a
-                            href={finalWaUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-700/25 transition-all hover:scale-[1.01] active:scale-[0.99]"
-                          >
-                            <MessageCircle className="w-4 h-4" />
-                            <span>Send WhatsApp Message to Customer</span>
-                            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(finalWaText);
-                              setCopiedWaMsg(true);
-                              setTimeout(() => setCopiedWaMsg(false), 2500);
-                            }}
-                            className="px-3.5 py-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>{copiedWaMsg ? 'Message Copied!' : 'Copy Text'}</span>
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">
-                          💡 <strong>Automate WhatsApp:</strong> Click <em>"Link WhatsApp"</em> in the top navigation bar to link office number <strong>7878444414</strong> and send all messages in the background without opening tabs.
-                        </p>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 );
               })()}
