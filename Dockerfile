@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Eco Green Solar CMS
 # Stage 1: Build React Frontend
-FROM node:20-slim AS frontend-builder
+FROM node:22-bookworm-slim AS frontend-builder
 WORKDIR /app/client
 
 COPY client/package*.json ./
@@ -10,7 +10,7 @@ COPY client/ ./
 RUN npm run build
 
 # Stage 2: Production Runtime
-FROM node:20-slim AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
 # Install native compilation dependencies for SQLite
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install backend dependencies
 COPY server/package*.json ./server/
-RUN cd server && npm install --production
+RUN cd server && npm install --omit=dev
 
 # Copy server application and populated SQLite database (with 6,102 customer records)
 COPY server/ ./server/
