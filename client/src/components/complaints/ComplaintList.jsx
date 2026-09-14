@@ -104,6 +104,11 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
     return status;
   };
 
+  const getDisplayPriority = (priority) => {
+    if (priority === 'Urgent') return 'High';
+    return priority || 'Medium';
+  };
+
   return (
     <div className="space-y-4">
       {/* Top Controls Bar */}
@@ -369,13 +374,18 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                       {/* Priority & Warranty */}
                       <td className="py-3 px-4">
                         <div className="space-y-1">
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            c.priority === 'High' ? 'bg-amber-100 text-amber-800' :
-                            c.priority === 'Medium' ? 'bg-blue-100 text-blue-800' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>
-                            {c.priority}
-                          </span>
+                          {(() => {
+                            const dispPriority = getDisplayPriority(c.priority);
+                            return (
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                dispPriority === 'High' ? 'bg-amber-100 text-amber-800' :
+                                dispPriority === 'Medium' ? 'bg-blue-100 text-blue-800' :
+                                'bg-slate-100 text-slate-700'
+                              }`}>
+                                {dispPriority}
+                              </span>
+                            );
+                          })()}
                           {c.is_in_warranty !== undefined && (
                             <span className={`block text-[10px] font-semibold ${
                               c.is_in_warranty ? 'text-emerald-700' : 'text-rose-600'
@@ -491,11 +501,11 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                         </span>
 
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          c.priority === 'High' ? 'bg-amber-100 text-amber-700' :
-                          c.priority === 'Medium' ? 'bg-blue-100 text-blue-700' :
+                          getDisplayPriority(c.priority) === 'High' ? 'bg-amber-100 text-amber-700' :
+                          getDisplayPriority(c.priority) === 'Medium' ? 'bg-blue-100 text-blue-700' :
                           'bg-slate-100 text-slate-600'
                         }`}>
-                          {c.priority}
+                          {getDisplayPriority(c.priority)}
                         </span>
                       </div>
                     </div>

@@ -32,18 +32,13 @@ export const TicketAgeBadge = ({ complaint, compact = false, showLabel = true })
   if (isOverdue) {
     return (
       <span 
-        className={`inline-flex items-center gap-1 font-bold rounded-lg border border-rose-300 bg-rose-100 text-rose-800 shadow-2xs shrink-0 ${
-          compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
+        className={`inline-flex items-center gap-1.5 font-bold rounded-lg border border-rose-300 bg-rose-100 text-rose-800 shadow-2xs shrink-0 ${
+          compact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'
         }`}
-        title={`Pending for ${days} days without closure! Overdue alert.`}
+        title={`Pending for ${days} days without closure!`}
       >
-        <AlertTriangle className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-rose-600 shrink-0 animate-pulse`} />
+        <AlertTriangle className={`${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-rose-600 shrink-0 animate-pulse`} />
         <span className="font-extrabold whitespace-nowrap">{text}</span>
-        {showLabel && (
-          <span className="bg-rose-600 text-white text-[9px] px-1 py-0.2 rounded font-black tracking-wider uppercase shrink-0">
-            &gt;2 Days
-          </span>
-        )}
       </span>
     );
   }
