@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import confetti from 'canvas-confetti';
 import { 
   Sun, Shield, Users, Wrench, Search, Plus, Bell, 
   CheckCircle2, ArrowRight, ArrowLeft, X, Sparkles, 
@@ -189,7 +188,6 @@ export const OnboardingTour = ({ isOpen, onClose, onSwitchTab }) => {
 
   const handleFinish = () => {
     localStorage.setItem('egs_cms_tour_completed', 'true');
-    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
     onClose();
   };
 

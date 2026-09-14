@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { api } from '../../api/client';
-import confetti from 'canvas-confetti';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
-  Link, IndianRupee, Trash2, FileText
+  Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -63,6 +62,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated }) => {
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [copiedWaMsg, setCopiedWaMsg] = useState(false);
 
   // Smart Customer Search & Warranty state
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -175,7 +175,6 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated }) => {
 
       const res = await api.createComplaint(data);
       setCreatedTicket(res.complaint);
-      confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
       if (onComplaintCreated) onComplaintCreated(res.complaint);
     } catch (err) {
       alert('Failed to create complaint: ' + err.message);
@@ -246,57 +245,147 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated }) => {
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1">
           {createdTicket ? (
-            /* Success confirmation screen */
-            <div className="text-center py-6 space-y-5">
-              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-
-              <div>
-                <span className="text-xs uppercase font-bold text-emerald-700 tracking-wider">Ticket Created & Dispatched</span>
-                <h3 className="text-2xl font-black text-slate-900 mt-1">
-                  {createdTicket.ticket_id}
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  Registered for <strong>{createdTicket.customer_name}</strong> ({createdTicket.product_type})
-                </p>
-              </div>
-
-              {/* Notification badge info */}
-              <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200 text-left text-xs text-emerald-900 space-y-2">
-                <div className="font-bold flex items-center gap-1.5 text-emerald-800">
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
-                  Automatic Multi-Channel Alerts Dispatched:
+            /* Clean, Professional Success Confirmation Screen (No Birthday Confetti) */
+            <div className="py-4 space-y-5 max-w-xl mx-auto">
+              {/* Header Icon & Title */}
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs border border-emerald-200">
+                  <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700">
-                  <div className="bg-white p-2.5 rounded-lg border border-emerald-100 flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block">WhatsApp Sent</span>
-                      <span className="text-[11px] text-slate-500">{createdTicket.customer_phone}</span>
-                    </div>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-lg border border-emerald-100 flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-blue-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block">Branded Email Sent</span>
-                      <span className="text-[11px] text-slate-500">{createdTicket.customer_email || 'Logged in system'}</span>
-                    </div>
-                  </div>
+                <div>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-3 py-0.5 rounded-full uppercase tracking-wider">
+                    Complaint Registered Successfully
+                  </span>
+                  <h3 className="text-2xl font-black text-slate-900 font-mono mt-1.5 tracking-tight">
+                    {createdTicket.ticket_id}
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Registered on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • Status: <strong className="text-amber-700">Unassigned</strong>
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-3 pt-3">
+              {/* Ticket Summary Box */}
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs text-slate-700 shadow-2xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Customer Name</span>
+                    <strong className="text-slate-900 text-sm block truncate">{createdTicket.customer_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Mobile Number</span>
+                    <span className="font-mono font-bold text-emerald-700 text-sm block">📞 {createdTicket.customer_phone}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Product & Issue</span>
+                    <span className="text-slate-800 font-semibold block">{createdTicket.product_type} — {createdTicket.issue_category}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Warranty Status</span>
+                    <span className={`font-bold inline-block mt-0.5 ${createdTicket.is_in_warranty ? 'text-emerald-700' : 'text-rose-600'}`}>
+                      {createdTicket.is_in_warranty ? '🟢 In Warranty (Free Service)' : '🔴 Out of Warranty'}
+                    </span>
+                  </div>
+                  {createdTicket.city && (
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">City / Village</span>
+                      <span className="text-slate-800 font-medium block">📍 {createdTicket.city}</span>
+                    </div>
+                  )}
+                  {createdTicket.estimated_charges > 0 && (
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Service Fee</span>
+                      <strong className="text-slate-900 font-mono text-sm block">₹{createdTicket.estimated_charges}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Direct 1-Click WhatsApp Action Card */}
+              {(() => {
+                const cleanPhone = (createdTicket.customer_phone || '').replace(/[^0-9]/g, '');
+                const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+                const trackingUrl = `${window.location.origin}/track/${createdTicket.ticket_id}`;
+                const chargesLine = (createdTicket.notify_charges && createdTicket.estimated_charges > 0)
+                  ? `\n💰 *Estimated Service Charge:* ₹${createdTicket.estimated_charges} (Standard Visit & Diagnostic Fee)`
+                  : '';
+                const waRawText = `☀️ *Eco Green Solar Support*
+
+Dear ${createdTicket.customer_name}, your service complaint has been successfully registered.
+
+📌 *Ticket ID:* ${createdTicket.ticket_id}
+🔧 *Product:* ${createdTicket.product_type}
+📅 *Date:* ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}${chargesLine}
+
+Our team is reviewing your ticket and will assign a service technician shortly.
+
+🔗 *Track Live Status:* ${trackingUrl}
+
+Helpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
+
+                const waSendUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(waRawText)}`;
+
+                return (
+                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50/60 rounded-2xl p-4 border border-emerald-300 text-left space-y-3 shadow-sm">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-700/20">
+                        <MessageCircle className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-emerald-950">Send Confirmation to Customer on WhatsApp</h4>
+                        <p className="text-[11px] text-emerald-800">
+                          Click below to instantly open WhatsApp and send official ticket details to <strong>{createdTicket.customer_phone}</strong>:
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Formatted Message Preview */}
+                    <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 text-[11px] font-mono text-slate-700 whitespace-pre-line leading-relaxed max-h-32 overflow-y-auto shadow-inner">
+                      {waRawText}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                      <a
+                        href={waSendUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-700/25 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Send WhatsApp Message to Customer</span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(waRawText);
+                          setCopiedWaMsg(true);
+                          setTimeout(() => setCopiedWaMsg(false), 2500);
+                        }}
+                        className="px-3.5 py-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{copiedWaMsg ? 'Message Copied!' : 'Copy Text'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-center gap-3 pt-2">
                 <button
+                  type="button"
                   onClick={copyTicketId}
                   className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors"
                 >
-                  <Copy className="w-4 h-4" />
-                  {copied ? 'Copied to Clipboard!' : 'Copy Ticket ID'}
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copied ? 'Ticket ID Copied!' : 'Copy Ticket ID'}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={resetAndClose}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 transition-all"
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md transition-all"
                 >
                   Done & View Complaints
                 </button>

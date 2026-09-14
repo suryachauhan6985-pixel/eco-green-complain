@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { api } from '../../api/client';
-import confetti from 'canvas-confetti';
 import { 
   Search, Sun, Droplets, Wind, CheckCircle2, Clock, 
   Wrench, Phone, Star, RotateCcw, AlertTriangle, Send 
@@ -62,7 +61,6 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
         feedback_comments: feedbackText
       });
       setFeedbackSubmitted(true);
-      confetti({ particleCount: 70, spread: 60 });
     } catch (err) {
       alert('Failed to submit feedback: ' + err.message);
     }
