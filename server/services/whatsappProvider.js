@@ -3,9 +3,27 @@
  * Supports Meta Cloud API, Twilio WhatsApp API, and Built-in Simulator
  */
 
+const whatsappSessionManager = require('./whatsappSessionManager');
+
 async function sendWhatsAppMessage({ to, message, templateName, variables = {} }) {
   const provider = process.env.WHATSAPP_PROVIDER || 'SIMULATED';
   const cleanTo = (to || '').replace(/[^0-9+]/g, '');
+
+  // 1. Primary Priority: WhatsApp Gateway (Office WhatsApp Web session from +91 7878444414)
+  const sessionStatus = whatsappSessionManager.getStatus();
+  if (sessionStatus.isConnected) {
+    try {
+      const result = await whatsappSessionManager.sendDirectWhatsAppMessage(cleanTo, message);
+      return {
+        success: true,
+        provider: 'WHATSAPP_GATEWAY',
+        messageId: result.messageId,
+        fromPhone: sessionStatus.connectedPhone
+      };
+    } catch (err) {
+      console.warn('[WhatsAppProvider] Direct WhatsApp Gateway error, falling back:', err.message);
+    }
+  }
 
   if (provider === 'META_CLOUD_API') {
     const phoneNumberId = process.env.META_PHONE_NUMBER_ID;

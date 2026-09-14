@@ -851,5 +851,13 @@ export const api = {
   syncCustomersFromExcel: (formData) => request('/customers/sync', {
     method: 'POST',
     body: formData
+  }),
+
+  // WhatsApp Gateway (Baileys Session)
+  getWhatsAppStatus: () => request('/whatsapp/status'),
+  logoutWhatsApp: () => request('/whatsapp/logout', { method: 'POST' }),
+  sendDirectWhatsApp: (phone, message) => request('/whatsapp/send-direct', {
+    method: 'POST',
+    body: JSON.stringify({ phone, message })
   })
 };

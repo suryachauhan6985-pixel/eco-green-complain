@@ -18,7 +18,8 @@ export const ComplaintDetailDrawer = ({
   isOpen, 
   onClose, 
   onComplaintUpdated,
-  onViewCustomerHistory 
+  onViewCustomerHistory,
+  whatsAppStatus 
 }) => {
   const { currentUser } = useAuth();
   const [ticket, setTicket] = useState(null);
@@ -36,6 +37,12 @@ export const ComplaintDetailDrawer = ({
   const [assignSuccessModal, setAssignSuccessModal] = useState(null);
   const [copiedCustWa, setCopiedCustWa] = useState(false);
   const [copiedTechWa, setCopiedTechWa] = useState(false);
+  const [directSendingCust, setDirectSendingCust] = useState(false);
+  const [directSentCust, setDirectSentCust] = useState(false);
+  const [directSendingTech, setDirectSendingTech] = useState(false);
+  const [directSentTech, setDirectSentTech] = useState(false);
+  const [directSendingBoth, setDirectSendingBoth] = useState(false);
+  const [directSentBoth, setDirectSentBoth] = useState(false);
 
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpStatus, setFollowUpStatus] = useState('');
@@ -123,6 +130,9 @@ export const ComplaintDetailDrawer = ({
       const customerWa = await buildTechnicianAssignedWhatsApp(ticket, assignedTech, expectedDate);
       const techWa = buildTechnicianWorkOrderWhatsApp(ticket, assignedTech, expectedDate);
 
+      setDirectSentCust(false);
+      setDirectSentTech(false);
+      setDirectSentBoth(false);
       setAssignSuccessModal({
         ticket,
         tech: assignedTech,
@@ -134,6 +144,51 @@ export const ComplaintDetailDrawer = ({
       alert('Failed to assign technician: ' + err.message);
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const handleDirectSendCustomer = async () => {
+    if (!assignSuccessModal?.ticket?.customer_phone || !assignSuccessModal?.customerWa?.rawText) return;
+    try {
+      setDirectSendingCust(true);
+      await api.sendDirectWhatsApp(assignSuccessModal.ticket.customer_phone, assignSuccessModal.customerWa.rawText);
+      setDirectSentCust(true);
+    } catch (e) {
+      alert('Failed to send to customer via WhatsApp Gateway: ' + e.message);
+    } finally {
+      setDirectSendingCust(false);
+    }
+  };
+
+  const handleDirectSendTech = async () => {
+    if (!assignSuccessModal?.tech?.phone || !assignSuccessModal?.techWa?.rawText) return;
+    try {
+      setDirectSendingTech(true);
+      await api.sendDirectWhatsApp(assignSuccessModal.tech.phone, assignSuccessModal.techWa.rawText);
+      setDirectSentTech(true);
+    } catch (e) {
+      alert('Failed to send to technician via WhatsApp Gateway: ' + e.message);
+    } finally {
+      setDirectSendingTech(false);
+    }
+  };
+
+  const handleDirectSendBoth = async () => {
+    try {
+      setDirectSendingBoth(true);
+      if (assignSuccessModal?.ticket?.customer_phone && assignSuccessModal?.customerWa?.rawText) {
+        await api.sendDirectWhatsApp(assignSuccessModal.ticket.customer_phone, assignSuccessModal.customerWa.rawText);
+        setDirectSentCust(true);
+      }
+      if (assignSuccessModal?.tech?.phone && assignSuccessModal?.techWa?.rawText) {
+        await api.sendDirectWhatsApp(assignSuccessModal.tech.phone, assignSuccessModal.techWa.rawText);
+        setDirectSentTech(true);
+      }
+      setDirectSentBoth(true);
+    } catch (e) {
+      alert('Failed to send messages via WhatsApp Gateway: ' + e.message);
+    } finally {
+      setDirectSendingBoth(false);
     }
   };
 
@@ -1345,6 +1400,46 @@ export const ComplaintDetailDrawer = ({
                 </div>
               </div>
 
+              {/* Office WhatsApp Gateway Status Banner */}
+              {whatsAppStatus?.isConnected ? (
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                    <div>
+                      <span className="text-xs font-bold text-emerald-900 block">
+                        Office WhatsApp Gateway Online (+91 7878444414)
+                      </span>
+                      <span className="text-[10px] text-emerald-700">
+                        Zero popups — send messages directly from the server in background.
+                      </span>
+                    </div>
+                  </div>
+                  {directSentBoth ? (
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-600 stroke-[3]" /> Both Messages Delivered!
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleDirectSendBoth}
+                      disabled={directSendingBoth}
+                      className="w-full sm:w-auto px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95"
+                    >
+                      {directSendingBoth ? (
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>{directSendingBoth ? 'Sending Both...' : '⚡ Send Both via Office WhatsApp'}</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-800 flex items-center justify-between gap-2">
+                  <span>💡 <strong>Tip:</strong> Link office WhatsApp (7878444414) in the navbar to send without opening tabs.</span>
+                </div>
+              )}
+
               {/* SECTION 1: Customer WhatsApp Notification */}
               <div className="bg-white rounded-xl p-4 border border-emerald-300 shadow-sm space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -1357,6 +1452,11 @@ export const ComplaintDetailDrawer = ({
                       <p className="text-[10px] text-slate-500">Customer: <strong>{ticket.customer_name}</strong> (📞 {ticket.customer_phone})</p>
                     </div>
                   </div>
+                  {directSentCust && (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Delivered
+                    </span>
+                  )}
                 </div>
 
                 {/* Message Preview */}
@@ -1364,17 +1464,41 @@ export const ComplaintDetailDrawer = ({
                   {assignSuccessModal.customerWa.rawText}
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                  <a
-                    href={assignSuccessModal.customerWa.sendUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Send WhatsApp to Customer</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                  </a>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                  {whatsAppStatus?.isConnected ? (
+                    directSentCust ? (
+                      <div className="flex-1 py-2 px-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+                        <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                        <span>Sent via Office WhatsApp (+91 7878444414)</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleDirectSendCustomer}
+                        disabled={directSendingCust}
+                        className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
+                      >
+                        {directSendingCust ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <MessageCircle className="w-4 h-4" />
+                        )}
+                        <span>{directSendingCust ? 'Sending...' : '⚡ Send Directly (Background)'}</span>
+                      </button>
+                    )
+                  ) : (
+                    <a
+                      href={assignSuccessModal.customerWa.sendUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Send WhatsApp to Customer</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                    </a>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -1387,6 +1511,18 @@ export const ComplaintDetailDrawer = ({
                     <Copy className="w-3.5 h-3.5" />
                     <span>{copiedCustWa ? 'Copied!' : 'Copy'}</span>
                   </button>
+
+                  {whatsAppStatus?.isConnected && (
+                    <a
+                      href={assignSuccessModal.customerWa.sendUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="py-2.5 px-2.5 text-slate-400 hover:text-slate-700 text-xs transition-colors"
+                      title="Manual Fallback: Open WhatsApp Web"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -1402,6 +1538,11 @@ export const ComplaintDetailDrawer = ({
                       <p className="text-[10px] text-slate-500">Technician: <strong>{assignSuccessModal.tech?.name}</strong> (📞 {assignSuccessModal.tech?.phone || 'N/A'})</p>
                     </div>
                   </div>
+                  {directSentTech && (
+                    <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full border border-teal-200 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Delivered
+                    </span>
+                  )}
                 </div>
 
                 {/* Work Order Preview */}
@@ -1409,17 +1550,41 @@ export const ComplaintDetailDrawer = ({
                   {assignSuccessModal.techWa.rawText}
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                  <a
-                    href={assignSuccessModal.techWa.sendUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 px-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Send Work Order to Tech</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                  </a>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                  {whatsAppStatus?.isConnected ? (
+                    directSentTech ? (
+                      <div className="flex-1 py-2 px-3 bg-teal-50 border border-teal-300 text-teal-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+                        <Check className="w-4 h-4 text-teal-600 stroke-[3]" />
+                        <span>Sent to Tech via Office WhatsApp (+91 7878444414)</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleDirectSendTech}
+                        disabled={directSendingTech}
+                        className="flex-1 py-2.5 px-3 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
+                      >
+                        {directSendingTech ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <MessageCircle className="w-4 h-4" />
+                        )}
+                        <span>{directSendingTech ? 'Sending...' : '⚡ Send Directly (Background)'}</span>
+                      </button>
+                    )
+                  ) : (
+                    <a
+                      href={assignSuccessModal.techWa.sendUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2.5 px-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Send Work Order to Tech</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                    </a>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -1432,6 +1597,18 @@ export const ComplaintDetailDrawer = ({
                     <Copy className="w-3.5 h-3.5" />
                     <span>{copiedTechWa ? 'Copied!' : 'Copy'}</span>
                   </button>
+
+                  {whatsAppStatus?.isConnected && (
+                    <a
+                      href={assignSuccessModal.techWa.sendUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="py-2.5 px-2.5 text-slate-400 hover:text-slate-700 text-xs transition-colors"
+                      title="Manual Fallback: Open WhatsApp Web"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  )}
                 </div>
               </div>
             </div>

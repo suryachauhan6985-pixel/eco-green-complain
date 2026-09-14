@@ -137,6 +137,35 @@ app.get('/api/notifications/simulated', notificationController.getSimulatedMessa
 app.delete('/api/notifications/simulated', notificationController.clearSimulated);
 app.get('/api/notifications/events', notificationController.subscribeSimulatedEvents);
 
+// ================= WHATSAPP GATEWAY (BAILEYS QR SESSION) =================
+const whatsappSessionManager = require('./services/whatsappSessionManager');
+
+app.get('/api/whatsapp/status', (req, res) => {
+  res.json(whatsappSessionManager.getStatus());
+});
+
+app.post('/api/whatsapp/logout', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const result = await whatsappSessionManager.logout();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Logout failed: ' + err.message });
+  }
+});
+
+app.post('/api/whatsapp/send-direct', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+    if (!phone || !message) {
+      return res.status(400).json({ error: 'Phone and message are required' });
+    }
+    const result = await whatsappSessionManager.sendDirectWhatsAppMessage(phone, message);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ================= REPORT & ANALYTICS ROUTES =================
 app.get('/api/reports/metrics', authenticateToken, requireRole('admin', 'staff'), reportController.getDashboardMetrics);
 app.get('/api/reports/export-csv', authenticateToken, requireRole('admin', 'staff'), reportController.exportComplaintsCsv);

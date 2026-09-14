@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   Sun, Shield, Users, Wrench, Search, Plus, 
   BarChart3, Settings, Bell, ChevronDown, Check, LogOut,
-  Compass, RotateCcw, Sparkles, X 
+  Compass, RotateCcw, Sparkles, X, MessageCircle, QrCode 
 } from 'lucide-react';
 
 export const Navbar = ({ 
@@ -12,7 +12,9 @@ export const Navbar = ({
   onOpenNewComplaint, 
   onToggleNotificationDrawer,
   onOpenTour,
-  onReloadDemoData
+  onReloadDemoData,
+  onOpenWhatsAppGateway,
+  whatsAppStatus
 }) => {
   const { currentUser, switchRole, logout, unreadSimulatedCount } = useAuth();
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
@@ -195,6 +197,27 @@ export const Navbar = ({
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Register Ticket</span>
+              </button>
+            )}
+
+            {/* WhatsApp Gateway Status & QR Trigger (For Admin & Staff) */}
+            {['admin', 'staff'].includes(currentUser?.role) && (
+              <button
+                onClick={onOpenWhatsAppGateway}
+                title={whatsAppStatus?.isConnected ? `WhatsApp Gateway Connected: ${whatsAppStatus.connectedPhone || '+91 7878444414'}` : 'WhatsApp Gateway: Click to Scan QR Code'}
+                className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 ${
+                  whatsAppStatus?.isConnected
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-2xs'
+                    : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 animate-pulse'
+                }`}
+              >
+                <MessageCircle className={`w-3.5 h-3.5 ${whatsAppStatus?.isConnected ? 'text-emerald-600 fill-emerald-100' : 'text-amber-600'}`} />
+                <span className="hidden lg:inline">
+                  {whatsAppStatus?.isConnected ? 'WA Connected' : 'Link WhatsApp'}
+                </span>
+                <span className={`w-2 h-2 rounded-full ${
+                  whatsAppStatus?.isConnected ? 'bg-emerald-500' : 'bg-amber-500'
+                }`} />
               </button>
             )}
 
