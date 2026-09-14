@@ -86,6 +86,8 @@ app.get('/api/complaints/track/:query', complaintController.trackTicket);
 app.post('/api/complaints/:id/feedback', complaintController.submitFeedback);
 // Public self-service complaint registration (or front-office)
 app.post('/api/complaints/public-register', upload.array('attachments', 5), complaintController.createComplaint);
+// Multi-source backup synchronization for container restarts
+app.post('/api/complaints/sync-backup', complaintController.syncBackupComplaints);
 
 // Protected complaint endpoints
 app.get('/api/complaints', authenticateToken, complaintController.listComplaints);

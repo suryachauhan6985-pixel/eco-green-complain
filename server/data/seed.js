@@ -5,13 +5,9 @@ async function seedDatabase(forceReset = false) {
   console.log('Seeding Eco Green Solar CMS Database...');
 
   if (forceReset) {
-    db.prepare('DELETE FROM complaint_timelines').run();
-    db.prepare('DELETE FROM complaint_attachments').run();
-    db.prepare('DELETE FROM notification_logs').run();
-    db.prepare('DELETE FROM complaints').run();
-    db.prepare('DELETE FROM technicians').run();
-    db.prepare('DELETE FROM users').run();
-    console.log('Tables cleared for fresh seed.');
+    // Only reset demo seed tickets, NEVER delete user-created complaints!
+    db.prepare("DELETE FROM complaints WHERE ticket_id BETWEEN 'EGS-2026-000101' AND 'EGS-2026-000112'").run();
+    console.log('Demo seed complaints cleared for refresh.');
   }
 
   // 1. Seed Users
@@ -42,9 +38,9 @@ async function seedDatabase(forceReset = false) {
   insertTech.run(3, 5, 'Suresh Patel', '+919876543212', 'suresh.tech@ecogreensolar.com', 'East Zone (Whitefield / Marathahalli)', 'Heat Pumps', 1);
   insertTech.run(4, 6, 'Manoj Sharma', '+919876543213', 'manoj.tech@ecogreensolar.com', 'West Zone (Rajajinagar / Malleshwaram)', 'All Products', 1);
 
-  // 3. Seed Notification Templates
+  // 3. Seed Notification Templates (Use INSERT OR IGNORE so user customized templates & helpline numbers are preserved)
   const insertTemplate = db.prepare(`
-    INSERT OR REPLACE INTO notification_templates (template_key, name, whatsapp_body, email_subject, email_body)
+    INSERT OR IGNORE INTO notification_templates (template_key, name, whatsapp_body, email_subject, email_body)
     VALUES (?, ?, ?, ?, ?)
   `);
 

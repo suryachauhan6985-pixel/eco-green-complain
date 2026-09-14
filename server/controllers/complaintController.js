@@ -791,6 +791,81 @@ function submitFeedback(req, res) {
   }
 }
 
+// Bulk sync / restore complaints from browser client backup or persistent store
+function syncBackupComplaints(req, res) {
+  try {
+    const { complaints } = req.body;
+    if (!Array.isArray(complaints) || complaints.length === 0) {
+      return res.json({ synced: 0, message: 'No complaints to sync' });
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO complaints (
+        ticket_id, customer_name, customer_phone, customer_email, customer_address,
+        city, consumer_no, order_no, location_url, is_in_warranty,
+        estimated_charges, notify_charges, payment_collected, payment_status,
+        product_type, product_serial, installation_id, issue_category, issue_description,
+        priority, status, assigned_technician_id, expected_visit_date, resolution_notes,
+        created_at, status_updated_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?
+      )
+    `);
+
+    let syncedCount = 0;
+    const syncTx = db.transaction(() => {
+      for (const c of complaints) {
+        if (!c.ticket_id || !c.customer_name || !c.customer_phone) continue;
+        const existing = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get(c.ticket_id);
+        if (!existing) {
+          insertStmt.run(
+            c.ticket_id,
+            c.customer_name,
+            c.customer_phone,
+            c.customer_email || null,
+            c.customer_address || 'Address',
+            c.city || null,
+            c.consumer_no || null,
+            c.order_no || null,
+            c.location_url || null,
+            c.is_in_warranty !== undefined ? c.is_in_warranty : 1,
+            c.estimated_charges || 0,
+            c.notify_charges || 0,
+            c.payment_collected || 0,
+            c.payment_status || 'Unpaid',
+            c.product_type || 'Solar Rooftop Systems',
+            c.product_serial || null,
+            c.installation_id || null,
+            c.issue_category || 'Service Request',
+            c.issue_description || 'Service complaint',
+            c.priority || 'Medium',
+            c.status || 'Unassigned',
+            c.assigned_technician_id || null,
+            c.expected_visit_date || null,
+            c.resolution_notes || null,
+            c.created_at || new Date().toISOString(),
+            c.status_updated_at || c.created_at || new Date().toISOString(),
+            c.updated_at || new Date().toISOString()
+          );
+          syncedCount++;
+        }
+      }
+    });
+
+    syncTx();
+    console.log(`[BackupSync] Restored/Synced ${syncedCount} complaints to database.`);
+    res.json({ success: true, synced: syncedCount });
+  } catch (err) {
+    console.error('Sync backup error:', err);
+    res.status(500).json({ error: 'Failed to sync backup: ' + err.message });
+  }
+}
+
 module.exports = {
   listComplaints,
   getComplaintById,
@@ -804,5 +879,6 @@ module.exports = {
   resolveComplaint,
   closeComplaint,
   reopenComplaint,
-  submitFeedback
+  submitFeedback,
+  syncBackupComplaints
 };

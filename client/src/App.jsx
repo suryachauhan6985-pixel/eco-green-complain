@@ -126,6 +126,9 @@ function AppContent() {
   }
 
   const handleReloadDemoData = async () => {
+    if (!window.confirm('Are you sure you want to refresh sample demo complaints? All your newly created complaints will remain safe.')) {
+      return;
+    }
     try {
       api.resetDemoData();
       try {

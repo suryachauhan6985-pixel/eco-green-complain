@@ -20,6 +20,50 @@ export function setAuthToken(token) {
   }
 }
 
+// Permanent Local Storage Backup Key
+const PERMANENT_STORAGE_KEY = 'egs_permanent_complaints';
+
+export function getPermanentComplaints() {
+  try {
+    return JSON.parse(localStorage.getItem(PERMANENT_STORAGE_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveComplaintPermanently(comp) {
+  if (!comp || !comp.ticket_id) return;
+  try {
+    const list = getPermanentComplaints();
+    const idx = list.findIndex(c => c.ticket_id === comp.ticket_id || (comp.id && c.id === comp.id));
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...comp };
+    } else {
+      list.unshift(comp);
+    }
+    localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save to permanent storage:', e);
+  }
+}
+
+export function saveComplaintsPermanently(complaints) {
+  if (!Array.isArray(complaints)) return;
+  try {
+    const list = getPermanentComplaints();
+    const map = new Map();
+    list.forEach(c => { if (c.ticket_id) map.set(c.ticket_id, c); });
+    complaints.forEach(c => {
+      if (!c.ticket_id) return;
+      const existing = map.get(c.ticket_id);
+      map.set(c.ticket_id, existing ? { ...existing, ...c } : c);
+    });
+    localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(Array.from(map.values())));
+  } catch (e) {
+    console.warn('Failed to bulk save to permanent storage:', e);
+  }
+}
+
 // Local Storage Fallback Mock Store for seamless standalone demo execution
 class LocalMockStore {
   constructor() {
@@ -33,11 +77,24 @@ class LocalMockStore {
   }
 
   reset() {
-    localStorage.setItem('egs_mock_complaints', JSON.stringify(INITIAL_COMPLAINTS));
+    const existing = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const permanent = getPermanentComplaints();
+    const userTickets = [...existing, ...permanent].filter(c => {
+      if (!c.ticket_id) return false;
+      const isInitial = INITIAL_COMPLAINTS.some(init => init.ticket_id === c.ticket_id);
+      return !isInitial;
+    });
+
+    const userMap = new Map();
+    userTickets.forEach(t => userMap.set(t.ticket_id, t));
+
+    localStorage.setItem('egs_mock_complaints', JSON.stringify([...Array.from(userMap.values()), ...INITIAL_COMPLAINTS]));
     localStorage.setItem('egs_mock_technicians', JSON.stringify(INITIAL_TECHNICIANS));
     localStorage.setItem('egs_mock_users', JSON.stringify(INITIAL_USERS));
     localStorage.setItem('egs_mock_notifications', JSON.stringify(INITIAL_SIMULATED_NOTIFICATIONS));
-    localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
+    if (!localStorage.getItem('egs_mock_templates')) {
+      localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
+    }
   }
 
   getUsers() {
@@ -387,7 +444,7 @@ async function request(endpoint, options = {}) {
 
   try {
     const controller = new AbortController();
-    const timeoutMs = options.timeout || (endpoint.includes('/customers/sync') ? 60000 : 8000);
+    const timeoutMs = options.timeout || (endpoint.includes('/customers/sync') ? 60000 : 45000);
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -457,6 +514,7 @@ function fallbackHandler(endpoint, options) {
         const id = endpoint.split('/')[2];
         const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
         const comp = mockStore.assignTechnician(id, body.technician_id, body.expected_visit_date);
+        saveComplaintPermanently(comp);
         return { message: 'Assigned successfully', complaint: comp };
       }
 
@@ -470,6 +528,7 @@ function fallbackHandler(endpoint, options) {
       if (endpoint.includes('/resolve')) {
         const id = endpoint.split('/')[2];
         const comp = mockStore.resolveComplaint(id, options.body);
+        saveComplaintPermanently(comp);
         return { message: 'Complaint resolved', complaint: comp };
       }
 
@@ -477,6 +536,7 @@ function fallbackHandler(endpoint, options) {
         const id = endpoint.split('/')[2];
         const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
         const comp = mockStore.closeComplaint(id, body.closure_remarks);
+        saveComplaintPermanently(comp);
         return { message: 'Complaint closed', complaint: comp };
       }
 
@@ -484,6 +544,7 @@ function fallbackHandler(endpoint, options) {
         const id = endpoint.split('/')[2];
         const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
         const comp = mockStore.reopenComplaint(id, body.reason);
+        saveComplaintPermanently(comp);
         return { message: 'Complaint reopened', complaint: comp };
       }
 
@@ -498,17 +559,20 @@ function fallbackHandler(endpoint, options) {
         const id = endpoint.split('/')[2];
         const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
         const comp = mockStore.recordPayment(id, body);
+        saveComplaintPermanently(comp);
         return { message: 'Payment recorded successfully', complaint: comp };
       }
 
       // Create complaint
       const comp = mockStore.createComplaint(options.body);
+      saveComplaintPermanently(comp);
       return { message: 'Complaint registered successfully', complaint: comp };
     }
 
     if (method === 'PUT') {
       const id = endpoint.split('/')[2];
       const comp = mockStore.updateComplaint(id, options.body);
+      saveComplaintPermanently(comp);
       return { message: 'Complaint updated successfully', complaint: comp };
     }
   }
@@ -595,51 +659,132 @@ export const api = {
   }),
 
   // Complaints
-  getComplaints: (params = {}) => {
+  getComplaints: async (params = {}) => {
     const query = new URLSearchParams(params).toString();
-    return request(`/complaints?${query}`);
+    const res = await request(`/complaints?${query}`);
+
+    if (res && Array.isArray(res.complaints)) {
+      // Save all fetched complaints into local permanent storage
+      saveComplaintsPermanently(res.complaints);
+
+      // Check if any user-created complaints in local permanent storage are missing on server (e.g. after container restart or redeploy)
+      const permList = getPermanentComplaints();
+      const serverTicketIds = new Set(res.complaints.map(c => c.ticket_id));
+      const missingFromServer = permList.filter(c => {
+        if (!c.ticket_id) return false;
+        const isDummy = INITIAL_COMPLAINTS.some(init => init.ticket_id === c.ticket_id);
+        return !isDummy && !serverTicketIds.has(c.ticket_id);
+      });
+
+      if (missingFromServer.length > 0) {
+        console.log(`[PermanentSync] Restoring ${missingFromServer.length} user complaint(s) to server...`);
+        request('/complaints/sync-backup', {
+          method: 'POST',
+          body: JSON.stringify({ complaints: missingFromServer })
+        }).catch(err => console.warn('[PermanentSync] Background sync notice:', err.message));
+
+        // Merge missing complaints to the top of list so user immediately sees them!
+        res.complaints = [...missingFromServer, ...res.complaints];
+        if (typeof res.total === 'number') {
+          res.total += missingFromServer.length;
+        }
+      }
+    }
+    return res;
   },
   getComplaint: (id) => request(`/complaints/${id}`),
   getCustomerHistory: (phone) => request(`/complaints/customer-history?phone=${encodeURIComponent(phone)}`),
-  createComplaint: (formData) => request('/complaints', {
-    method: 'POST',
-    body: formData
-  }),
-  updateComplaint: (id, data) => request(`/complaints/${id}`, {
-    method: 'PUT',
-    body: data instanceof FormData ? data : JSON.stringify(data)
-  }),
-  recordPayment: (id, paymentData) => request(`/complaints/${id}/payment`, {
-    method: 'POST',
-    body: JSON.stringify(paymentData)
-  }),
-  publicRegister: (formData) => request('/complaints/public-register', {
-    method: 'POST',
-    body: formData
-  }),
-  assignTechnician: (id, technicianId, expectedVisitDate) => request(`/complaints/${id}/assign`, {
-    method: 'POST',
-    body: JSON.stringify({ technician_id: technicianId, expected_visit_date: expectedVisitDate })
-  }),
+  createComplaint: async (formData) => {
+    const res = await request('/complaints', {
+      method: 'POST',
+      body: formData
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  updateComplaint: async (id, data) => {
+    const res = await request(`/complaints/${id}`, {
+      method: 'PUT',
+      body: data instanceof FormData ? data : JSON.stringify(data)
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  recordPayment: async (id, paymentData) => {
+    const res = await request(`/complaints/${id}/payment`, {
+      method: 'POST',
+      body: JSON.stringify(paymentData)
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  publicRegister: async (formData) => {
+    const res = await request('/complaints/public-register', {
+      method: 'POST',
+      body: formData
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  assignTechnician: async (id, technicianId, expectedVisitDate) => {
+    const res = await request(`/complaints/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ technician_id: technicianId, expected_visit_date: expectedVisitDate })
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
   addTimelineNote: (id, { notes, status, notify_customer }) => request(`/complaints/${id}/note`, {
     method: 'POST',
     body: JSON.stringify({ notes, status, notify_customer })
   }),
-  resolveComplaint: (id, formData) => request(`/complaints/${id}/resolve`, {
-    method: 'POST',
-    body: formData
-  }),
-  closeComplaint: (id, closureRemarks) => request(`/complaints/${id}/close`, {
-    method: 'POST',
-    body: JSON.stringify({ closure_remarks: closureRemarks })
-  }),
-  reopenComplaint: (id, reason) => request(`/complaints/${id}/reopen`, {
-    method: 'POST',
-    body: JSON.stringify({ reason })
-  }),
+  resolveComplaint: async (id, formData) => {
+    const res = await request(`/complaints/${id}/resolve`, {
+      method: 'POST',
+      body: formData
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  closeComplaint: async (id, closureRemarks) => {
+    const res = await request(`/complaints/${id}/close`, {
+      method: 'POST',
+      body: JSON.stringify({ closure_remarks: closureRemarks })
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  reopenComplaint: async (id, reason) => {
+    const res = await request(`/complaints/${id}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
   submitFeedback: (id, { rating, feedback_comments }) => request(`/complaints/${id}/feedback`, {
     method: 'POST',
     body: JSON.stringify({ rating, feedback_comments })
+  }),
+  syncBackupComplaints: (complaints) => request('/complaints/sync-backup', {
+    method: 'POST',
+    body: JSON.stringify({ complaints })
   }),
   trackTicket: (query) => request(`/complaints/track/${encodeURIComponent(query)}`),
 
