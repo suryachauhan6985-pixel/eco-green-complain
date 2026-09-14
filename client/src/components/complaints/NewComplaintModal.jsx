@@ -38,7 +38,7 @@ const PRODUCT_CATEGORIES = {
   ]
 };
 
-export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint, whatsAppStatus }) => {
+export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint }) => {
   const [directSending, setDirectSending] = useState(false);
   const [directSent, setDirectSent] = useState(false);
   const [directSendError, setDirectSendError] = useState(null);

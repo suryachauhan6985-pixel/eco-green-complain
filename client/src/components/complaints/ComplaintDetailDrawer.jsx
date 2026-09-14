@@ -18,8 +18,7 @@ export const ComplaintDetailDrawer = ({
   isOpen, 
   onClose, 
   onComplaintUpdated,
-  onViewCustomerHistory,
-  whatsAppStatus 
+  onViewCustomerHistory 
 }) => {
   const { currentUser } = useAuth();
   const [ticket, setTicket] = useState(null);

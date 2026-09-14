@@ -328,7 +328,6 @@ function AppContent() {
       <NewComplaintModal
         isOpen={isNewComplaintOpen}
         onClose={() => setIsNewComplaintOpen(false)}
-        whatsAppStatus={whatsAppStatus}
         onComplaintCreated={(newTicket) => {
           // Refresh complaints list without popping drawer underneath success modal
           setRefreshKey(k => k + 1);
@@ -342,7 +341,6 @@ function AppContent() {
         complaintId={selectedComplaintId}
         isOpen={Boolean(selectedComplaintId)}
         onClose={() => setSelectedComplaintId(null)}
-        whatsAppStatus={whatsAppStatus}
         onComplaintUpdated={() => setRefreshKey(k => k + 1)}
         onViewCustomerHistory={(phone) => setHistoryPhone(phone)}
       />

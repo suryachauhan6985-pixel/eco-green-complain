@@ -12,9 +12,7 @@ export const Navbar = ({
   onOpenNewComplaint, 
   onToggleNotificationDrawer,
   onOpenTour,
-  onReloadDemoData,
-  onOpenWhatsAppGateway,
-  whatsAppStatus
+  onReloadDemoData
 }) => {
   const { currentUser, switchRole, logout, unreadSimulatedCount } = useAuth();
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
