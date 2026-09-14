@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Eco Green Solar - WhatsApp Master Relay
  * Content Script (Injected into web.whatsapp.com)
  */
@@ -8,10 +8,21 @@ console.log("[MasterRelay Content] Injected into WhatsApp Web");
 let isRunning = false;
 let checkInterval = null;
 
-// Poll DOM every 800ms when page URL contains "send?phone="
-function checkForAutoSend() {
+// Listen for direct trigger from background script
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  if (req.type === "TRIGGER_SEND_NOW") {
+    isRunning = false;
+    clearInterval(checkInterval);
+    checkForAutoSend(true);
+    sendResponse({ ok: true });
+    return true;
+  }
+});
+
+// Poll DOM when page URL contains "send?phone=" or force triggered
+function checkForAutoSend(force = false) {
   if (isRunning) return;
-  if (!window.location.href.includes("send?phone=") && !window.location.href.includes("send/?phone=")) {
+  if (!force && !window.location.href.includes("send?phone=") && !window.location.href.includes("send/?phone=")) {
     return;
   }
 

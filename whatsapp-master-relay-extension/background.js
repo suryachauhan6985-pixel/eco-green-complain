@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Eco Green Solar - WhatsApp Master Relay
  * Background Service Worker (Manifest V3)
  */
@@ -58,12 +58,20 @@ async function checkQueue() {
   }
 }
 
+let previousTabId = null;
+
 async function dispatchJob(job, serverUrl) {
   isProcessing = true;
   currentJob = { ...job, serverUrl };
   console.log(`[MasterRelay] Dispatching Job #${job.id} to ${job.phone}...`);
 
   try {
+    // 0. Remember current active tab so user's work is not disrupted
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab) previousTabId = activeTab.id;
+    } catch (e) {}
+
     // 1. Find or open WhatsApp Web tab
     const waTabs = await chrome.tabs.query({ url: "*://web.whatsapp.com/*" });
     let targetTab = null;
@@ -81,9 +89,11 @@ async function dispatchJob(job, serverUrl) {
       await new Promise((r) => setTimeout(r, 6000));
     }
 
-    // 2. Navigate tab to direct send URL
+    currentJob.targetTabId = targetTab.id;
+
+    // 2. Navigate tab to direct send URL and focus briefly so Chrome doesn't throttle DOM
     const sendUrl = `https://web.whatsapp.com/send?phone=${job.phone}&text=${encodeURIComponent(job.message)}`;
-    await chrome.tabs.update(targetTab.id, { url: sendUrl });
+    await chrome.tabs.update(targetTab.id, { url: sendUrl, active: true });
 
     // 3. Set safety timeout (35 seconds max for slow connections)
     clearTimeout(jobTimeoutTimer);
@@ -91,6 +101,7 @@ async function dispatchJob(job, serverUrl) {
       if (isProcessing && currentJob?.id === job.id) {
         console.warn(`[MasterRelay] Timeout waiting for WhatsApp Web to send #${job.id}`);
         await updateJobStatus(job.id, "failed", "WhatsApp Web timed out or number not on WhatsApp", serverUrl);
+        restorePreviousTab();
         isProcessing = false;
         currentJob = null;
       }
@@ -99,8 +110,15 @@ async function dispatchJob(job, serverUrl) {
   } catch (err) {
     console.error("[MasterRelay] Failed to start dispatch:", err);
     await updateJobStatus(job.id, "failed", err.message, serverUrl);
+    restorePreviousTab();
     isProcessing = false;
     currentJob = null;
+  }
+}
+
+function restorePreviousTab() {
+  if (previousTabId) {
+    chrome.tabs.update(previousTabId, { active: true }).catch(() => {});
   }
 }
 
@@ -135,6 +153,9 @@ async function handleSendSuccess(info) {
 
   await updateJobStatus(jobId, "sent", null, serverUrl);
 
+  // Restore user to their working tab immediately
+  restorePreviousTab();
+
   // Update local stats
   const { sentCount = 0 } = await chrome.storage.local.get("sentCount");
   await chrome.storage.local.set({
@@ -158,6 +179,7 @@ async function handleSendFailure(info) {
   const jobId = currentJob.id;
 
   await updateJobStatus(jobId, "failed", info.error || "Unknown Error", serverUrl);
+  restorePreviousTab();
 
   setTimeout(() => {
     isProcessing = false;

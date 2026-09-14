@@ -1399,6 +1399,19 @@ export const ComplaintDetailDrawer = ({
                 </div>
               </div>
 
+              {/* Background Relay Dispatch Notice Banner */}
+              <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex items-start gap-2.5">
+                <div className="p-1 bg-emerald-600 text-white rounded-lg shrink-0 mt-0.5">
+                  <CheckCircle className="w-4 h-4" />
+                </div>
+                <div className="text-xs text-emerald-950">
+                  <strong className="block font-bold">⚡ Auto-Queued for Master PC WhatsApp Relay</strong>
+                  <span className="text-[11px] text-emerald-800">
+                    Customer aur Technician ke alerts server queue mein add ho chuke hain. Office Master PC background mein bina koi tab khole inhein automatically deliver kar dega!
+                  </span>
+                </div>
+              </div>
+
               {/* SECTION 1: Customer WhatsApp Notification */}
               <div className="bg-white rounded-xl p-4 border border-emerald-300 shadow-sm space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -1407,10 +1420,13 @@ export const ComplaintDetailDrawer = ({
                       <MessageCircle className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="font-black text-slate-900 text-xs">1. Send Visit Confirmation to Customer</h4>
+                      <h4 className="font-black text-slate-900 text-xs">1. Customer Visit Confirmation</h4>
                       <p className="text-[10px] text-slate-500">Customer: <strong>{ticket.customer_name}</strong> (📞 {ticket.customer_phone})</p>
                     </div>
                   </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Auto-Queued
+                  </span>
                 </div>
 
                 {/* Message Preview */}
@@ -1418,17 +1434,7 @@ export const ComplaintDetailDrawer = ({
                   {assignSuccessModal.customerWa.rawText}
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                  <a
-                    href={assignSuccessModal.customerWa.sendUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Send WhatsApp to Customer</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                  </a>
+                <div className="flex items-center justify-between pt-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -1436,11 +1442,21 @@ export const ComplaintDetailDrawer = ({
                       setCopiedCustWa(true);
                       setTimeout(() => setCopiedCustWa(false), 2000);
                     }}
-                    className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold flex items-center justify-center gap-1 text-xs transition-colors"
+                    className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center gap-1 text-xs transition-colors"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedCustWa ? 'Copied!' : 'Copy'}</span>
+                    <span>{copiedCustWa ? 'Copied!' : 'Copy Text'}</span>
                   </button>
+
+                  <a
+                    href={assignSuccessModal.customerWa.sendUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-slate-400 hover:text-emerald-700 flex items-center gap-1 underline transition-colors"
+                  >
+                    <span>Manual Fallback (if Master PC OFF)</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
                 </div>
               </div>
 
@@ -1452,10 +1468,13 @@ export const ComplaintDetailDrawer = ({
                       <Wrench className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800 text-xs">2. Send Field Work Order to Technician</h4>
+                      <h4 className="font-bold text-slate-800 text-xs">2. Technician Field Work Order</h4>
                       <p className="text-[10px] text-slate-500">Technician: <strong>{assignSuccessModal.tech?.name}</strong> (📞 {assignSuccessModal.tech?.phone || 'N/A'})</p>
                     </div>
                   </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span> Auto-Queued
+                  </span>
                 </div>
 
                 {/* Work Order Preview */}
@@ -1463,17 +1482,7 @@ export const ComplaintDetailDrawer = ({
                   {assignSuccessModal.techWa.rawText}
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                  <a
-                    href={assignSuccessModal.techWa.sendUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 px-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Send Work Order to Tech</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                  </a>
+                <div className="flex items-center justify-between pt-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -1481,11 +1490,21 @@ export const ComplaintDetailDrawer = ({
                       setCopiedTechWa(true);
                       setTimeout(() => setCopiedTechWa(false), 2000);
                     }}
-                    className="py-2.5 px-3 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-semibold flex items-center justify-center gap-1 text-xs transition-colors"
+                    className="py-1.5 px-3 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold flex items-center gap-1 text-xs transition-colors"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedTechWa ? 'Copied!' : 'Copy'}</span>
+                    <span>{copiedTechWa ? 'Copied!' : 'Copy Text'}</span>
                   </button>
+
+                  <a
+                    href={assignSuccessModal.techWa.sendUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-slate-400 hover:text-teal-700 flex items-center gap-1 underline transition-colors"
+                  >
+                    <span>Manual Fallback (if Master PC OFF)</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
                 </div>
               </div>
             </div>
@@ -1495,9 +1514,9 @@ export const ComplaintDetailDrawer = ({
               <button
                 type="button"
                 onClick={() => setAssignSuccessModal(null)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
               >
-                Done & Return to Ticket
+                ✓ Done & Return to Ticket
               </button>
             </div>
           </div>
