@@ -142,4 +142,53 @@ function deleteUser(req, res) {
   }
 }
 
-module.exports = { login, getMe, listUsers, createUser, deleteUser };
+async function updateUser(req, res) {
+  try {
+    const { id } = req.params;
+    const { name, email, role, phone, password } = req.body;
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (email && email !== user.email) {
+      const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, id);
+      if (existing) {
+        return res.status(400).json({ error: 'Email is already taken by another user' });
+      }
+    }
+
+    let passwordHash = user.password_hash;
+    if (password && password.trim()) {
+      passwordHash = await bcrypt.hash(password.trim(), 10);
+    }
+
+    db.prepare(`
+      UPDATE users 
+      SET name = COALESCE(?, name),
+          email = COALESCE(?, email),
+          role = COALESCE(?, role),
+          phone = COALESCE(?, phone),
+          password_hash = ?
+      WHERE id = ?
+    `).run(name || null, email || null, role || null, phone || null, passwordHash, id);
+
+    // If technician, also sync technician record
+    db.prepare(`
+      UPDATE technicians 
+      SET name = COALESCE(?, name),
+          email = COALESCE(?, email),
+          phone = COALESCE(?, phone)
+      WHERE user_id = ?
+    `).run(name || null, email || null, phone || null, id);
+
+    const updated = db.prepare('SELECT id, name, email, role, phone, is_active FROM users WHERE id = ?').get(id);
+    res.json({ message: 'User updated successfully', user: updated });
+  } catch (err) {
+    console.error('Update user error:', err);
+    res.status(500).json({ error: 'Failed to update user: ' + err.message });
+  }
+}
+
+module.exports = { login, getMe, listUsers, createUser, updateUser, deleteUser };

@@ -482,6 +482,56 @@ async function recordPayment(req, res) {
   }
 }
 
+async function settleCompanyPayment(req, res) {
+  try {
+    const { id } = req.params;
+    const { notes = '', amount_received } = req.body;
+
+    const complaint = db.prepare(`
+      SELECT c.*, t.name as tech_name 
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ?
+    `).get(id);
+
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const settledAmt = amount_received !== undefined ? parseFloat(amount_received) : (parseFloat(complaint.payment_collected) || 0);
+    const actorName = req.user ? req.user.name : 'Company Finance/Admin';
+    const actorRole = req.user ? req.user.role : 'admin';
+
+    db.prepare(`
+      UPDATE complaints SET
+        company_settlement_status = 'Settled with Company',
+        company_settled_at = CURRENT_TIMESTAMP,
+        company_settled_by = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(actorName, id);
+
+    const timelineMsg = `Company confirmed receipt of ₹${settledAmt} collected by technician ${complaint.tech_name || 'N/A'} into company account.${notes ? ` • Note: ${notes}` : ''}`;
+
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
+      VALUES (?, 'Cash Settled with Company', ?, ?, ?, 0, CURRENT_TIMESTAMP)
+    `).run(id, timelineMsg, actorName, actorRole);
+
+    const updated = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ?
+    `).get(id);
+
+    res.json({ message: 'Payment settled with company successfully', complaint: updated });
+  } catch (err) {
+    console.error('Settle company payment error:', err);
+    res.status(500).json({ error: 'Failed to settle payment with company: ' + err.message });
+  }
+}
+
 async function assignTechnician(req, res) {
   try {
     const { id } = req.params;
@@ -877,6 +927,7 @@ module.exports = {
   createComplaint,
   updateComplaint,
   recordPayment,
+  settleCompanyPayment,
   assignTechnician,
   addTimelineNote,
   resolveComplaint,

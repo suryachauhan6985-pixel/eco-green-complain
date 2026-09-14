@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   Wrench, Phone, MessageCircle, MapPin, CheckCircle, Clock, 
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
-  Search, X 
+  Search, X, IndianRupee 
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
@@ -147,6 +147,59 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
             Completed Work ({resolvedComplaints.length})
           </button>
         </div>
+      </div>
+
+      {/* Cash Collection & Company Settlement Balance Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+        <div className="flex items-center justify-between mb-2.5">
+          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+            <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+            My Cash Collection & Company Settlement
+          </h3>
+          <span className="text-[11px] text-slate-400">Account Reconciliation</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Customer Cash Collected</span>
+            <strong className="text-base font-black text-slate-800 font-mono">₹{techProfile?.total_collected || 0}</strong>
+          </div>
+
+          <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-100">
+            <span className="text-[10px] uppercase font-bold text-emerald-700 block">Deposited / Settled with Company</span>
+            <strong className="text-base font-black text-emerald-700 font-mono">₹{techProfile?.total_settled_with_company || 0}</strong>
+          </div>
+
+          <div className={`p-2.5 rounded-xl border ${
+            (techProfile?.cash_in_hand_due || 0) > 0 
+              ? 'bg-amber-50 border-amber-300' 
+              : 'bg-slate-50 border-slate-100'
+          }`}>
+            <span className={`text-[10px] uppercase font-bold block ${
+              (techProfile?.cash_in_hand_due || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-400'
+            }`}>
+              Cash in Hand (Due to Company)
+            </span>
+            <div className="flex items-center justify-between mt-0.5">
+              <strong className={`text-base font-black font-mono ${
+                (techProfile?.cash_in_hand_due || 0) > 0 ? 'text-amber-900' : 'text-slate-700'
+              }`}>
+                ₹{techProfile?.cash_in_hand_due || 0}
+              </strong>
+              {(techProfile?.cash_in_hand_due || 0) > 0 && (
+                <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
+                  Deposit Pending
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {(techProfile?.cash_in_hand_due || 0) > 0 && (
+          <p className="text-[11px] text-amber-800 bg-amber-50/50 p-2 rounded-lg mt-2 border border-amber-200/60">
+            💡 Aapke paas customer se collect kiye huye <strong>₹{techProfile?.cash_in_hand_due}</strong> cash mein hain. Kripya office cash counter / account mein deposit karwayein taaki settlement update ho sake.
+          </p>
+        )}
       </div>
 
       {/* Off-Duty Notice Alert if technician is on leave */}

@@ -42,6 +42,7 @@ export const ComplaintDetailDrawer = ({
   const [directSentTech, setDirectSentTech] = useState(false);
   const [directSendingBoth, setDirectSendingBoth] = useState(false);
   const [directSentBoth, setDirectSentBoth] = useState(false);
+  const [settlingCompany, setSettlingCompany] = useState(false);
 
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpStatus, setFollowUpStatus] = useState('');
@@ -333,6 +334,27 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
+  const handleSettleWithCompany = async () => {
+    if (!ticket) return;
+    const techName = ticket.assigned_tech_name || ticket.technician_name || 'the technician';
+    const confirmMsg = `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setSettlingCompany(true);
+      await api.settleCompanyPayment(ticket.id, {
+        notes: `Cash received from technician ${techName} by ${currentUser?.name || 'Staff'}`
+      });
+      await fetchTicketDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+      alert(`₹${ticket.payment_collected} marked as received & settled with company!`);
+    } catch (err) {
+      alert('Failed to settle payment with company: ' + err.message);
+    } finally {
+      setSettlingCompany(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -595,6 +617,48 @@ export const ComplaintDetailDrawer = ({
                           </button>
                         </div>
                       </div>
+
+                      {/* Company Settlement Status Banner */}
+                      {Number(ticket.payment_collected || 0) > 0 && (
+                        <div className={`mt-3 p-3.5 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+                          ticket.company_settlement_status === 'Settled with Company'
+                            ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                            : 'bg-amber-50/90 border-amber-200 text-amber-950'
+                        }`}>
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <div className="font-bold flex items-center gap-1.5">
+                              {ticket.company_settlement_status === 'Settled with Company' ? (
+                                <span className="text-emerald-800 font-extrabold flex items-center gap-1">
+                                  ✓ Received into Company Account (Settled)
+                                </span>
+                              ) : (
+                                <span className="text-amber-800 font-extrabold flex items-center gap-1">
+                                  ⚠️ Cash in Hand with Technician (Pending Company Deposit)
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              {ticket.company_settlement_status === 'Settled with Company' ? (
+                                <>Amount ₹<strong>{ticket.payment_collected}</strong> received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
+                              ) : (
+                                <>₹<strong>{ticket.payment_collected}</strong> was collected by <strong>{ticket.assigned_tech_name || ticket.technician_name || 'the technician'}</strong> and is currently in technician's possession.</>
+                              )}
+                            </p>
+                          </div>
+
+                          {ticket.company_settlement_status !== 'Settled with Company' && ['admin', 'staff'].includes(currentUser?.role) && (
+                            <button
+                              type="button"
+                              disabled={settlingCompany}
+                              onClick={handleSettleWithCompany}
+                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5"
+                            >
+                              <IndianRupee className="w-3.5 h-3.5" />
+                              {settlingCompany ? 'Settling...' : 'Collect from Tech'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Issue Description */}

@@ -97,7 +97,38 @@ app.post('/api/auth/login', authController.login);
 app.get('/api/auth/me', authenticateToken, authController.getMe);
 app.get('/api/auth/users', authenticateToken, requireRole('admin'), authController.listUsers);
 app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), authController.createUser);
+app.put('/api/auth/users/:id', authenticateToken, requireRole('admin'), authController.updateUser);
 app.delete('/api/auth/users/:id', authenticateToken, requireRole('admin'), authController.deleteUser);
+
+// ================= PRODUCT CATALOG ROUTES =================
+app.get('/api/products', (req, res) => {
+  try {
+    const products = db.prepare('SELECT * FROM products ORDER BY is_custom ASC, id ASC').all();
+    res.json({ products });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch products: ' + err.message });
+  }
+});
+
+app.post('/api/products', authenticateToken, (req, res) => {
+  try {
+    const { name, icon = 'Box', description = '' } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Product name is required' });
+    }
+    const cleanName = name.trim();
+    const existing = db.prepare('SELECT * FROM products WHERE LOWER(name) = LOWER(?)').get(cleanName);
+    if (existing) {
+      return res.status(400).json({ error: 'Product already exists' });
+    }
+    const stmt = db.prepare('INSERT INTO products (name, icon, description, is_custom) VALUES (?, ?, ?, 1)');
+    const info = stmt.run(cleanName, icon, description);
+    const newProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
+    res.status(201).json({ product: newProduct });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add product: ' + err.message });
+  }
+});
 
 // ================= COMPLAINT ROUTES =================
 // Public track endpoint (anyone with Ticket ID or Phone)
@@ -116,6 +147,7 @@ app.get('/api/complaints/:id', authenticateToken, complaintController.getComplai
 app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), complaintController.createComplaint);
 app.put('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.updateComplaint);
 app.post('/api/complaints/:id/payment', authenticateToken, complaintController.recordPayment);
+app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), complaintController.settleCompanyPayment);
 app.post('/api/complaints/:id/assign', authenticateToken, requireRole('admin', 'staff'), complaintController.assignTechnician);
 app.post('/api/complaints/:id/note', authenticateToken, complaintController.addTimelineNote);
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), complaintController.resolveComplaint);
@@ -125,7 +157,8 @@ app.post('/api/complaints/:id/reopen', authenticateToken, complaintController.re
 // ================= TECHNICIAN ROUTES =================
 app.get('/api/technicians', authenticateToken, technicianController.listTechnicians);
 app.get('/api/technicians/:id', authenticateToken, technicianController.getTechnician);
-app.put('/api/technicians/:id/availability', authenticateToken, requireRole('admin', 'staff'), technicianController.updateAvailability);
+app.put('/api/technicians/:id', authenticateToken, requireRole('admin', 'staff'), technicianController.updateTechnician);
+app.put('/api/technicians/:id/availability', authenticateToken, requireRole('admin', 'staff', 'technician'), technicianController.updateAvailability);
 app.delete('/api/technicians/:id', authenticateToken, requireRole('admin'), technicianController.deleteTechnician);
 
 // ================= NOTIFICATION ROUTES =================

@@ -5,7 +5,8 @@ import {
   X, Sun, Droplets, Wind, AlertTriangle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
-  Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye
+  Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
+  Gauge, Layers, ArrowLeft, Plus
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -35,7 +36,32 @@ const PRODUCT_CATEGORIES = {
     'Circulation Pump Failure',
     'Refrigerant Leak / Pressure Drop',
     'Other Heat Pump Issue'
+  ],
+  'Pressure Pumps': [
+    'Pump Not Starting / No Power',
+    'Low Pressure / Uneven Flow',
+    'Continuous Running / Won\'t Turn Off',
+    'Water Leakage from Body/Joints',
+    'Pressure Controller / Switch Fault',
+    'Motor Overheating / Burning Smell',
+    'Other Pressure Pump Issue'
+  ],
+  'Other': [
+    'Equipment Not Turning On',
+    'Performance Degradation',
+    'Physical / Mechanical Damage',
+    'Electrical / Wiring Short Circuit',
+    'Periodic Maintenance / Inspection',
+    'Other Issue'
   ]
+};
+
+const getProductComponentIcon = (type) => {
+  if (type === 'Solar Rooftop Systems') return Sun;
+  if (type === 'Solar Water Heaters') return Droplets;
+  if (type === 'Heat Pumps') return Wind;
+  if (type === 'Pressure Pumps') return Gauge;
+  return Layers;
 };
 
 export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint }) => {
@@ -80,6 +106,89 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       setWaData(null);
     }
   }, [createdTicket]);
+
+  // 2-Step Registration Wizard state
+  const [step, setStep] = useState('product'); // 'product' | 'form'
+  const [productsList, setProductsList] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductDesc, setNewProductDesc] = useState('');
+  const [addingProduct, setAddingProduct] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadProducts();
+      if (!createdTicket) {
+        setStep('product');
+      }
+    }
+  }, [isOpen]);
+
+  const loadProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const res = await api.getProducts();
+      if (res.products && res.products.length > 0) {
+        setProductsList(res.products);
+      } else {
+        setProductsList([
+          { id: 1, name: 'Solar Rooftop Systems', description: 'On-Grid & Off-Grid Solar Plants' },
+          { id: 2, name: 'Solar Water Heaters', description: 'Domestic & Commercial ETC / FPC Water Heaters' },
+          { id: 3, name: 'Heat Pumps', description: 'Commercial & Residential High-Efficiency Heat Pumps' },
+          { id: 4, name: 'Pressure Pumps', description: 'Booster & Hydro-Pneumatic Pressure Pumps' },
+          { id: 5, name: 'Other', description: 'Other Solar & Renewable Energy Equipment' }
+        ]);
+      }
+    } catch (e) {
+      setProductsList([
+        { id: 1, name: 'Solar Rooftop Systems', description: 'On-Grid & Off-Grid Solar Plants' },
+        { id: 2, name: 'Solar Water Heaters', description: 'Domestic & Commercial ETC / FPC Water Heaters' },
+        { id: 3, name: 'Heat Pumps', description: 'Commercial & Residential High-Efficiency Heat Pumps' },
+        { id: 4, name: 'Pressure Pumps', description: 'Booster & Hydro-Pneumatic Pressure Pumps' },
+        { id: 5, name: 'Other', description: 'Other Solar & Renewable Energy Equipment' }
+      ]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const handleSelectProduct = (prodName) => {
+    const defaultCategories = PRODUCT_CATEGORIES[prodName] || [
+      'Equipment Not Starting / Tripping',
+      'Physical Damage',
+      'Electrical / Power Issue',
+      'Performance Degradation',
+      'Other Fault'
+    ];
+    setFormData(prev => ({
+      ...prev,
+      product_type: prodName,
+      issue_category: defaultCategories[0]
+    }));
+    setStep('form');
+  };
+
+  const handleCreateNewProduct = async (e) => {
+    e.preventDefault();
+    if (!newProductName.trim()) return;
+    try {
+      setAddingProduct(true);
+      const res = await api.addProduct({
+        name: newProductName.trim(),
+        description: newProductDesc.trim() || undefined
+      });
+      await loadProducts();
+      setShowAddProductModal(false);
+      setNewProductName('');
+      setNewProductDesc('');
+      handleSelectProduct(res.product?.name || newProductName.trim());
+    } catch (err) {
+      alert('Failed to add product: ' + err.message);
+    } finally {
+      setAddingProduct(false);
+    }
+  };
 
   // Smart Customer Search & Warranty state
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -127,7 +236,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       consumer_no: c.consumer_no || prev.consumer_no,
       order_no: c.order_no || prev.order_no,
       is_in_warranty: c.is_in_warranty !== undefined ? c.is_in_warranty : 1,
-      product_type: 'Solar Rooftop Systems',
+      product_type: prev.product_type || 'Solar Rooftop Systems',
       installation_id: c.consumer_no || c.order_no || prev.installation_id,
       product_serial: c.inverter_serial || prev.product_serial
     }));
@@ -141,7 +250,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     setFormData({
       ...formData,
       product_type: prod,
-      issue_category: PRODUCT_CATEGORIES[prod][0]
+      issue_category: (PRODUCT_CATEGORIES[prod] && PRODUCT_CATEGORIES[prod][0]) || 'General Service Required'
     });
   };
 
@@ -226,7 +335,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   };
 
   const resetAndClose = () => {
+    setStep('product');
     setCreatedTicket(null);
+    setShowAddProductModal(false);
+    setNewProductName('');
+    setNewProductDesc('');
     setDirectSending(false);
     setDirectSent(false);
     setDirectSendError(null);
@@ -259,21 +372,44 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="px-6 py-4 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/10 rounded-xl">
-              <Sun className="w-5 h-5 text-amber-300" />
-            </div>
+            {step === 'form' && !createdTicket ? (
+              <button
+                type="button"
+                onClick={() => setStep('product')}
+                className="p-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-emerald-100 hover:text-white transition-colors cursor-pointer"
+                title="Back to Product Selection"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            ) : (
+              <div className="p-2 bg-white/10 rounded-xl">
+                <Sun className="w-5 h-5 text-amber-300" />
+              </div>
+            )}
             <div>
-              <h2 className="text-lg font-bold">Register New Solar Complaint</h2>
-              <p className="text-xs text-emerald-200">Auto-generates ticket ID & notifies customer via WhatsApp + Email</p>
+              <h2 className="text-lg font-bold">
+                {createdTicket 
+                  ? 'Complaint Registered Successfully' 
+                  : step === 'product' 
+                    ? 'Step 1: Select Product Category' 
+                    : `Step 2: ${formData.product_type} Complaint Form`}
+              </h2>
+              <p className="text-xs text-emerald-200">
+                {createdTicket 
+                  ? 'Ticket registered & automated notifications ready' 
+                  : step === 'product'
+                    ? 'Choose product to start complaint registration'
+                    : 'Fill customer & defect details to register ticket'}
+              </p>
             </div>
           </div>
           <button 
             onClick={resetAndClose}
-            className="p-1.5 hover:bg-white/10 rounded-lg text-emerald-200 hover:text-white transition-colors"
+            className="p-1.5 hover:bg-white/10 rounded-lg text-emerald-200 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -439,42 +575,103 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 </button>
               </div>
             </div>
-          ) : (
-            /* Registration Form */
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Product Selector Cards */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Select Product Category *
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { id: 'Solar Rooftop Systems', icon: Sun, label: 'Solar Rooftop', sub: 'On-Grid / Off-Grid' },
-                    { id: 'Solar Water Heaters', icon: Droplets, label: 'Water Heater', sub: 'ETC / FPC Tanks' },
-                    { id: 'Heat Pumps', icon: Wind, label: 'Heat Pump', sub: 'Commercial / Residential' }
-                  ].map((prod) => {
-                    const Icon = prod.icon;
-                    const isSelected = formData.product_type === prod.id;
+          ) : step === 'product' ? (
+            /* STEP 1: PRODUCT SELECTION WINDOW */
+            <div className="space-y-6 py-3">
+              <div className="text-center max-w-md mx-auto space-y-1">
+                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full uppercase tracking-wider">
+                  Step 1 of 2: Select Product
+                </span>
+                <h3 className="text-xl font-black text-slate-900 mt-2">
+                  Which product requires service?
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Select a product category below to open the complaint registration form.
+                </p>
+              </div>
+
+              {loadingProducts ? (
+                <div className="py-12 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                  Loading product catalog...
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+                  {productsList.map((prod) => {
+                    const Icon = getProductComponentIcon(prod.name);
                     return (
                       <button
                         type="button"
-                        key={prod.id}
-                        onClick={() => handleProductChange(prod.id)}
-                        className={`p-3 rounded-xl border text-left flex flex-col items-center sm:items-start transition-all ${
-                          isSelected 
-                            ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs' 
-                            : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
-                        }`}
+                        key={prod.name}
+                        onClick={() => handleSelectProduct(prod.name)}
+                        className="group p-4 rounded-2xl border-2 border-slate-200 hover:border-emerald-500 bg-white hover:bg-emerald-50/40 text-left transition-all shadow-2xs hover:shadow-md flex flex-col justify-between gap-3 relative overflow-hidden cursor-pointer"
                       >
-                        <div className={`p-2 rounded-lg mb-2 ${isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                          <Icon className="w-5 h-5" />
+                        <div className="flex items-start justify-between">
+                          <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                            <Icon className="w-6 h-6" />
+                          </div>
+                          <span className="text-xs font-bold text-slate-300 group-hover:text-emerald-600 transition-colors flex items-center gap-1">
+                            Select →
+                          </span>
                         </div>
-                        <span className="font-bold text-xs">{prod.label}</span>
-                        <span className="text-[10px] text-slate-500 hidden sm:block">{prod.sub}</span>
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900 group-hover:text-emerald-950">
+                            {prod.name}
+                          </h4>
+                          <p className="text-xs text-slate-500 line-clamp-2 mt-1">
+                            {prod.description || 'Breakdown repairs, service & maintenance'}
+                          </p>
+                        </div>
                       </button>
                     );
                   })}
+
+                  {/* Add New Product Option */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProductModal(true)}
+                    className="p-4 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/30 text-left transition-all flex flex-col items-center justify-center gap-2 group min-h-[140px] cursor-pointer"
+                  >
+                    <div className="p-3 rounded-xl bg-slate-100 group-hover:bg-emerald-100 text-slate-500 group-hover:text-emerald-700 transition-colors">
+                      <Plus className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-800">
+                      + Add New Product
+                    </span>
+                    <span className="text-[10px] text-slate-400 text-center">
+                      Register a new product type
+                    </span>
+                  </button>
                 </div>
+              )}
+            </div>
+          ) : (
+            /* STEP 2: REGISTRATION FORM WINDOW */
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Selected Product Banner with "Change Product" button */}
+              <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0">
+                    {React.createElement(getProductComponentIcon(formData.product_type), { className: 'w-5 h-5' })}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
+                      Selected Product Category (Step 2 of 2)
+                    </span>
+                    <strong className="text-sm font-bold text-slate-900 truncate block">
+                      {formData.product_type}
+                    </strong>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStep('product')}
+                  className="px-3 py-1.5 bg-white hover:bg-emerald-100/80 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Change Product
+                </button>
               </div>
 
               {/* Smart Customer Lookup Bar (Excel 6,100+ Database) */}
@@ -822,7 +1019,14 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     onChange={(e) => setFormData({ ...formData, issue_category: e.target.value })}
                     className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
-                    {PRODUCT_CATEGORIES[formData.product_type]?.map((cat) => (
+                    {(PRODUCT_CATEGORIES[formData.product_type] || [
+                      'Equipment Not Starting / Tripping',
+                      'Physical / Mechanical Damage',
+                      'Electrical / Power Fault',
+                      'Performance Degradation',
+                      'Periodic Maintenance / Inspection',
+                      'Other Fault'
+                    ]).map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -942,6 +1146,71 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
           )}
         </div>
       </div>
+
+      {/* Add New Product to Catalog Sub-Modal */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 border border-slate-200 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-900">Add New Product to Catalog</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddProductModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewProduct} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Product Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Solar Inverters, Street Lights, Batteries..."
+                  value={newProductName}
+                  onChange={(e) => setNewProductName(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Short Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Inverter units, grid-tie controllers, and battery packs"
+                  value={newProductDesc}
+                  onChange={(e) => setNewProductDesc(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddProductModal(false)}
+                  className="px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingProduct}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-xs transition-all disabled:opacity-50"
+                >
+                  {addingProduct ? 'Adding...' : 'Add & Select Product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

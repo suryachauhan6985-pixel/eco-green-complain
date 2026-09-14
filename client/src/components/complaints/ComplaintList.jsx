@@ -5,7 +5,7 @@ import {
   Search, Filter, Plus, Download, RefreshCw, Sun, Droplets, Wind, 
   User, Calendar, Clock, ChevronRight, AlertCircle, CheckCircle2, Wrench,
   MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
-  AlertTriangle
+  AlertTriangle, Gauge, Layers
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
@@ -70,10 +70,30 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
     fetchComplaints();
   };
 
+  const handleQuickSettle = async (e, complaint) => {
+    e.stopPropagation();
+    const techName = complaint.technician_name || 'Technician';
+    const amount = complaint.payment_collected || 0;
+    if (!window.confirm(`Confirm receipt of ₹${amount} collected by ${techName} into Eco Green Solar Company account for Ticket #${complaint.ticket_id}?`)) {
+      return;
+    }
+    try {
+      await api.settleCompanyPayment(complaint.id, {
+        notes: `Quick cash settlement collected from ${techName} by ${currentUser?.name || 'Staff'}`
+      });
+      fetchComplaints();
+      alert(`₹${amount} successfully recorded as received by company!`);
+    } catch (err) {
+      alert('Failed to settle payment: ' + err.message);
+    }
+  };
+
   const getProductIcon = (type) => {
     if (type === 'Solar Rooftop Systems') return <Sun className="w-4 h-4 text-amber-500" />;
     if (type === 'Solar Water Heaters') return <Droplets className="w-4 h-4 text-blue-500" />;
-    return <Wind className="w-4 h-4 text-teal-500" />;
+    if (type === 'Heat Pumps') return <Wind className="w-4 h-4 text-teal-500" />;
+    if (type === 'Pressure Pumps') return <Gauge className="w-4 h-4 text-indigo-500" />;
+    return <Layers className="w-4 h-4 text-slate-500" />;
   };
 
   const statusPills = ['all', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened'];
@@ -217,6 +237,8 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
             <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
             <option value="Solar Water Heaters">Solar Water Heaters</option>
             <option value="Heat Pumps">Heat Pumps</option>
+            <option value="Pressure Pumps">Pressure Pumps</option>
+            <option value="Other">Other Products</option>
           </select>
 
           <select
@@ -408,18 +430,43 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
 
                       {/* Charges & Payment */}
                       <td className="py-3 px-4">
-                        {c.estimated_charges > 0 ? (
-                          <div>
-                            <span className="font-bold text-slate-900 block">
-                              ₹{c.estimated_charges}
-                            </span>
-                            <span className={`text-[10px] font-bold ${
-                              c.payment_status === 'Collected' ? 'text-emerald-600' :
-                              c.payment_status === 'Partially Paid' ? 'text-blue-600' :
-                              'text-amber-600'
-                            }`}>
-                              {c.payment_status || 'Unpaid'}
-                            </span>
+                        {c.estimated_charges > 0 || c.payment_collected > 0 ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 block">
+                                ₹{c.payment_collected > 0 ? c.payment_collected : c.estimated_charges}
+                              </span>
+                              <span className={`text-[10px] font-bold ${
+                                c.payment_status === 'Collected' ? 'text-emerald-600' :
+                                c.payment_status === 'Partially Paid' ? 'text-blue-600' :
+                                'text-amber-600'
+                              }`}>
+                                {c.payment_status || 'Unpaid'}
+                              </span>
+                            </div>
+                            {c.payment_collected > 0 && (
+                              c.company_settlement_status === 'Settled with Company' ? (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  ✓ Co. Settled
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <span className="inline-flex items-center text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200" title="Cash is with technician">
+                                    Tech Cash
+                                  </span>
+                                  {['admin', 'staff'].includes(currentUser?.role) && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleQuickSettle(e, c)}
+                                      className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9px] font-bold shadow-2xs transition-all"
+                                      title="Mark received from technician into company account"
+                                    >
+                                      Collect
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            )}
                           </div>
                         ) : (
                           <span className="text-[11px] text-slate-400">Free / In-Wty</span>
@@ -538,6 +585,35 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                     <div className="text-xs text-slate-600 line-clamp-2 mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
                       <strong className="text-slate-800">{c.issue_category}:</strong> {c.issue_description}
                     </div>
+
+                    {/* Cash in Hand & Company Settlement in Card */}
+                    {c.payment_collected > 0 && (
+                      <div className="mt-2 flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                        <span className="text-slate-600 font-medium">
+                          Collected: <strong className="text-emerald-700">₹{c.payment_collected}</strong>
+                        </span>
+                        {c.company_settlement_status === 'Settled with Company' ? (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                            ✓ Co. Settled
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-200">
+                              Cash with Tech
+                            </span>
+                            {['admin', 'staff'].includes(currentUser?.role) && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleQuickSettle(e, c)}
+                                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-bold transition-all shadow-xs"
+                              >
+                                Collect
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Footer Row */}

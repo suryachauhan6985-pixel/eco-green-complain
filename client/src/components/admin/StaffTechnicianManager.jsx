@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { 
   Users, Wrench, Plus, Trash2, CheckCircle2, XCircle, 
-  Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X 
+  Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X, Edit3, IndianRupee 
 } from 'lucide-react';
 
 export const StaffTechnicianManager = () => {
@@ -13,7 +13,7 @@ export const StaffTechnicianManager = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
 
-  // Form State
+  // Add Form State
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -23,6 +23,66 @@ export const StaffTechnicianManager = () => {
     area_zone: 'North Zone (Indiranagar / Hebbal)',
     specialization: 'Solar Rooftop Systems'
   });
+
+  // Edit State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editType, setEditType] = useState('technician'); // 'technician' | 'staff'
+  const [editingMember, setEditingMember] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    role: 'staff',
+    area_zone: '',
+    specialization: ''
+  });
+
+  const handleOpenEdit = (member, type) => {
+    setEditType(type);
+    setEditingMember(member);
+    setEditFormData({
+      name: member.name || '',
+      email: member.email || '',
+      phone: member.phone || '',
+      password: '',
+      role: member.role || (type === 'technician' ? 'technician' : 'staff'),
+      area_zone: member.area_zone || 'North Zone (Indiranagar / Hebbal)',
+      specialization: member.specialization || 'Solar Rooftop Systems'
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    try {
+      if (editType === 'technician') {
+        await api.updateTechnician(editingMember.id, {
+          name: editFormData.name,
+          email: editFormData.email,
+          phone: editFormData.phone,
+          area_zone: editFormData.area_zone,
+          specialization: editFormData.specialization
+        });
+        showToast(`Technician "${editFormData.name}" updated successfully!`);
+      } else {
+        await api.updateUser(editingMember.id, {
+          name: editFormData.name,
+          email: editFormData.email,
+          phone: editFormData.phone,
+          role: editFormData.role,
+          password: editFormData.password || undefined
+        });
+        showToast(`Staff member "${editFormData.name}" updated successfully!`);
+      }
+      setIsEditModalOpen(false);
+      setEditingMember(null);
+      loadData();
+    } catch (err) {
+      alert('Failed to update member: ' + err.message);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -236,8 +296,30 @@ export const StaffTechnicianManager = () => {
                   </div>
                 )}
 
+                {/* Cash Reconciliation Box */}
+                <div className="mt-2.5 p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-600">Total Customer Cash Collected:</span>
+                    <strong className="font-mono text-slate-900">₹{t.total_collected || 0}</strong>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-emerald-700">Deposited to Company:</span>
+                    <strong className="font-mono text-emerald-700">₹{t.total_settled_with_company || 0}</strong>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-amber-200 text-[11px] font-bold">
+                    <span className={t.cash_in_hand_due > 0 ? "text-amber-900 font-extrabold flex items-center gap-1" : "text-slate-600"}>
+                      <IndianRupee className="w-3 h-3 text-amber-600" /> Cash in Hand (Due to Co.):
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full font-mono text-[11px] ${
+                      t.cash_in_hand_due > 0 ? 'bg-amber-200 text-amber-950 font-black' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      ₹{t.cash_in_hand_due || 0}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Performance Stats */}
-                <div className="grid grid-cols-3 gap-2 text-center mt-2.5 py-1.5 bg-slate-50/50 rounded-lg">
+                <div className="grid grid-cols-3 gap-2 text-center mt-2 py-1.5 bg-slate-50/50 rounded-lg">
                   <div>
                     <span className="block text-xs font-bold text-amber-600">{t.active_tickets_count ?? 0}</span>
                     <span className="text-[10px] text-slate-400">Active</span>
@@ -257,10 +339,10 @@ export const StaffTechnicianManager = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs gap-2">
                 <button
                   onClick={() => handleToggleAvailability(t.id, t.is_available)}
-                  className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1 ${
+                  className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors flex items-center gap-1 ${
                     t.is_available
                       ? 'border-slate-300 text-slate-600 hover:bg-slate-100'
                       : 'border-emerald-500 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-2xs'
@@ -269,14 +351,24 @@ export const StaffTechnicianManager = () => {
                   {t.is_available ? 'Mark Off-Duty' : '🟢 Mark On-Duty (Active)'}
                 </button>
 
-                <button
-                  onClick={() => handleDeleteTechnician(t.id, t.name)}
-                  className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 transition-colors flex items-center gap-1 text-[11px]"
-                  title="Remove Technician"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Remove</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleOpenEdit(t, 'technician')}
+                    className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold"
+                    title="Edit Technician"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Edit</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteTechnician(t.id, t.name)}
+                    className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors flex items-center gap-1 text-[11px]"
+                    title="Remove Technician"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -323,14 +415,24 @@ export const StaffTechnicianManager = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 text-xs">
+                <button
+                  onClick={() => handleOpenEdit(u, 'staff')}
+                  className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold"
+                  title="Edit Staff Member"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Edit</span>
+                </button>
+
                 {u.role !== 'admin' && (
                   <button
                     onClick={() => handleDeleteUser(u.id, u.name)}
-                    className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 transition-colors flex items-center gap-1 text-[11px]"
+                    className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors flex items-center gap-1 text-[11px]"
+                    title="Remove Staff"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove Staff</span>
+                    <span>Remove</span>
                   </button>
                 )}
               </div>
@@ -464,6 +566,136 @@ export const StaffTechnicianManager = () => {
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
                 >
                   Save Member
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Member Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-emerald-600" />
+                Edit {editType === 'technician' ? 'Technician' : 'Staff Member'}
+              </h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="mt-3 space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={editFormData.email}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Mobile / WhatsApp *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={editFormData.phone}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                  />
+                </div>
+              </div>
+
+              {editType === 'technician' ? (
+                <>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Service Area / Zone</label>
+                    <select
+                      value={editFormData.area_zone}
+                      onChange={(e) => setEditFormData({ ...editFormData, area_zone: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    >
+                      <option value="North Zone (Indiranagar / Hebbal)">North Zone (Indiranagar / Hebbal)</option>
+                      <option value="South Zone (Jayanagar / Koramangala)">South Zone (Jayanagar / Koramangala)</option>
+                      <option value="East Zone (Whitefield / Marathahalli)">East Zone (Whitefield / Marathahalli)</option>
+                      <option value="West Zone (Rajajinagar / Malleshwaram)">West Zone (Rajajinagar / Malleshwaram)</option>
+                      <option value="Central & Outer Zone">Central & Outer Zone</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Product Specialization</label>
+                    <select
+                      value={editFormData.specialization}
+                      onChange={(e) => setEditFormData({ ...editFormData, specialization: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    >
+                      <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
+                      <option value="Solar Water Heaters">Solar Water Heaters</option>
+                      <option value="Heat Pumps">Heat Pumps</option>
+                      <option value="All Products">All Solar Products</option>
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Access Role</label>
+                    <select
+                      value={editFormData.role}
+                      onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    >
+                      <option value="staff">Support Staff (Ticket Management)</option>
+                      <option value="admin">Admin Supervisor (Full Access)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Change Password (leave empty to keep existing)</label>
+                    <input
+                      type="password"
+                      placeholder="Enter new password (optional)"
+                      value={editFormData.password}
+                      onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
+                >
+                  Update Member
                 </button>
               </div>
             </form>

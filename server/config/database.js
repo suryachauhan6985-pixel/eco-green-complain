@@ -57,7 +57,10 @@ function initializeSchema() {
       notify_charges INTEGER DEFAULT 0,
       payment_collected REAL DEFAULT 0,
       payment_status TEXT DEFAULT 'Unpaid',
-      product_type TEXT NOT NULL CHECK(product_type IN ('Solar Rooftop Systems', 'Solar Water Heaters', 'Heat Pumps')),
+      company_settlement_status TEXT DEFAULT 'Pending Settlement',
+      company_settled_at DATETIME,
+      company_settled_by TEXT,
+      product_type TEXT NOT NULL,
       product_serial TEXT,
       installation_id TEXT,
       issue_category TEXT NOT NULL,
@@ -151,6 +154,15 @@ function initializeSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      icon TEXT DEFAULT 'Sun',
+      description TEXT,
+      is_custom INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_complaints_ticket ON complaints(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status);
     CREATE INDEX IF NOT EXISTS idx_complaints_phone ON complaints(customer_phone);
@@ -164,6 +176,22 @@ function initializeSchema() {
     CREATE INDEX IF NOT EXISTS idx_customers_dealer ON installed_customers(dealer_name);
     CREATE INDEX IF NOT EXISTS idx_customers_inverter ON installed_customers(inverter_serial);
   `);
+
+  // Seed default product catalog
+  const defaultProducts = [
+    { name: 'Solar Rooftop Systems', icon: 'Sun', description: 'On-grid & off-grid inverters, panels, net meters, tripping issues' },
+    { name: 'Solar Water Heaters', icon: 'Flame', description: 'ETC & FPC collector tanks, scaling, plumbing, non-heating' },
+    { name: 'Heat Pumps', icon: 'AirVent', description: 'Commercial & residential heat pumps, compressor tripping, error codes' },
+    { name: 'Pressure Pumps', icon: 'Droplets', description: 'Booster pumps, pressure drop, continuous run, motor jamming' },
+    { name: 'Other', icon: 'Box', description: 'General solar & electrical maintenance requests' }
+  ];
+  const insertProd = db.prepare(`
+    INSERT OR IGNORE INTO products (name, icon, description, is_custom)
+    VALUES (?, ?, ?, 0)
+  `);
+  for (const p of defaultProducts) {
+    insertProd.run(p.name, p.icon, p.description);
+  }
 }
 
 function migrateComplaintsTable() {
@@ -171,9 +199,9 @@ function migrateComplaintsTable() {
     const tableSqlRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='complaints'").get();
     if (!tableSqlRow) return;
 
-    // Check if the current table constraint contains 'Unassigned'
-    if (!tableSqlRow.sql.includes('Unassigned')) {
-      console.log('Migrating complaints table schema to support Unassigned status and all extended fields...');
+    // Check if table needs recreation (missing Unassigned status or has restrictive product_type check)
+    if (!tableSqlRow.sql.includes('Unassigned') || tableSqlRow.sql.includes("CHECK(product_type IN")) {
+      console.log('Migrating complaints table schema to support dynamic products and company settlement fields...');
       db.pragma('foreign_keys = OFF');
       db.transaction(() => {
         // 1. Ensure existing table has the extra columns before copying
@@ -189,6 +217,9 @@ function migrateComplaintsTable() {
           { name: 'notify_charges', type: 'INTEGER DEFAULT 0' },
           { name: 'payment_collected', type: 'REAL DEFAULT 0' },
           { name: 'payment_status', type: "TEXT DEFAULT 'Unpaid'" },
+          { name: 'company_settlement_status', type: "TEXT DEFAULT 'Pending Settlement'" },
+          { name: 'company_settled_at', type: 'DATETIME' },
+          { name: 'company_settled_by', type: 'TEXT' },
           { name: 'status_updated_at', type: 'DATETIME' }
         ];
         for (const col of colDefs) {
@@ -200,7 +231,7 @@ function migrateComplaintsTable() {
         // 2. Rename old table
         db.exec(`ALTER TABLE complaints RENAME TO complaints_old`);
 
-        // 3. Create new complaints table with updated CHECK constraint
+        // 3. Create new complaints table with dynamic product_type and company settlement fields
         db.exec(`
           CREATE TABLE complaints (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -218,7 +249,10 @@ function migrateComplaintsTable() {
             notify_charges INTEGER DEFAULT 0,
             payment_collected REAL DEFAULT 0,
             payment_status TEXT DEFAULT 'Unpaid',
-            product_type TEXT NOT NULL CHECK(product_type IN ('Solar Rooftop Systems', 'Solar Water Heaters', 'Heat Pumps')),
+            company_settlement_status TEXT DEFAULT 'Pending Settlement',
+            company_settled_at DATETIME,
+            company_settled_by TEXT,
+            product_type TEXT NOT NULL,
             product_serial TEXT,
             installation_id TEXT,
             issue_category TEXT NOT NULL,
@@ -250,6 +284,7 @@ function migrateComplaintsTable() {
             id, ticket_id, customer_name, customer_phone, customer_email, customer_address,
             city, consumer_no, order_no, location_url, is_in_warranty, estimated_charges,
             notify_charges, payment_collected, payment_status,
+            company_settlement_status, company_settled_at, company_settled_by,
             product_type, product_serial, installation_id, issue_category, issue_description,
             priority, status, assigned_technician_id, expected_visit_date, resolution_notes,
             spare_parts_used, closing_photo_url, rating, feedback_comments, registered_by_user_id,
@@ -259,6 +294,7 @@ function migrateComplaintsTable() {
             id, ticket_id, customer_name, customer_phone, customer_email, customer_address,
             city, consumer_no, order_no, location_url, COALESCE(is_in_warranty, 1), COALESCE(estimated_charges, 0),
             COALESCE(notify_charges, 0), COALESCE(payment_collected, 0), COALESCE(payment_status, 'Unpaid'),
+            COALESCE(company_settlement_status, 'Pending Settlement'), company_settled_at, company_settled_by,
             product_type, product_serial, installation_id, issue_category, issue_description,
             priority, 
             CASE WHEN status = 'Registered' THEN 'Unassigned' ELSE status END,

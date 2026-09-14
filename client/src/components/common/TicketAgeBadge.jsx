@@ -6,14 +6,24 @@ export const getTicketAgeInfo = (complaint) => {
   const dateStr = complaint.created_at || complaint.status_updated_at;
   if (!dateStr) return { text: 'Today', days: 0, isOpen: false, isOverdue: false };
 
-  const createdTime = new Date(dateStr).getTime();
+  // Normalize SQLite UTC timestamp format:
+  // SQLite CURRENT_TIMESTAMP is "YYYY-MM-DD HH:MM:SS" (UTC without 'T' or 'Z').
+  // In Indian Standard Time (IST, UTC+5:30), new Date("2026-09-14 14:00:00") is treated as local time,
+  // causing an artificial 5.5 hour ("5h ago") discrepancy for newly registered tickets.
+  const normalizedStr = dateStr.includes('Z') || dateStr.includes('+')
+    ? dateStr
+    : (dateStr.includes('T') ? `${dateStr}Z` : `${dateStr.replace(' ', 'T')}Z`);
+
+  const createdTime = new Date(normalizedStr).getTime();
   const now = new Date().getTime();
   const diffMs = Math.max(0, now - createdTime);
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
   const days = Math.floor(diffHours / 24);
 
   let text = 'Today';
-  if (diffHours < 1) text = 'Just now';
+  if (diffMinutes < 3) text = 'Just now';
+  else if (diffHours < 1) text = `${diffMinutes}m ago`;
   else if (diffHours < 24) text = `${diffHours}h ago`;
   else if (days === 1) text = '1 day ago';
   else text = `${days} days ago`;

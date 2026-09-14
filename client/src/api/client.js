@@ -858,5 +858,28 @@ export const api = {
   enqueueWhatsAppMessage: (data) => request('/whatsapp/queue', {
     method: 'POST',
     body: JSON.stringify(data)
+  }),
+
+  // Company Payment Settlement
+  settleCompanyPayment: (id, data = {}) => request(`/complaints/${id}/settle-company`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+
+  // Staff & Technician Updates
+  updateTechnician: (id, data) => request(`/technicians/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  updateUser: (id, data) => request(`/auth/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+
+  // Dynamic Product Catalog
+  getProducts: () => request('/products'),
+  addProduct: (data) => request('/products', {
+    method: 'POST',
+    body: JSON.stringify(data)
   })
 };
