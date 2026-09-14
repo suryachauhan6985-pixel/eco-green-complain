@@ -1,0 +1,10 @@
+{
+  "name": "eco-green-solar-cms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Eco Green Solar Complaint Management System with 6,102 Customer Excel Database & 5-Year Warranty Engine",
+  "scripts": {
+    "build": "cd client && npm install && npm run build && cd ../server && npm install",
+    "start": "node server/server.js"
+  }
+}
