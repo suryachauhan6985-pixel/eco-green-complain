@@ -88,9 +88,9 @@ class WhatsAppSessionManager {
       }
     } catch (e) {}
 
-    // Auto-start session initialization
-    restoreAuthFolderFromDb();
-    this.initSession();
+    // Disabled auto-start to prevent Meta automated unofficial client detection
+    // restoreAuthFolderFromDb();
+    // this.initSession();
   }
 
   getStatus() {
