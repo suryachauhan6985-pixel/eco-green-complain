@@ -1,4 +1,4 @@
-﻿document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const toggleRelay = document.getElementById("toggleRelay");
   const serverUrlInput = document.getElementById("serverUrl");
   const sentCountEl = document.getElementById("sentCount");
@@ -48,6 +48,41 @@
     } finally {
       btnSync.textContent = "⚡ Check & Dispatch Queue Now";
       btnSync.disabled = false;
+    }
+  });
+
+  // Send Test Message
+  const btnSendTest = document.getElementById("btnSendTest");
+  const testPhoneInput = document.getElementById("testPhone");
+  const testMsgInput = document.getElementById("testMsg");
+
+  btnSendTest.addEventListener("click", async () => {
+    const phone = testPhoneInput.value.trim();
+    const message = testMsgInput.value.trim();
+    if (!phone) {
+      alert("Please enter a mobile number to test!");
+      return;
+    }
+    btnSendTest.disabled = true;
+    btnSendTest.textContent = "Adding to queue...";
+    try {
+      const serverUrl = serverUrlInput.value.trim().replace(/\/$/, "");
+      const res = await fetch(`${serverUrl}/api/whatsapp/queue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, message, recipient_name: "Test User" })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("✅ Test message queued! The relay will pick it up and send it via WhatsApp Web in a few seconds.");
+      } else {
+        alert("Server Error: " + (data.error || "Could not enqueue"));
+      }
+    } catch (e) {
+      alert("Network Error: " + e.message);
+    } finally {
+      btnSendTest.disabled = false;
+      btnSendTest.textContent = "🚀 Send Test via Relay";
     }
   });
 
