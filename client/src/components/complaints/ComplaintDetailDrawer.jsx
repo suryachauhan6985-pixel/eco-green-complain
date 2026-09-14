@@ -7,6 +7,7 @@ import {
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert
 } from 'lucide-react';
+import { TicketAgeBadge } from '../common/TicketAgeBadge';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -183,16 +184,6 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
-  const formatStageAge = (dateStr) => {
-    if (!dateStr) return '';
-    const diffMs = Math.max(0, new Date() - new Date(dateStr));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const days = Math.floor(diffHours / 24);
-    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  };
-
   const openEditModal = () => {
     if (!ticket) return;
     setEditFormData({
@@ -297,10 +288,7 @@ export const ComplaintDetailDrawer = ({
                 }`}>
                   {ticket?.status === 'Registered' ? 'Unassigned' : ticket?.status}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  {formatStageAge(ticket?.status_updated_at || ticket?.created_at)}
-                </span>
+                <TicketAgeBadge complaint={ticket} />
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                   ticket?.priority === 'High' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
                   ticket?.priority === 'Medium' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :

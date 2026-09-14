@@ -4,8 +4,10 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   Search, Filter, Plus, Download, RefreshCw, Sun, Droplets, Wind, 
   User, Calendar, Clock, ChevronRight, AlertCircle, CheckCircle2, Wrench,
-  MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee
+  MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
+  AlertTriangle
 } from 'lucide-react';
+import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
 export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
   const { currentUser } = useAuth();
@@ -29,16 +31,6 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
   const [productFilter, setProductFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [technicianFilter, setTechnicianFilter] = useState('');
-
-  const formatStageAge = (dateStr) => {
-    if (!dateStr) return '';
-    const diffMs = Math.max(0, new Date() - new Date(dateStr));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const days = Math.floor(diffHours / 24);
-    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  };
 
   const fetchComplaints = async () => {
     try {
@@ -118,7 +110,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Search Form */}
-          <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-md">
+          <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-xl lg:max-w-2xl">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -281,16 +273,18 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
             <p className="text-xs text-slate-500 mt-1">Try adjusting your filters or search keywords</p>
           </div>
         ) : viewMode === 'list' ? (
-          /* COMPACT LIST / TABLE VIEW */
+          /* COMPACT LIST / TABLE VIEW — Expands across widescreen desktop */
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-4">Ticket & Product</th>
-                  <th className="py-3 px-4">Customer & Location</th>
-                  <th className="py-3 px-4">Status & Stage Age</th>
+                  <th className="py-3 px-4">Customer & City</th>
+                  <th className="py-3 px-4 hidden lg:table-cell">Issue Summary</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Days Open / Age</th>
                   <th className="py-3 px-4">Priority & Warranty</th>
-                  <th className="py-3 px-4">Assigned Tech</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Assigned Tech</th>
                   <th className="py-3 px-4">Charges</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
@@ -298,7 +292,6 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
               <tbody className="divide-y divide-slate-100 text-xs">
                 {complaints.map((c) => {
                   const displayStatus = getDisplayStatus(c.status);
-                  const stageAge = formatStageAge(c.status_updated_at || c.created_at);
                   const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
                   const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
                     `Namaste ${c.customer_name},\nRegarding your Eco Green Solar ticket (${c.ticket_id}).\nStatus: ${displayStatus}.\nEco Green Solar Support.`
@@ -320,9 +313,14 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                             <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 block">
                               {c.ticket_id}
                             </span>
-                            <span className="text-[10px] text-slate-500 truncate block max-w-[140px]">
+                            <span className="text-[10px] text-slate-500 truncate block max-w-[160px]">
                               {c.product_type}
                             </span>
+                            {(c.consumer_no || c.order_no) && (
+                              <span className="text-[9px] text-slate-400 font-mono block">
+                                {c.consumer_no ? `Cons: ${c.consumer_no}` : ''} {c.order_no ? `• Ord: ${c.order_no}` : ''}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -330,31 +328,42 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                       {/* Customer & Location */}
                       <td className="py-3 px-4">
                         <div>
-                          <span className="font-bold text-slate-900 block truncate max-w-[160px]">
+                          <span className="font-bold text-slate-900 block truncate max-w-[180px]">
                             {c.customer_name}
                           </span>
                           <span className="text-[11px] text-slate-500 font-mono block">
                             📞 {c.customer_phone}
                           </span>
                           {(c.city || c.customer_address) && (
-                            <span className="text-[10px] text-slate-400 truncate block max-w-[180px]">
+                            <span className="text-[10px] text-slate-400 truncate block max-w-[200px]">
                               📍 {c.city || c.customer_address}
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* Status & Stage Duration */}
-                      <td className="py-3 px-4">
-                        <div>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getStatusBadgeStyle(displayStatus)}`}>
-                            {displayStatus}
-                          </span>
-                          <span className="text-[10px] text-slate-500 block mt-0.5 flex items-center gap-1">
-                            <Clock className="w-2.5 h-2.5 text-slate-400" />
-                            {stageAge}
+                      {/* Issue Summary (Visible on lg+ screens) */}
+                      <td className="py-3 px-4 hidden lg:table-cell max-w-xs">
+                        <div className="truncate">
+                          <strong className="text-slate-800 font-semibold block truncate text-[11px]">
+                            {c.issue_category}
+                          </strong>
+                          <span className="text-slate-500 text-[10px] truncate block">
+                            {c.issue_description}
                           </span>
                         </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getStatusBadgeStyle(displayStatus)}`}>
+                          {displayStatus}
+                        </span>
+                      </td>
+
+                      {/* Days Open / Age with Red Alert (>2 Days) */}
+                      <td className="py-3 px-4">
+                        <TicketAgeBadge complaint={c} />
                       </td>
 
                       {/* Priority & Warranty */}
@@ -378,10 +387,10 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                       </td>
 
                       {/* Assigned Tech */}
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 hidden sm:table-cell">
                         <div className="flex items-center gap-1 text-slate-700">
                           <Wrench className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span className="truncate max-w-[120px] font-medium">
+                          <span className="truncate max-w-[140px] font-medium">
                             {c.technician_name || <em className="text-amber-600 font-normal">Unassigned</em>}
                           </span>
                         </div>
@@ -437,11 +446,11 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
             </table>
           </div>
         ) : (
-          /* CARD GRID VIEW */
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3.5 bg-slate-100/60">
+          /* CARD GRID VIEW — Responsive: 1 col mobile, 2 cols tablet, 3-4 cols on wide screens */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 p-4 bg-slate-100/60">
             {complaints.map((c) => {
               const displayStatus = getDisplayStatus(c.status);
-              const stageAge = formatStageAge(c.status_updated_at || c.created_at);
+              const ageInfo = getTicketAgeInfo(c);
               const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
               const waMessage = encodeURIComponent(
                 `Namaste ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${displayStatus}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
@@ -452,7 +461,11 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                 <div
                   key={c.id}
                   onClick={() => onSelectComplaint(c.id)}
-                  className="bg-white rounded-xl border border-slate-200/90 p-3.5 shadow-2xs hover:shadow-md hover:border-emerald-500 transition-all cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden"
+                  className={`bg-white rounded-xl border p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden ${
+                    ageInfo.isOverdue 
+                      ? 'border-rose-300 ring-1 ring-rose-200 border-l-4 border-l-rose-500' 
+                      : 'border-slate-200/90 hover:border-emerald-500'
+                  }`}
                 >
                   {/* Product color accent bar on top */}
                   <div className={`absolute top-0 left-0 right-0 h-1 ${
@@ -462,9 +475,9 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
 
                   {/* Top: Ticket ID, Badges */}
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 shrink-0">
+                    <div className="flex items-center justify-between gap-1.5 mb-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="p-1 rounded-md bg-slate-50 border border-slate-200 shrink-0">
                           {getProductIcon(c.product_type)}
                         </div>
                         <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 truncate">
@@ -472,7 +485,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getStatusBadgeStyle(displayStatus)}`}>
                           {displayStatus}
                         </span>
@@ -487,6 +500,11 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
                       </div>
                     </div>
 
+                    {/* Prominent Age & SLA Alert Bar */}
+                    <div className="mb-2">
+                      <TicketAgeBadge complaint={c} compact={true} />
+                    </div>
+
                     {/* Customer Info */}
                     <div className="flex items-baseline justify-between gap-2">
                       <h4 className="text-xs font-bold text-slate-900 truncate">
@@ -499,10 +517,11 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint }) => {
 
                     <div className="flex items-center justify-between gap-2 text-[11px] text-emerald-800/80 font-medium truncate mt-0.5">
                       <span className="truncate">{c.product_type} {c.city ? `• ${c.city}` : ''}</span>
-                      <span className="text-[10px] text-slate-400 font-normal shrink-0 flex items-center gap-0.5">
-                        <Clock className="w-2.5 h-2.5" />
-                        {stageAge}
-                      </span>
+                      {c.estimated_charges > 0 && (
+                        <span className="text-[10px] font-bold text-slate-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 shrink-0">
+                          ₹{c.estimated_charges}
+                        </span>
+                      )}
                     </div>
 
                     {/* Issue Summary Box */}

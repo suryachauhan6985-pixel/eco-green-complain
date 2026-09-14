@@ -146,7 +146,7 @@ async function seedDatabase(forceReset = false) {
         addr: 'Flat 602, Prestige Lakeside, Marathahalli, Bengaluru', prod: 'Heat Pumps',
         serial: 'EGS-HP-300L-091', instId: 'INST-BLR-2025-019', cat: 'Display Error Code (F1/F2)',
         desc: 'Water is only warm, not reaching set 55C. Display panel showing Code F2.',
-        prio: 'Urgent', status: 'Registered', techId: null, visitDate: null,
+        prio: 'High', status: 'Unassigned', techId: null, visitDate: null,
         resNotes: null, parts: null, rating: null, comments: null,
         created: '2026-09-14 08:20:00', assigned: null, resolved: null, closed: null,
         timeline: [
@@ -215,7 +215,7 @@ async function seedDatabase(forceReset = false) {
         addr: 'House 12, Sector 15, HSR Layout, Bengaluru', prod: 'Solar Water Heaters',
         serial: 'EGS-SWH-300L-512', instId: 'INST-BLR-2023-789', cat: 'Low Water Temperature',
         desc: 'Water temperature does not exceed 35°C even after a full sunny day.',
-        prio: 'Medium', status: 'Registered', techId: null, visitDate: null,
+        prio: 'Medium', status: 'Unassigned', techId: null, visitDate: null,
         resNotes: null, parts: null, rating: null, comments: null,
         created: '2026-09-14 07:45:00', assigned: null, resolved: null, closed: null,
         timeline: [

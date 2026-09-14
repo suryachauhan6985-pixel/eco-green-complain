@@ -6,6 +6,7 @@ import {
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
   Search, X 
 } from 'lucide-react';
+import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
 export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
   const { currentUser } = useAuth();
@@ -219,38 +220,42 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
             </p>
           </div>
         ) : (
-          displayList.map((job) => (
-            <div
-              key={job.id}
-              className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-emerald-500 hover:shadow-md transition-all overflow-hidden flex flex-col justify-between"
-            >
-              {/* Job Card Header */}
-              <div className="p-3.5 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                  <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded truncate">
-                    {job.ticket_id}
-                  </span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                    job.status === 'In Progress' ? 'bg-blue-600 text-white' :
-                    job.status === 'Resolved' ? 'bg-emerald-600 text-white' :
-                    job.status === 'Closed' ? 'bg-slate-700 text-white' :
-                    'bg-amber-500 text-slate-900'
-                  }`}>
-                    {job.status}
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                    job.priority === 'High' ? 'bg-amber-100 text-amber-800' :
-                    job.priority === 'Medium' ? 'bg-blue-100 text-blue-800' :
-                    'bg-slate-200 text-slate-700'
-                  }`}>
-                    {job.priority}
-                  </span>
-                </div>
+          displayList.map((job) => {
+            const ageInfo = getTicketAgeInfo(job);
+            return (
+              <div
+                key={job.id}
+                className={`bg-white rounded-2xl border shadow-2xs hover:shadow-md transition-all overflow-hidden flex flex-col justify-between ${
+                  ageInfo.isOverdue
+                    ? 'border-rose-300 ring-1 ring-rose-200 border-l-4 border-l-rose-500'
+                    : 'border-slate-200 hover:border-emerald-500'
+                }`}
+              >
+                {/* Job Card Header */}
+                <div className="p-3 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded truncate">
+                      {job.ticket_id}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      job.status === 'In Progress' ? 'bg-blue-600 text-white' :
+                      job.status === 'Resolved' ? 'bg-emerald-600 text-white' :
+                      job.status === 'Closed' ? 'bg-slate-700 text-white' :
+                      'bg-amber-500 text-slate-900'
+                    }`}>
+                      {job.status}
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                      job.priority === 'High' ? 'bg-amber-100 text-amber-800' :
+                      job.priority === 'Medium' ? 'bg-blue-100 text-blue-800' :
+                      'bg-slate-200 text-slate-700'
+                    }`}>
+                      {job.priority}
+                    </span>
+                  </div>
 
-                <span className="text-[11px] text-slate-400 shrink-0">
-                  {new Date(job.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                </span>
-              </div>
+                  <TicketAgeBadge complaint={job} compact={true} />
+                </div>
 
               {/* Job Details */}
               <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
@@ -334,8 +339,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                 </button>
               </div>
             </div>
-          ))
-        )}
+          );
+        })
+      )}
       </div>
     </div>
   );

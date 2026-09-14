@@ -100,7 +100,7 @@ function AppContent() {
 
       {/* Demo Mode & Quick Tour Banner (Shrink-0) */}
       <div className="shrink-0 bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 text-white px-4 py-2 text-xs shadow-xs z-20">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="max-w-[1780px] w-full mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -142,8 +142,8 @@ function AppContent() {
         </div>
       )}
 
-      {/* Main Page Content — ONLY this section scrolls */}
-      <main className="flex-1 overflow-y-auto min-h-0 max-w-7xl w-full mx-auto p-3 sm:p-5 lg:p-6">
+      {/* Main Page Content — Spreads horizontally on wide screens, responsive on mobile */}
+      <main className="flex-1 overflow-y-auto min-h-0 max-w-[1780px] w-full mx-auto p-3 sm:p-5 lg:p-6">
         {currentTab === 'complaints' && (
           <ComplaintList
             key={`comp-${refreshKey}`}
