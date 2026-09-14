@@ -209,12 +209,17 @@ This tests:
 
 ---
 
-## 🐳 Docker Deployment
+## 🐳 Docker Deployment & Containerization
 
-To launch with Docker Compose:
+The repository is fully containerized with a production multi-stage `Dockerfile` and `docker-compose.yml`:
 
+### Run Locally with Docker Compose:
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
+The complete unified application (Vite React UI + Express Backend + 6,102 Customer Database) will run on `http://localhost:10000`.
 
-Backend will be available on port `5000`.
+### Deploy on Render with Docker Runtime:
+1. In Render Web Service settings, select **Runtime: Docker** (or let `render.yaml` auto-configure it).
+2. Render automatically detects the root `Dockerfile` and builds both frontend and backend in an isolated, extensible Linux container.
+3. Add your custom domain `eco-green-complain.vprotec.online` in Render settings.

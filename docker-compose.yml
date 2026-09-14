@@ -1,24 +1,22 @@
 version: '3.8'
 
 services:
-  backend:
+  eco-green-cms:
     build:
-      context: ./server
+      context: .
       dockerfile: Dockerfile
-    container_name: ecogreen_cms_backend
+    container_name: eco-green-complain
     ports:
-      - "5000:5000"
+      - "10000:10000"
     environment:
-      - PORT=5000
+      - PORT=10000
       - NODE_ENV=production
-      - APP_URL=http://localhost:5173
+      - JWT_SECRET=egs_production_super_secret_token_2026
       - WHATSAPP_PROVIDER=SIMULATED
       - EMAIL_PROVIDER=SIMULATED
     volumes:
-      - cms_data:/app/data
-      - cms_uploads:/app/uploads
+      - cms_uploads:/app/server/uploads
     restart: unless-stopped
 
 volumes:
-  cms_data:
   cms_uploads:
