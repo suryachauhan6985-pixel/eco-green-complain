@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
+import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
-  Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink
+  Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -37,7 +38,7 @@ const PRODUCT_CATEGORIES = {
   ]
 };
 
-export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated }) => {
+export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint }) => {
   const [formData, setFormData] = useState({
     customer_name: '',
     customer_phone: '',
@@ -61,8 +62,20 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated }) => {
   const [fileList, setFileList] = useState([]); // [{ file, preview, id }]
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState(null);
+  const [waData, setWaData] = useState(null);
   const [copied, setCopied] = useState(false);
   const [copiedWaMsg, setCopiedWaMsg] = useState(false);
+
+  // Dynamic template rendering for WhatsApp message
+  useEffect(() => {
+    if (createdTicket) {
+      buildComplaintRegisteredWhatsApp(createdTicket)
+        .then((data) => setWaData(data))
+        .catch((err) => console.error('Error generating WhatsApp text:', err));
+    } else {
+      setWaData(null);
+    }
+  }, [createdTicket]);
 
   // Smart Customer Search & Warranty state
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -309,21 +322,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated }) => {
                 const chargesLine = (createdTicket.notify_charges && createdTicket.estimated_charges > 0)
                   ? `\n💰 *Estimated Service Charge:* ₹${createdTicket.estimated_charges} (Standard Visit & Diagnostic Fee)`
                   : '';
-                const waRawText = `☀️ *Eco Green Solar Support*
 
-Dear ${createdTicket.customer_name}, your service complaint has been successfully registered.
+                const defaultFallbackText = `☀️ *Eco Green Solar Support*\n\nDear ${createdTicket.customer_name}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* ${createdTicket.ticket_id}\n🔧 *Product:* ${createdTicket.product_type}\n📅 *Date:* ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}${chargesLine}\n\nOur team is reviewing your ticket and will assign a service technician shortly.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
 
-📌 *Ticket ID:* ${createdTicket.ticket_id}
-🔧 *Product:* ${createdTicket.product_type}
-📅 *Date:* ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}${chargesLine}
-
-Our team is reviewing your ticket and will assign a service technician shortly.
-
-🔗 *Track Live Status:* ${trackingUrl}
-
-Helpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
-
-                const waSendUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(waRawText)}`;
+                const finalWaText = waData?.rawText || defaultFallbackText;
+                const finalWaUrl = waData?.sendUrl || `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(finalWaText)}`;
 
                 return (
                   <div className="bg-gradient-to-br from-emerald-50 to-teal-50/60 rounded-2xl p-4 border border-emerald-300 text-left space-y-3 shadow-sm">
@@ -340,13 +343,13 @@ Helpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
                     </div>
 
                     {/* Formatted Message Preview */}
-                    <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 text-[11px] font-mono text-slate-700 whitespace-pre-line leading-relaxed max-h-32 overflow-y-auto shadow-inner">
-                      {waRawText}
+                    <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 text-[11px] font-mono text-slate-700 whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto shadow-inner">
+                      {finalWaText}
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
                       <a
-                        href={waSendUrl}
+                        href={finalWaUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-700/25 transition-all hover:scale-[1.01] active:scale-[0.99]"
@@ -358,7 +361,7 @@ Helpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(waRawText);
+                          navigator.clipboard.writeText(finalWaText);
                           setCopiedWaMsg(true);
                           setTimeout(() => setCopiedWaMsg(false), 2500);
                         }}
@@ -373,21 +376,37 @@ Helpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
               })()}
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-center gap-3 pt-2">
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={copyTicketId}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors"
                 >
                   <Copy className="w-3.5 h-3.5" />
                   <span>{copied ? 'Ticket ID Copied!' : 'Copy Ticket ID'}</span>
                 </button>
+
+                {onViewComplaint && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = createdTicket.id;
+                      resetAndClose();
+                      onViewComplaint(id);
+                    }}
+                    className="px-3.5 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Open Ticket Details</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={resetAndClose}
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md transition-all"
                 >
-                  Done & View Complaints
+                  Done & Close
                 </button>
               </div>
             </div>

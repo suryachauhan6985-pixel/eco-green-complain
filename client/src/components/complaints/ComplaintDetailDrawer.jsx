@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp } from '../../utils/templateUtils';
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
-  Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert
+  Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
+  MessageCircle, Copy
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
 
@@ -31,6 +33,9 @@ export const ComplaintDetailDrawer = ({
   const [selectedTechId, setSelectedTechId] = useState('');
   const [expectedDate, setExpectedDate] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [assignSuccessModal, setAssignSuccessModal] = useState(null);
+  const [copiedCustWa, setCopiedCustWa] = useState(false);
+  const [copiedTechWa, setCopiedTechWa] = useState(false);
 
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpStatus, setFollowUpStatus] = useState('');
@@ -110,6 +115,21 @@ export const ComplaintDetailDrawer = ({
       await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+
+      // Find assigned technician details
+      const assignedTech = technicians.find(t => String(t.id) === String(selectedTechId));
+
+      // Build dynamic WhatsApp links using latest backend template
+      const customerWa = await buildTechnicianAssignedWhatsApp(ticket, assignedTech, expectedDate);
+      const techWa = buildTechnicianWorkOrderWhatsApp(ticket, assignedTech, expectedDate);
+
+      setAssignSuccessModal({
+        ticket,
+        tech: assignedTech,
+        expectedDate,
+        customerWa,
+        techWa
+      });
     } catch (err) {
       alert('Failed to assign technician: ' + err.message);
     } finally {
@@ -1280,6 +1300,151 @@ export const ComplaintDetailDrawer = ({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1-Click WhatsApp Dispatch Modal for Technician Assignment */}
+      {assignSuccessModal && (
+        <div className="fixed inset-0 z-70 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <CheckCircle className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black tracking-tight">Technician Assigned Successfully!</h3>
+                  <p className="text-[11px] text-emerald-200">Send instant 1-click WhatsApp alerts to customer & technician</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAssignSuccessModal(null)}
+                className="p-1.5 hover:bg-white/10 rounded-lg text-emerald-200 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Summary Pill */}
+              <div className="bg-emerald-50/80 rounded-xl p-3 border border-emerald-200 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 block">Ticket & Assigned Specialist</span>
+                  <span className="font-bold text-slate-900 font-mono text-xs">{ticket.ticket_id}</span>
+                  <span className="text-slate-600 text-[11px] ml-1.5">→ 👨‍🔧 <strong>{assignSuccessModal.tech?.name}</strong></span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Scheduled Visit</span>
+                  <span className="font-bold text-emerald-800 text-xs">
+                    {assignSuccessModal.expectedDate ? new Date(assignSuccessModal.expectedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Within 24-48 Hours'}
+                  </span>
+                </div>
+              </div>
+
+              {/* SECTION 1: Customer WhatsApp Notification */}
+              <div className="bg-white rounded-xl p-4 border border-emerald-300 shadow-sm space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                      <MessageCircle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-xs">1. Send Visit Confirmation to Customer</h4>
+                      <p className="text-[10px] text-slate-500">Customer: <strong>{ticket.customer_name}</strong> (📞 {ticket.customer_phone})</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Message Preview */}
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 whitespace-pre-line max-h-28 overflow-y-auto leading-relaxed shadow-inner">
+                  {assignSuccessModal.customerWa.rawText}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <a
+                    href={assignSuccessModal.customerWa.sendUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Send WhatsApp to Customer</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(assignSuccessModal.customerWa.rawText);
+                      setCopiedCustWa(true);
+                      setTimeout(() => setCopiedCustWa(false), 2000);
+                    }}
+                    className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold flex items-center justify-center gap-1 text-xs transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedCustWa ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION 2: Technician WhatsApp Work Order */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-teal-700 text-white flex items-center justify-center shrink-0">
+                      <Wrench className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-xs">2. Send Field Work Order to Technician</h4>
+                      <p className="text-[10px] text-slate-500">Technician: <strong>{assignSuccessModal.tech?.name}</strong> (📞 {assignSuccessModal.tech?.phone || 'N/A'})</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Work Order Preview */}
+                <div className="bg-white p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 whitespace-pre-line max-h-24 overflow-y-auto leading-relaxed shadow-inner">
+                  {assignSuccessModal.techWa.rawText}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <a
+                    href={assignSuccessModal.techWa.sendUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-2.5 px-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-xs transition-all hover:scale-[1.01]"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Send Work Order to Tech</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(assignSuccessModal.techWa.rawText);
+                      setCopiedTechWa(true);
+                      setTimeout(() => setCopiedTechWa(false), 2000);
+                    }}
+                    className="py-2.5 px-3 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-semibold flex items-center justify-center gap-1 text-xs transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedTechWa ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setAssignSuccessModal(null)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+              >
+                Done & Return to Ticket
+              </button>
             </div>
           </div>
         </div>

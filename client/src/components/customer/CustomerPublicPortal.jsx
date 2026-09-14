@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { 
   Search, Sun, Droplets, Wind, CheckCircle2, Clock, 
-  Wrench, Phone, Star, RotateCcw, AlertTriangle, Send 
+  Wrench, Phone, Star, RotateCcw, AlertTriangle, Send, ArrowRight
 } from 'lucide-react';
 
 const STEPS = [
@@ -13,8 +13,13 @@ const STEPS = [
   { key: 'Closed', label: 'Closed' }
 ];
 
-export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
-  const [ticketQuery, setTicketQuery] = useState('');
+export const CustomerPublicPortal = ({ 
+  onOpenNewComplaint, 
+  initialTicketId = '', 
+  isStandalone = false, 
+  onExitStandalone 
+}) => {
+  const [ticketQuery, setTicketQuery] = useState(initialTicketId || '');
   const [trackingData, setTrackingData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -29,16 +34,16 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
 
-  const handleSearch = async (e) => {
-    e?.preventDefault();
-    if (!ticketQuery.trim()) return;
+  const performSearch = async (queryToSearch) => {
+    const q = (queryToSearch || ticketQuery || '').trim();
+    if (!q) return;
 
     try {
       setLoading(true);
       setSearched(true);
-      const data = await api.trackTicket(ticketQuery.trim());
+      const data = await api.trackTicket(q);
       setTrackingData(data);
-      if (data.complaint.rating) {
+      if (data?.complaint?.rating) {
         setStarRating(data.complaint.rating);
         setFeedbackText(data.complaint.feedback_comments || '');
         setFeedbackSubmitted(true);
@@ -50,6 +55,18 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (initialTicketId) {
+      setTicketQuery(initialTicketId);
+      performSearch(initialTicketId);
+    }
+  }, [initialTicketId]);
+
+  const handleSearch = (e) => {
+    e?.preventDefault();
+    performSearch(ticketQuery);
   };
 
   const handleFeedbackSubmit = async (e) => {
@@ -92,7 +109,7 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
 
   const currentStepIndex = trackingData ? getStepIndex(trackingData.complaint.status) : 0;
 
-  return (
+  const portalBody = (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Customer Header Banner */}
       <div className="text-center py-6 px-4 bg-gradient-to-b from-emerald-800 to-teal-900 text-white rounded-3xl shadow-lg">
@@ -129,7 +146,7 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
           <span>Try sample:</span>
           <button 
             type="button" 
-            onClick={() => { setTicketQuery('EGS-2026-000101'); }} 
+            onClick={() => { setTicketQuery('EGS-2026-000101'); performSearch('EGS-2026-000101'); }} 
             className="underline hover:text-white font-mono"
           >
             EGS-2026-000101
@@ -137,7 +154,7 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
           <span>•</span>
           <button 
             type="button" 
-            onClick={() => { setTicketQuery('EGS-2026-000105'); }} 
+            onClick={() => { setTicketQuery('EGS-2026-000105'); performSearch('EGS-2026-000105'); }} 
             className="underline hover:text-white font-mono"
           >
             EGS-2026-000105
@@ -347,14 +364,69 @@ export const CustomerPublicPortal = ({ onOpenNewComplaint }) => {
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
             We couldn't find a record matching "{ticketQuery}". Please verify your ticket ID or register a new service request below.
           </p>
-          <button
-            onClick={onOpenNewComplaint}
-            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all"
-          >
-            Raise a New Complaint
-          </button>
+          {onOpenNewComplaint && (
+            <button
+              onClick={onOpenNewComplaint}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all"
+            >
+              Raise a New Complaint
+            </button>
+          )}
         </div>
       )}
     </div>
   );
+
+  if (isStandalone) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+        {/* Top Standalone Header */}
+        <header className="bg-white border-b border-slate-200 shadow-2xs px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-30">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-700 to-teal-800 text-white flex items-center justify-center shadow-xs">
+              <Sun className="w-5 h-5 text-amber-300" />
+            </div>
+            <div>
+              <span className="text-sm font-black text-slate-900 tracking-tight block">Eco Green Solar Care</span>
+              <span className="text-[10px] font-bold text-emerald-700 block -mt-0.5 uppercase tracking-wide">
+                Customer Service & Tracking Desk
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {onExitStandalone ? (
+              <button
+                onClick={onExitStandalone}
+                className="text-xs font-bold text-slate-600 hover:text-emerald-700 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                <span>Staff Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <a
+                href="/"
+                className="text-xs font-bold text-slate-600 hover:text-emerald-700 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                <span>Staff Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
+        </header>
+
+        {/* Portal Body */}
+        <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-6 lg:p-8">
+          {portalBody}
+        </main>
+
+        {/* Footer */}
+        <footer className="bg-white border-t border-slate-200 py-4 px-4 text-center text-xs text-slate-500 font-medium">
+          <p>© 2026 Eco Green Solar — Customer Service Desk • Rooftop Solar • Water Heaters • Heat Pumps</p>
+        </footer>
+      </div>
+    );
+  }
+
+  return portalBody;
 };

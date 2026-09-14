@@ -19,13 +19,55 @@ import {
   Users, Wrench, Shield, BarChart3, Search, Plus 
 } from 'lucide-react';
 
+function getTrackingInfoFromUrl() {
+  const path = window.location.pathname;
+  const match = path.match(/^\/track(?:\/([^\/?#]+))?/i);
+  if (match) {
+    return {
+      isTracking: true,
+      ticketId: match[1] ? decodeURIComponent(match[1]) : ''
+    };
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const trackParam = searchParams.get('track');
+  if (trackParam) {
+    return {
+      isTracking: true,
+      ticketId: trackParam
+    };
+  }
+
+  const hash = window.location.hash;
+  const hashMatch = hash.match(/^#\/?track(?:\/([^\/?#]+))?/i);
+  if (hashMatch) {
+    return {
+      isTracking: true,
+      ticketId: hashMatch[1] ? decodeURIComponent(hashMatch[1]) : ''
+    };
+  }
+
+  return { isTracking: false, ticketId: '' };
+}
+
 function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
+  const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
+
   const [currentTab, setCurrentTab] = useState(() => {
     if (currentUser?.role === 'technician') return 'technician';
     if (currentUser?.role === 'customer') return 'customer';
     return 'complaints';
   });
+
+  // Listen to browser forward/back buttons for URL tracking
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setTrackingInfo(getTrackingInfoFromUrl());
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
 
   // Modals & Drawers state (MUST be declared before early returns per React Rules of Hooks)
   const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
@@ -41,6 +83,21 @@ function AppContent() {
   // Refresh trigger counter for child components when demo data is reloaded
   const [refreshKey, setRefreshKey] = useState(0);
   const [resetSuccessToast, setResetSuccessToast] = useState(false);
+
+  // Standalone tracking portal route: accessed via /track/:ticketId (Zero staff chrome)
+  if (trackingInfo.isTracking) {
+    return (
+      <CustomerPublicPortal
+        initialTicketId={trackingInfo.ticketId}
+        isStandalone={true}
+        onExitStandalone={() => {
+          window.history.pushState(null, '', '/');
+          setTrackingInfo({ isTracking: false, ticketId: '' });
+        }}
+        onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+      />
+    );
+  }
 
   // Keep tab aligned when role changes
   useEffect(() => {
@@ -268,8 +325,11 @@ function AppContent() {
         isOpen={isNewComplaintOpen}
         onClose={() => setIsNewComplaintOpen(false)}
         onComplaintCreated={(newTicket) => {
-          setSelectedComplaintId(newTicket.id);
+          // Refresh complaints list without popping drawer underneath success modal
           setRefreshKey(k => k + 1);
+        }}
+        onViewComplaint={(ticketId) => {
+          setSelectedComplaintId(ticketId);
         }}
       />
 

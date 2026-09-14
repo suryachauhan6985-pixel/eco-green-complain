@@ -107,7 +107,7 @@ app.put('/api/technicians/:id/availability', authenticateToken, requireRole('adm
 app.delete('/api/technicians/:id', authenticateToken, requireRole('admin'), technicianController.deleteTechnician);
 
 // ================= NOTIFICATION ROUTES =================
-app.get('/api/notifications/templates', authenticateToken, notificationController.getTemplates);
+app.get('/api/notifications/templates', notificationController.getTemplates);
 app.put('/api/notifications/templates/:id', authenticateToken, requireRole('admin'), notificationController.updateTemplate);
 app.get('/api/notifications/logs', authenticateToken, notificationController.getLogs);
 app.post('/api/notifications/logs/:id/resend', authenticateToken, requireRole('admin', 'staff'), notificationController.resendLog);
