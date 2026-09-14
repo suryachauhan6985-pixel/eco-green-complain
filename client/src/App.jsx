@@ -27,6 +27,32 @@ function AppContent() {
     return 'complaints';
   });
 
+  // Modals & Drawers state (MUST be declared before early returns per React Rules of Hooks)
+  const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [selectedComplaintId, setSelectedComplaintId] = useState(null);
+  const [historyPhone, setHistoryPhone] = useState(null);
+
+  // Onboarding Tour state
+  const [isTourOpen, setIsTourOpen] = useState(() => {
+    return !localStorage.getItem('egs_cms_tour_completed');
+  });
+
+  // Refresh trigger counter for child components when demo data is reloaded
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [resetSuccessToast, setResetSuccessToast] = useState(false);
+
+  // Keep tab aligned when role changes
+  useEffect(() => {
+    if (currentUser?.role === 'technician') {
+      setCurrentTab('technician');
+    } else if (currentUser?.role === 'customer') {
+      setCurrentTab('customer');
+    } else if (currentUser?.role === 'staff' && ['analytics', 'templates', 'team'].includes(currentTab)) {
+      setCurrentTab('complaints');
+    }
+  }, [currentUser?.role]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white text-xs">
@@ -41,32 +67,6 @@ function AppContent() {
   if (!currentUser) {
     return <LoginPage onSwitchToCustomer={() => switchRole('customer')} />;
   }
-
-  // Keep tab aligned when role changes
-  useEffect(() => {
-    if (currentUser?.role === 'technician') {
-      setCurrentTab('technician');
-    } else if (currentUser?.role === 'customer') {
-      setCurrentTab('customer');
-    } else if (currentUser?.role === 'staff' && ['analytics', 'templates', 'team'].includes(currentTab)) {
-      setCurrentTab('complaints');
-    }
-  }, [currentUser?.role]);
-
-  // Modals & Drawers state
-  const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
-  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
-  const [selectedComplaintId, setSelectedComplaintId] = useState(null);
-  const [historyPhone, setHistoryPhone] = useState(null);
-
-  // Onboarding Tour state
-  const [isTourOpen, setIsTourOpen] = useState(() => {
-    return !localStorage.getItem('egs_cms_tour_completed');
-  });
-
-  // Refresh trigger counter for child components when demo data is reloaded
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [resetSuccessToast, setResetSuccessToast] = useState(false);
 
   const handleReloadDemoData = async () => {
     try {
@@ -303,10 +303,52 @@ function AppContent() {
   );
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('UI Crash caught by ErrorBoundary:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
+          <div className="bg-slate-800 p-8 rounded-3xl border border-rose-500/30 max-w-md shadow-2xl space-y-4">
+            <div className="w-14 h-14 bg-rose-500/20 text-rose-400 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold">
+              ⚠️
+            </div>
+            <h2 className="text-lg font-black text-white">Application Error</h2>
+            <p className="text-xs text-slate-400 font-mono bg-slate-900/60 p-3 rounded-xl break-all">
+              {this.state.error?.message || 'An unexpected error occurred.'}
+            </p>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-xs transition-colors"
+            >
+              Clear Storage & Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
