@@ -1,0 +1,89 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Eco Green Solar — WhatsApp Relay</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { width: 330px; background: #f8fafc; color: #0f172a; padding: 14px; font-size: 12px; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 12px; }
+    .brand { display: flex; align-items: center; gap: 8px; }
+    .logo { width: 28px; height: 28px; background: linear-gradient(135deg, #059669, #0d9488); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fef08a; font-size: 16px; }
+    .brand h1 { font-size: 13px; font-weight: 800; color: #0f172a; }
+    .brand span { color: #059669; }
+    .badge { font-size: 10px; font-weight: 700; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 12px; }
+    
+    .status-card { background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .indicator { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 2px #bbf7d0; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.2); opacity: 0.8; } }
+    
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .stat-box { background: #f1f5f9; border-radius: 8px; padding: 8px; text-align: center; }
+    .stat-num { font-size: 16px; font-weight: 800; color: #059669; font-family: monospace; }
+    .stat-label { font-size: 10px; color: #64748b; font-weight: 600; text-transform: uppercase; }
+
+    .form-group { margin-bottom: 10px; }
+    label { font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px; }
+    input { width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 11px; outline: none; }
+    input:focus { border-color: #059669; }
+
+    .btn { display: block; width: 100%; border: none; border-radius: 8px; padding: 8px; font-size: 11px; font-weight: 700; cursor: pointer; text-align: center; transition: all 0.15s ease; margin-bottom: 6px; }
+    .btn-primary { background: #059669; color: white; }
+    .btn-primary:hover { background: #047857; }
+    .btn-secondary { background: white; border: 1px solid #cbd5e1; color: #334155; }
+    .btn-secondary:hover { background: #f8fafc; }
+    
+    .footer { font-size: 10px; color: #94a3b8; text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="logo">☀️</div>
+      <div>
+        <h1>Eco Green <span>Solar</span></h1>
+      </div>
+    </div>
+    <span class="badge">Master PC</span>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <div class="indicator" id="statusIndicator">
+        <span class="dot"></span>
+        <span id="statusText">Relay Active</span>
+      </div>
+      <label style="cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;">
+        <input type="checkbox" id="toggleRelay" checked style="width: auto; margin: 0;"> ON
+      </label>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-num" id="sentCount">0</div>
+        <div class="stat-label">Sent Today</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num" id="lastSent">--</div>
+        <div class="stat-label">Last Sent</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="serverUrl">CMS Server Endpoint</label>
+    <input type="text" id="serverUrl" value="https://eco-green-complain.vprotech.online">
+  </div>
+
+  <button class="btn btn-primary" id="btnSync">⚡ Check & Dispatch Queue Now</button>
+  <button class="btn btn-secondary" id="btnOpenWA">💬 Open WhatsApp Web Tab</button>
+
+  <div class="footer">
+    Zero-Ban Local Chrome Relay • Official Web
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

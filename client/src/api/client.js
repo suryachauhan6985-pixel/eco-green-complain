@@ -853,11 +853,10 @@ export const api = {
     body: formData
   }),
 
-  // WhatsApp Gateway (Baileys Session)
-  getWhatsAppStatus: () => request('/whatsapp/status'),
-  logoutWhatsApp: () => request('/whatsapp/logout', { method: 'POST' }),
-  sendDirectWhatsApp: (phone, message) => request('/whatsapp/send-direct', {
+  // WhatsApp Master Relay (Zero-Ban Local Chrome Relay Queue)
+  getRelayStatus: () => request('/whatsapp/relay/status'),
+  enqueueWhatsAppMessage: (data) => request('/whatsapp/queue', {
     method: 'POST',
-    body: JSON.stringify({ phone, message })
+    body: JSON.stringify(data)
   })
 };

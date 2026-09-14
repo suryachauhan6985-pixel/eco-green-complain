@@ -137,30 +137,126 @@ app.get('/api/notifications/simulated', notificationController.getSimulatedMessa
 app.delete('/api/notifications/simulated', notificationController.clearSimulated);
 app.get('/api/notifications/events', notificationController.subscribeSimulatedEvents);
 
-// ================= WHATSAPP GATEWAY (BAILEYS QR SESSION) =================
-const whatsappSessionManager = require('./services/whatsappSessionManager');
+// ================= WHATSAPP MASTER RELAY (OFFICE PC ZERO-BAN QUEUE) =================
+// Table for outgoing WhatsApp messages & Master PC heartbeat
+db.exec(`
+  CREATE TABLE IF NOT EXISTS whatsapp_outgoing_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT NOT NULL,
+    message TEXT NOT NULL,
+    ticket_id TEXT,
+    recipient_name TEXT,
+    status TEXT DEFAULT 'pending',
+    retry_count INTEGER DEFAULT 0,
+    error_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME
+  );
+  CREATE TABLE IF NOT EXISTS whatsapp_relay_heartbeat (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
+    relay_name TEXT DEFAULT 'Office Master PC',
+    ip TEXT
+  );
+  INSERT OR IGNORE INTO whatsapp_relay_heartbeat (id, relay_name) VALUES (1, 'Office Master PC');
+`);
 
-app.get('/api/whatsapp/status', (req, res) => {
-  res.json(whatsappSessionManager.getStatus());
-});
-
-app.post('/api/whatsapp/logout', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+// 1. Add message to WhatsApp queue (From any PC/Staff)
+app.post('/api/whatsapp/queue', (req, res) => {
   try {
-    const result = await whatsappSessionManager.logout();
-    res.json(result);
+    const { phone, message, ticket_id, recipient_name } = req.body;
+    if (!phone || !message) {
+      return res.status(400).json({ error: 'phone and message are required' });
+    }
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+    const stmt = db.prepare(`
+      INSERT INTO whatsapp_outgoing_queue (phone, message, ticket_id, recipient_name, status)
+      VALUES (?, ?, ?, ?, 'pending')
+    `);
+    const info = stmt.run(formattedPhone, message, ticket_id || null, recipient_name || null);
+    res.json({ success: true, queueId: info.lastInsertRowid });
   } catch (err) {
-    res.status(500).json({ error: 'Logout failed: ' + err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/whatsapp/send-direct', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+// 2. Master PC Relay Extension polls for pending messages
+app.get('/api/whatsapp/relay/pending', (req, res) => {
   try {
-    const { phone, message } = req.body;
-    if (!phone || !message) {
-      return res.status(400).json({ error: 'Phone and message are required' });
+    // Update heartbeat of Master PC
+    db.prepare(`
+      UPDATE whatsapp_relay_heartbeat 
+      SET last_heartbeat = CURRENT_TIMESTAMP, ip = ? 
+      WHERE id = 1
+    `).run(req.ip || 'local');
+
+    // Fetch up to 3 pending messages (FIFO order)
+    const pending = db.prepare(`
+      SELECT * FROM whatsapp_outgoing_queue 
+      WHERE status = 'pending' 
+      ORDER BY id ASC LIMIT 3
+    `).all();
+
+    res.json({
+      success: true,
+      pending: pending || []
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Master PC Relay updates status after sending
+app.post('/api/whatsapp/relay/status', (req, res) => {
+  try {
+    const { id, status, error } = req.body;
+    if (!id || !status) {
+      return res.status(400).json({ error: 'id and status are required' });
     }
-    const result = await whatsappSessionManager.sendDirectWhatsAppMessage(phone, message);
-    res.json(result);
+    const stmt = db.prepare(`
+      UPDATE whatsapp_outgoing_queue 
+      SET status = ?, 
+          sent_at = CASE WHEN ? = 'sent' THEN CURRENT_TIMESTAMP ELSE sent_at END,
+          error_message = ?
+      WHERE id = ?
+    `);
+    stmt.run(status, status, error || null, id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. CMS checks Master PC Relay Status (Active / Inactive)
+app.get('/api/whatsapp/relay/status', (req, res) => {
+  try {
+    const hb = db.prepare('SELECT * FROM whatsapp_relay_heartbeat WHERE id = 1').get();
+    const stats = db.prepare(`
+      SELECT 
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pendingCount,
+        COUNT(CASE WHEN status = 'sent' THEN 1 END) as sentCount,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failedCount,
+        MAX(sent_at) as lastSentAt
+      FROM whatsapp_outgoing_queue
+    `).get();
+
+    let isRelayActive = false;
+    if (hb && hb.last_heartbeat) {
+      const lastHbTime = new Date(hb.last_heartbeat + 'Z').getTime();
+      const now = Date.now();
+      isRelayActive = (now - lastHbTime) < 35000;
+    }
+
+    res.json({
+      isRelayActive,
+      lastHeartbeat: hb?.last_heartbeat || null,
+      relayName: hb?.relay_name || 'Office Master PC',
+      pendingCount: stats?.pendingCount || 0,
+      sentCount: stats?.sentCount || 0,
+      failedCount: stats?.failedCount || 0,
+      lastSentAt: stats?.lastSentAt || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

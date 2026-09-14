@@ -3,26 +3,23 @@
  * Supports Meta Cloud API, Twilio WhatsApp API, and Built-in Simulator
  */
 
-const whatsappSessionManager = require('./whatsappSessionManager');
+const db = require('../config/database');
 
-async function sendWhatsAppMessage({ to, message, templateName, variables = {} }) {
+async function sendWhatsAppMessage({ to, message, templateName, variables = {}, ticket_id, recipient_name }) {
   const provider = process.env.WHATSAPP_PROVIDER || 'SIMULATED';
-  const cleanTo = (to || '').replace(/[^0-9+]/g, '');
+  const cleanTo = (to || '').replace(/[^0-9]/g, '');
+  const formattedPhone = cleanTo.startsWith('91') ? cleanTo : (cleanTo.length === 10 ? `91${cleanTo}` : cleanTo);
 
-  // 1. Primary Priority: WhatsApp Gateway (Office WhatsApp Web session from +91 7878444414)
-  const sessionStatus = whatsappSessionManager.getStatus();
-  if (sessionStatus.isConnected) {
-    try {
-      const result = await whatsappSessionManager.sendDirectWhatsAppMessage(cleanTo, message);
-      return {
-        success: true,
-        provider: 'WHATSAPP_GATEWAY',
-        messageId: result.messageId,
-        fromPhone: sessionStatus.connectedPhone
-      };
-    } catch (err) {
-      console.warn('[WhatsAppProvider] Direct WhatsApp Gateway error, falling back:', err.message);
-    }
+  // 1. Primary Priority: Enqueue into WhatsApp Master PC Relay Queue
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO whatsapp_outgoing_queue (phone, message, ticket_id, recipient_name, status)
+      VALUES (?, ?, ?, ?, 'pending')
+    `);
+    const info = stmt.run(formattedPhone, message, ticket_id || null, recipient_name || null);
+    console.log(`[WhatsAppProvider] Enqueued message #${info.lastInsertRowid} for Master PC Relay to ${formattedPhone}`);
+  } catch (e) {
+    console.warn('[WhatsAppProvider] Notice enqueueing to relay:', e.message);
   }
 
   if (provider === 'META_CLOUD_API') {
