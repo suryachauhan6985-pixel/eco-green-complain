@@ -527,12 +527,12 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
   }
 });
 
-// 7. Universal WhatsApp Web Inbox: Direct reply to any phone number
-app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+// 7. Universal WhatsApp Web Inbox: Direct reply to any phone number (with optional attachment)
+app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', 'staff'), upload.single('attachment'), async (req, res) => {
   try {
     const { phone, message } = req.body;
-    if (!phone || !message || !message.trim()) {
-      return res.status(400).json({ error: 'phone and message are required' });
+    if (!phone || (!message && !req.file)) {
+      return res.status(400).json({ error: 'phone and message or attachment are required' });
     }
 
     const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -546,39 +546,63 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
       ORDER BY id DESC LIMIT 1
     `).get(`%${last10}%`);
 
+    let mediaUrl = null;
+    let mediaType = null;
+    let mediaFileName = null;
+
+    if (req.file) {
+      mediaUrl = `/uploads/${req.file.filename}`;
+      mediaFileName = req.file.originalname;
+      mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'document';
+    }
+
+    // Public URL for Meta Cloud API if APP_URL or request origin is available
+    let absoluteMediaUrl = mediaUrl;
+    if (mediaUrl) {
+      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      absoluteMediaUrl = `${baseUrl}${mediaUrl}`;
+    }
+
     const { sendWhatsAppMessage } = require('./services/whatsappProvider');
     const sendRes = await sendWhatsAppMessage({
       to: formattedPhone,
-      message: message.trim(),
+      message: (message || '').trim(),
       ticket_id: complaint?.ticket_id || null,
-      recipient_name: complaint?.customer_name || 'Valued Customer'
+      recipient_name: complaint?.customer_name || 'Valued Customer',
+      mediaUrl: absoluteMediaUrl,
+      mediaType: mediaType,
+      mediaFileName: mediaFileName
     });
 
     // Record outbound message in whatsapp_messages
     const insertStmt = db.prepare(`
       INSERT INTO whatsapp_messages (
         complaint_id, phone, sender_type, sender_name,
-        message_body, wam_id, status
-      ) VALUES (?, ?, 'company', ?, ?, ?, 'sent')
+        message_body, media_url, media_type, media_caption, wam_id, status
+      ) VALUES (?, ?, 'company', ?, ?, ?, ?, ?, ?, 'sent')
     `);
 
     const insertRes = insertStmt.run(
       complaint ? complaint.id : null,
       formattedPhone,
       req.user?.name || 'Eco Green Support',
-      message.trim(),
+      (message || '').trim(),
+      mediaUrl,
+      mediaType,
+      mediaFileName,
       sendRes.messageId || null
     );
 
     // If complaint exists, also log in complaint_timelines
     if (complaint) {
       try {
+        const actionNote = mediaUrl ? `Staff sent ${mediaType}: ${mediaFileName} ${message ? '(' + message + ')' : ''}` : message.trim();
         db.prepare(`
           INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
           VALUES (?, 'Staff WhatsApp Reply', ?, ?, ?, 1)
         `).run(
           complaint.id,
-          message.trim(),
+          actionNote,
           req.user?.name || 'Staff Specialist',
           req.user?.role || 'staff'
         );
@@ -590,7 +614,8 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
     res.json({
       success: true,
       messageId: insertRes.lastInsertRowid,
-      metaMessageId: sendRes.messageId
+      metaMessageId: sendRes.messageId,
+      mediaUrl: mediaUrl
     });
   } catch (err) {
     console.error('Error sending direct WhatsApp reply:', err);

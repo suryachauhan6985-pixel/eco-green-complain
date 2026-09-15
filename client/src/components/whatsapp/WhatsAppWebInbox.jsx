@@ -21,11 +21,14 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
   const [contactInfo, setContactInfo] = useState(null);
 
   const [replyText, setReplyText] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
   const [sendingReply, setSendingReply] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all' | 'unlinked' | 'linked'
   const [previewMedia, setPreviewMedia] = useState(null);
 
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   // Load conversation list
@@ -73,9 +76,13 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
   useEffect(() => {
     if (selectedPhone) {
       loadMessages(selectedPhone);
+      setSelectedFile(null);
+      setFilePreview(null);
     } else {
       setMessages([]);
       setContactInfo(null);
+      setSelectedFile(null);
+      setFilePreview(null);
     }
   }, [selectedPhone]);
 
@@ -97,15 +104,61 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
     }
   }, [messages]);
 
-  // Handle sending reply
+  // Handle file selection from user
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('File size must be under 15MB', 'warning');
+      return;
+    }
+
+    setSelectedFile(file);
+    if (file.type.startsWith('image/')) {
+      setFilePreview(URL.createObjectURL(file));
+    } else {
+      setFilePreview(null);
+    }
+  };
+
+  const handleClearSelectedFile = () => {
+    if (filePreview) {
+      URL.revokeObjectURL(filePreview);
+    }
+    setSelectedFile(null);
+    setFilePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Download media helper
+  const handleDownloadFile = (url, filename) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'download';
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handle sending reply (with optional attachment)
   const handleSendReply = async (e) => {
     e.preventDefault();
-    if (!replyText.trim() || !selectedPhone || sendingReply) return;
+    if ((!replyText.trim() && !selectedFile) || !selectedPhone || sendingReply) return;
 
     try {
       setSendingReply(true);
       const textToSend = replyText.trim();
+      const fileToSend = selectedFile;
+      const previewToSend = filePreview;
+
       setReplyText('');
+      setSelectedFile(null);
+      setFilePreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
 
       // Optimistic message append
       const tempMsg = {
@@ -114,12 +167,15 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
         sender_type: 'company',
         sender_name: currentUser?.name || 'Staff Support',
         message_body: textToSend,
+        media_url: previewToSend || (fileToSend ? URL.createObjectURL(fileToSend) : null),
+        media_type: fileToSend ? (fileToSend.type.startsWith('image/') ? 'image' : 'document') : null,
+        media_caption: fileToSend ? fileToSend.name : null,
         created_at: new Date().toISOString(),
         status: 'sending'
       };
       setMessages(prev => [...prev, tempMsg]);
 
-      const res = await api.sendWhatsAppDirectReply(selectedPhone, textToSend);
+      const res = await api.sendWhatsAppDirectReply(selectedPhone, textToSend, fileToSend);
       if (res.success) {
         loadMessages(selectedPhone, true);
         loadConversations(true);
@@ -151,11 +207,11 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
   const selectedConv = conversations.find(c => c.phone === selectedPhone);
 
   return (
-    <div className="h-[calc(100vh-8.5rem)] min-h-[550px] bg-white rounded-2xl border border-slate-200 shadow-sm flex overflow-hidden">
+    <div className="flex-1 w-full h-full bg-white flex overflow-hidden select-none">
       {/* LEFT SIDEBAR: Conversation list (WhatsApp Web style) */}
       <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {/* Header */}
-        <div className="p-3.5 bg-white border-b border-slate-200 flex items-center justify-between">
+        <div className="p-3.5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
               <MessageSquare className="w-5 h-5" />
@@ -175,7 +231,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="p-2.5 bg-white border-b border-slate-200 space-y-2">
+        <div className="p-2.5 bg-white border-b border-slate-200 space-y-2 shrink-0">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -221,7 +277,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
           </div>
         </div>
 
-        {/* Conversations Scrollable List */}
+        {/* Conversations Scrollable List (Vertical Scrollbar ONLY here) */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {loadingConversations && conversations.length === 0 ? (
             <div className="p-8 text-center text-slate-400 text-xs">
@@ -310,7 +366,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
         {selectedPhone ? (
           <>
             {/* Top Chat Header */}
-            <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between z-10">
+            <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between z-10 shrink-0">
               <div className="flex items-center gap-3">
                 {/* Back button for mobile */}
                 <button
@@ -346,40 +402,23 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 </div>
               </div>
 
-              {/* Action Buttons: Open Complaint or Convert to Complaint */}
+              {/* Action Buttons: Only show View Ticket Details when ticket exists (Removed redundant green button) */}
               <div className="flex items-center gap-2">
-                {selectedConv?.complaint_id ? (
+                {selectedConv?.complaint_id && (
                   <button
                     onClick={() => onOpenComplaint && onOpenComplaint(selectedConv.complaint_id)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>View Ticket Details</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      if (onNewComplaintWithData) {
-                        const firstCustMsg = messages.find(m => m.sender_type === 'customer');
-                        onNewComplaintWithData({
-                          customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
-                          customer_phone: selectedPhone.replace(/^91/, ''),
-                          issue_description: firstCustMsg?.message_body || 'Customer contacted via WhatsApp'
-                        });
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Create Complaint Ticket</span>
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Notice banner for general conversations */}
+            {/* Notice banner for general conversations (Single unified button to raise complaint) */}
             {!selectedConv?.complaint_id && (
-              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between text-xs text-amber-900">
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between text-xs text-amber-900 shrink-0">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
@@ -397,7 +436,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                       });
                     }
                   }}
-                  className="font-bold underline text-amber-800 hover:text-amber-950 shrink-0 cursor-pointer"
+                  className="font-bold underline text-amber-800 hover:text-amber-950 shrink-0 cursor-pointer ml-2"
                 >
                   Convert to Complaint →
                 </button>
@@ -415,7 +454,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 <div className="p-12 text-center text-slate-400 text-xs">
                   <MessageSquare className="w-10 h-10 mx-auto mb-2 text-slate-300 opacity-60" />
                   <p className="font-semibold text-slate-600">No messages in this chat yet</p>
-                  <p className="text-[11px] text-slate-400 mt-1">Send a greeting message below to begin conversation.</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Send a greeting or documents below to begin conversation.</p>
                 </div>
               ) : (
                 messages.map((msg, idx) => {
@@ -444,45 +483,75 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
                         {/* Text Body */}
                         {msg.message_body && (
-                          <p className="text-xs whitespace-pre-wrap break-words leading-relaxed">
+                          <p className="text-xs whitespace-pre-wrap break-words leading-relaxed select-text">
                             {msg.message_body}
                           </p>
                         )}
 
-                        {/* Media: Image */}
+                        {/* Media: Image (With explicit preview & download button) */}
                         {msg.media_url && (msg.media_type === 'image' || msg.media_type?.includes('image')) && (
-                          <div className="mt-2 rounded-xl overflow-hidden border border-black/10 bg-black/5">
+                          <div className="mt-2 rounded-xl overflow-hidden border border-black/10 bg-black/5 relative group">
                             <img
                               src={msg.media_url}
                               alt="WhatsApp attachment"
                               onClick={() => setPreviewMedia({ url: msg.media_url, type: 'image' })}
-                              className="max-h-60 w-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                              className="max-h-64 w-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
                             />
+                            {/* Hover overlay with download and expand icons */}
+                            <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-90">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadFile(msg.media_url, msg.media_caption || 'whatsapp_photo.jpg');
+                                }}
+                                title="Download Photo"
+                                className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-colors cursor-pointer shadow-md"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPreviewMedia({ url: msg.media_url, type: 'image' });
+                                }}
+                                title="Zoom Full Screen"
+                                className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-colors cursor-pointer shadow-md"
+                              >
+                                <Maximize2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                             {msg.media_caption && (
-                              <p className="p-2 text-[11px] italic">{msg.media_caption}</p>
+                              <p className="p-2 text-[11px] italic bg-black/5">{msg.media_caption}</p>
                             )}
                           </div>
                         )}
 
-                        {/* Media: Document (PDF) */}
-                        {msg.media_url && (msg.media_type === 'document' || msg.media_type?.includes('pdf')) && (
+                        {/* Media: Document (PDF / file download card) */}
+                        {msg.media_url && (msg.media_type === 'document' || msg.media_type?.includes('pdf') || msg.media_type === 'bin') && (
                           <div className="mt-2">
-                            <a
-                              href={msg.media_url}
-                              target="_blank"
-                              rel="noreferrer"
+                            <div
                               className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-bold border transition-colors ${
                                 isCustomer
-                                  ? 'bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-800'
-                                  : 'bg-emerald-800/80 hover:bg-emerald-800 border-emerald-600 text-white'
+                                  ? 'bg-slate-50 border-slate-300 text-slate-800'
+                                  : 'bg-emerald-800/80 border-emerald-600 text-white'
                               }`}
                             >
-                              <FileText className="w-5 h-5 shrink-0" />
+                              <FileText className="w-5 h-5 shrink-0 text-amber-400" />
                               <span className="truncate flex-1 font-mono text-[11px]">
-                                {msg.media_caption || 'Download Document (PDF)'}
+                                {msg.media_caption || 'Document Attachment'}
                               </span>
-                              <Download className="w-4 h-4 shrink-0 opacity-80" />
-                            </a>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadFile(msg.media_url, msg.media_caption || 'document.pdf')}
+                                className="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg flex items-center gap-1 text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                                title="Download Document"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download</span>
+                              </button>
+                            </div>
                           </div>
                         )}
 
@@ -501,19 +570,67 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Bottom Reply Box */}
-            <form onSubmit={handleSendReply} className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+            {/* Pending File Attachment Preview Banner */}
+            {selectedFile && (
+              <div className="px-4 py-2.5 bg-emerald-50 border-t border-emerald-200 flex items-center justify-between shrink-0 animate-in fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  {filePreview ? (
+                    <img src={filePreview} alt="preview" className="w-10 h-10 rounded-lg object-cover border border-emerald-300 shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-emerald-200 text-emerald-800 flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{selectedFile.name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">{(selectedFile.size / 1024).toFixed(1)} KB • Ready to send</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearSelectedFile}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+                  title="Remove attachment"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Bottom Reply Box (with paperclip document attachment button) */}
+            <form onSubmit={handleSendReply} className="p-3 bg-white border-t border-slate-200 flex items-center gap-2 shrink-0">
+              {/* Hidden File Input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+              />
+
+              {/* Attach Document / Photo Button */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sendingReply}
+                className="p-2.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                title="Attach photo or document (PDF / Image)"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+
               <input
                 type="text"
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                placeholder={`Type a message to +${selectedPhone}...`}
+                placeholder={selectedFile ? `Add a caption or send ${selectedFile.name}...` : `Type a message to +${selectedPhone}...`}
                 className="flex-1 text-xs px-4 py-2.5 bg-slate-100 hover:bg-slate-50 focus:bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                 disabled={sendingReply}
               />
+
               <button
                 type="submit"
-                disabled={sendingReply || !replyText.trim()}
+                disabled={sendingReply || (!replyText.trim() && !selectedFile)}
                 className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:cursor-not-allowed shrink-0"
               >
                 <Send className="w-4 h-4" />
@@ -534,19 +651,28 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
         )}
       </div>
 
-      {/* MEDIA PREVIEW MODAL */}
+      {/* MEDIA PREVIEW MODAL (Zoomed View with Download Button) */}
       {previewMedia && (
         <div 
           onClick={() => setPreviewMedia(null)}
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
         >
-          <div className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center">
-            <button
-              onClick={() => setPreviewMedia(null)}
-              className="absolute -top-10 right-0 p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
-            >
-              <X className="w-6 h-6" />
-            </button>
+          <div className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute -top-10 right-0 flex items-center gap-2">
+              <button
+                onClick={() => handleDownloadFile(previewMedia.url, 'whatsapp_photo.jpg')}
+                className="px-3 py-1 bg-white/20 hover:bg-white/40 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download</span>
+              </button>
+              <button
+                onClick={() => setPreviewMedia(null)}
+                className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
             <img
               src={previewMedia.url}
               alt="Zoomed attachment"

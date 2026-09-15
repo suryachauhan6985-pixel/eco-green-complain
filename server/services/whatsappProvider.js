@@ -5,7 +5,7 @@
 
 const db = require('../config/database');
 
-async function sendWhatsAppMessage({ to, message, templateName, variables = {}, ticket_id, recipient_name }) {
+async function sendWhatsAppMessage({ to, message, templateName, variables = {}, ticket_id, recipient_name, mediaUrl, mediaType, mediaFileName }) {
   const provider = process.env.WHATSAPP_PROVIDER || 'SIMULATED';
   const cleanTo = (to || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanTo.startsWith('91') ? cleanTo : (cleanTo.length === 10 ? `91${cleanTo}` : cleanTo);
@@ -90,7 +90,14 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
             ]
           }
         ]
-      };
+    } else if (mediaUrl) {
+      if (mediaType === 'image') {
+        payload.type = 'image';
+        payload.image = { link: mediaUrl, caption: message || '' };
+      } else {
+        payload.type = 'document';
+        payload.document = { link: mediaUrl, caption: message || '', filename: mediaFileName || 'Document.pdf' };
+      }
     } else {
       payload.type = 'text';
       payload.text = { body: message };

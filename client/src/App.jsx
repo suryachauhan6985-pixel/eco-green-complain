@@ -203,7 +203,11 @@ function AppContent() {
       )}
 
       {/* Main Page Content — Spreads horizontally on wide screens, responsive on mobile */}
-      <main className="flex-1 overflow-y-auto min-h-0 max-w-[1780px] w-full mx-auto p-3 sm:p-5 lg:p-6">
+      <main className={`flex-1 min-h-0 w-full mx-auto ${
+        currentTab === 'whatsapp-inbox' 
+          ? 'overflow-hidden p-0 max-w-full flex flex-col' 
+          : 'overflow-y-auto max-w-[1780px] p-3 sm:p-5 lg:p-6'
+      }`}>
         {currentTab === 'complaints' && (
           <ComplaintList
             key={`comp-${refreshKey}`}
@@ -351,9 +355,11 @@ function AppContent() {
       </nav>
 
       {/* Sticky Single-Page Footer — Pinned at bottom on desktop */}
-      <footer className="hidden sm:block shrink-0 bg-white border-t border-slate-200 py-2.5 px-4 text-center text-xs text-slate-500 font-medium z-10 shadow-xs">
-        <p>© 2026 Eco Green Solar — Complaint Management System (CMS). Solar Rooftop Systems • Solar Water Heaters • Heat Pumps</p>
-      </footer>
+      {currentTab !== 'whatsapp-inbox' && (
+        <footer className="hidden sm:block shrink-0 bg-white border-t border-slate-200 py-2.5 px-4 text-center text-xs text-slate-500 font-medium z-10 shadow-xs">
+          <p>© 2026 Eco Green Solar — Complaint Management System (CMS). Solar Rooftop Systems • Solar Water Heaters • Heat Pumps</p>
+        </footer>
+      )}
 
       {/* Global Modals & Slide-over Panels */}
       <NewComplaintModal

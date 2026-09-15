@@ -909,9 +909,21 @@ export const api = {
   // Universal WhatsApp Web Inbox API
   getWhatsAppConversations: () => request('/whatsapp/conversations'),
   getWhatsAppChatHistory: (phone) => request(`/whatsapp/chats/${phone}`),
-  sendWhatsAppDirectReply: (phone, message) => request('/whatsapp/direct-reply', {
-    method: 'POST',
-    body: JSON.stringify({ phone, message })
-  })
+  sendWhatsAppDirectReply: (phone, message, attachment = null) => {
+    if (attachment) {
+      const formData = new FormData();
+      formData.append('phone', phone);
+      if (message) formData.append('message', message);
+      formData.append('attachment', attachment);
+      return request('/whatsapp/direct-reply', {
+        method: 'POST',
+        body: formData
+      });
+    }
+    return request('/whatsapp/direct-reply', {
+      method: 'POST',
+      body: JSON.stringify({ phone, message })
+    });
+  }
 };
 
