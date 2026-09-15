@@ -19,6 +19,7 @@ const technicianController = require('./controllers/technicianController');
 const notificationController = require('./controllers/notificationController');
 const reportController = require('./controllers/reportController');
 const customerDirectoryController = require('./controllers/customerDirectoryController');
+const { verifyWebhook, handleIncomingWebhook } = require('./services/whatsappWebhookService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -311,6 +312,99 @@ app.get('/api/whatsapp/relay/status', (req, res) => {
       lastSentAt: stats?.lastSentAt || null
     });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= OFFICIAL WHATSAPP CLOUD API WEBHOOKS & BIDIRECTIONAL CHAT =================
+// 1. Meta Webhook verification handshake
+app.get('/api/whatsapp/webhook', verifyWebhook);
+
+// 2. Meta Webhook incoming messages, media and delivery status
+app.post('/api/whatsapp/webhook', handleIncomingWebhook);
+
+// 3. Get all WhatsApp conversation messages for a complaint
+app.get('/api/complaints/:id/whatsapp-messages', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare('SELECT id, ticket_id, customer_phone FROM complaints WHERE id = ?').get(id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const cleanPhone = (complaint.customer_phone || '').replace(/[^0-9]/g, '');
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    const messages = db.prepare(`
+      SELECT * FROM whatsapp_messages
+      WHERE complaint_id = ? OR phone LIKE ?
+      ORDER BY created_at ASC
+    `).all(id, `%${last10}%`);
+
+    res.json({ success: true, messages: messages || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Staff direct reply to customer via WhatsApp from complaint drawer
+app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const cleanPhone = (complaint.customer_phone || '').replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+
+    const { sendWhatsAppMessage } = require('./services/whatsappProvider');
+    const sendRes = await sendWhatsAppMessage({
+      to: formattedPhone,
+      message: message.trim(),
+      ticket_id: complaint.ticket_id,
+      recipient_name: complaint.customer_name
+    });
+
+    // Record outbound staff reply into whatsapp_messages
+    const insertStmt = db.prepare(`
+      INSERT INTO whatsapp_messages (
+        complaint_id, phone, sender_type, sender_name,
+        message_body, wam_id, status
+      ) VALUES (?, ?, 'company', ?, ?, ?, 'sent')
+    `);
+    const insertRes = insertStmt.run(
+      complaint.id,
+      formattedPhone,
+      req.user?.name || 'Staff Specialist',
+      message.trim(),
+      sendRes.messageId || null
+    );
+
+    // Also record timeline entry
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES (?, 'Staff WhatsApp Reply', ?, ?, ?, 1)
+    `).run(
+      complaint.id,
+      message.trim(),
+      req.user?.name || 'Staff Specialist',
+      req.user?.role || 'staff'
+    );
+
+    res.json({
+      success: true,
+      messageId: insertRes.lastInsertRowid,
+      metaMessageId: sendRes.messageId
+    });
+  } catch (err) {
+    console.error('Error sending WhatsApp reply:', err);
     res.status(500).json({ error: err.message });
   }
 });

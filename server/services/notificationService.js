@@ -108,6 +108,17 @@ class NotificationService extends EventEmitter {
         providerName
       );
 
+      // Also record into whatsapp_messages for the 2-way chat conversation
+      try {
+        db.prepare(`
+          INSERT INTO whatsapp_messages (
+            complaint_id, phone, sender_type, sender_name, message_body, status
+          ) VALUES (?, ?, 'company', 'Eco Green Solar', ?, ?)
+        `).run(complaintId || null, targetPhone, renderedWhatsApp, status);
+      } catch (waMsgErr) {
+        console.warn('[NotificationService] Error saving to whatsapp_messages:', waMsgErr.message);
+      }
+
       const logItem = {
         id: logResult.lastInsertRowid,
         complaint_id: complaintId,

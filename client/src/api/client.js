@@ -897,6 +897,13 @@ export const api = {
   }),
   deleteCategory: (id) => request(`/categories/${id}`, {
     method: 'DELETE'
+  }),
+
+  // Official WhatsApp Cloud API Bidirectional Chat
+  getComplaintWhatsAppMessages: (complaintId) => request(`/complaints/${complaintId}/whatsapp-messages`),
+  sendComplaintWhatsAppReply: (complaintId, message) => request(`/complaints/${complaintId}/whatsapp-reply`, {
+    method: 'POST',
+    body: JSON.stringify({ message })
   })
 };
 

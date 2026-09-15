@@ -78,6 +78,23 @@ export const ComplaintDetailDrawer = ({
   const [savingPayment, setSavingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
 
+  // WhatsApp Live Chat State
+  const [waChatMessages, setWaChatMessages] = useState([]);
+  const [waReplyText, setWaReplyText] = useState('');
+  const [sendingWaReply, setSendingWaReply] = useState(false);
+
+  const fetchWhatsAppChat = async () => {
+    if (!complaintId) return;
+    try {
+      if (api.getComplaintWhatsAppMessages) {
+        const waData = await api.getComplaintWhatsAppMessages(complaintId);
+        setWaChatMessages(waData.messages || []);
+      }
+    } catch (e) {
+      console.warn('Failed to load WhatsApp messages:', e);
+    }
+  };
+
   const fetchTicketDetails = async () => {
     if (!complaintId) return;
     try {
@@ -94,6 +111,7 @@ export const ComplaintDetailDrawer = ({
         setExpectedDate(data.complaint.expected_visit_date);
       }
       setFollowUpStatus(data.complaint.status);
+      await fetchWhatsAppChat();
     } catch (err) {
       console.error('Failed to load complaint details:', err);
     } finally {
@@ -114,8 +132,28 @@ export const ComplaintDetailDrawer = ({
     if (isOpen && complaintId) {
       fetchTicketDetails();
       fetchTechs();
+      fetchWhatsAppChat();
+      const interval = setInterval(fetchWhatsAppChat, 5000);
+      return () => clearInterval(interval);
     }
   }, [isOpen, complaintId]);
+
+  const handleSendWhatsAppReply = async (e) => {
+    e?.preventDefault();
+    if (!waReplyText.trim()) return;
+    try {
+      setSendingWaReply(true);
+      await api.sendComplaintWhatsAppReply(ticket.id, waReplyText.trim());
+      setWaReplyText('');
+      showToast('WhatsApp reply sent to customer!', 'success');
+      await fetchWhatsAppChat();
+      await fetchTicketDetails();
+    } catch (err) {
+      showToast('Failed to send WhatsApp message: ' + err.message, 'error');
+    } finally {
+      setSendingWaReply(false);
+    }
+  };
 
   const handleAssign = async (e) => {
     e.preventDefault();
@@ -509,6 +547,22 @@ export const ComplaintDetailDrawer = ({
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 Dispatched Alerts ({notifications.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('whatsapp')}
+                className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+                  activeTab === 'whatsapp'
+                    ? 'border-emerald-600 text-emerald-800 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>WhatsApp Live Chat</span>
+                {waChatMessages.length > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
+                    {waChatMessages.length}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -1187,6 +1241,136 @@ export const ComplaintDetailDrawer = ({
                           </div>
                         </div>
                       ))
+                    )}
+                  </div>
+                )}
+
+                {/* 4. WHATSAPP LIVE CHAT TAB */}
+                {activeTab === 'whatsapp' && (
+                  <div className="flex flex-col h-[520px] bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    {/* Chat Header */}
+                    <div className="bg-emerald-800 text-white px-4 py-3 flex items-center justify-between shrink-0">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold text-white text-xs border border-white/20">
+                          <MessageCircle className="w-4 h-4 text-emerald-300" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-xs block leading-tight">{ticket.customer_name}</span>
+                          <span className="text-[10px] text-emerald-200 font-mono flex items-center gap-1">
+                            <span>📞 {ticket.customer_phone}</span>
+                            <span>•</span>
+                            <span className="inline-flex items-center text-emerald-300 font-sans font-medium">● Meta Cloud API</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={fetchWhatsAppChat}
+                        title="Refresh WhatsApp conversation"
+                        className="p-1.5 hover:bg-white/10 rounded-lg text-emerald-200 hover:text-white transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Chat Message Stream */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:16px_16px]">
+                      {waChatMessages.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                          <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-3 shadow-2xs">
+                            <MessageCircle className="w-6 h-6" />
+                          </div>
+                          <p className="font-bold text-slate-800 text-xs mb-1">No Chat History Yet</p>
+                          <p className="text-[11px] text-slate-500 max-w-xs leading-relaxed">
+                            When customer <strong>{ticket.customer_name}</strong> replies to WhatsApp alerts with text, photos, or documents, they will automatically appear here in real-time.
+                          </p>
+                        </div>
+                      ) : (
+                        waChatMessages.map((msg, idx) => {
+                          const isCustomer = msg.sender_type === 'customer';
+                          return (
+                            <div
+                              key={msg.id || idx}
+                              className={`flex flex-col ${isCustomer ? 'items-start' : 'items-end'}`}
+                            >
+                              <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-xs text-xs space-y-1.5 ${
+                                isCustomer
+                                  ? 'bg-white text-slate-900 border border-slate-200 rounded-tl-2xs'
+                                  : 'bg-emerald-700 text-white rounded-tr-2xs'
+                              }`}>
+                                <div className="flex items-center justify-between gap-3 text-[10px] opacity-80 border-b border-black/5 pb-1">
+                                  <span className="font-bold">{isCustomer ? msg.sender_name || 'Customer' : 'Eco Green Support'}</span>
+                                  <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+
+                                {/* Text Body */}
+                                {msg.message_body && (
+                                  <p className="whitespace-pre-wrap leading-relaxed select-text font-sans">
+                                    {msg.message_body}
+                                  </p>
+                                )}
+
+                                {/* Media Attachment Preview */}
+                                {msg.media_url && (
+                                  <div className="pt-1">
+                                    {msg.media_type === 'image' || (msg.media_url && msg.media_url.match(/\.(jpeg|jpg|png|webp)($|\?)/i)) ? (
+                                      <div className="rounded-xl overflow-hidden border border-slate-300/40 bg-slate-900/5">
+                                        <img
+                                          src={msg.media_url}
+                                          alt="Customer WhatsApp Attachment"
+                                          onClick={() => setPreviewDocModal({ url: msg.media_url, name: 'WhatsApp_Photo.jpg', isImage: true })}
+                                          className="max-h-48 w-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                        />
+                                        {msg.media_caption && (
+                                          <p className="p-1.5 text-[11px] font-medium bg-black/20 text-white">{msg.media_caption}</p>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <a
+                                        href={msg.media_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className={`flex items-center gap-2 p-2 rounded-xl text-[11px] font-bold border transition-colors ${
+                                          isCustomer
+                                            ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                                            : 'bg-emerald-800/80 hover:bg-emerald-800 border-emerald-600 text-white'
+                                        }`}
+                                      >
+                                        <FileText className="w-4 h-4 shrink-0" />
+                                        <span className="truncate flex-1">{msg.media_caption || 'Attached Document (PDF)'}</span>
+                                        <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-75" />
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Staff Reply Bar */}
+                    {['admin', 'staff'].includes(currentUser?.role) && (
+                      <form onSubmit={handleSendWhatsAppReply} className="p-2.5 bg-white border-t border-slate-200 flex items-center gap-2 shrink-0">
+                        <input
+                          type="text"
+                          value={waReplyText}
+                          onChange={(e) => setWaReplyText(e.target.value)}
+                          placeholder={`Reply to ${ticket.customer_name} via official WhatsApp...`}
+                          className="flex-1 text-xs px-3.5 py-2.5 bg-slate-100 hover:bg-slate-50 focus:bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                          disabled={sendingWaReply}
+                        />
+                        <button
+                          type="submit"
+                          disabled={sendingWaReply || !waReplyText.trim()}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{sendingWaReply ? 'Sending...' : 'Send'}</span>
+                        </button>
+                      </form>
                     )}
                   </div>
                 )}

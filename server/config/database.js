@@ -172,6 +172,26 @@ function initializeSchema() {
       UNIQUE(product_type, category_name)
     );
 
+    CREATE TABLE IF NOT EXISTS whatsapp_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER,
+      phone TEXT NOT NULL,
+      sender_type TEXT NOT NULL CHECK(sender_type IN ('customer', 'company', 'technician')),
+      sender_name TEXT,
+      message_body TEXT,
+      media_id TEXT,
+      media_type TEXT,
+      media_url TEXT,
+      media_caption TEXT,
+      wam_id TEXT UNIQUE,
+      status TEXT DEFAULT 'received',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_msg_complaint ON whatsapp_messages(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_msg_phone ON whatsapp_messages(phone);
+
     CREATE INDEX IF NOT EXISTS idx_complaints_ticket ON complaints(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status);
     CREATE INDEX IF NOT EXISTS idx_complaints_phone ON complaints(customer_phone);
