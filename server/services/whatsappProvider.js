@@ -30,21 +30,105 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       throw new Error('Meta Cloud API credentials missing (META_PHONE_NUMBER_ID, META_ACCESS_TOKEN)');
     }
 
-    const response = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+    let payload = {
+      messaging_product: 'whatsapp',
+      to: formattedPhone
+    };
+
+    // If template matches Meta registered templates, send as template message
+    if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_registered',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: variables.customer_name || 'Valued Customer' },
+              { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
+              { type: 'text', text: variables.product_type || 'Solar Equipment' },
+              { type: 'text', text: variables.issue_category || 'Service Request' },
+              { type: 'text', text: variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}` }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_assigned',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: variables.customer_name || 'Valued Customer' },
+              { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
+              { type: 'text', text: variables.technician_name || 'Field Technician' },
+              { type: 'text', text: variables.technician_phone || 'Support' },
+              { type: 'text', text: variables.expected_visit_date || 'Today' },
+              { type: 'text', text: variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}` }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'complaint_resolved') {
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_resolved',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: variables.customer_name || 'Valued Customer' },
+              { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
+              { type: 'text', text: variables.technician_name || 'Technician' },
+              { type: 'text', text: variables.notes || 'Service inspection completed successfully.' },
+              { type: 'text', text: variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}` }
+            ]
+          }
+        ]
+      };
+    } else {
+      payload.type = 'text';
+      payload.text = { body: message };
+    }
+
+    let response = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: cleanTo.startsWith('+') ? cleanTo.substring(1) : cleanTo,
-        type: 'text',
-        text: { body: message }
-      })
+      body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
+    let data = await response.json();
+
+    // Fallback: If template is still pending approval, try direct text
+    if (!response.ok && payload.type === 'template') {
+      console.warn('[Meta Cloud API] Template failed, trying direct text fallback:', data.error?.message);
+      const textResponse = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: formattedPhone,
+          type: 'text',
+          text: { body: message }
+        })
+      });
+      const textData = await textResponse.json();
+      if (textResponse.ok) {
+        return { success: true, provider: 'META_CLOUD_API', messageId: textData.messages?.[0]?.id };
+      }
+    }
+
     if (!response.ok) {
       throw new Error(data.error ? data.error.message : 'Meta WhatsApp API error');
     }
