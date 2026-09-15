@@ -56,18 +56,26 @@ function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
 
-  const [currentTab, setCurrentTab] = useState(() => {
-    // 1. Check URL hash (e.g. #whatsapp-inbox or #technician)
-    const hash = window.location.hash.replace('#', '');
-    if (hash && ['complaints', 'technician', 'whatsapp-inbox', 'staff', 'analytics', 'templates', 'customer'].includes(hash)) {
-      return hash;
+  const normalizeTab = (tab) => {
+    if (!tab) return null;
+    if (tab === 'staff') return 'team';
+    if (['complaints', 'technician', 'whatsapp-inbox', 'team', 'analytics', 'templates', 'customer'].includes(tab)) {
+      return tab;
     }
+    return null;
+  };
+
+  const [currentTab, setCurrentTab] = useState(() => {
+    // 1. Check URL hash (e.g. #whatsapp-inbox or #technician or #team)
+    const hash = window.location.hash.replace('#', '');
+    const validFromHash = normalizeTab(hash);
+    if (validFromHash) return validFromHash;
+
     // 2. Check saved tab in localStorage
     try {
       const saved = localStorage.getItem('egs_active_tab');
-      if (saved && ['complaints', 'technician', 'whatsapp-inbox', 'staff', 'analytics', 'templates', 'customer'].includes(saved)) {
-        return saved;
-      }
+      const validFromSaved = normalizeTab(saved);
+      if (validFromSaved) return validFromSaved;
     } catch (e) {}
 
     if (currentUser?.role === 'technician') return 'technician';
@@ -77,10 +85,11 @@ function AppContent() {
 
   // Keep localStorage and URL hash in sync with currentTab
   const handleTabChange = (tab) => {
-    setCurrentTab(tab);
+    const normalized = normalizeTab(tab) || tab;
+    setCurrentTab(normalized);
     try {
-      localStorage.setItem('egs_active_tab', tab);
-      window.location.hash = tab;
+      localStorage.setItem('egs_active_tab', normalized);
+      window.location.hash = normalized;
     } catch (e) {}
   };
 
@@ -89,8 +98,9 @@ function AppContent() {
     const handleLocationChange = () => {
       setTrackingInfo(getTrackingInfoFromUrl());
       const hash = window.location.hash.replace('#', '');
-      if (hash && ['complaints', 'technician', 'whatsapp-inbox', 'staff', 'analytics', 'templates', 'customer'].includes(hash)) {
-        setCurrentTab(hash);
+      const valid = normalizeTab(hash);
+      if (valid) {
+        setCurrentTab(valid);
       }
     };
     window.addEventListener('popstate', handleLocationChange);

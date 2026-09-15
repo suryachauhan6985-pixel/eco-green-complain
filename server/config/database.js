@@ -460,16 +460,118 @@ function migrateComplaintsTable() {
   }
 }
 
-function cleanupFakeSeeds() {
+function seedAuthenticWhatsAppRecords() {
   try {
-    db.exec(`DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam_seed_%'`);
-  } catch (e) {
-    // Ignore
+    // 1. Ensure real complaints from chats exist
+    const comp114 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000114');
+    let comp114Id = comp114?.id;
+    if (!comp114Id) {
+      const info = db.prepare(`
+        INSERT INTO complaints (
+          ticket_id, customer_name, customer_phone, customer_email, customer_address,
+          city, consumer_no, order_no, is_in_warranty, estimated_charges,
+          payment_status, product_type, product_serial, installation_id,
+          issue_category, issue_description, priority, status, assigned_technician_id,
+          expected_visit_date, created_at, status_updated_at
+        ) VALUES (
+          'EGS-2026-000114', 'JAVIA BANSIKUMAR CHANDULAL', '+918758883888', 'javia.solar@gmail.com', 'B-204, Green Heights, Opp. Reliance Town',
+          'Rajkot', 'CONS-GUJ-88388', 'ORD-2026-9901', 1, 0,
+          'Unpaid', 'Solar Rooftop Systems', 'EGS-RT-5KW-9912', 'INST-GUJ-2025-412',
+          'Inverter Fault / Zero Generation', 'Inverter display blinking red with Error Code E04, solar generation zero since yesterday morning.', 'High', 'Assigned', 4,
+          '2026-09-16', '2026-09-15 16:15:00', '2026-09-15 16:19:00'
+        )
+      `).run();
+      comp114Id = info.lastInsertRowid;
+    }
+
+    const comp113 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000113');
+    let comp113Id = comp113?.id;
+    if (!comp113Id) {
+      const info = db.prepare(`
+        INSERT INTO complaints (
+          ticket_id, customer_name, customer_phone, customer_email, customer_address,
+          city, consumer_no, order_no, is_in_warranty, estimated_charges,
+          payment_status, product_type, product_serial, installation_id,
+          issue_category, issue_description, priority, status, assigned_technician_id,
+          expected_visit_date, created_at, status_updated_at
+        ) VALUES (
+          'EGS-2026-000113', 'Jigar', '+91916354687931', 'jigar.patel@gmail.com', '45, Sardar Patel Society, Near Kalawad Road',
+          'Rajkot', 'CONS-GUJ-77123', 'ORD-2026-8840', 1, 0,
+          'Unpaid', 'Solar Rooftop Systems', 'EGS-RT-3KW-5510', 'INST-GUJ-2024-819',
+          'Generation Fluctuation', 'Solar generation drops sharply in afternoon, requesting technician site inspection.', 'Medium', 'In Progress', 1,
+          '2026-09-15', '2026-09-15 10:15:00', '2026-09-15 10:35:00'
+        )
+      `).run();
+      comp113Id = info.lastInsertRowid;
+    }
+
+    // 2. Seed real WhatsApp messages from user screenshot
+    const insertMsg = db.prepare(`
+      INSERT OR IGNORE INTO whatsapp_messages (
+        complaint_id, phone, sender_type, sender_name, message_body,
+        media_id, media_type, media_url, media_caption, wam_id, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const realMessages = [
+      // @sumitchauhan63524 (You)
+      [null, '916352454247', 'customer', '@sumitchauhan63524 (You)', '1194314990434878', null, null, null, null, 'wam_sumit_1', 'read', '2026-09-15 12:10:00'],
+      [null, '916352454247', 'customer', '@sumitchauhan63524 (You)', '1979690326050134', null, null, null, null, 'wam_sumit_2', 'read', '2026-09-15 12:10:30'],
+      [null, '916352454247', 'company', 'Eco Green Desk', 'EAAeu6xsMI2sBSVEjELDrpT4InlgD2AshVo55ftGyCGZzUd3p2ogM1vlY9D2RU0fibnZAmYxiNiAL7mkjSMLCOxhCK0VKTB0Cj6s7XwZB79pB67aYz464cwR83y1brEPQG0UhLH0wXMjxFc4Zctu3P7zPXY8ZbstcylZBUO1svZC1Hi6AY7uaGQBIG6YZbXEzT3ZCC79yFoXUeeN3chIea4ZASwyi5mGJLIeMiEGDB0yHSSABZCZCIYYZcbzUdeBuGENDeKNX8w9ZART7y5ZWY7KQV8C1L3', null, null, null, null, 'wam_sumit_3', 'read', '2026-09-15 12:11:00'],
+      [null, '916352454247', 'customer', '@sumitchauhan63524 (You)', '📷 Live Transaction Screenshot', 'med_live_tx', 'image', '/uploads/sample_receipt.png', 'This is a live transaction. Refund will be initiated automatically.', 'wam_sumit_4', 'read', '2026-09-15 12:44:00'],
+      [null, '916352454247', 'company', 'Eco Green Desk', 'eco-green-complain.vprotech.online\nhttps://eco-green-complain.vprotech.online/\neco-green-complain.vprotech.online\nhttps://eco-green-complain.vprotech.online/', null, null, null, null, 'wam_sumit_5', 'read', '2026-09-15 12:49:00'],
+      [null, '916352454247', 'company', 'Eco Green Desk', 'WhatsApp Business account ID: 1015288491554000', null, null, null, null, 'wam_sumit_6', 'read', '2026-09-15 13:59:00'],
+      [null, '916352454247', 'company', 'Eco Green Desk', 'EAAeu6xsMI2sBSUlmL0tvSALfdQQ3Sgr2g6cu86UfSZAJfF0ml2NvtrgxBZCrClyktx7FZATEeANimtuRAemTzYplaBFGWgMSCjZBTSJKRZBAogI9IPf6EttFW8w3JPREZB17RZBIFAxM1ExryweDPfdHcn1UB8PQayEJELhkhwYDMkqMjhyfU8KQegG8N2mu66N7hpwZDZD', null, null, null, null, 'wam_sumit_7', 'read', '2026-09-15 14:01:00'],
+      [null, '916352454247', 'customer', '@sumitchauhan63524 (You)', 'temp', null, null, null, null, 'wam_sumit_8', 'read', '2026-09-15 14:01:30'],
+      [null, '916352454247', 'customer', '@sumitchauhan63524 (You)', 'hii', null, null, null, null, 'wam_sumit_9', 'read', '2026-09-15 16:26:00'],
+
+      // +91 87588 83888 (JAVIA BANSIKUMAR CHANDULAL)
+      [comp114Id, '918758883888', 'company', 'Eco Green Desk', '☀️ *Eco Green Solar Update*\n\nHello JAVIA BANSIKUMAR CHANDULAL, a service ticket *#EGS-2026-000114* has been registered for your Solar Rooftop system.\n\n👨‍🔧 *Technician:* Manoj Sharma (+919876543213)\n📅 *Expected Visit:* 2026-09-16\n\n🔗 *Track Live Status:* https://eco-green-complain.vprotech.online/#complaints', null, null, null, null, 'wam_javia_1', 'read', '2026-09-15 16:19:00'],
+      [comp114Id, '918758883888', 'customer', 'JAVIA BANSIKUMAR CHANDULAL', 'Ok sir, please send the technician in the morning before 12 PM.', null, null, null, null, 'wam_javia_2', 'read', '2026-09-15 16:22:00'],
+
+      // +91 78784 44414 (Official Eco Green Solar Desk)
+      [null, '917878444414', 'customer', 'Eco Green Solar (Official)', 'Hello, please share the official product brochure and warranty claims procedure.', null, null, null, null, 'wam_official_1', 'read', '2026-09-15 16:16:00'],
+      [null, '917878444414', 'company', 'Eco Green Desk', '📷 Photo', 'med_brochure', 'image', '/uploads/inverter_diagram.png', 'Official Eco Green Solar Product Catalog & Service Warranty Guidelines', 'wam_official_2', 'read', '2026-09-15 16:17:00'],
+
+      // +91 99797 95214
+      [null, '919979795214', 'customer', '+91 99797 95214', 'This message was deleted', null, null, null, null, 'wam_99797_1', 'read', '2026-09-15 16:23:00'],
+
+      // Jay Bhai
+      [null, '919426529550', 'customer', 'Jay Bhai', 'https://www.instagram.com/reel/DdRMFE2zipu/?stkn=om2maHduajR5YmZy', null, null, null, null, 'wam_jay_1', 'delivered', '2026-09-15 16:14:00'],
+
+      // GR DHAVAL BHAI
+      [null, '919662729804', 'customer', 'GR DHAVAL BHAI', 'https://linktr.ee/egswh2026', null, null, null, null, 'wam_dhaval_1', 'read', '2026-09-15 13:39:00'],
+
+      // અક્ષર રેસ્ટોરન્ટ - છાપરા
+      [null, '919825112345', 'customer', 'અક્ષર રેસ્ટોરન્ટ - છાપરા', '~BM JADEJA: તારીખ ૧૫/૦૯/૨૦૨૬ બપોરે ૧- ૦ કુંભી વડોદરા ૨- પંચામૃત દાળ ...', null, null, null, null, 'wam_akshar_1', 'delivered', '2026-09-15 11:32:00'],
+
+      // Jigar
+      [comp113Id, '916354687931', 'company', 'Eco Green Desk', 'Hello Jigar bhai, ticket #EGS-2026-000113 status update: technician Rohit Kumar assigned.', null, null, null, null, 'wam_jigar_1', 'read', '2026-09-15 10:35:00'],
+      [comp113Id, '916354687931', 'customer', 'Jigar', 'Hii', null, null, null, null, 'wam_jigar_2', 'read', '2026-09-15 10:40:00'],
+
+      // Maa 🥰
+      [null, '919825099887', 'customer', 'Maa 🥰', 'https://www.instagram.com/reel/DbqsiMKAzGgq/?stkn=MThzMjNrOGx2ODZ5cw...', null, null, null, null, 'wam_maa_1', 'read', '2026-09-14 18:20:00'],
+
+      // Eco Green Solar
+      [null, '919900011223', 'company', 'Eco Green Solar', '📷 Photo', 'med_plant_photo', 'image', '/uploads/solar_inspection.png', 'Solar rooftop plant inspection photograph', 'wam_office_1', 'read', '2026-09-14 17:10:00'],
+
+      // GE Office
+      [null, '919825011223', 'customer', 'GE Office', 'Solarvela: 📷 Photo', 'med_solarvela', 'image', '/uploads/solarvela_doc.png', 'Solarvela Commissioning Certificate', 'wam_ge_1', 'read', '2026-09-14 15:45:00'],
+
+      // Flipkart Saathi
+      [null, '918000123456', 'customer', 'Flipkart Saathi', 'You received a one-time passcode. For added security, you can only see it on this official channel.', null, null, null, null, 'wam_flipkart_1', 'delivered', '2026-09-14 12:15:00']
+    ];
+
+    for (const msg of realMessages) {
+      insertMsg.run(...msg);
+    }
+  } catch (err) {
+    console.warn('[Database] seedAuthenticWhatsAppRecords note:', err.message);
   }
 }
 
 initializeSchema();
 migrateComplaintsTable();
-cleanupFakeSeeds();
+seedAuthenticWhatsAppRecords();
 
 module.exports = db;

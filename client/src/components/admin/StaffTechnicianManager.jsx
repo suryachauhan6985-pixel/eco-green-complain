@@ -67,6 +67,10 @@ export const StaffTechnicianManager = () => {
     setIsEditModalOpen(true);
   };
 
+  const handleOpenEdit = (member, role) => {
+    openEditModal(member, role === 'technician');
+  };
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -185,13 +189,21 @@ export const StaffTechnicianManager = () => {
     try {
       setLoading(true);
       const [techRes, usersRes] = await Promise.all([
-        api.getTechnicians(),
-        api.getUsers()
+        api.getTechnicians().catch(e => { console.warn('Tech load error:', e); return []; }),
+        api.getUsers().catch(e => { console.warn('Users load error:', e); return []; })
       ]);
-      setTechnicians(techRes);
-      setUsers(usersRes);
+      const techList = Array.isArray(techRes?.technicians) 
+        ? techRes.technicians 
+        : (Array.isArray(techRes) ? techRes : []);
+      const userList = Array.isArray(usersRes?.users) 
+        ? usersRes.users 
+        : (Array.isArray(usersRes) ? usersRes : []);
+      setTechnicians(techList);
+      setUsers(userList);
     } catch (err) {
       console.error('Failed to load team data:', err);
+      setTechnicians([]);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -269,7 +281,9 @@ export const StaffTechnicianManager = () => {
     setTimeout(() => setActionSuccess(''), 3500);
   };
 
-  const staffUsers = users.filter(u => u.role === 'staff' || u.role === 'admin');
+  const staffUsers = Array.isArray(users) 
+    ? users.filter(u => u && (u.role === 'staff' || u.role === 'admin')) 
+    : [];
 
   return (
     <div className="space-y-4">
@@ -305,7 +319,7 @@ export const StaffTechnicianManager = () => {
               }`}
             >
               <Wrench className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Technicians ({technicians.length})</span>
+              <span>Technicians ({(technicians || []).length})</span>
             </button>
 
             <button
@@ -317,7 +331,7 @@ export const StaffTechnicianManager = () => {
               }`}
             >
               <Shield className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Office Staff ({staffUsers.length})</span>
+              <span>Office Staff ({(staffUsers || []).length})</span>
             </button>
 
             <button
@@ -329,7 +343,7 @@ export const StaffTechnicianManager = () => {
               }`}
             >
               <Layers className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Catalog & Categories ({products.length})</span>
+              <span>Catalog & Categories ({(products || []).length})</span>
             </button>
           </div>
 
@@ -355,7 +369,7 @@ export const StaffTechnicianManager = () => {
       ) : activeTab === 'technicians' ? (
         /* Technicians 2-Column Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {technicians.map((t) => (
+          {(technicians || []).map((t) => (
             <div
               key={t.id}
               className={`rounded-xl border p-4 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between gap-3 relative ${
@@ -497,7 +511,7 @@ export const StaffTechnicianManager = () => {
       ) : activeTab === 'staff' ? (
         /* Staff Users 2-Column Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {staffUsers.map((u) => (
+          {(staffUsers || []).map((u) => (
             <div
               key={u.id}
               className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between gap-3"
@@ -573,7 +587,7 @@ export const StaffTechnicianManager = () => {
               <div>
                 <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                   <Layers className="w-4 h-4 text-emerald-600" />
-                  Solar Product Catalog ({products.length})
+                  Solar Product Catalog ({(products || []).length})
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Manage standard and custom solar equipment serviced by Eco Green Solar.
@@ -583,7 +597,7 @@ export const StaffTechnicianManager = () => {
 
             {/* Products Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
-              {products.map((p) => (
+              {(products || []).map((p) => (
                 <div key={p.id || p.name} className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col justify-between gap-2">
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -656,7 +670,7 @@ export const StaffTechnicianManager = () => {
                   onChange={e => setSelectedProductForCat(e.target.value)}
                   className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
-                  {products.map(p => (
+                  {(products || []).map(p => (
                     <option key={p.name} value={p.name}>{p.name}</option>
                   ))}
                 </select>
@@ -666,17 +680,17 @@ export const StaffTechnicianManager = () => {
             {/* List of categories for the selected product */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-                <span>Active Categories for <strong className="text-slate-800">{selectedProductForCat}</strong> ({categories.filter(c => c.product_type === selectedProductForCat).length})</span>
+                <span>Active Categories for <strong className="text-slate-800">{selectedProductForCat}</strong> ({(categories || []).filter(c => c.product_type === selectedProductForCat).length})</span>
                 <span>Actions</span>
               </div>
 
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl bg-slate-50/50 max-h-80 overflow-y-auto">
-                {categories.filter(c => c.product_type === selectedProductForCat).length === 0 ? (
+                {(categories || []).filter(c => c.product_type === selectedProductForCat).length === 0 ? (
                   <div className="p-6 text-center text-xs text-slate-400">
                     No custom categories defined for this product. Default system list applies.
                   </div>
                 ) : (
-                  categories
+                  (categories || [])
                     .filter(c => c.product_type === selectedProductForCat)
                     .map((cat) => (
                       <div key={cat.id} className="p-3 flex items-center justify-between gap-2 hover:bg-white transition-colors">

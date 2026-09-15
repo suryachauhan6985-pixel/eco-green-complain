@@ -37,15 +37,19 @@ export const TemplateManager = () => {
     try {
       setLoading(true);
       const res = await api.getTemplates();
-      setTemplates(res.data);
-      if (res.data.length > 0 && !selectedTemplate) {
-        setSelectedTemplate(res.data[0]);
-        setWhatsappBody(res.data[0].whatsapp_body || '');
-        setEmailSubject(res.data[0].email_subject || '');
-        setEmailBody(res.data[0].email_body || '');
+      const list = Array.isArray(res?.templates) 
+        ? res.templates 
+        : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      setTemplates(list);
+      if (list.length > 0 && !selectedTemplate) {
+        setSelectedTemplate(list[0]);
+        setWhatsappBody(list[0].whatsapp_body || '');
+        setEmailSubject(list[0].email_subject || '');
+        setEmailBody(list[0].email_body || '');
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch templates:', err);
+      setTemplates([]);
     } finally {
       setLoading(false);
     }
@@ -119,7 +123,7 @@ export const TemplateManager = () => {
           </span>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden divide-y divide-slate-100">
-            {templates.map((tmpl) => {
+            {(Array.isArray(templates) ? templates : []).map((tmpl) => {
               const isSelected = selectedTemplate?.id === tmpl.id;
               return (
                 <button
