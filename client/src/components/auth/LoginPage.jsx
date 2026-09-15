@@ -91,25 +91,25 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black text-white leading-tight mb-2">
-              Clean Energy Service & Field Support Hub
+              Empowering Sustainable Energy & Customer Care
             </h2>
             <p className="text-xs text-emerald-100/90 leading-relaxed mb-6">
-              Enterprise customer complaint registration, dynamic 6,300+ warranty lookup, and automated WhatsApp & Email tracking.
+              Dedicated service and technical support portal committed to clean energy reliability, rapid response, and seamless on-site assistance.
             </p>
 
-            {/* Feature Pills */}
-            <div className="space-y-3">
+            {/* Core Values & Commitments */}
+            <div className="space-y-3.5">
               <div className="flex items-start gap-2.5 text-xs text-emerald-50">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>3 Core Products:</strong> Solar Rooftops, Water Heaters & Heat Pumps</span>
+                <span><strong>Dedicated Customer Support:</strong> Prompt assistance for residential and commercial solar installations.</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-emerald-50">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>5-Year Warranty Engine:</strong> Automated check on 6,100+ installations</span>
+                <span><strong>Certified Field Specialists:</strong> Trained technical experts ensuring optimal system performance and safety.</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-emerald-50">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>Live Multi-Channel Alerts:</strong> Real-time WhatsApp & Email dispatch</span>
+                <span><strong>Seamless Service Lifecycle:</strong> Transparent tracking from complaint registration to verified on-site resolution.</span>
               </div>
             </div>
           </div>
@@ -138,7 +138,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
             {/* 1-Click Role Quick Buttons */}
             <div className="mb-5">
               <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                1-Click Fast Demo Login
+                Quick Role Selection
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {DEMO_ACCOUNTS.map((acc) => {

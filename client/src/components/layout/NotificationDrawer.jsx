@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   X, Bell, MessageSquare, Mail, RefreshCw, Trash2, CheckCheck, 
   ExternalLink, Sparkles, Send, ShieldAlert 
@@ -8,6 +9,7 @@ import {
 
 export const NotificationDrawer = ({ isOpen, onClose }) => {
   const { unreadSimulatedCount, setUnreadSimulatedCount } = useAuth();
+  const { confirm, showToast } = useDialog();
   const [messages, setMessages] = useState([]);
   const [filter, setFilter] = useState('all'); // all | whatsapp | email
   const [loading, setLoading] = useState(false);
@@ -57,11 +59,18 @@ export const NotificationDrawer = ({ isOpen, onClose }) => {
   }, [isOpen]);
 
   const handleClear = async () => {
-    if (confirm('Clear all simulated notifications?')) {
-      await api.clearSimulatedNotifications();
-      setMessages([]);
-      setUnreadSimulatedCount(0);
-    }
+    const ok = await confirm({
+      title: 'Clear Notifications?',
+      message: 'Are you sure you want to clear all simulated notification logs?',
+      type: 'danger',
+      confirmText: 'Clear All'
+    });
+    if (!ok) return;
+
+    await api.clearSimulatedNotifications();
+    setMessages([]);
+    setUnreadSimulatedCount(0);
+    showToast('All notifications cleared', 'info');
   };
 
   const handleResend = async (logId) => {
@@ -69,8 +78,9 @@ export const NotificationDrawer = ({ isOpen, onClose }) => {
       setResendingId(logId);
       await api.resendNotification(logId);
       await fetchMessages();
+      showToast('Notification resent successfully', 'success');
     } catch (err) {
-      alert('Failed to resend: ' + err.message);
+      showToast('Failed to resend: ' + err.message, 'error');
     } finally {
       setResendingId(null);
     }

@@ -5,8 +5,10 @@ import {
   Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X, Edit3, IndianRupee,
   Layers, Tag
 } from 'lucide-react';
+import { useDialog } from '../../context/DialogContext';
 
 export const StaffTechnicianManager = () => {
+  const { confirm, alert, showToast: showGlobalToast } = useDialog();
   const [activeTab, setActiveTab] = useState('technicians'); // 'technicians' | 'staff' | 'catalog'
   const [technicians, setTechnicians] = useState([]);
   const [users, setUsers] = useState([]);
@@ -24,6 +26,18 @@ export const StaffTechnicianManager = () => {
   const [newProdDesc, setNewProdDesc] = useState('');
   const [addingProd, setAddingProd] = useState(false);
 
+  // Edit Member Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    area_zone: '',
+    specialization: '',
+    daily_capacity: 5
+  });
+
   // Add Form State
   const [formData, setFormData] = useState({
     name: '',
@@ -35,63 +49,43 @@ export const StaffTechnicianManager = () => {
     specialization: 'Solar Rooftop Systems'
   });
 
-  // Edit State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editType, setEditType] = useState('technician'); // 'technician' | 'staff'
-  const [editingMember, setEditingMember] = useState(null);
-  const [editFormData, setEditFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    password: '',
-    role: 'staff',
-    area_zone: '',
-    specialization: ''
-  });
+  useEffect(() => {
+    loadData();
+    loadCatalog();
+  }, []);
 
-  const handleOpenEdit = (member, type) => {
-    setEditType(type);
-    setEditingMember(member);
+  const openEditModal = (member, isTech = false) => {
+    setEditingMember({ ...member, isTech });
     setEditFormData({
       name: member.name || '',
-      email: member.email || '',
       phone: member.phone || '',
-      password: '',
-      role: member.role || (type === 'technician' ? 'technician' : 'staff'),
+      email: member.email || '',
       area_zone: member.area_zone || 'North Zone (Indiranagar / Hebbal)',
-      specialization: member.specialization || 'Solar Rooftop Systems'
+      specialization: member.specialization || 'Solar Rooftop Systems',
+      daily_capacity: member.daily_capacity || 5
     });
     setIsEditModalOpen(true);
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    if (!editingMember) return;
     try {
-      if (editType === 'technician') {
-        await api.updateTechnician(editingMember.id, {
-          name: editFormData.name,
-          email: editFormData.email,
-          phone: editFormData.phone,
-          area_zone: editFormData.area_zone,
-          specialization: editFormData.specialization
-        });
-        showToast(`Technician "${editFormData.name}" updated successfully!`);
+      if (editingMember.isTech) {
+        await api.updateTechnician(editingMember.id, editFormData);
+        showToast(`Technician ${editFormData.name} updated successfully!`);
       } else {
         await api.updateUser(editingMember.id, {
           name: editFormData.name,
-          email: editFormData.email,
           phone: editFormData.phone,
-          role: editFormData.role,
-          password: editFormData.password || undefined
+          email: editFormData.email
         });
-        showToast(`Staff member "${editFormData.name}" updated successfully!`);
+        showToast(`Staff member ${editFormData.name} updated successfully!`);
       }
       setIsEditModalOpen(false);
       setEditingMember(null);
       loadData();
     } catch (err) {
-      alert('Failed to update member: ' + err.message);
+      showGlobalToast('Failed to update member: ' + err.message, 'error');
     }
   };
 
@@ -125,20 +119,27 @@ export const StaffTechnicianManager = () => {
       showToast(`Category "${newCatName.trim()}" added to ${selectedProductForCat}!`);
       await loadCatalog();
     } catch (err) {
-      alert('Failed to add category: ' + err.message);
+      showGlobalToast('Failed to add category: ' + err.message, 'error');
     } finally {
       setAddingCat(false);
     }
   };
 
   const handleDeleteCategory = async (id, name) => {
-    if (!window.confirm(`Delete issue category "${name}"?`)) return;
+    const ok = await confirm({
+      title: 'Delete Category',
+      message: `Are you sure you want to delete issue category "${name}"? Existing complaints will retain their records.`,
+      type: 'danger',
+      confirmText: 'Delete Category'
+    });
+    if (!ok) return;
+
     try {
       await api.deleteCategory(id);
       showToast(`Category "${name}" removed`);
       await loadCatalog();
     } catch (err) {
-      alert('Failed to delete category: ' + err.message);
+      showGlobalToast('Failed to delete category: ' + err.message, 'error');
     }
   };
 
@@ -156,20 +157,27 @@ export const StaffTechnicianManager = () => {
       showToast(`Product "${newProdName.trim()}" added to catalog!`);
       await loadCatalog();
     } catch (err) {
-      alert('Failed to add product: ' + err.message);
+      showGlobalToast('Failed to add product: ' + err.message, 'error');
     } finally {
       setAddingProd(false);
     }
   };
 
   const handleDeleteProduct = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete product "${name}" from catalog?`)) return;
+    const ok = await confirm({
+      title: 'Delete Product',
+      message: `Are you sure you want to delete product "${name}" from catalog?`,
+      type: 'danger',
+      confirmText: 'Delete Product'
+    });
+    if (!ok) return;
+
     try {
       await api.deleteProduct(id);
       showToast(`Product "${name}" deleted`);
       await loadCatalog();
     } catch (err) {
-      alert('Failed to delete product: ' + err.message);
+      showGlobalToast('Failed to delete product: ' + err.message, 'error');
     }
   };
 
@@ -178,51 +186,60 @@ export const StaffTechnicianManager = () => {
       setLoading(true);
       const [techRes, usersRes] = await Promise.all([
         api.getTechnicians(),
-        api.getUsers().catch(() => ({ users: [] }))
+        api.getUsers()
       ]);
-      setTechnicians(techRes.technicians || []);
-      setUsers(usersRes.users || []);
-      await loadCatalog();
+      setTechnicians(techRes);
+      setUsers(usersRes);
     } catch (err) {
-      console.error('Error loading staff/technicians:', err);
+      console.error('Failed to load team data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const handleToggleAvailability = async (id, currentStatus) => {
+  const handleToggleAvailability = async (tech) => {
     try {
-      await api.updateTechnicianAvailability(id, !currentStatus);
+      await api.updateTechnicianStatus(tech.id, !tech.is_available);
       showToast('Technician availability updated');
       loadData();
     } catch (err) {
-      alert('Failed to update availability: ' + err.message);
+      showGlobalToast('Failed to update availability: ' + err.message, 'error');
     }
   };
 
   const handleDeleteTechnician = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to remove technician "${name}"?`)) return;
+    const ok = await confirm({
+      title: 'Remove Technician',
+      message: `Are you sure you want to remove technician "${name}"?`,
+      type: 'danger',
+      confirmText: 'Remove Technician'
+    });
+    if (!ok) return;
+
     try {
       await api.deleteTechnician(id);
       showToast(`Technician ${name} removed`);
       loadData();
     } catch (err) {
-      alert('Failed to delete technician: ' + err.message);
+      showGlobalToast('Failed to delete technician: ' + err.message, 'error');
     }
   };
 
   const handleDeleteUser = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to remove staff member "${name}"?`)) return;
+    const ok = await confirm({
+      title: 'Remove Staff Member',
+      message: `Are you sure you want to remove staff member "${name}"?`,
+      type: 'danger',
+      confirmText: 'Remove Staff'
+    });
+    if (!ok) return;
+
     try {
       await api.deleteUser(id);
       showToast(`Staff member ${name} removed`);
       loadData();
     } catch (err) {
-      alert('Failed to delete user: ' + err.message);
+      showGlobalToast('Failed to delete user: ' + err.message, 'error');
     }
   };
 
@@ -243,7 +260,7 @@ export const StaffTechnicianManager = () => {
       });
       loadData();
     } catch (err) {
-      alert('Failed to add member: ' + err.message);
+      showGlobalToast('Failed to add member: ' + err.message, 'error');
     }
   };
 

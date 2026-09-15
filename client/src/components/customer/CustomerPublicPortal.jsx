@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
+import { useDialog } from '../../context/DialogContext';
 import { 
   Search, Sun, Droplets, Wind, CheckCircle2, Clock, 
   Wrench, Phone, Star, RotateCcw, AlertTriangle, Send, ArrowRight
@@ -19,6 +20,7 @@ export const CustomerPublicPortal = ({
   isStandalone = false, 
   onExitStandalone 
 }) => {
+  const { showToast } = useDialog();
   const [ticketQuery, setTicketQuery] = useState(initialTicketId || '');
   const [trackingData, setTrackingData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -78,8 +80,9 @@ export const CustomerPublicPortal = ({
         feedback_comments: feedbackText
       });
       setFeedbackSubmitted(true);
+      showToast('Thank you! Your feedback has been recorded.', 'success');
     } catch (err) {
-      alert('Failed to submit feedback: ' + err.message);
+      showToast('Failed to submit feedback: ' + err.message, 'error');
     }
   };
 
@@ -91,9 +94,9 @@ export const CustomerPublicPortal = ({
       await api.reopenComplaint(trackingData.complaint.id, reopenReason);
       setShowReopenInput(false);
       await handleSearch();
-      alert('Ticket reopened. A service supervisor will contact you.');
+      showToast('Ticket reopened. A service supervisor will contact you shortly.', 'success');
     } catch (err) {
-      alert('Failed to reopen ticket: ' + err.message);
+      showToast('Failed to reopen ticket: ' + err.message, 'error');
     } finally {
       setReopening(false);
     }

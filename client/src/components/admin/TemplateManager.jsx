@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
+import { useDialog } from '../../context/DialogContext';
 import { 
   Settings, MessageSquare, Mail, Save, RefreshCw, 
   HelpCircle, Code2, Check, Key, Shield, Sparkles 
@@ -20,6 +21,7 @@ const PLACEHOLDERS = [
 ];
 
 export const TemplateManager = () => {
+  const { showToast } = useDialog();
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,13 +36,16 @@ export const TemplateManager = () => {
   const fetchTemplates = async () => {
     try {
       setLoading(true);
-      const data = await api.getTemplates();
-      setTemplates(data.templates || []);
-      if (data.templates?.length > 0 && !selectedTemplate) {
-        selectTemplate(data.templates[0]);
+      const res = await api.getTemplates();
+      setTemplates(res.data);
+      if (res.data.length > 0 && !selectedTemplate) {
+        setSelectedTemplate(res.data[0]);
+        setWhatsappBody(res.data[0].whatsapp_body || '');
+        setEmailSubject(res.data[0].email_subject || '');
+        setEmailBody(res.data[0].email_body || '');
       }
     } catch (err) {
-      console.error('Failed to load templates:', err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -52,9 +57,9 @@ export const TemplateManager = () => {
 
   const selectTemplate = (tmpl) => {
     setSelectedTemplate(tmpl);
-    setWhatsappBody(tmpl.whatsapp_body);
-    setEmailSubject(tmpl.email_subject);
-    setEmailBody(tmpl.email_body);
+    setWhatsappBody(tmpl.whatsapp_body || '');
+    setEmailSubject(tmpl.email_subject || '');
+    setEmailBody(tmpl.email_body || '');
     setSavedSuccess(false);
   };
 
@@ -69,10 +74,11 @@ export const TemplateManager = () => {
         email_body: emailBody
       });
       setSavedSuccess(true);
+      showToast('Notification template updated successfully', 'success');
       await fetchTemplates();
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
-      alert('Failed to save template: ' + err.message);
+      showToast('Failed to save template: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   Wrench, Phone, MessageCircle, MapPin, CheckCircle, Clock, 
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
@@ -10,6 +11,7 @@ import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
 export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
   const { currentUser } = useAuth();
+  const { showToast } = useDialog();
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('active'); // active | resolved
@@ -54,8 +56,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
       const newStatus = !techProfile.is_available;
       await api.updateTechnicianAvailability(techProfile.id, newStatus);
       setTechProfile(prev => ({ ...prev, is_available: newStatus ? 1 : 0 }));
+      showToast(newStatus ? 'Duty status set to: ON DUTY' : 'Duty status set to: OFF DUTY', 'info');
     } catch (err) {
-      alert('Failed to update status: ' + err.message);
+      showToast('Failed to update status: ' + err.message, 'error');
     }
   };
 

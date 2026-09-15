@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { DialogProvider, useDialog } from './context/DialogContext';
 import { Navbar } from './components/layout/Navbar';
 import { NotificationDrawer } from './components/layout/NotificationDrawer';
 import { ComplaintList } from './components/complaints/ComplaintList';
@@ -124,10 +125,17 @@ function AppContent() {
     return <LoginPage onSwitchToCustomer={() => switchRole('customer')} />;
   }
 
+  const { confirm, showToast } = useDialog();
+
   const handleReloadDemoData = async () => {
-    if (!window.confirm('Are you sure you want to refresh sample demo complaints? All your newly created complaints will remain safe.')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Reload Sample Complaints?',
+      message: 'Are you sure you want to refresh sample demo complaints? All your newly created complaints will remain safe.',
+      type: 'warning',
+      confirmText: 'Reload Sample Data'
+    });
+    if (!ok) return;
+
     try {
       api.resetDemoData();
       try {
@@ -136,10 +144,9 @@ function AppContent() {
         // Backend offline, local mock already reset
       }
       setRefreshKey(k => k + 1);
-      setResetSuccessToast(true);
-      setTimeout(() => setResetSuccessToast(false), 3500);
+      showToast('Demo Data successfully reset with 12+ realistic complaints!', 'success');
     } catch (err) {
-      alert('Failed to reset demo data: ' + err.message);
+      showToast('Failed to reset demo data: ' + err.message, 'error');
     }
   };
 
@@ -409,7 +416,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <AppContent />
+        <DialogProvider>
+          <AppContent />
+        </DialogProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

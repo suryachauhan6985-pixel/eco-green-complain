@@ -10,6 +10,7 @@ import {
   MessageCircle, Copy, Eye, FileText, UserCheck
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
+import { useDialog } from '../../context/DialogContext';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -21,6 +22,7 @@ export const ComplaintDetailDrawer = ({
   onViewCustomerHistory 
 }) => {
   const { currentUser } = useAuth();
+  const { confirm, alert, showToast } = useDialog();
   const [ticket, setTicket] = useState(null);
   const [attachments, setAttachments] = useState([]);
   const [timeline, setTimeline] = useState([]);
@@ -117,7 +119,7 @@ export const ComplaintDetailDrawer = ({
 
   const handleAssign = async (e) => {
     e.preventDefault();
-    if (!selectedTechId) return alert('Select a technician to assign');
+    if (!selectedTechId) return showToast('Please select a technician to assign', 'error');
     try {
       setAssigning(true);
       await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
@@ -141,8 +143,9 @@ export const ComplaintDetailDrawer = ({
         customerWa,
         techWa
       });
+      showToast(`Technician ${assignedTech?.name || ''} assigned successfully!`, 'success');
     } catch (err) {
-      alert('Failed to assign technician: ' + err.message);
+      showToast('Failed to assign technician: ' + err.message, 'error');
     } finally {
       setAssigning(false);
     }
@@ -154,8 +157,9 @@ export const ComplaintDetailDrawer = ({
       setDirectSendingCust(true);
       await api.sendDirectWhatsApp(assignSuccessModal.ticket.customer_phone, assignSuccessModal.customerWa.rawText);
       setDirectSentCust(true);
+      showToast('Message sent to customer via WhatsApp!', 'success');
     } catch (e) {
-      alert('Failed to send to customer via WhatsApp Gateway: ' + e.message);
+      showToast('Failed to send to customer via WhatsApp: ' + e.message, 'error');
     } finally {
       setDirectSendingCust(false);
     }
@@ -167,8 +171,9 @@ export const ComplaintDetailDrawer = ({
       setDirectSendingTech(true);
       await api.sendDirectWhatsApp(assignSuccessModal.tech.phone, assignSuccessModal.techWa.rawText);
       setDirectSentTech(true);
+      showToast('Work order sent to technician via WhatsApp!', 'success');
     } catch (e) {
-      alert('Failed to send to technician via WhatsApp Gateway: ' + e.message);
+      showToast('Failed to send to technician via WhatsApp: ' + e.message, 'error');
     } finally {
       setDirectSendingTech(false);
     }
@@ -186,8 +191,9 @@ export const ComplaintDetailDrawer = ({
         setDirectSentTech(true);
       }
       setDirectSentBoth(true);
+      showToast('WhatsApp alerts sent to both Customer and Technician!', 'success');
     } catch (e) {
-      alert('Failed to send messages via WhatsApp Gateway: ' + e.message);
+      showToast('Failed to send messages via WhatsApp: ' + e.message, 'error');
     } finally {
       setDirectSendingBoth(false);
     }
@@ -206,8 +212,9 @@ export const ComplaintDetailDrawer = ({
       setFollowUpNote('');
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+      showToast('Follow-up note added to ticket history', 'success');
     } catch (err) {
-      alert('Failed to add note: ' + err.message);
+      showToast('Failed to add note: ' + err.message, 'error');
     } finally {
       setSubmittingNote(false);
     }
@@ -215,7 +222,7 @@ export const ComplaintDetailDrawer = ({
 
   const handleResolve = async (e) => {
     e.preventDefault();
-    if (!resolutionNotes.trim()) return alert('Please enter resolution notes');
+    if (!resolutionNotes.trim()) return showToast('Please enter resolution notes', 'error');
     try {
       setResolving(true);
       const data = new FormData();
@@ -226,8 +233,9 @@ export const ComplaintDetailDrawer = ({
       await api.resolveComplaint(ticket.id, data);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+      showToast('Complaint resolved successfully!', 'success');
     } catch (err) {
-      alert('Failed to resolve complaint: ' + err.message);
+      showToast('Failed to resolve complaint: ' + err.message, 'error');
     } finally {
       setResolving(false);
     }
@@ -239,8 +247,9 @@ export const ComplaintDetailDrawer = ({
       await api.closeComplaint(ticket.id, closureRemarks);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+      showToast('Ticket closed successfully!', 'success');
     } catch (err) {
-      alert('Failed to close ticket: ' + err.message);
+      showToast('Failed to close ticket: ' + err.message, 'error');
     } finally {
       setClosing(false);
     }
@@ -253,8 +262,9 @@ export const ComplaintDetailDrawer = ({
       setReopenReason('');
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+      showToast('Complaint ticket reopened successfully', 'info');
     } catch (err) {
-      alert('Failed to reopen ticket: ' + err.message);
+      showToast('Failed to reopen ticket: ' + err.message, 'error');
     } finally {
       setReopening(false);
     }
@@ -293,9 +303,9 @@ export const ComplaintDetailDrawer = ({
       await fetchTicketDetails();
       setIsEditing(false);
       if (onComplaintUpdated) onComplaintUpdated();
-      alert('Complaint details updated successfully!');
+      showToast('Complaint details updated successfully!', 'success');
     } catch (err) {
-      alert('Failed to update complaint: ' + err.message);
+      showToast('Failed to update complaint: ' + err.message, 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -355,9 +365,9 @@ export const ComplaintDetailDrawer = ({
       setIsRecordingPayment(false);
       setShowUnderpaidWarning(false);
       if (onComplaintUpdated) onComplaintUpdated();
-      alert('Payment collected recorded successfully!');
+      showToast('Payment collected recorded successfully!', 'success');
     } catch (err) {
-      alert('Failed to record payment: ' + err.message);
+      showToast('Failed to record payment: ' + err.message, 'error');
     } finally {
       setSavingPayment(false);
     }
@@ -366,12 +376,22 @@ export const ComplaintDetailDrawer = ({
   const handleSettleWithCompany = async () => {
     if (!ticket) return;
     if (!ticket.assigned_technician_id) {
-      alert('Cannot settle technician cash on an unassigned complaint. Please assign a technician first.');
+      await alert({
+        title: 'Technician Assignment Required',
+        message: 'Cannot settle technician cash on an unassigned complaint. Please assign a technician first.',
+        type: 'warning'
+      });
       return;
     }
     const techName = ticket.assigned_tech_name || ticket.technician_name || 'the technician';
-    const confirmMsg = `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`;
-    if (!window.confirm(confirmMsg)) return;
+    const ok = await confirm({
+      title: 'Confirm Company Cash Deposit',
+      message: `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`,
+      type: 'payment',
+      confirmText: `Receive ₹${ticket.payment_collected}`,
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
 
     try {
       setSettlingCompany(true);
@@ -380,9 +400,9 @@ export const ComplaintDetailDrawer = ({
       });
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
-      alert(`₹${ticket.payment_collected} marked as received & settled with company!`);
+      showToast(`₹${ticket.payment_collected} marked as received & settled with company!`, 'success');
     } catch (err) {
-      alert('Failed to settle payment with company: ' + err.message);
+      showToast('Failed to settle payment with company: ' + err.message, 'error');
     } finally {
       setSettlingCompany(false);
     }
@@ -715,9 +735,14 @@ export const ComplaintDetailDrawer = ({
                           {ticket.company_settlement_status !== 'Settled with Company' && ['admin', 'staff'].includes(currentUser?.role) && (
                             <button
                               type="button"
-                              disabled={settlingCompany}
+                              disabled={settlingCompany || !ticket.assigned_technician_id}
                               onClick={handleSettleWithCompany}
-                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5"
+                              title={!ticket.assigned_technician_id ? 'Assign technician first before collecting' : 'Receive cash from technician into company account'}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5 ${
+                                !ticket.assigned_technician_id
+                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              }`}
                             >
                               <IndianRupee className="w-3.5 h-3.5" />
                               {settlingCompany ? 'Settling...' : 'Collect from Tech'}

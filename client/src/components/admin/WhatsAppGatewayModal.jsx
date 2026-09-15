@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
+import { useDialog } from '../../context/DialogContext';
 import { 
   MessageSquare, CheckCircle2, AlertCircle, RefreshCw, Smartphone, 
   Send, LogOut, ShieldCheck, Zap, X, Info
 } from 'lucide-react';
 
 export const WhatsAppGatewayModal = ({ isOpen, onClose, onStatusChange }) => {
+  const { confirm, showToast } = useDialog();
   const [gatewayStatus, setGatewayStatus] = useState({
     status: 'connecting',
     isConnected: false,
@@ -40,15 +42,21 @@ export const WhatsAppGatewayModal = ({ isOpen, onClose, onStatusChange }) => {
   }, [isOpen]);
 
   const handleLogout = async () => {
-    if (!window.confirm('Are you sure you want to unlink the WhatsApp account? You will need to scan the QR code again.')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Unlink WhatsApp Account?',
+      message: 'Are you sure you want to disconnect this WhatsApp session? You will need to scan the QR code again with your phone.',
+      type: 'danger',
+      confirmText: 'Unlink Session'
+    });
+    if (!ok) return;
+
     try {
       setLoading(true);
       await api.logoutWhatsApp();
       await fetchStatus();
+      showToast('WhatsApp session unlinked successfully', 'info');
     } catch (err) {
-      alert('Failed to disconnect: ' + err.message);
+      showToast('Failed to disconnect: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -57,7 +65,7 @@ export const WhatsAppGatewayModal = ({ isOpen, onClose, onStatusChange }) => {
   const handleSendTest = async (e) => {
     e.preventDefault();
     if (!testPhone.trim()) {
-      alert('Please enter a 10-digit mobile number');
+      showToast('Please enter a 10-digit mobile number', 'warning');
       return;
     }
 

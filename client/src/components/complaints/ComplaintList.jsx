@@ -83,22 +83,32 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
   const handleQuickSettle = async (e, complaint) => {
     e.stopPropagation();
     if (!complaint.assigned_technician_id && !complaint.technician_id) {
-      alert('Cannot collect technician cash on an unassigned complaint. Please assign a technician first.');
+      await alert({
+        title: 'Technician Assignment Required',
+        message: 'Cannot collect technician cash on an unassigned complaint. Please assign a technician to this ticket first.',
+        type: 'warning'
+      });
       return;
     }
-    const techName = complaint.technician_name || 'Technician';
+    const techName = complaint.technician_name || 'the assigned technician';
     const amount = complaint.payment_collected || 0;
-    if (!window.confirm(`Confirm receipt of ₹${amount} collected by ${techName} into Eco Green Solar Company account for Ticket #${complaint.ticket_id}?`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Confirm Cash Deposit',
+      message: `Confirm receipt of ₹${amount} cash collected by ${techName} into Eco Green Solar Company account for Ticket #${complaint.ticket_id}?`,
+      type: 'payment',
+      confirmText: `Receive ₹${amount}`,
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
     try {
       await api.settleCompanyPayment(complaint.id, {
         notes: `Quick cash settlement collected from ${techName} by ${currentUser?.name || 'Staff'}`
       });
       fetchComplaints();
-      alert(`₹${amount} successfully recorded as received by company!`);
+      showToast(`₹${amount} received and settled with company!`, 'success');
     } catch (err) {
-      alert('Failed to settle payment: ' + err.message);
+      showToast('Failed to settle payment: ' + err.message, 'error');
     }
   };
 

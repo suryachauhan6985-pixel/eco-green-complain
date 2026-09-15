@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
+import { useDialog } from '../../context/DialogContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, Upload, 
@@ -65,6 +66,7 @@ const getProductComponentIcon = (type) => {
 };
 
 export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint }) => {
+  const { showToast } = useDialog();
   const [directSending, setDirectSending] = useState(false);
   const [directSent, setDirectSent] = useState(false);
   const [directSendError, setDirectSendError] = useState(null);
@@ -279,7 +281,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.customer_name || !formData.customer_phone || !formData.customer_address || !formData.issue_description) {
-      alert('Please fill all required customer and issue details.');
+      showToast('Please fill all required customer and issue details.', 'warning');
       return;
     }
 
@@ -298,9 +300,10 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
       const res = await api.createComplaint(data);
       setCreatedTicket(res.complaint);
+      showToast('Complaint registered successfully', 'success');
       if (onComplaintCreated) onComplaintCreated(res.complaint);
     } catch (err) {
-      alert('Failed to create complaint: ' + err.message);
+      showToast('Failed to create complaint: ' + err.message, 'error');
     } finally {
       setSubmitting(false);
     }
