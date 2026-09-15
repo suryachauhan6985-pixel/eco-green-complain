@@ -302,9 +302,13 @@ export const ComplaintDetailDrawer = ({
   };
 
   const openPaymentModal = () => {
+    if (!ticket.assigned_technician_id) {
+      alert('⚠️ Pehle Technician assign karein! Bina technician assign kiye complaint ka payment record nahi kiya ja sakta.');
+      return;
+    }
     setPaymentData({
       payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
-      payment_method: ticket.assigned_technician_id ? 'Cash' : 'UPI',
+      payment_method: 'Cash',
       payment_notes: ''
     });
     setShowUnderpaidWarning(false);
@@ -312,8 +316,8 @@ export const ComplaintDetailDrawer = ({
   };
 
   const handleRecordPaymentSubmit = async (forceSubmit = false) => {
-    if (paymentData.payment_method === 'Cash' && !ticket.assigned_technician_id) {
-      alert('Cannot record "Cash to Technician" on an unassigned complaint. Please assign a technician first, or select "Direct Office Cash Deposit", "UPI", or "Bank Transfer".');
+    if (!ticket.assigned_technician_id) {
+      alert('⚠️ Pehle Technician assign karein! Bina technician assign kiye payment collect nahi ho sakta.');
       return;
     }
 
@@ -617,16 +621,41 @@ export const ComplaintDetailDrawer = ({
                         </div>
 
                         <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex flex-col justify-center">
-                          <button
-                            type="button"
-                            onClick={openPaymentModal}
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
-                          >
-                            <CreditCard className="w-3.5 h-3.5" />
-                            Record Payment Collected
-                          </button>
+                          {ticket.assigned_technician_id ? (
+                            <button
+                              type="button"
+                              onClick={openPaymentModal}
+                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                            >
+                              <CreditCard className="w-3.5 h-3.5" />
+                              Record Payment Collected
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => alert('⚠️ Pehle Technician assign karein! Bina technician assign kiye payment record nahi kiya ja sakta.')}
+                              className="w-full py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                              title="Pehle Technician assign karein"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                              Assign Tech First to Collect
+                            </button>
+                          )}
                         </div>
                       </div>
+
+                      {/* Prominent warning if no technician is assigned */}
+                      {!ticket.assigned_technician_id && (
+                        <div className="mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="block font-bold">⚠️ Technician Assign Nahi Hai</strong>
+                            <span className="text-[11px] text-amber-800 leading-relaxed">
+                              Yeh complaint abhi tak kisi technician ko assign nahi hui hai. Customer se payment collect karne ke liye pehle niche "Technician Assignment" section se technician assign karein.
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Company Settlement Status Banner */}
                       {Number(ticket.payment_collected || 0) > 0 && (
@@ -1355,6 +1384,13 @@ export const ComplaintDetailDrawer = ({
             </div>
 
             <div className="p-5 space-y-4 text-xs">
+              {!ticket.assigned_technician_id && (
+                <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs flex items-center gap-2 font-bold animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>⚠️ Technician Assign Nahi Hai! Pehle technician assign karein, bina technician ke payment save nahi ho sakti.</span>
+                </div>
+              )}
+
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
                 <div>
                   <span className="text-[11px] text-slate-500 block">Quoted Service Charge</span>
@@ -1387,8 +1423,8 @@ export const ComplaintDetailDrawer = ({
                     <button
                       type="button"
                       onClick={() => handleRecordPaymentSubmit(true)}
-                      disabled={savingPayment}
-                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold"
+                      disabled={savingPayment || !ticket.assigned_technician_id}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold disabled:opacity-50"
                     >
                       {savingPayment ? 'Saving...' : 'Confirm & Save Partial'}
                     </button>
@@ -1424,10 +1460,7 @@ export const ComplaintDetailDrawer = ({
                   onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium"
                 >
-                  <option value="Cash" disabled={!ticket.assigned_technician_id}>
-                    Cash to Technician {!ticket.assigned_technician_id ? '(Requires Technician Assigned)' : ''}
-                  </option>
-                  <option value="Office Cash">Direct Office Cash Deposit</option>
+                  <option value="Cash">Cash to Technician</option>
                   <option value="UPI">UPI / QR Code</option>
                   <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
                   <option value="Cheque">Cheque</option>
@@ -1459,8 +1492,8 @@ export const ComplaintDetailDrawer = ({
                   <button
                     type="button"
                     onClick={() => handleRecordPaymentSubmit(false)}
-                    disabled={savingPayment || !paymentData.payment_collected}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 disabled:opacity-50"
+                    disabled={savingPayment || !paymentData.payment_collected || !ticket.assigned_technician_id}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingPayment ? 'Saving...' : 'Record Payment'}
                   </button>

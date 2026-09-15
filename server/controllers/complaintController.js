@@ -445,15 +445,14 @@ async function recordPayment(req, res) {
 
     const isDirectPayment = payment_mode && (
       payment_mode.toLowerCase().includes('online') || 
-      payment_mode.toLowerCase().includes('office') || 
       payment_mode.toLowerCase().includes('bank') ||
       payment_mode.toLowerCase().includes('upi')
     );
 
-    // Enforce: On-site technician cash collection requires an assigned technician!
-    if (!isDirectPayment && amount > 0 && !complaint.assigned_technician_id) {
+    // Enforce: ALL payment collection strictly requires an assigned technician!
+    if (amount > 0 && !complaint.assigned_technician_id) {
       return res.status(400).json({ 
-        error: 'Cannot record field technician cash collection on an unassigned complaint. Please assign a technician to this ticket first, or choose Direct Office / Online Payment.' 
+        error: 'Cannot record payment on an unassigned complaint. Please assign a technician to this ticket first.' 
       });
     }
 
