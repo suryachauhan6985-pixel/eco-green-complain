@@ -881,5 +881,22 @@ export const api = {
   addProduct: (data) => request('/products', {
     method: 'POST',
     body: JSON.stringify(data)
+  }),
+  deleteProduct: (id) => request(`/products/${id}`, {
+    method: 'DELETE'
+  }),
+
+  // Dynamic Issue Categories
+  getCategories: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/categories${qs ? '?' + qs : ''}`);
+  },
+  addCategory: (data) => request('/categories', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  deleteCategory: (id) => request(`/categories/${id}`, {
+    method: 'DELETE'
   })
 };
+

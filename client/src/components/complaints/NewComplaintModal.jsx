@@ -111,19 +111,43 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [step, setStep] = useState('product'); // 'product' | 'form'
   const [productsList, setProductsList] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
-  const [showAddProductModal, setShowAddProductModal] = useState(false);
-  const [newProductName, setNewProductName] = useState('');
-  const [newProductDesc, setNewProductDesc] = useState('');
-  const [addingProduct, setAddingProduct] = useState(false);
+  const [categoriesList, setCategoriesList] = useState([]);
+  const [previewItem, setPreviewItem] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
       loadProducts();
+      loadCategories();
       if (!createdTicket) {
         setStep('product');
       }
     }
   }, [isOpen]);
+
+  const loadCategories = async () => {
+    try {
+      const res = await api.getCategories();
+      if (res && res.categories && res.categories.length > 0) {
+        setCategoriesList(res.categories);
+      }
+    } catch (e) {
+      console.warn('Failed to load dynamic categories:', e);
+    }
+  };
+
+  const getProductCategories = (prodName) => {
+    const dynamic = categoriesList
+      .filter(c => c.product_type === prodName)
+      .map(c => c.category_name);
+    if (dynamic.length > 0) return dynamic;
+    return PRODUCT_CATEGORIES[prodName] || [
+      'Equipment Not Starting / Tripping',
+      'Physical / Mechanical Damage',
+      'Electrical / Power Issue',
+      'Performance Degradation',
+      'Other Fault'
+    ];
+  };
 
   const loadProducts = async () => {
     try {
@@ -154,40 +178,13 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   };
 
   const handleSelectProduct = (prodName) => {
-    const defaultCategories = PRODUCT_CATEGORIES[prodName] || [
-      'Equipment Not Starting / Tripping',
-      'Physical Damage',
-      'Electrical / Power Issue',
-      'Performance Degradation',
-      'Other Fault'
-    ];
+    const availableCategories = getProductCategories(prodName);
     setFormData(prev => ({
       ...prev,
       product_type: prodName,
-      issue_category: defaultCategories[0]
+      issue_category: availableCategories[0] || 'Other Issue'
     }));
     setStep('form');
-  };
-
-  const handleCreateNewProduct = async (e) => {
-    e.preventDefault();
-    if (!newProductName.trim()) return;
-    try {
-      setAddingProduct(true);
-      const res = await api.addProduct({
-        name: newProductName.trim(),
-        description: newProductDesc.trim() || undefined
-      });
-      await loadProducts();
-      setShowAddProductModal(false);
-      setNewProductName('');
-      setNewProductDesc('');
-      handleSelectProduct(res.product?.name || newProductName.trim());
-    } catch (err) {
-      alert('Failed to add product: ' + err.message);
-    } finally {
-      setAddingProduct(false);
-    }
   };
 
   // Smart Customer Search & Warranty state
@@ -337,9 +334,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const resetAndClose = () => {
     setStep('product');
     setCreatedTicket(null);
-    setShowAddProductModal(false);
-    setNewProductName('');
-    setNewProductDesc('');
+    setPreviewItem(null);
     setDirectSending(false);
     setDirectSent(false);
     setDirectSendError(null);
@@ -626,22 +621,6 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     );
                   })}
 
-                  {/* Add New Product Option */}
-                  <button
-                    type="button"
-                    onClick={() => setShowAddProductModal(true)}
-                    className="p-4 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/30 text-left transition-all flex flex-col items-center justify-center gap-2 group min-h-[140px] cursor-pointer"
-                  >
-                    <div className="p-3 rounded-xl bg-slate-100 group-hover:bg-emerald-100 text-slate-500 group-hover:text-emerald-700 transition-colors">
-                      <Plus className="w-6 h-6" />
-                    </div>
-                    <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-800">
-                      + Add New Product
-                    </span>
-                    <span className="text-[10px] text-slate-400 text-center">
-                      Register a new product type
-                    </span>
-                  </button>
                 </div>
               )}
             </div>
@@ -1019,14 +998,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     onChange={(e) => setFormData({ ...formData, issue_category: e.target.value })}
                     className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
-                    {(PRODUCT_CATEGORIES[formData.product_type] || [
-                      'Equipment Not Starting / Tripping',
-                      'Physical / Mechanical Damage',
-                      'Electrical / Power Fault',
-                      'Performance Degradation',
-                      'Periodic Maintenance / Inspection',
-                      'Other Fault'
-                    ]).map((cat) => (
+                    {getProductCategories(formData.product_type).map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -1097,7 +1069,9 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                           <img 
                             src={item.preview} 
                             alt={item.name} 
-                            className="w-12 h-12 object-cover rounded-lg shrink-0 border border-slate-100" 
+                            onClick={() => setPreviewItem(item)}
+                            className="w-12 h-12 object-cover rounded-lg shrink-0 border border-slate-100 cursor-pointer hover:opacity-85 transition-opacity" 
+                            title="Click to zoom preview"
                           />
                         ) : (
                           <div className="w-12 h-12 bg-slate-100 rounded-lg shrink-0 flex items-center justify-center text-slate-500">
@@ -1110,14 +1084,26 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                           </p>
                           <p className="text-[10px] text-slate-400">{item.size}</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeFile(item.id)}
-                          className="p-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors shrink-0"
-                          title="Remove file"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {item.preview && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewItem(item)}
+                              className="p-1 rounded-full bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-700 transition-colors shrink-0 cursor-pointer"
+                              title="View full preview"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeFile(item.id)}
+                            className="p-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors shrink-0 cursor-pointer"
+                            title="Remove file"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1129,14 +1115,14 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 <button
                   type="button"
                   onClick={resetAndClose}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 transition-colors"
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
                   {submitting ? 'Registering & Dispatching...' : 'Register Complaint & Send Alerts'}
@@ -1147,67 +1133,43 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
         </div>
       </div>
 
-      {/* Add New Product to Catalog Sub-Modal */}
-      {showAddProductModal && (
-        <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 border border-slate-200 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+      {/* Attachment Preview Modal / Lightbox */}
+      {previewItem && (
+        <div 
+          className="fixed inset-0 z-70 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4" 
+          onClick={() => setPreviewItem(null)}
+        >
+          <div 
+            className="relative max-w-2xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in fade-in zoom-in-95" 
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
-                  <Plus className="w-4 h-4" />
-                </div>
-                <h4 className="text-sm font-bold text-slate-900">Add New Product to Catalog</h4>
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-xs font-bold text-slate-800 truncate">{previewItem.name}</span>
+                <span className="text-[10px] text-slate-400 shrink-0">({previewItem.size})</span>
               </div>
-              <button
+              <button 
                 type="button"
-                onClick={() => setShowAddProductModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                onClick={() => setPreviewItem(null)} 
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-
-            <form onSubmit={handleCreateNewProduct} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Product Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Solar Inverters, Street Lights, Batteries..."
-                  value={newProductName}
-                  onChange={(e) => setNewProductName(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+            <div className="p-2 flex items-center justify-center max-h-[70vh] overflow-auto bg-slate-50/50 rounded-xl mt-2">
+              {previewItem.isImage && previewItem.preview ? (
+                <img 
+                  src={previewItem.preview} 
+                  alt={previewItem.name} 
+                  className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-xs" 
                 />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Short Description (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Inverter units, grid-tie controllers, and battery packs"
-                  value={newProductDesc}
-                  onChange={(e) => setNewProductDesc(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddProductModal(false)}
-                  className="px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={addingProduct}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-xs transition-all disabled:opacity-50"
-                >
-                  {addingProduct ? 'Adding...' : 'Add & Select Product'}
-                </button>
-              </div>
-            </form>
+              ) : (
+                <div className="py-12 text-center text-xs text-slate-500">
+                  Preview not available for this file type ({previewItem.name})
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
-export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKey }) => {
+export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKey, initialFilters }) => {
   const { currentUser } = useAuth();
   const [complaints, setComplaints] = useState([]);
   const [technicians, setTechnicians] = useState([]);
@@ -26,11 +26,21 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
   };
 
   // Filters
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [productFilter, setProductFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [technicianFilter, setTechnicianFilter] = useState('');
+  const [search, setSearch] = useState(initialFilters?.search || '');
+  const [statusFilter, setStatusFilter] = useState(initialFilters?.status || 'all');
+  const [productFilter, setProductFilter] = useState(initialFilters?.product_type || 'all');
+  const [priorityFilter, setPriorityFilter] = useState(initialFilters?.priority || 'all');
+  const [technicianFilter, setTechnicianFilter] = useState(initialFilters?.technician_id || '');
+
+  useEffect(() => {
+    if (initialFilters) {
+      if (initialFilters.status !== undefined) setStatusFilter(initialFilters.status);
+      if (initialFilters.product_type !== undefined) setProductFilter(initialFilters.product_type);
+      if (initialFilters.priority !== undefined) setPriorityFilter(initialFilters.priority);
+      if (initialFilters.search !== undefined) setSearch(initialFilters.search);
+      if (initialFilters.technician_id !== undefined) setTechnicianFilter(initialFilters.technician_id);
+    }
+  }, [initialFilters]);
 
   const fetchComplaints = async () => {
     try {
@@ -72,6 +82,10 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
 
   const handleQuickSettle = async (e, complaint) => {
     e.stopPropagation();
+    if (!complaint.assigned_technician_id && !complaint.technician_id) {
+      alert('Cannot collect technician cash on an unassigned complaint. Please assign a technician first.');
+      return;
+    }
     const techName = complaint.technician_name || 'Technician';
     const amount = complaint.payment_collected || 0;
     if (!window.confirm(`Confirm receipt of ₹${amount} collected by ${techName} into Eco Green Solar Company account for Ticket #${complaint.ticket_id}?`)) {
@@ -449,7 +463,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                                 <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                   ✓ Co. Settled
                                 </span>
-                              ) : (
+                              ) : (c.assigned_technician_id || c.technician_id) ? (
                                 <div className="flex items-center gap-1">
                                   <span className="inline-flex items-center text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200" title="Cash is with technician">
                                     Tech Cash
@@ -465,6 +479,10 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                                     </button>
                                   )}
                                 </div>
+                              ) : (
+                                <span className="inline-flex items-center text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" title="Direct Office or Online payment (No technician assigned)">
+                                  Direct / Office
+                                </span>
                               )
                             )}
                           </div>
@@ -581,9 +599,15 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                       )}
                     </div>
 
-                    {/* Issue Summary Box */}
-                    <div className="text-xs text-slate-600 line-clamp-2 mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <strong className="text-slate-800">{c.issue_category}:</strong> {c.issue_description}
+                    {/* Issue Summary Box - Full visibility with balanced uniform min-height */}
+                    <div 
+                      className="text-xs text-slate-600 mt-1.5 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 min-h-[64px] flex flex-col justify-start"
+                      title={`${c.issue_category}: ${c.issue_description}`}
+                    >
+                      <p className="line-clamp-3 leading-relaxed">
+                        <strong className="text-slate-800 font-semibold">{c.issue_category}:</strong>{' '}
+                        <span>{c.issue_description}</span>
+                      </p>
                     </div>
 
                     {/* Cash in Hand & Company Settlement in Card */}
@@ -596,7 +620,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
                             ✓ Co. Settled
                           </span>
-                        ) : (
+                        ) : (c.assigned_technician_id || c.technician_id) ? (
                           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-200">
                               Cash with Tech
@@ -611,6 +635,10 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                               </button>
                             )}
                           </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded-full border border-slate-300" title="Direct Office or Online Payment (No Technician Assigned)">
+                            Direct / Office
+                          </span>
                         )}
                       </div>
                     )}

@@ -75,10 +75,9 @@ function AppContent() {
   const [selectedComplaintId, setSelectedComplaintId] = useState(null);
   const [historyPhone, setHistoryPhone] = useState(null);
 
-  // Onboarding Tour state
-  const [isTourOpen, setIsTourOpen] = useState(() => {
-    return !localStorage.getItem('egs_cms_tour_completed');
-  });
+  // Onboarding Tour state - temporarily disabled by default as requested
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  const [complaintFilters, setComplaintFilters] = useState(null);
 
   // Refresh trigger counter for child components when demo data is reloaded
   const [refreshKey, setRefreshKey] = useState(0);
@@ -176,14 +175,6 @@ function AppContent() {
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <button
-              onClick={() => setIsTourOpen(true)}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 shadow-xs transition-colors"
-            >
-              <Compass className="w-3 h-3" />
-              <span>Step-by-Step Tour</span>
-            </button>
-
-            <button
               onClick={handleReloadDemoData}
               className="bg-white/10 hover:bg-white/20 text-emerald-100 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition-colors"
             >
@@ -208,6 +199,7 @@ function AppContent() {
           <ComplaintList
             key={`comp-${refreshKey}`}
             refreshKey={refreshKey}
+            initialFilters={complaintFilters}
             onSelectComplaint={(id) => setSelectedComplaintId(id)}
             onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
           />
@@ -227,7 +219,13 @@ function AppContent() {
         )}
 
         {currentTab === 'analytics' && (
-          <AnalyticsDashboard key={`ana-${refreshKey}`} />
+          <AnalyticsDashboard
+            key={`ana-${refreshKey}`}
+            onNavigateToComplaints={(filters) => {
+              setComplaintFilters(filters);
+              setCurrentTab('complaints');
+            }}
+          />
         )}
 
         {currentTab === 'templates' && (

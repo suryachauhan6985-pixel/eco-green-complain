@@ -130,6 +130,26 @@ app.post('/api/products', authenticateToken, (req, res) => {
   }
 });
 
+app.delete('/api/products/:id', authenticateToken, requireRole('admin'), (req, res) => {
+  try {
+    const { id } = req.params;
+    const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    if (prod.is_custom === 0) {
+      return res.status(400).json({ error: 'Default core products cannot be deleted' });
+    }
+    db.prepare('DELETE FROM products WHERE id = ?').run(id);
+    res.json({ message: 'Product deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete product: ' + err.message });
+  }
+});
+
+// ================= ISSUE CATEGORY ROUTES =================
+app.get('/api/categories', complaintController.listCategories);
+app.post('/api/categories', authenticateToken, requireRole('admin', 'staff'), complaintController.addCategory);
+app.delete('/api/categories/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.deleteCategory);
+
 // ================= COMPLAINT ROUTES =================
 // Public track endpoint (anyone with Ticket ID or Phone)
 app.get('/api/complaints/track/:query', complaintController.trackTicket);

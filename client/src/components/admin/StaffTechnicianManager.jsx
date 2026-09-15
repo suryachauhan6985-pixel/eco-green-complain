@@ -2,16 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { 
   Users, Wrench, Plus, Trash2, CheckCircle2, XCircle, 
-  Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X, Edit3, IndianRupee 
+  Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X, Edit3, IndianRupee,
+  Layers, Tag
 } from 'lucide-react';
 
 export const StaffTechnicianManager = () => {
-  const [activeTab, setActiveTab] = useState('technicians'); // 'technicians' | 'staff'
+  const [activeTab, setActiveTab] = useState('technicians'); // 'technicians' | 'staff' | 'catalog'
   const [technicians, setTechnicians] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
+
+  // Product & Category Management State
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedProductForCat, setSelectedProductForCat] = useState('Solar Rooftop Systems');
+  const [newCatName, setNewCatName] = useState('');
+  const [addingCat, setAddingCat] = useState(false);
+  const [newProdName, setNewProdName] = useState('');
+  const [newProdDesc, setNewProdDesc] = useState('');
+  const [addingProd, setAddingProd] = useState(false);
 
   // Add Form State
   const [formData, setFormData] = useState({
@@ -84,6 +95,84 @@ export const StaffTechnicianManager = () => {
     }
   };
 
+  const loadCatalog = async () => {
+    try {
+      const [prodRes, catRes] = await Promise.all([
+        api.getProducts().catch(() => ({ products: [] })),
+        api.getCategories().catch(() => ({ categories: [] }))
+      ]);
+      const fetchedProducts = prodRes.products || [];
+      setProducts(fetchedProducts);
+      setCategories(catRes.categories || []);
+      if (fetchedProducts.length > 0 && !selectedProductForCat) {
+        setSelectedProductForCat(fetchedProducts[0].name);
+      }
+    } catch (e) {
+      console.warn('Error loading catalog:', e);
+    }
+  };
+
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    try {
+      setAddingCat(true);
+      await api.addCategory({
+        product_type: selectedProductForCat,
+        category_name: newCatName.trim()
+      });
+      setNewCatName('');
+      showToast(`Category "${newCatName.trim()}" added to ${selectedProductForCat}!`);
+      await loadCatalog();
+    } catch (err) {
+      alert('Failed to add category: ' + err.message);
+    } finally {
+      setAddingCat(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id, name) => {
+    if (!window.confirm(`Delete issue category "${name}"?`)) return;
+    try {
+      await api.deleteCategory(id);
+      showToast(`Category "${name}" removed`);
+      await loadCatalog();
+    } catch (err) {
+      alert('Failed to delete category: ' + err.message);
+    }
+  };
+
+  const handleAddProduct = async (e) => {
+    e.preventDefault();
+    if (!newProdName.trim()) return;
+    try {
+      setAddingProd(true);
+      await api.addProduct({
+        name: newProdName.trim(),
+        description: newProdDesc.trim() || undefined
+      });
+      setNewProdName('');
+      setNewProdDesc('');
+      showToast(`Product "${newProdName.trim()}" added to catalog!`);
+      await loadCatalog();
+    } catch (err) {
+      alert('Failed to add product: ' + err.message);
+    } finally {
+      setAddingProd(false);
+    }
+  };
+
+  const handleDeleteProduct = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete product "${name}" from catalog?`)) return;
+    try {
+      await api.deleteProduct(id);
+      showToast(`Product "${name}" deleted`);
+      await loadCatalog();
+    } catch (err) {
+      alert('Failed to delete product: ' + err.message);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -93,6 +182,7 @@ export const StaffTechnicianManager = () => {
       ]);
       setTechnicians(techRes.technicians || []);
       setUsers(usersRes.users || []);
+      await loadCatalog();
     } catch (err) {
       console.error('Error loading staff/technicians:', err);
     } finally {
@@ -212,16 +302,30 @@ export const StaffTechnicianManager = () => {
               <Shield className="w-3.5 h-3.5 text-emerald-600" />
               <span>Office Staff ({staffUsers.length})</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('catalog')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeTab === 'catalog'
+                  ? 'bg-white text-emerald-800 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Catalog & Categories ({products.length})</span>
+            </button>
           </div>
 
           {/* Add Button */}
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Member</span>
-          </button>
+          {activeTab !== 'catalog' && (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Member</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -373,7 +477,7 @@ export const StaffTechnicianManager = () => {
             </div>
           ))}
         </div>
-      ) : (
+      ) : activeTab === 'staff' ? (
         /* Staff Users 2-Column Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {staffUsers.map((u) => (
@@ -388,34 +492,38 @@ export const StaffTechnicianManager = () => {
                       {u.name.charAt(0)}
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900">{u.name}</h4>
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>{u.name}</span>
+                        {u.role === 'admin' && (
+                          <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded font-bold uppercase">
+                            Admin
+                          </span>
+                        )}
+                      </h4>
                       <p className="text-[11px] text-slate-500">{u.email}</p>
                     </div>
                   </div>
 
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                    u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {u.role === 'admin' ? 'Admin Supervisor' : 'Support Staff'}
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 uppercase">
+                    {u.role}
                   </span>
                 </div>
 
-                <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                {/* Details */}
+                <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-1.5 text-[11px]">
                     <Phone className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{u.phone || '+919876500000'}</span>
+                    <span>{u.phone || 'No phone set'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px]">
                     <Mail className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{u.email}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                    <span>Registered: {new Date(u.created_at || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span className="truncate">{u.email}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 text-xs">
+              {/* Actions */}
+              <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs gap-1.5">
                 <button
                   onClick={() => handleOpenEdit(u, 'staff')}
                   className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold"
@@ -438,6 +546,165 @@ export const StaffTechnicianManager = () => {
               </div>
             </div>
           ))}
+        </div>
+      ) : (
+        /* Catalog & Issue Categories Management Tab */
+        <div className="space-y-6">
+          {/* Section 1: Product Catalog Management */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-emerald-600" />
+                  Solar Product Catalog ({products.length})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Manage standard and custom solar equipment serviced by Eco Green Solar.
+                </p>
+              </div>
+            </div>
+
+            {/* Products Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
+              {products.map((p) => (
+                <div key={p.id || p.name} className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-bold text-xs text-slate-900">{p.name}</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{p.description || 'No description'}</p>
+                    </div>
+                    {p.is_default ? (
+                      <span className="text-[9px] font-bold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded shrink-0">System</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProduct(p.id, p.name)}
+                        className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded transition-colors shrink-0 cursor-pointer"
+                        title="Delete Product"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick Add Product Form */}
+            <form onSubmit={handleAddProduct} className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+              <input
+                type="text"
+                required
+                placeholder="New Product Name (e.g. Solar Batteries)"
+                value={newProdName}
+                onChange={e => setNewProdName(e.target.value)}
+                className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <input
+                type="text"
+                placeholder="Short Description (Optional)"
+                value={newProdDesc}
+                onChange={e => setNewProdDesc(e.target.value)}
+                className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={addingProd || !newProdName.trim()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{addingProd ? 'Adding...' : 'Add Product'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Section 2: Issue Categories Management */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-emerald-600" />
+                  Dynamic Complaint Issue Categories
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Configure the dropdown choices shown during complaint registration for each product.
+                </p>
+              </div>
+
+              {/* Product Selector Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600">Product:</span>
+                <select
+                  value={selectedProductForCat}
+                  onChange={e => setSelectedProductForCat(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                >
+                  {products.map(p => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* List of categories for the selected product */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+                <span>Active Categories for <strong className="text-slate-800">{selectedProductForCat}</strong> ({categories.filter(c => c.product_type === selectedProductForCat).length})</span>
+                <span>Actions</span>
+              </div>
+
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl bg-slate-50/50 max-h-80 overflow-y-auto">
+                {categories.filter(c => c.product_type === selectedProductForCat).length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    No custom categories defined for this product. Default system list applies.
+                  </div>
+                ) : (
+                  categories
+                    .filter(c => c.product_type === selectedProductForCat)
+                    .map((cat) => (
+                      <div key={cat.id} className="p-3 flex items-center justify-between gap-2 hover:bg-white transition-colors">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs font-bold text-slate-800 truncate">{cat.category_name}</span>
+                          {cat.is_default ? (
+                            <span className="text-[9px] font-semibold text-slate-500 bg-slate-200/70 px-1.5 py-0.2 rounded">Default</span>
+                          ) : (
+                            <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">Custom</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat.id, cat.category_name)}
+                          className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Delete category"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+
+            {/* Add Category Form */}
+            <form onSubmit={handleAddCategory} className="pt-2 flex flex-col sm:flex-row items-center gap-2 text-xs">
+              <input
+                type="text"
+                required
+                placeholder={`Add new defect category for ${selectedProductForCat}...`}
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                className="flex-1 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={addingCat || !newCatName.trim()}
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{addingCat ? 'Adding...' : 'Add Category'}</span>
+              </button>
+            </form>
+          </div>
         </div>
       )}
 

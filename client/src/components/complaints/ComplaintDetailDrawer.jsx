@@ -7,7 +7,7 @@ import {
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
-  MessageCircle, Copy
+  MessageCircle, Copy, Eye, FileText
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
 
@@ -74,6 +74,7 @@ export const ComplaintDetailDrawer = ({
   });
   const [showUnderpaidWarning, setShowUnderpaidWarning] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [previewDocModal, setPreviewDocModal] = useState(null);
 
   const fetchTicketDetails = async () => {
     if (!complaintId) return;
@@ -303,7 +304,7 @@ export const ComplaintDetailDrawer = ({
   const openPaymentModal = () => {
     setPaymentData({
       payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
-      payment_method: 'Cash',
+      payment_method: ticket.assigned_technician_id ? 'Cash' : 'UPI',
       payment_notes: ''
     });
     setShowUnderpaidWarning(false);
@@ -311,6 +312,11 @@ export const ComplaintDetailDrawer = ({
   };
 
   const handleRecordPaymentSubmit = async (forceSubmit = false) => {
+    if (paymentData.payment_method === 'Cash' && !ticket.assigned_technician_id) {
+      alert('Cannot record "Cash to Technician" on an unassigned complaint. Please assign a technician first, or select "Direct Office Cash Deposit", "UPI", or "Bank Transfer".');
+      return;
+    }
+
     const entered = Number(paymentData.payment_collected || 0);
     const expected = Number(ticket.estimated_charges || 0);
 
@@ -336,6 +342,10 @@ export const ComplaintDetailDrawer = ({
 
   const handleSettleWithCompany = async () => {
     if (!ticket) return;
+    if (!ticket.assigned_technician_id) {
+      alert('Cannot settle technician cash on an unassigned complaint. Please assign a technician first.');
+      return;
+    }
     const techName = ticket.assigned_tech_name || ticket.technician_name || 'the technician';
     const confirmMsg = `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`;
     if (!window.confirm(confirmMsg)) return;
@@ -671,22 +681,57 @@ export const ComplaintDetailDrawer = ({
                       </p>
 
                       {attachments.length > 0 && (
-                        <div className="mt-3">
-                          <span className="text-[11px] font-semibold text-slate-500 block mb-1.5 flex items-center gap-1">
-                            <Paperclip className="w-3 h-3" /> Attached Proof Files ({attachments.length}):
+                        <div className="mt-4 pt-3 border-t border-slate-100">
+                          <span className="text-[11px] font-bold text-slate-700 block mb-2 flex items-center gap-1.5">
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Proof Documents / Photos ({attachments.length}):
                           </span>
-                          <div className="flex flex-wrap gap-2">
-                            {attachments.map((att) => (
-                              <a
-                                key={att.id}
-                                href={att.file_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded text-[11px] text-slate-700 font-medium flex items-center gap-1"
-                              >
-                                {att.file_name}
-                              </a>
-                            ))}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {attachments.map((att) => {
+                              const isImg = att.file_url && (att.file_url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || att.file_name?.match(/\.(jpeg|jpg|gif|png|webp)$/i));
+                              return (
+                                <div
+                                  key={att.id}
+                                  className="group bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl p-2 transition-all flex items-center gap-2 relative overflow-hidden"
+                                >
+                                  {isImg ? (
+                                    <img
+                                      src={att.file_url}
+                                      alt={att.file_name}
+                                      onClick={() => setPreviewDocModal({ url: att.file_url, name: att.file_name, isImage: true })}
+                                      className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
+                                      title="Click to view full photo"
+                                    />
+                                  ) : (
+                                    <div className="w-12 h-12 bg-slate-200/70 rounded-lg flex items-center justify-center text-slate-500 shrink-0">
+                                      <Paperclip className="w-5 h-5" />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-bold text-slate-800 truncate" title={att.file_name}>
+                                      {att.file_name}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => isImg ? setPreviewDocModal({ url: att.file_url, name: att.file_name, isImage: true }) : window.open(att.file_url, '_blank')}
+                                        className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 cursor-pointer bg-emerald-100/70 px-1.5 py-0.5 rounded"
+                                      >
+                                        <Eye className="w-3 h-3" /> Preview
+                                      </button>
+                                      <a
+                                        href={att.file_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] text-slate-500 hover:text-slate-700 flex items-center gap-0.5"
+                                        title="Open file in new tab"
+                                      >
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1379,7 +1424,10 @@ export const ComplaintDetailDrawer = ({
                   onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium"
                 >
-                  <option value="Cash">Cash to Technician</option>
+                  <option value="Cash" disabled={!ticket.assigned_technician_id}>
+                    Cash to Technician {!ticket.assigned_technician_id ? '(Requires Technician Assigned)' : ''}
+                  </option>
+                  <option value="Office Cash">Direct Office Cash Deposit</option>
                   <option value="UPI">UPI / QR Code</option>
                   <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
                   <option value="Cheque">Cheque</option>
@@ -1582,6 +1630,54 @@ export const ComplaintDetailDrawer = ({
               >
                 ✓ Done & Return to Ticket
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox / High-Res Document & Photo Preview Modal */}
+      {previewDocModal && (
+        <div 
+          className="fixed inset-0 z-80 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150" 
+          onClick={() => setPreviewDocModal(null)}
+        >
+          <div 
+            className="relative max-w-3xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150" 
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2 min-w-0">
+                <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-xs font-bold text-slate-800 truncate">{previewDocModal.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewDocModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Full Tab
+                </a>
+                <button 
+                  type="button"
+                  onClick={() => setPreviewDocModal(null)} 
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-2 flex items-center justify-center max-h-[75vh] overflow-auto bg-slate-50/70 rounded-xl mt-2">
+              {previewDocModal.isImage ? (
+                <img 
+                  src={previewDocModal.url} 
+                  alt={previewDocModal.name} 
+                  className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm" 
+                />
+              ) : (
+                <iframe src={previewDocModal.url} className="w-full h-[65vh] rounded-lg" title={previewDocModal.name} />
+              )}
             </div>
           </div>
         </div>

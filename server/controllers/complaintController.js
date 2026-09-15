@@ -439,9 +439,23 @@ async function recordPayment(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    const { payment_collected, payment_mode = 'Cash / UPI', notes = '' } = req.body;
+    const { payment_collected, payment_mode = 'Cash', notes = '' } = req.body;
     const amount = parseFloat(payment_collected) || 0;
     const estimated = parseFloat(complaint.estimated_charges) || 0;
+
+    const isDirectPayment = payment_mode && (
+      payment_mode.toLowerCase().includes('online') || 
+      payment_mode.toLowerCase().includes('office') || 
+      payment_mode.toLowerCase().includes('bank') ||
+      payment_mode.toLowerCase().includes('upi')
+    );
+
+    // Enforce: On-site technician cash collection requires an assigned technician!
+    if (!isDirectPayment && amount > 0 && !complaint.assigned_technician_id) {
+      return res.status(400).json({ 
+        error: 'Cannot record field technician cash collection on an unassigned complaint. Please assign a technician to this ticket first, or choose Direct Office / Online Payment.' 
+      });
+    }
 
     let paymentStatus = 'Collected';
     if (amount === 0) {
@@ -450,16 +464,30 @@ async function recordPayment(req, res) {
       paymentStatus = 'Partially Paid';
     }
 
+    // Direct office payments are already with the company; technician cash is pending settlement until deposited
+    const actorName = req.user ? req.user.name : (complaint.assigned_technician_id ? 'Field Technician' : 'Office Staff');
+    const actorRole = req.user ? req.user.role : (complaint.assigned_technician_id ? 'technician' : 'staff');
+
+    let settlementStatus = complaint.company_settlement_status || 'Pending Settlement';
+    let settledAt = complaint.company_settled_at;
+    let settledBy = complaint.company_settled_by;
+
+    if (isDirectPayment && amount > 0) {
+      settlementStatus = 'Settled with Company';
+      settledAt = new Date().toISOString();
+      settledBy = actorName;
+    }
+
     db.prepare(`
       UPDATE complaints SET
         payment_collected = ?,
         payment_status = ?,
+        company_settlement_status = ?,
+        company_settled_at = ?,
+        company_settled_by = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(amount, paymentStatus, id);
-
-    const actorName = req.user ? req.user.name : 'Field Technician';
-    const actorRole = req.user ? req.user.role : 'technician';
+    `).run(amount, paymentStatus, settlementStatus, settledAt, settledBy, id);
 
     const noteText = `Payment of ₹${amount} recorded via ${payment_mode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''} ${notes ? `• ${notes}` : ''}`;
 
@@ -498,6 +526,12 @@ async function settleCompanyPayment(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
+    if (!complaint.assigned_technician_id) {
+      return res.status(400).json({ 
+        error: 'Cannot settle technician cash on an unassigned complaint. Please assign a technician first.' 
+      });
+    }
+
     const settledAmt = amount_received !== undefined ? parseFloat(amount_received) : (parseFloat(complaint.payment_collected) || 0);
     const actorName = req.user ? req.user.name : 'Company Finance/Admin';
     const actorRole = req.user ? req.user.role : 'admin';
@@ -529,6 +563,64 @@ async function settleCompanyPayment(req, res) {
   } catch (err) {
     console.error('Settle company payment error:', err);
     res.status(500).json({ error: 'Failed to settle payment with company: ' + err.message });
+  }
+}
+
+// ================= CATEGORY MANAGEMENT CONTROLLERS =================
+async function listCategories(req, res) {
+  try {
+    const { product_type } = req.query;
+    let query = 'SELECT * FROM issue_categories';
+    const params = [];
+    if (product_type) {
+      query += ' WHERE product_type = ?';
+      params.push(product_type);
+    }
+    query += ' ORDER BY product_type ASC, is_default DESC, category_name ASC';
+    const categories = db.prepare(query).all(...params);
+    res.json({ categories });
+  } catch (err) {
+    console.error('List categories error:', err);
+    res.status(500).json({ error: 'Failed to fetch categories: ' + err.message });
+  }
+}
+
+async function addCategory(req, res) {
+  try {
+    const { product_type, category_name } = req.body;
+    if (!product_type || !category_name || !category_name.trim()) {
+      return res.status(400).json({ error: 'Product type and category name are required' });
+    }
+    const cleanCat = category_name.trim();
+    const existing = db.prepare('SELECT id FROM issue_categories WHERE product_type = ? AND LOWER(category_name) = LOWER(?)').get(product_type, cleanCat);
+    if (existing) {
+      return res.status(400).json({ error: 'This category already exists for ' + product_type });
+    }
+    const result = db.prepare(`
+      INSERT INTO issue_categories (product_type, category_name, is_default)
+      VALUES (?, ?, 0)
+    `).run(product_type, cleanCat);
+
+    const created = db.prepare('SELECT * FROM issue_categories WHERE id = ?').get(result.lastInsertRowid);
+    res.status(201).json({ message: 'Category added successfully', category: created });
+  } catch (err) {
+    console.error('Add category error:', err);
+    res.status(500).json({ error: 'Failed to add category: ' + err.message });
+  }
+}
+
+async function deleteCategory(req, res) {
+  try {
+    const { id } = req.params;
+    const category = db.prepare('SELECT * FROM issue_categories WHERE id = ?').get(id);
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    db.prepare('DELETE FROM issue_categories WHERE id = ?').run(id);
+    res.json({ message: 'Category deleted successfully' });
+  } catch (err) {
+    console.error('Delete category error:', err);
+    res.status(500).json({ error: 'Failed to delete category: ' + err.message });
   }
 }
 
@@ -934,5 +1026,8 @@ module.exports = {
   closeComplaint,
   reopenComplaint,
   submitFeedback,
-  syncBackupComplaints
+  syncBackupComplaints,
+  listCategories,
+  addCategory,
+  deleteCategory
 };

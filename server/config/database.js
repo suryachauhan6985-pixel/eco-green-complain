@@ -163,12 +163,22 @@ function initializeSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS issue_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_type TEXT NOT NULL,
+      category_name TEXT NOT NULL,
+      is_default INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(product_type, category_name)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_complaints_ticket ON complaints(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status);
     CREATE INDEX IF NOT EXISTS idx_complaints_phone ON complaints(customer_phone);
     CREATE INDEX IF NOT EXISTS idx_complaints_tech ON complaints(assigned_technician_id);
     CREATE INDEX IF NOT EXISTS idx_timeline_complaint ON complaint_timelines(complaint_id);
     CREATE INDEX IF NOT EXISTS idx_notif_complaint ON notification_logs(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_categories_product ON issue_categories(product_type);
     CREATE INDEX IF NOT EXISTS idx_customers_name ON installed_customers(customer_name);
     CREATE INDEX IF NOT EXISTS idx_customers_mobile ON installed_customers(consumer_mobile);
     CREATE INDEX IF NOT EXISTS idx_customers_consumer_no ON installed_customers(consumer_no);
@@ -191,6 +201,61 @@ function initializeSchema() {
   `);
   for (const p of defaultProducts) {
     insertProd.run(p.name, p.icon, p.description);
+  }
+
+  // Seed default issue categories per product
+  const defaultCategories = [
+    // Solar Rooftop Systems
+    { product_type: 'Solar Rooftop Systems', category_name: 'No Power Output' },
+    { product_type: 'Solar Rooftop Systems', category_name: 'Inverter Fault / Error Code' },
+    { product_type: 'Solar Rooftop Systems', category_name: 'Grid Breaker Tripping' },
+    { product_type: 'Solar Rooftop Systems', category_name: 'Cable / Connector Damage' },
+    { product_type: 'Solar Rooftop Systems', category_name: 'AMC / Panel Cleaning' },
+    { product_type: 'Solar Rooftop Systems', category_name: 'Monitoring App Offline' },
+    { product_type: 'Solar Rooftop Systems', category_name: 'Other Rooftop Issue' },
+
+    // Solar Water Heaters
+    { product_type: 'Solar Water Heaters', category_name: 'Water Leakage from Tank' },
+    { product_type: 'Solar Water Heaters', category_name: 'Cold Water Inlet / Pipe Issue' },
+    { product_type: 'Solar Water Heaters', category_name: 'Low Water Temperature' },
+    { product_type: 'Solar Water Heaters', category_name: 'Scale Formation / Descaling' },
+    { product_type: 'Solar Water Heaters', category_name: 'Air Vent Valve Issue' },
+    { product_type: 'Solar Water Heaters', category_name: 'Electrical Backup Heater Fault' },
+    { product_type: 'Solar Water Heaters', category_name: 'Other Water Heater Issue' },
+
+    // Heat Pumps
+    { product_type: 'Heat Pumps', category_name: 'Compressor Tripping' },
+    { product_type: 'Heat Pumps', category_name: 'Water Not Heating to Set Temp' },
+    { product_type: 'Heat Pumps', category_name: 'Display Error Code (F1/F2)' },
+    { product_type: 'Heat Pumps', category_name: 'Unusual Noise / Vibration' },
+    { product_type: 'Heat Pumps', category_name: 'Circulation Pump Failure' },
+    { product_type: 'Heat Pumps', category_name: 'Refrigerant Leak / Pressure Drop' },
+    { product_type: 'Heat Pumps', category_name: 'Other Heat Pump Issue' },
+
+    // Pressure Pumps
+    { product_type: 'Pressure Pumps', category_name: 'Pump Not Starting / No Power' },
+    { product_type: 'Pressure Pumps', category_name: 'Low Pressure / Uneven Flow' },
+    { product_type: 'Pressure Pumps', category_name: 'Continuous Running / Won\'t Turn Off' },
+    { product_type: 'Pressure Pumps', category_name: 'Water Leakage from Body/Joints' },
+    { product_type: 'Pressure Pumps', category_name: 'Pressure Controller / Switch Fault' },
+    { product_type: 'Pressure Pumps', category_name: 'Motor Overheating / Burning Smell' },
+    { product_type: 'Pressure Pumps', category_name: 'Other Pressure Pump Issue' },
+
+    // Other
+    { product_type: 'Other', category_name: 'Equipment Not Turning On' },
+    { product_type: 'Other', category_name: 'Performance Degradation' },
+    { product_type: 'Other', category_name: 'Physical / Mechanical Damage' },
+    { product_type: 'Other', category_name: 'Electrical / Wiring Short Circuit' },
+    { product_type: 'Other', category_name: 'Periodic Maintenance / Inspection' },
+    { product_type: 'Other', category_name: 'Other Issue' }
+  ];
+
+  const insertCat = db.prepare(`
+    INSERT OR IGNORE INTO issue_categories (product_type, category_name, is_default)
+    VALUES (?, ?, 1)
+  `);
+  for (const c of defaultCategories) {
+    insertCat.run(c.product_type, c.category_name);
   }
 }
 

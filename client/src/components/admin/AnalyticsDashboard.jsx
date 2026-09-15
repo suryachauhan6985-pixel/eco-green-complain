@@ -6,7 +6,7 @@ import {
   Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles
 } from 'lucide-react';
 
-export const AnalyticsDashboard = () => {
+export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [customerStats, setCustomerStats] = useState(null);
@@ -76,17 +76,38 @@ export const AnalyticsDashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Export Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+      {/* Toast Notification */}
+      {syncToast && (
+        <div className={`p-4 rounded-2xl flex items-center justify-between shadow-lg text-xs font-bold animate-in fade-in slide-in-from-top-4 ${
+          syncToast.type === 'success' 
+            ? 'bg-emerald-800 text-emerald-100 border border-emerald-600' 
+            : 'bg-rose-800 text-rose-100 border border-rose-600'
+        }`}>
+          <div className="flex items-center gap-2">
+            {syncToast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-300" /> : <AlertCircle className="w-4 h-4 text-rose-300" />}
+            <span>{syncToast.message}</span>
+          </div>
+          <button onClick={() => setSyncToast(null)} className="text-white/80 hover:text-white">✕</button>
+        </div>
+      )}
+
+      {/* Header with Export */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-black text-slate-900">Service Performance & Operations Analytics</h2>
-          <p className="text-xs text-slate-500">Real-time solar complaint resolution metrics and technician scoreboard</p>
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <BarChart3 className="w-6 h-6 text-emerald-600" />
+            Executive Performance & Analytics
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Real-time complaint diagnostics, warranty coverage, resolution metrics, and field team scoreboard.
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={fetchMetrics}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 border border-slate-200"
+            className="p-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-slate-600 hover:text-slate-900 transition-colors"
+            title="Refresh Metrics"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -94,39 +115,15 @@ export const AnalyticsDashboard = () => {
           <a
             href={api.getExportCsvUrl()}
             download
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors"
           >
             <Download className="w-4 h-4" />
-            Export Complaints Report (CSV)
+            <span>Export Complaints CSV</span>
           </a>
         </div>
       </div>
 
-      {/* Sync Toast Feedback */}
-      {syncToast && (
-        <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-md transition-all ${
-          syncToast.type === 'success' 
-            ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
-            : 'bg-rose-50 border-rose-300 text-rose-900'
-        }`}>
-          <div className="flex items-center gap-2">
-            {syncToast.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            ) : (
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-            )}
-            <span>{syncToast.message}</span>
-          </div>
-          <button 
-            onClick={() => setSyncToast(null)}
-            className="text-xs opacity-70 hover:opacity-100 font-normal px-2 py-0.5 rounded"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Connected Excel Customer Database & 5-Year Warranty Engine Card */}
+      {/* Hero Section: Customer Directory & 5-Year Warranty Database */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 border border-emerald-900/50 shadow-xl relative overflow-hidden">
         {/* Ambient Glow */}
         <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -150,9 +147,9 @@ export const AnalyticsDashboard = () => {
             <h3 className="text-lg font-black text-white pt-1 flex items-center gap-2">
               Installed Customer Base & Warranty Engine
             </h3>
-            <p className="text-xs text-slate-300 flex items-center gap-1.5 flex-wrap font-mono">
-              <HardDrive className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="truncate max-w-lg">\\As6302t-989d\work\2023-24\Solar Rooftop\NP - Site Visit, 3D\SUMIT\All Customer - FINAL.xls</span>
+            <p className="text-xs text-slate-300 flex items-center gap-1.5 flex-wrap">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Central Customer Directory • Secure Local Synchronization</span>
             </p>
           </div>
 
@@ -181,22 +178,22 @@ export const AnalyticsDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-xs p-4 rounded-2xl border border-emerald-500/20">
-            <div className="text-xs font-semibold text-emerald-400 mb-1 flex items-center justify-between">
-              <span>🟢 In Warranty (&le; 5 Years)</span>
+          <div className="bg-white/5 backdrop-blur-xs p-4 rounded-2xl border border-white/10">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
+              <span>In Warranty (0-5 Years)</span>
               <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded">
                 {customerStats?.totalCustomers ? Math.round((customerStats.inWarrantyCount / customerStats.totalCustomers) * 100) : 59}%
               </span>
             </div>
-            <div className="text-3xl font-black text-emerald-300">
+            <div className="text-3xl font-black text-emerald-400">
               {customerStats?.inWarrantyCount?.toLocaleString() || '3,623'}
             </div>
-            <div className="text-[11px] text-slate-400 mt-1">Free service & part replacement covered</div>
+            <div className="text-[11px] text-slate-400 mt-1">Eligible for free service & repairs</div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-xs p-4 rounded-2xl border border-rose-500/20">
-            <div className="text-xs font-semibold text-rose-400 mb-1 flex items-center justify-between">
-              <span>🔴 Out of Warranty (&gt; 5 Years)</span>
+          <div className="bg-white/5 backdrop-blur-xs p-4 rounded-2xl border border-white/10">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
+              <span>Out of Warranty (5+ Years)</span>
               <span className="text-[10px] font-bold bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded">
                 {customerStats?.totalCustomers ? Math.round((customerStats.outWarrantyCount / customerStats.totalCustomers) * 100) : 41}%
               </span>
@@ -211,23 +208,35 @@ export const AnalyticsDashboard = () => {
 
       {/* KPI Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div 
+          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ status: 'all' })}
+          className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group"
+          title="Click to view all complaints"
+        >
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold">Total Complaints</span>
+            <span className="text-xs font-semibold group-hover:text-emerald-700 transition-colors">Total Complaints</span>
             <BarChart3 className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-slate-900">{counts.total || 0}</div>
-          <div className="text-[11px] text-slate-500 mt-1">All registered service tickets</div>
+          <div className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-emerald-800 transition-colors">{counts.total || 0}</div>
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+            <span>All registered tickets</span>
+            <span className="text-emerald-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+          </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div 
+          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ status: 'In Progress' })}
+          className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-amber-500 hover:shadow-md transition-all cursor-pointer group"
+          title="Click to view active complaints"
+        >
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold">Active In-Pipeline</span>
+            <span className="text-xs font-semibold group-hover:text-amber-700 transition-colors">Active In-Pipeline</span>
             <Clock className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-amber-600">{activeCount}</div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            {counts.registered_count || 0} Open • {counts.assigned_count || 0} Assigned • {counts.in_progress_count || 0} In Progress
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+            <span className="truncate">{counts.registered_count || 0} Open • {counts.assigned_count || 0} Assigned</span>
+            <span className="text-amber-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity shrink-0">View →</span>
           </div>
         </div>
 
@@ -251,7 +260,7 @@ export const AnalyticsDashboard = () => {
             {metrics?.customerSatisfaction?.averageRating || 4.8} <span className="text-sm font-semibold text-slate-400">/ 5.0</span>
           </div>
           <div className="text-[11px] text-slate-500 mt-1">
-            Based on {metrics?.customerSatisfaction?.totalReviews || 0} verified customer ratings
+            Based on {metrics?.customerSatisfaction?.totalReviews || 0} verified ratings
           </div>
         </div>
       </div>
@@ -270,11 +279,16 @@ export const AnalyticsDashboard = () => {
               const total = counts.total || 1;
               const pct = Math.round((prod.count / total) * 100);
               return (
-                <div key={prod.product_type} className="space-y-1 text-xs">
+                <div 
+                  key={prod.product_type} 
+                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
+                  className="space-y-1 text-xs p-2 rounded-xl hover:bg-emerald-50/70 cursor-pointer transition-all border border-transparent hover:border-emerald-200 group"
+                  title={`Click to filter complaints by ${prod.product_type}`}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-800">{prod.product_type}</span>
-                    <span className="text-slate-500">
-                      <strong>{prod.count}</strong> complaints ({pct}%)
+                    <span className="font-semibold text-slate-800 group-hover:text-emerald-900">{prod.product_type}</span>
+                    <span className="text-slate-500 group-hover:text-emerald-700">
+                      <strong>{prod.count}</strong> complaints ({pct}%) →
                     </span>
                   </div>
                   <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
@@ -305,10 +319,15 @@ export const AnalyticsDashboard = () => {
               const maxCount = metrics.issueCategoryStats[0]?.count || 1;
               const pct = Math.round((issue.count / maxCount) * 100);
               return (
-                <div key={issue.issue_category} className="space-y-1 text-xs">
+                <div 
+                  key={issue.issue_category} 
+                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ search: issue.issue_category })}
+                  className="space-y-1 text-xs p-2 rounded-xl hover:bg-amber-50/70 cursor-pointer transition-all border border-transparent hover:border-amber-200 group"
+                  title={`Click to filter complaints matching "${issue.issue_category}"`}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-700 truncate max-w-xs">{issue.issue_category}</span>
-                    <span className="font-bold text-slate-900">{issue.count}</span>
+                    <span className="font-medium text-slate-700 group-hover:text-amber-950 truncate max-w-xs">{issue.issue_category}</span>
+                    <span className="font-bold text-slate-900 group-hover:text-amber-800">{issue.count} →</span>
                   </div>
                   <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                     <div
@@ -328,7 +347,7 @@ export const AnalyticsDashboard = () => {
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-sm text-slate-900">Technician Performance & SLA Scoreboard</h3>
-            <p className="text-xs text-slate-500">Workload, resolution speed, and average customer rating</p>
+            <p className="text-xs text-slate-500">Workload, resolution speed, and average customer rating (Click row to view technician tickets)</p>
           </div>
           <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full">
             {metrics?.technicianLeaderboard?.length || 0} Active Specialists
@@ -350,12 +369,17 @@ export const AnalyticsDashboard = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {metrics?.technicianLeaderboard?.map((tech) => (
-                <tr key={tech.id} className="hover:bg-slate-50/50">
+                <tr 
+                  key={tech.id} 
+                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ technician_id: String(tech.id) })}
+                  className="hover:bg-emerald-50/50 cursor-pointer transition-colors"
+                  title={`Click to view all complaints assigned to ${tech.name}`}
+                >
                   <td className="px-4 py-3.5 font-bold text-slate-900 flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
                       {tech.name.charAt(0)}
                     </div>
-                    {tech.name}
+                    <span>{tech.name}</span>
                   </td>
                   <td className="px-4 py-3.5 text-slate-600">{tech.area_zone}</td>
                   <td className="px-4 py-3.5">
