@@ -312,41 +312,58 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
 
       {/* Complaints Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        {loading ? (
-          <div className="py-16 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-            Loading complaints...
-          </div>
-        ) : complaints.length === 0 ? (
-          <div className="py-16 text-center text-slate-500">
-            <AlertCircle className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-            <h4 className="text-sm font-bold text-slate-700">No complaints found</h4>
-            <p className="text-xs text-slate-500 mt-1">Try adjusting your filters or search keywords</p>
-          </div>
-        ) : viewMode === 'list' ? (
-          /* COMPACT LIST / TABLE VIEW — Expands across widescreen desktop */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Ticket & Product</th>
-                  <th className="py-3 px-4">Customer & City</th>
-                  <th className="py-3 px-4 hidden lg:table-cell">Issue Summary</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Days Open / Age</th>
-                  <th className="py-3 px-4">Priority & Warranty</th>
-                  <th className="py-3 px-4 hidden sm:table-cell">Assigned Tech</th>
-                  <th className="py-3 px-4">Charges</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {complaints.map((c) => {
-                  const displayStatus = getDisplayStatus(c.status);
-                  const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
-                  const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
-                    `Namaste ${c.customer_name},\nRegarding your Eco Green Solar ticket (${c.ticket_id}).\nStatus: ${displayStatus}.\nEco Green Solar Support.`
-                  )}`;
+        {(() => {
+          const displayedComplaints = complaints.filter(c => {
+            if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+            if (productFilter !== 'all' && c.product_type !== productFilter) return false;
+            if (priorityFilter !== 'all' && c.priority !== priorityFilter) return false;
+            if (technicianFilter && String(c.assigned_technician_id) !== String(technicianFilter)) return false;
+            return true;
+          });
+
+          if (loading) {
+            return (
+              <div className="py-16 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                Loading complaints...
+              </div>
+            );
+          }
+
+          if (displayedComplaints.length === 0) {
+            return (
+              <div className="py-16 text-center text-slate-500">
+                <AlertCircle className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                <h4 className="text-sm font-bold text-slate-700">No complaints found</h4>
+                <p className="text-xs text-slate-500 mt-1">Try adjusting your filters or search keywords</p>
+              </div>
+            );
+          }
+
+          return viewMode === 'list' ? (
+            /* COMPACT LIST / TABLE VIEW — Expands across widescreen desktop */
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-4">Ticket & Product</th>
+                    <th className="py-3 px-4">Customer & City</th>
+                    <th className="py-3 px-4 hidden lg:table-cell">Issue Summary</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Days Open / Age</th>
+                    <th className="py-3 px-4">Priority & Warranty</th>
+                    <th className="py-3 px-4 hidden sm:table-cell">Assigned Tech</th>
+                    <th className="py-3 px-4">Charges</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {displayedComplaints.map((c) => {
+                    const displayStatus = getDisplayStatus(c.status);
+                    const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
+                    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
+                      `Namaste ${c.customer_name},\nRegarding your Eco Green Solar ticket (${c.ticket_id}).\nStatus: ${displayStatus}.\nEco Green Solar Support.`
+                    )}`;
 
                   return (
                     <tr
@@ -529,7 +546,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
         ) : (
           /* CARD GRID VIEW — Responsive: 1 col mobile, 2 cols tablet, 3-4 cols on wide screens */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 p-4 bg-slate-100/60">
-            {complaints.map((c) => {
+            {displayedComplaints.map((c) => {
               const displayStatus = getDisplayStatus(c.status);
               const ageInfo = getTicketAgeInfo(c);
               const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
@@ -678,7 +695,8 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
               );
             })}
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

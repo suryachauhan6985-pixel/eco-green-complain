@@ -460,101 +460,16 @@ function migrateComplaintsTable() {
   }
 }
 
-function seedInitialWhatsAppMessages() {
+function cleanupFakeSeeds() {
   try {
-    const row = db.prepare('SELECT COUNT(*) as count FROM whatsapp_messages').get();
-    if (!row || row.count === 0) {
-      console.log('Seeding initial/restored WhatsApp conversations...');
-      const insert = db.prepare(`
-        INSERT INTO whatsapp_messages (
-          complaint_id, phone, sender_type, sender_name,
-          message_body, media_url, media_type, media_caption, wam_id, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const now = Date.now();
-      const initialConversations = [
-        {
-          phone: '916352454247',
-          sender_type: 'customer',
-          sender_name: 'Sumit Chauhan',
-          message_body: 'Hello Eco Green Solar support team, maine rooftop solar system lagwaya hai.',
-          created_at: new Date(now - 3600000 * 2.5).toISOString()
-        },
-        {
-          phone: '916352454247',
-          sender_type: 'company',
-          sender_name: 'Eco Green Support',
-          message_body: 'Namaste Sumit ji! Welcome to Eco Green Solar service. Aapki kya sahayata kar sakte hain?',
-          created_at: new Date(now - 3600000 * 2.2).toISOString()
-        },
-        {
-          phone: '916352454247',
-          sender_type: 'customer',
-          sender_name: 'Sumit Chauhan',
-          message_body: 'Inverter generating data aur warranty card document verify karwana hai.',
-          created_at: new Date(now - 3600000 * 2.0).toISOString()
-        },
-        {
-          phone: '919426529550',
-          sender_type: 'customer',
-          sender_name: 'Jay Javia',
-          message_body: 'Namaste, inverter check karwana hai solar panel ka.',
-          created_at: new Date(now - 3600000 * 1.8).toISOString()
-        },
-        {
-          phone: '916354687931',
-          sender_type: 'customer',
-          sender_name: 'JD..',
-          message_body: 'Inverter red light blinking issue ticket EGS-2026-000113 ke liye.',
-          created_at: new Date(now - 3600000 * 1.4).toISOString()
-        },
-        {
-          phone: '918799296076',
-          sender_type: 'customer',
-          sender_name: 'Sahil',
-          message_body: 'Solar panel generation kam ho rahi hai, please regular cleaning inspection schedule karein.',
-          created_at: new Date(now - 3600000 * 1.1).toISOString()
-        },
-        {
-          phone: '918306583067',
-          sender_type: 'customer',
-          sender_name: 'Eco Green Solar',
-          message_body: 'Service helpline test message on +91 78784 44414.',
-          created_at: new Date(now - 3600000 * 0.8).toISOString()
-        },
-        {
-          phone: '919662729804',
-          sender_type: 'customer',
-          sender_name: 'dhavalxansgra170',
-          message_body: 'Inquiry regarding solar water heater installation and rooftop subsidy details.',
-          created_at: new Date(now - 3600000 * 0.4).toISOString()
-        }
-      ];
-
-      for (const m of initialConversations) {
-        insert.run(
-          null,
-          m.phone,
-          m.sender_type,
-          m.sender_name,
-          m.message_body,
-          null,
-          null,
-          null,
-          'wam_seed_' + Math.random().toString(36).substring(2, 9),
-          'delivered',
-          m.created_at
-        );
-      }
-    }
+    db.exec(`DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam_seed_%'`);
   } catch (e) {
-    console.warn('WhatsApp seed note:', e.message);
+    // Ignore
   }
 }
 
 initializeSchema();
 migrateComplaintsTable();
-seedInitialWhatsAppMessages();
+cleanupFakeSeeds();
 
 module.exports = db;

@@ -182,6 +182,52 @@ app.get('/api/technicians/:id', authenticateToken, technicianController.getTechn
 app.put('/api/technicians/:id', authenticateToken, requireRole('admin', 'staff'), technicianController.updateTechnician);
 app.put('/api/technicians/:id/availability', authenticateToken, requireRole('admin', 'staff', 'technician'), technicianController.updateAvailability);
 app.delete('/api/technicians/:id', authenticateToken, requireRole('admin'), technicianController.deleteTechnician);
+app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const techId = req.params.id;
+    const actorName = req.user ? req.user.name : 'Company Admin';
+    const actorRole = req.user ? req.user.role : 'admin';
+
+    const pending = db.prepare(`
+      SELECT id, ticket_id, payment_collected FROM complaints
+      WHERE assigned_technician_id = ?
+        AND payment_collected > 0
+        AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+    `).all(techId);
+
+    if (pending.length === 0) {
+      return res.json({ success: true, message: 'No pending cash settlements for this technician', settledCount: 0, totalAmount: 0 });
+    }
+
+    let totalAmount = 0;
+    const updateStmt = db.prepare(`
+      UPDATE complaints SET
+        company_settlement_status = 'Settled with Company',
+        company_settled_at = CURRENT_TIMESTAMP,
+        company_settled_by = ?
+      WHERE id = ?
+    `);
+
+    const timelineStmt = db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
+      VALUES (?, 'Company Cash Settled', ?, ?, ?, 0, CURRENT_TIMESTAMP)
+    `);
+
+    const tx = db.transaction(() => {
+      for (const c of pending) {
+        totalAmount += (c.payment_collected || 0);
+        updateStmt.run(actorName, c.id);
+        timelineStmt.run(c.id, `Batch cash settlement of ₹${c.payment_collected} received and deposited into company accounts.`, actorName, actorRole);
+      }
+    });
+
+    tx();
+    res.json({ success: true, settledCount: pending.length, totalAmount });
+  } catch (err) {
+    console.error('Batch settlement error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ================= NOTIFICATION ROUTES =================
 app.get('/api/notifications/templates', notificationController.getTemplates);

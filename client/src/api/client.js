@@ -78,7 +78,12 @@ const PERMANENT_WHATSAPP_KEY = 'egs_permanent_whatsapp_messages';
 
 export function getPermanentWhatsAppMessages() {
   try {
-    return JSON.parse(localStorage.getItem(PERMANENT_WHATSAPP_KEY) || '[]');
+    const list = JSON.parse(localStorage.getItem(PERMANENT_WHATSAPP_KEY) || '[]');
+    const cleaned = list.filter(m => !m.wam_id?.startsWith('wam_seed_'));
+    if (cleaned.length !== list.length) {
+      localStorage.setItem(PERMANENT_WHATSAPP_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch (e) {
     return [];
   }
@@ -87,13 +92,15 @@ export function getPermanentWhatsAppMessages() {
 export function saveWhatsAppMessagesPermanently(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
   try {
+    const realMessages = messages.filter(m => !m.wam_id?.startsWith('wam_seed_'));
+    if (realMessages.length === 0) return;
     const existing = getPermanentWhatsAppMessages();
     const map = new Map();
     existing.forEach(m => {
       const key = m.wam_id || `${m.phone}_${m.created_at}_${m.message_body}`;
       map.set(key, m);
     });
-    messages.forEach(m => {
+    realMessages.forEach(m => {
       const key = m.wam_id || `${m.phone}_${m.created_at}_${m.message_body}`;
       const prev = map.get(key);
       map.set(key, prev ? { ...prev, ...m } : m);
@@ -726,25 +733,28 @@ export const api = {
       saveComplaintsPermanently(res.complaints);
 
       // Check if any user-created complaints in local permanent storage are missing on server (e.g. after container restart or redeploy)
-      const permList = getPermanentComplaints();
-      const serverTicketIds = new Set(res.complaints.map(c => c.ticket_id));
-      const missingFromServer = permList.filter(c => {
-        if (!c.ticket_id) return false;
-        const isDummy = INITIAL_COMPLAINTS.some(init => init.ticket_id === c.ticket_id);
-        return !isDummy && !serverTicketIds.has(c.ticket_id);
-      });
+      const hasSpecificFilter = Object.entries(params).some(([k, v]) => v && v !== 'all' && k !== 'limit' && k !== 'offset');
+      if (!hasSpecificFilter) {
+        const permList = getPermanentComplaints();
+        const serverTicketIds = new Set(res.complaints.map(c => c.ticket_id));
+        const missingFromServer = permList.filter(c => {
+          if (!c.ticket_id) return false;
+          const isDummy = INITIAL_COMPLAINTS.some(init => init.ticket_id === c.ticket_id);
+          return !isDummy && !serverTicketIds.has(c.ticket_id);
+        });
 
-      if (missingFromServer.length > 0) {
-        console.log(`[PermanentSync] Restoring ${missingFromServer.length} user complaint(s) to server...`);
-        request('/complaints/sync-backup', {
-          method: 'POST',
-          body: JSON.stringify({ complaints: missingFromServer })
-        }).catch(err => console.warn('[PermanentSync] Background sync notice:', err.message));
+        if (missingFromServer.length > 0) {
+          console.log(`[PermanentSync] Restoring ${missingFromServer.length} user complaint(s) to server...`);
+          request('/complaints/sync-backup', {
+            method: 'POST',
+            body: JSON.stringify({ complaints: missingFromServer })
+          }).catch(err => console.warn('[PermanentSync] Background sync notice:', err.message));
 
-        // Merge missing complaints to the top of list so user immediately sees them!
-        res.complaints = [...missingFromServer, ...res.complaints];
-        if (typeof res.total === 'number') {
-          res.total += missingFromServer.length;
+          // Merge missing complaints to the top of list so user immediately sees them!
+          res.complaints = [...missingFromServer, ...res.complaints];
+          if (typeof res.total === 'number') {
+            res.total += missingFromServer.length;
+          }
         }
       }
     }
@@ -852,6 +862,9 @@ export const api = {
   updateTechnicianAvailability: (id, isAvailable) => request(`/technicians/${id}/availability`, {
     method: 'PUT',
     body: JSON.stringify({ is_available: isAvailable })
+  }),
+  settleAllTechnicianComplaints: (techId) => request(`/technicians/${techId}/settle-all`, {
+    method: 'POST'
   }),
 
   // Notifications

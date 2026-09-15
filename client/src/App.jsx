@@ -57,18 +57,48 @@ function AppContent() {
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
 
   const [currentTab, setCurrentTab] = useState(() => {
+    // 1. Check URL hash (e.g. #whatsapp-inbox or #technician)
+    const hash = window.location.hash.replace('#', '');
+    if (hash && ['complaints', 'technician', 'whatsapp-inbox', 'staff', 'analytics', 'templates', 'customer'].includes(hash)) {
+      return hash;
+    }
+    // 2. Check saved tab in localStorage
+    try {
+      const saved = localStorage.getItem('egs_active_tab');
+      if (saved && ['complaints', 'technician', 'whatsapp-inbox', 'staff', 'analytics', 'templates', 'customer'].includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+
     if (currentUser?.role === 'technician') return 'technician';
     if (currentUser?.role === 'customer') return 'customer';
     return 'complaints';
   });
 
-  // Listen to browser forward/back buttons for URL tracking
+  // Keep localStorage and URL hash in sync with currentTab
+  const handleTabChange = (tab) => {
+    setCurrentTab(tab);
+    try {
+      localStorage.setItem('egs_active_tab', tab);
+      window.location.hash = tab;
+    } catch (e) {}
+  };
+
+  // Listen to browser forward/back buttons and hash changes
   useEffect(() => {
     const handleLocationChange = () => {
       setTrackingInfo(getTrackingInfoFromUrl());
+      const hash = window.location.hash.replace('#', '');
+      if (hash && ['complaints', 'technician', 'whatsapp-inbox', 'staff', 'analytics', 'templates', 'customer'].includes(hash)) {
+        setCurrentTab(hash);
+      }
     };
     window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
   }, []);
 
   // Modals & Drawers state (MUST be declared before early returns per React Rules of Hooks)
@@ -158,7 +188,7 @@ function AppContent() {
       <div className="shrink-0 z-30">
         <Navbar
           currentTab={currentTab}
-          setCurrentTab={setCurrentTab}
+          setCurrentTab={handleTabChange}
           onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
           onToggleNotificationDrawer={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
           onOpenTour={() => setIsTourOpen(true)}
@@ -236,7 +266,7 @@ function AppContent() {
             key={`ana-${refreshKey}`}
             onNavigateToComplaints={(filters) => {
               setComplaintFilters(filters);
-              setCurrentTab('complaints');
+              handleTabChange('complaints');
             }}
           />
         )}
@@ -269,7 +299,7 @@ function AppContent() {
         {/* Complaints Desk */}
         {['admin', 'staff'].includes(currentUser?.role) && (
           <button
-            onClick={() => setCurrentTab('complaints')}
+            onClick={() => handleTabChange('complaints')}
             className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
               currentTab === 'complaints' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
             }`}
@@ -282,7 +312,7 @@ function AppContent() {
         {/* Field Ops / Technician */}
         {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
           <button
-            onClick={() => setCurrentTab('technician')}
+            onClick={() => handleTabChange('technician')}
             className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
               currentTab === 'technician' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
             }`}
@@ -295,7 +325,7 @@ function AppContent() {
         {/* WhatsApp Hub (Admin & Staff) */}
         {['admin', 'staff'].includes(currentUser?.role) && (
           <button
-            onClick={() => setCurrentTab('whatsapp-inbox')}
+            onClick={() => handleTabChange('whatsapp-inbox')}
             className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
               currentTab === 'whatsapp-inbox' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
             }`}
@@ -308,7 +338,7 @@ function AppContent() {
         {/* Staff/Techs (Admin only) */}
         {currentUser?.role === 'admin' && (
           <button
-            onClick={() => setCurrentTab('team')}
+            onClick={() => handleTabChange('team')}
             className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
               currentTab === 'team' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
             }`}
@@ -321,7 +351,7 @@ function AppContent() {
         {/* Analytics (Admin only) */}
         {currentUser?.role === 'admin' && (
           <button
-            onClick={() => setCurrentTab('analytics')}
+            onClick={() => handleTabChange('analytics')}
             className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
               currentTab === 'analytics' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
             }`}
@@ -334,7 +364,7 @@ function AppContent() {
         {/* Customer Public View */}
         {currentUser?.role === 'customer' && (
           <button
-            onClick={() => setCurrentTab('customer')}
+            onClick={() => handleTabChange('customer')}
             className="flex flex-col items-center py-1 px-3 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50"
           >
             <Search className="w-4 h-4 mb-0.5" />
