@@ -90,6 +90,7 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
             ]
           }
         ]
+      };
     } else if (mediaUrl) {
       if (mediaType === 'image') {
         payload.type = 'image';
