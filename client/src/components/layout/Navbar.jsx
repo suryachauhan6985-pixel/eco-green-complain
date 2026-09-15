@@ -105,6 +105,18 @@ export const Navbar = ({
                     <Wrench className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Field Operations</span>
                   </button>
+
+                  <button
+                    onClick={() => setCurrentTab('whatsapp-inbox')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      currentTab === 'whatsapp-inbox'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp Web</span>
+                  </button>
                 </>
               )}
 
@@ -133,6 +145,18 @@ export const Navbar = ({
                   >
                     <Wrench className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Field View</span>
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentTab('whatsapp-inbox')}
+                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      currentTab === 'whatsapp-inbox'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp Web</span>
                   </button>
 
                   <button

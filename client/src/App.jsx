@@ -13,11 +13,12 @@ import { AnalyticsDashboard } from './components/admin/AnalyticsDashboard';
 import { TemplateManager } from './components/admin/TemplateManager';
 import { StaffTechnicianManager } from './components/admin/StaffTechnicianManager';
 import { OnboardingTour } from './components/common/OnboardingTour';
+import { WhatsAppWebInbox } from './components/whatsapp/WhatsAppWebInbox';
 import { LoginPage } from './components/auth/LoginPage';
 import { api } from './api/client';
 import { 
   Sparkles, Compass, RotateCcw, CheckCircle2, 
-  Users, Wrench, Shield, BarChart3, Search, Plus 
+  Users, Wrench, Shield, BarChart3, Search, Plus, MessageCircle 
 } from 'lucide-react';
 
 function getTrackingInfoFromUrl() {
@@ -72,6 +73,7 @@ function AppContent() {
 
   // Modals & Drawers state (MUST be declared before early returns per React Rules of Hooks)
   const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
+  const [newComplaintInitialData, setNewComplaintInitialData] = useState(null);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [selectedComplaintId, setSelectedComplaintId] = useState(null);
   const [historyPhone, setHistoryPhone] = useState(null);
@@ -239,6 +241,17 @@ function AppContent() {
           <TemplateManager key={`tmpl-${refreshKey}`} />
         )}
 
+        {currentTab === 'whatsapp-inbox' && (
+          <WhatsAppWebInbox
+            key={`wa-inbox-${refreshKey}`}
+            onOpenComplaint={(complaintId) => setSelectedComplaintId(complaintId)}
+            onNewComplaintWithData={(data) => {
+              setNewComplaintInitialData(data);
+              setIsNewComplaintOpen(true);
+            }}
+          />
+        )}
+
         {currentTab === 'customer' && (
           <CustomerPublicPortal
             key={`cust-${refreshKey}`}
@@ -272,6 +285,19 @@ function AppContent() {
           >
             <Wrench className="w-4 h-4 mb-0.5" />
             <span>Field Ops</span>
+          </button>
+        )}
+
+        {/* WhatsApp Hub (Admin & Staff) */}
+        {['admin', 'staff'].includes(currentUser?.role) && (
+          <button
+            onClick={() => setCurrentTab('whatsapp-inbox')}
+            className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
+              currentTab === 'whatsapp-inbox' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            }`}
+          >
+            <MessageCircle className="w-4 h-4 mb-0.5" />
+            <span>WhatsApp</span>
           </button>
         )}
 
@@ -332,7 +358,11 @@ function AppContent() {
       {/* Global Modals & Slide-over Panels */}
       <NewComplaintModal
         isOpen={isNewComplaintOpen}
-        onClose={() => setIsNewComplaintOpen(false)}
+        initialData={newComplaintInitialData}
+        onClose={() => {
+          setIsNewComplaintOpen(false);
+          setNewComplaintInitialData(null);
+        }}
         onComplaintCreated={(newTicket) => {
           // Refresh complaints list without popping drawer underneath success modal
           setRefreshKey(k => k + 1);

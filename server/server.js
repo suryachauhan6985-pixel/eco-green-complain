@@ -409,6 +409,196 @@ app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, requireRole('a
   }
 });
 
+// 5. Universal WhatsApp Web Inbox: Get all conversation threads (linked or unlinked)
+app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    // Group by cleaned phone number
+    const rows = db.prepare(`
+      WITH RankedMessages AS (
+        SELECT 
+          m.*,
+          ROW_NUMBER() OVER(PARTITION BY m.phone ORDER BY m.created_at DESC) as rn
+        FROM whatsapp_messages m
+      )
+      SELECT 
+        rm.phone,
+        rm.complaint_id,
+        rm.sender_name,
+        rm.sender_type as last_sender_type,
+        rm.message_body as last_message,
+        rm.media_type as last_media_type,
+        rm.created_at as last_activity,
+        c.ticket_id,
+        c.customer_name as complaint_customer_name,
+        c.product_type,
+        c.status as complaint_status
+      FROM RankedMessages rm
+      LEFT JOIN complaints c ON c.id = rm.complaint_id
+      WHERE rm.rn = 1
+      ORDER BY rm.created_at DESC
+    `).all();
+
+    // In case a contact name is registered in complaints or installed_customers, supplement it
+    const conversations = rows.map(r => {
+      const cleanPhone = (r.phone || '').replace(/[^0-9]/g, '');
+      const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+      
+      let customerName = r.complaint_customer_name || r.sender_name;
+      let complaintId = r.complaint_id;
+      let ticketId = r.ticket_id;
+
+      if (!complaintId) {
+        // Check if there's any complaint matching this phone
+        const matchedComp = db.prepare(`
+          SELECT id, ticket_id, customer_name FROM complaints 
+          WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+          ORDER BY id DESC LIMIT 1
+        `).get(`%${last10}%`);
+        if (matchedComp) {
+          complaintId = matchedComp.id;
+          ticketId = matchedComp.ticket_id;
+          customerName = matchedComp.customer_name;
+        }
+      }
+
+      if (!customerName || customerName === 'Customer') {
+        const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+        if (inst) customerName = inst.customer_name;
+      }
+
+      return {
+        ...r,
+        complaint_id: complaintId,
+        ticket_id: ticketId,
+        sender_name: customerName || `+${r.phone}`
+      };
+    });
+
+    res.json({ success: true, conversations });
+  } catch (err) {
+    console.error('Error fetching WhatsApp conversations:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6. Universal WhatsApp Web Inbox: Get full chat history for a specific phone number
+app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const cleanPhone = (rawPhone || '').replace(/[^0-9]/g, '');
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    const messages = db.prepare(`
+      SELECT * FROM whatsapp_messages
+      WHERE phone LIKE ?
+      ORDER BY created_at ASC
+    `).all(`%${last10}%`);
+
+    // Find linked complaint if any
+    const complaint = db.prepare(`
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status 
+      FROM complaints 
+      WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+      ORDER BY id DESC LIMIT 1
+    `).get(`%${last10}%`);
+
+    let contactName = complaint?.customer_name;
+    if (!contactName) {
+      const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+      if (inst) contactName = inst.customer_name;
+    }
+    if (!contactName && messages.length > 0) {
+      const custMsg = messages.find(m => m.sender_type === 'customer' && m.sender_name);
+      if (custMsg) contactName = custMsg.sender_name;
+    }
+
+    res.json({
+      success: true,
+      messages: messages || [],
+      contact: {
+        phone: cleanPhone,
+        sender_name: contactName || `+${cleanPhone}`,
+        complaint: complaint || null
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching chat history:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. Universal WhatsApp Web Inbox: Direct reply to any phone number
+app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+    if (!phone || !message || !message.trim()) {
+      return res.status(400).json({ error: 'phone and message are required' });
+    }
+
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    // Check if complaint exists for this phone
+    const complaint = db.prepare(`
+      SELECT * FROM complaints 
+      WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+      ORDER BY id DESC LIMIT 1
+    `).get(`%${last10}%`);
+
+    const { sendWhatsAppMessage } = require('./services/whatsappProvider');
+    const sendRes = await sendWhatsAppMessage({
+      to: formattedPhone,
+      message: message.trim(),
+      ticket_id: complaint?.ticket_id || null,
+      recipient_name: complaint?.customer_name || 'Valued Customer'
+    });
+
+    // Record outbound message in whatsapp_messages
+    const insertStmt = db.prepare(`
+      INSERT INTO whatsapp_messages (
+        complaint_id, phone, sender_type, sender_name,
+        message_body, wam_id, status
+      ) VALUES (?, ?, 'company', ?, ?, ?, 'sent')
+    `);
+
+    const insertRes = insertStmt.run(
+      complaint ? complaint.id : null,
+      formattedPhone,
+      req.user?.name || 'Eco Green Support',
+      message.trim(),
+      sendRes.messageId || null
+    );
+
+    // If complaint exists, also log in complaint_timelines
+    if (complaint) {
+      try {
+        db.prepare(`
+          INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+          VALUES (?, 'Staff WhatsApp Reply', ?, ?, ?, 1)
+        `).run(
+          complaint.id,
+          message.trim(),
+          req.user?.name || 'Staff Specialist',
+          req.user?.role || 'staff'
+        );
+      } catch (tErr) {
+        console.warn('Timeline log notice:', tErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      messageId: insertRes.lastInsertRowid,
+      metaMessageId: sendRes.messageId
+    });
+  } catch (err) {
+    console.error('Error sending direct WhatsApp reply:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ================= REPORT & ANALYTICS ROUTES =================
 app.get('/api/reports/metrics', authenticateToken, requireRole('admin', 'staff'), reportController.getDashboardMetrics);
 app.get('/api/reports/export-csv', authenticateToken, requireRole('admin', 'staff'), reportController.exportComplaintsCsv);

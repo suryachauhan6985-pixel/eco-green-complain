@@ -904,6 +904,14 @@ export const api = {
   sendComplaintWhatsAppReply: (complaintId, message) => request(`/complaints/${complaintId}/whatsapp-reply`, {
     method: 'POST',
     body: JSON.stringify({ message })
+  }),
+
+  // Universal WhatsApp Web Inbox API
+  getWhatsAppConversations: () => request('/whatsapp/conversations'),
+  getWhatsAppChatHistory: (phone) => request(`/whatsapp/chats/${phone}`),
+  sendWhatsAppDirectReply: (phone, message) => request('/whatsapp/direct-reply', {
+    method: 'POST',
+    body: JSON.stringify({ phone, message })
   })
 };
 

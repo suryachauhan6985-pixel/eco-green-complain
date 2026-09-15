@@ -65,7 +65,7 @@ const getProductComponentIcon = (type) => {
   return Layers;
 };
 
-export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint }) => {
+export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint, initialData = null }) => {
   const { showToast } = useDialog();
   const [directSending, setDirectSending] = useState(false);
   const [directSent, setDirectSent] = useState(false);
@@ -90,6 +90,19 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     issue_description: '',
     priority: 'Medium'
   });
+
+  // Populate from initialData (e.g. from WhatsApp conversion)
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setFormData(prev => ({
+        ...prev,
+        customer_name: initialData.customer_name || prev.customer_name,
+        customer_phone: initialData.customer_phone || prev.customer_phone,
+        issue_description: initialData.issue_description || prev.issue_description
+      }));
+      setStep('form');
+    }
+  }, [initialData, isOpen]);
 
   const [fileList, setFileList] = useState([]); // [{ file, preview, id }]
   const [submitting, setSubmitting] = useState(false);
