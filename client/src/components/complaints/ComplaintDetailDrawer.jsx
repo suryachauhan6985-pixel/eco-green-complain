@@ -7,7 +7,7 @@ import {
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
-  MessageCircle, Copy, Eye, FileText
+  MessageCircle, Copy, Eye, FileText, UserCheck
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
 
@@ -301,9 +301,27 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
+  const scrollToTechnicianAssignment = () => {
+    setActiveTab('overview');
+    setTimeout(() => {
+      const el = document.getElementById('technician-assignment-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-emerald-500', 'bg-emerald-50/50');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-emerald-500', 'bg-emerald-50/50');
+        }, 2500);
+        const selectEl = el.querySelector('select');
+        if (selectEl) {
+          selectEl.focus();
+        }
+      }
+    }, 100);
+  };
+
   const openPaymentModal = () => {
     if (!ticket.assigned_technician_id) {
-      alert('⚠️ Pehle Technician assign karein! Bina technician assign kiye complaint ka payment record nahi kiya ja sakta.');
+      scrollToTechnicianAssignment();
       return;
     }
     setPaymentData({
@@ -317,7 +335,8 @@ export const ComplaintDetailDrawer = ({
 
   const handleRecordPaymentSubmit = async (forceSubmit = false) => {
     if (!ticket.assigned_technician_id) {
-      alert('⚠️ Pehle Technician assign karein! Bina technician assign kiye payment collect nahi ho sakta.');
+      setIsRecordingPayment(false);
+      scrollToTechnicianAssignment();
       return;
     }
 
@@ -633,12 +652,12 @@ export const ComplaintDetailDrawer = ({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => alert('⚠️ Pehle Technician assign karein! Bina technician assign kiye payment record nahi kiya ja sakta.')}
-                              className="w-full py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
-                              title="Pehle Technician assign karein"
+                              onClick={scrollToTechnicianAssignment}
+                              className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                              title="Assign a technician to enable payment collection"
                             >
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
-                              Assign Tech First to Collect
+                              <UserCheck className="w-3.5 h-3.5" />
+                              Assign Tech to Collect
                             </button>
                           )}
                         </div>
@@ -648,11 +667,19 @@ export const ComplaintDetailDrawer = ({
                       {!ticket.assigned_technician_id && (
                         <div className="mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="block font-bold">⚠️ Technician Assign Nahi Hai</strong>
-                            <span className="text-[11px] text-amber-800 leading-relaxed">
-                              Yeh complaint abhi tak kisi technician ko assign nahi hui hai. Customer se payment collect karne ke liye pehle niche "Technician Assignment" section se technician assign karein.
-                            </span>
+                          <div className="space-y-1 flex-1">
+                            <strong className="block font-bold text-amber-950">Technician Assignment Required</strong>
+                            <p className="text-[11px] text-amber-800 leading-relaxed">
+                              A technician must be assigned to this ticket before service charges can be collected or recorded.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={scrollToTechnicianAssignment}
+                              className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 underline transition-colors"
+                            >
+                              <span>Assign Technician Now</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
                           </div>
                         </div>
                       )}
@@ -790,7 +817,10 @@ export const ComplaintDetailDrawer = ({
 
                     {/* ASSIGNMENT SECTION */}
                     {['admin', 'staff'].includes(currentUser?.role) && (
-                      <div className="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
+                      <div 
+                        id="technician-assignment-section" 
+                        className="bg-white rounded-xl p-4 border border-slate-200 space-y-3 scroll-mt-6 transition-all duration-300"
+                      >
                         <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                           <Wrench className="w-3.5 h-3.5 text-emerald-700" />
                           Technician Assignment
@@ -1387,7 +1417,7 @@ export const ComplaintDetailDrawer = ({
               {!ticket.assigned_technician_id && (
                 <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs flex items-center gap-2 font-bold animate-in fade-in">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>⚠️ Technician Assign Nahi Hai! Pehle technician assign karein, bina technician ke payment save nahi ho sakti.</span>
+                  <span>Technician Assignment Required: Please assign a field specialist to this complaint before recording payment.</span>
                 </div>
               )}
 

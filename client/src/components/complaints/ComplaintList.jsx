@@ -450,7 +450,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                               <span className="font-bold text-slate-900 block">
                                 ₹{c.payment_collected > 0 ? c.payment_collected : c.estimated_charges}
                               </span>
-                              <span className={`text-[10px] font-bold ${
+                              <span className={`text-[10px] font-semibold ${
                                 c.payment_status === 'Collected' ? 'text-emerald-600' :
                                 c.payment_status === 'Partially Paid' ? 'text-blue-600' :
                                 'text-amber-600'
@@ -458,11 +458,6 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                                 {c.payment_status || 'Unpaid'}
                               </span>
                             </div>
-                            {c.estimated_charges > 0 && !(c.assigned_technician_id || c.technician_id) && c.payment_status !== 'Collected' && (
-                              <span className="inline-flex items-center text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                ⚠️ Pehle Tech Assign Karein
-                              </span>
-                            )}
                             {c.payment_collected > 0 && (
                               c.company_settlement_status === 'Settled with Company' ? (
                                 <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
@@ -484,11 +479,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                                     </button>
                                   )}
                                 </div>
-                              ) : (
-                                <span className="inline-flex items-center text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200" title="No technician assigned">
-                                  Tech Unassigned
-                                </span>
-                              )
+                              ) : null
                             )}
                           </div>
                         ) : (
@@ -615,13 +606,6 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                       </p>
                     </div>
 
-                    {/* Unassigned ticket with unpaid charges notice */}
-                    {c.estimated_charges > 0 && !(c.assigned_technician_id || c.technician_id) && c.payment_status !== 'Collected' && (
-                      <div className="mt-2 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 flex items-center gap-1">
-                        <span>⚠️ Payment locked: Pehle Tech assign karein</span>
-                      </div>
-                    )}
-
                     {/* Cash in Hand & Company Settlement in Card */}
                     {c.payment_collected > 0 && (
                       <div className="mt-2 flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-200/80">
@@ -647,11 +631,7 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                               </button>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200" title="No Technician Assigned">
-                            Tech Unassigned
-                          </span>
-                        )}
+                        ) : null}
                       </div>
                     )}
                   </div>
