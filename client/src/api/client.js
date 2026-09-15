@@ -73,6 +73,37 @@ export function saveComplaintsPermanently(complaints) {
   }
 }
 
+// Permanent Local Storage Backup Key for WhatsApp Messages (prevents loss on container restart)
+const PERMANENT_WHATSAPP_KEY = 'egs_permanent_whatsapp_messages';
+
+export function getPermanentWhatsAppMessages() {
+  try {
+    return JSON.parse(localStorage.getItem(PERMANENT_WHATSAPP_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveWhatsAppMessagesPermanently(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  try {
+    const existing = getPermanentWhatsAppMessages();
+    const map = new Map();
+    existing.forEach(m => {
+      const key = m.wam_id || `${m.phone}_${m.created_at}_${m.message_body}`;
+      map.set(key, m);
+    });
+    messages.forEach(m => {
+      const key = m.wam_id || `${m.phone}_${m.created_at}_${m.message_body}`;
+      const prev = map.get(key);
+      map.set(key, prev ? { ...prev, ...m } : m);
+    });
+    localStorage.setItem(PERMANENT_WHATSAPP_KEY, JSON.stringify(Array.from(map.values())));
+  } catch (e) {
+    console.warn('Failed to save whatsapp messages permanently:', e);
+  }
+}
+
 // Local Storage Fallback Mock Store for seamless standalone demo execution
 class LocalMockStore {
   constructor() {
@@ -906,24 +937,72 @@ export const api = {
     body: JSON.stringify({ message })
   }),
 
-  // Universal WhatsApp Web Inbox API
-  getWhatsAppConversations: () => request('/whatsapp/conversations'),
-  getWhatsAppChatHistory: (phone) => request(`/whatsapp/chats/${phone}`),
-  sendWhatsAppDirectReply: (phone, message, attachment = null) => {
+  // Universal WhatsApp Web Inbox API with Automatic Cloud Persistence
+  getWhatsAppConversations: async () => {
+    const res = await request('/whatsapp/conversations');
+    const permMessages = getPermanentWhatsAppMessages();
+    if (res && Array.isArray(res.conversations)) {
+      // If server database was restarted/rebuilt and has 0 conversations, auto-restore from local backup!
+      if (res.conversations.length === 0 && permMessages.length > 0) {
+        console.log(`[PermanentWhatsAppSync] Restoring ${permMessages.length} whatsapp messages to server...`);
+        try {
+          await request('/whatsapp/sync-backup', {
+            method: 'POST',
+            body: JSON.stringify({ messages: permMessages })
+          });
+          // Re-fetch restored conversations
+          return await request('/whatsapp/conversations');
+        } catch (e) {
+          console.warn('[PermanentWhatsAppSync] Background sync notice:', e.message);
+        }
+      }
+    }
+    return res;
+  },
+  getWhatsAppChatHistory: async (phone) => {
+    const res = await request(`/whatsapp/chats/${phone}`);
+    if (res && Array.isArray(res.messages) && res.messages.length > 0) {
+      saveWhatsAppMessagesPermanently(res.messages);
+    }
+    return res;
+  },
+  syncBackupWhatsApp: (messages) => request('/whatsapp/sync-backup', {
+    method: 'POST',
+    body: JSON.stringify({ messages })
+  }),
+  sendWhatsAppDirectReply: async (phone, message, attachment = null) => {
+    let res;
     if (attachment) {
       const formData = new FormData();
       formData.append('phone', phone);
       if (message) formData.append('message', message);
       formData.append('attachment', attachment);
-      return request('/whatsapp/direct-reply', {
+      res = await request('/whatsapp/direct-reply', {
         method: 'POST',
         body: formData
       });
+    } else {
+      res = await request('/whatsapp/direct-reply', {
+        method: 'POST',
+        body: JSON.stringify({ phone, message })
+      });
     }
-    return request('/whatsapp/direct-reply', {
-      method: 'POST',
-      body: JSON.stringify({ phone, message })
-    });
+
+    // Save outgoing reply to local permanent backup
+    if (res && res.success) {
+      saveWhatsAppMessagesPermanently([{
+        phone: phone,
+        sender_type: 'company',
+        sender_name: 'Eco Green Support',
+        message_body: (message || '').trim(),
+        media_url: res.mediaUrl || null,
+        media_type: attachment ? (attachment.type?.startsWith('image/') ? 'image' : 'document') : null,
+        media_caption: attachment?.name || null,
+        created_at: new Date().toISOString()
+      }]);
+    }
+
+    return res;
   }
 };
 

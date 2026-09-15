@@ -30,7 +30,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve uploaded photos/documents
-const uploadsPath = path.join(__dirname, 'uploads');
+const defaultUploadsPath = fs.existsSync('/data') ? path.join('/data', 'uploads') : path.join(__dirname, 'uploads');
+const uploadsPath = process.env.UPLOAD_DIR || defaultUploadsPath;
 if (!fs.existsSync(uploadsPath)) {
   fs.mkdirSync(uploadsPath, { recursive: true });
 }
@@ -620,6 +621,54 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
   } catch (err) {
     console.error('Error sending direct WhatsApp reply:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. Universal WhatsApp Web Inbox: Sync & restore backup messages (prevents data loss across redeploys)
+app.post('/api/whatsapp/sync-backup', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { messages } = req.body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.json({ success: true, synced: 0 });
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO whatsapp_messages (
+        complaint_id, phone, sender_type, sender_name,
+        message_body, media_url, media_type, media_caption, wam_id, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let count = 0;
+    const syncTx = db.transaction(() => {
+      for (const m of messages) {
+        if (!m.phone || !m.message_body) continue;
+        const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+        const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+        
+        insertStmt.run(
+          m.complaint_id || null,
+          formattedPhone,
+          m.sender_type || 'customer',
+          m.sender_name || 'Customer',
+          m.message_body,
+          m.media_url || null,
+          m.media_type || null,
+          m.media_caption || null,
+          m.wam_id || `backup_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          m.status || 'delivered',
+          m.created_at || new Date().toISOString()
+        );
+        count++;
+      }
+    });
+
+    syncTx();
+    console.log(`[WhatsAppBackupSync] Restored/Synced ${count} messages to database.`);
+    res.json({ success: true, synced: count });
+  } catch (err) {
+    console.error('WhatsApp sync backup error:', err);
+    res.status(500).json({ error: 'Failed to sync whatsapp backup: ' + err.message });
   }
 });
 
