@@ -33,9 +33,11 @@ export const StaffTechnicianManager = () => {
     name: '',
     phone: '',
     email: '',
-    area_zone: '',
-    specialization: '',
-    daily_capacity: 5
+    area_zone: 'North Zone (Indiranagar / Hebbal)',
+    specialization: 'Solar Rooftop Systems',
+    daily_capacity: 5,
+    role: 'staff',
+    password: ''
   });
 
   // Add Form State
@@ -62,7 +64,9 @@ export const StaffTechnicianManager = () => {
       email: member.email || '',
       area_zone: member.area_zone || 'North Zone (Indiranagar / Hebbal)',
       specialization: member.specialization || 'Solar Rooftop Systems',
-      daily_capacity: member.daily_capacity || 5
+      daily_capacity: member.daily_capacity || 5,
+      role: member.role || 'staff',
+      password: ''
     });
     setIsEditModalOpen(true);
   };
@@ -74,15 +78,27 @@ export const StaffTechnicianManager = () => {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (editingMember.isTech) {
-        await api.updateTechnician(editingMember.id, editFormData);
-        showToast(`Technician ${editFormData.name} updated successfully!`);
-      } else {
-        await api.updateUser(editingMember.id, {
+      if (editingMember?.isTech) {
+        await api.updateTechnician(editingMember.id, {
           name: editFormData.name,
           phone: editFormData.phone,
-          email: editFormData.email
+          email: editFormData.email,
+          area_zone: editFormData.area_zone,
+          specialization: editFormData.specialization,
+          daily_capacity: editFormData.daily_capacity
         });
+        showToast(`Technician ${editFormData.name} updated successfully!`);
+      } else {
+        const updatePayload = {
+          name: editFormData.name,
+          phone: editFormData.phone,
+          email: editFormData.email,
+          role: editFormData.role
+        };
+        if (editFormData.password && editFormData.password.trim()) {
+          updatePayload.password = editFormData.password.trim();
+        }
+        await api.updateUser(editingMember.id, updatePayload);
         showToast(`Staff member ${editFormData.name} updated successfully!`);
       }
       setIsEditModalOpen(false);
@@ -284,6 +300,8 @@ export const StaffTechnicianManager = () => {
   const staffUsers = Array.isArray(users) 
     ? users.filter(u => u && (u.role === 'staff' || u.role === 'admin')) 
     : [];
+
+  const editType = editingMember?.isTech ? 'technician' : 'staff';
 
   return (
     <div className="space-y-4">
