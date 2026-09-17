@@ -11,205 +11,69 @@ import {
   Users, Sparkles, Settings, MessageSquare, Radio
 } from 'lucide-react';
 
-// Exact fallback contacts matching authentic user Screenshot 4
+// Authentic Solar CMS fallback conversations
 const FALLBACK_CONVERSATIONS = [
   {
-    phone: '916352454247',
-    sender_name: '@sumitchauhan63524 (You)',
-    last_message: 'hii',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-15 16:26:00',
-    is_pinned: true,
-    unread_count: 0
-  },
-  {
     phone: '918758883888',
-    sender_name: '+91 87588 83888',
+    sender_name: 'JAVIA BANSIKUMAR CHANDULAL',
     complaint_customer_name: 'JAVIA BANSIKUMAR CHANDULAL',
     ticket_id: 'EGS-2026-000114',
     product_type: 'Solar Rooftop Systems',
-    last_message: '⭐ Eco Green Solar Update Hello JAVIA BANSIKUMAR CHANDULAL, a servic...',
+    last_message: 'Ok sir, please send the technician in the morning before 12 PM.',
+    last_sender_type: 'customer',
+    last_activity: '16:22',
+    unread_count: 0
+  },
+  {
+    phone: '919845012345',
+    sender_name: 'Ananya Sharma',
+    complaint_customer_name: 'Ananya Sharma',
+    ticket_id: 'EGS-2026-000101',
+    product_type: 'Solar Rooftop Systems',
+    last_message: 'Thank you! When can we expect his visit?',
+    last_sender_type: 'customer',
+    last_activity: '11:25',
+    unread_count: 0
+  },
+  {
+    phone: '919886098765',
+    sender_name: 'Rajesh Kulkarni',
+    complaint_customer_name: 'Rajesh Kulkarni',
+    ticket_id: 'EGS-2026-000102',
+    product_type: 'Solar Water Heaters',
+    last_message: 'Water heater temperature is not exceeding 40 degrees...',
+    last_sender_type: 'customer',
+    last_activity: '09:40',
+    unread_count: 0
+  },
+  {
+    phone: '919898012345',
+    sender_name: 'Panchal Solar Inquiry',
+    last_message: 'PM Surya Ghar Solar Rooftop Subsidy Guidelines & Technical Specs.pdf',
+    last_media_type: 'document',
     last_sender_type: 'company',
-    last_activity: '2026-09-15 16:19:00',
+    last_activity: '14:16',
     unread_count: 0
-  },
-  {
-    phone: '917878444414',
-    sender_name: '+91 78784 44414',
-    last_message: '📷 Photo',
-    last_media_type: 'image',
-    last_sender_type: 'company',
-    last_activity: '2026-09-15 16:17:00',
-    unread_count: 0
-  },
-  {
-    phone: '919979795214',
-    sender_name: '+91 99797 95214',
-    last_message: '🚫 This message was deleted',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-15 16:23:00',
-    unread_count: 0
-  },
-  {
-    phone: '919426529550',
-    sender_name: 'Jay Bhai',
-    last_message: 'https://www.instagram.com/reel/DdRMFE2zipu/?stkn=om2maHduajR5YmZy',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-15 16:14:00',
-    unread_count: 1
-  },
-  {
-    phone: '919662729804',
-    sender_name: 'GR DHAVAL BHAI',
-    last_message: 'https://linktr.ee/egswh2026',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-15 13:39:00',
-    unread_count: 0
-  },
-  {
-    phone: '919825112345',
-    sender_name: 'અક્ષર રેસ્ટોરન્ટ - છાપરા',
-    last_message: '~BM JADEJA: તારીખ ૧૫/૦૯/૨૦૨૬ બપોરે ૧- ૦ કુંભી વડોદરા ૨- પંચામૃત દાળ ...',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-15 11:32:00',
-    unread_count: 2,
-    is_muted: true
   },
   {
     phone: '916354687931',
-    sender_name: 'Jigar',
+    sender_name: 'Jignesh Patel',
     ticket_id: 'EGS-2026-000113',
     product_type: 'Solar Rooftop Systems',
-    last_message: 'Hii',
+    last_message: 'Generation fluctuating continuously between 1kW and 4kW.',
     last_sender_type: 'customer',
-    last_activity: '2026-09-15 10:40:00',
+    last_activity: '10:35',
     unread_count: 0
   },
   {
-    phone: '919825099887',
-    sender_name: 'Maa 🥰',
-    last_message: 'https://www.instagram.com/reel/DbqsiMKAzGgq/?stkn=MThzMjNrOGx2ODZ5cw...',
+    phone: '919731055667',
+    sender_name: 'Deepak Verma',
+    ticket_id: 'EGS-2026-000104',
+    product_type: 'Solar Rooftop Systems',
+    last_message: 'Technician visited today and replaced faulty MC4 connector.',
     last_sender_type: 'customer',
-    last_activity: '2026-09-14 18:20:00',
+    last_activity: 'Yesterday',
     unread_count: 0
-  },
-  {
-    phone: '919900011223',
-    sender_name: 'Eco Green Solar',
-    last_message: '📷 Photo',
-    last_media_type: 'image',
-    last_sender_type: 'company',
-    last_activity: '2026-09-14 17:10:00',
-    unread_count: 0
-  },
-  {
-    phone: '919825011223',
-    sender_name: 'GE Office',
-    last_message: 'Solarvela: 📷 Photo',
-    last_media_type: 'image',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-14 15:45:00',
-    unread_count: 0
-  },
-  {
-    phone: '918000123456',
-    sender_name: 'Flipkart Saathi',
-    last_message: 'You received a one-time passcode. For added security, you can only see it...',
-    last_sender_type: 'customer',
-    last_activity: '2026-09-14 12:15:00',
-    unread_count: 1
-  }
-];
-
-// Fallback messages for @sumitchauhan63524 (You) matching Screenshot 4 exactly
-const FALLBACK_SUMIT_MESSAGES = [
-  {
-    id: 'sumit_1',
-    phone: '916352454247',
-    sender_type: 'customer',
-    sender_name: '@sumitchauhan63524 (You)',
-    message_body: '1194314990434878',
-    created_at: '2026-09-15 12:10:00',
-    status: 'read'
-  },
-  {
-    id: 'sumit_2',
-    phone: '916352454247',
-    sender_type: 'customer',
-    sender_name: '@sumitchauhan63524 (You)',
-    message_body: '1979690326050134',
-    created_at: '2026-09-15 12:10:30',
-    status: 'read'
-  },
-  {
-    id: 'sumit_3',
-    phone: '916352454247',
-    sender_type: 'company',
-    sender_name: 'Eco Green Desk',
-    message_body: 'EAAeu6xsMI2sBSVEjELDrpT4InlgD2AshVo55ftGyCGZzUd3p2ogM1vlY9D2RU0fibnZAmYxiNiAL7mkjSMLCOxhCK0VKTB0Cj6s7XwZB79pB67aYz464cwR83y1brEPQG0UhLH0wXMjxFc4Zctu3P7zPXY8ZbstcylZBUO1svZC1Hi6AY7uaGQBIG6YZbXEzT3ZCC79yFoXUeeN3chIea4ZASwyi5mGJLIeMiEGDB0yHSSABZCZCIYYZcbzUdeBuGENDeKNX8w9ZART7y5ZWY7KQV8C1L3',
-    created_at: '2026-09-15 12:11:00',
-    status: 'read'
-  },
-  {
-    id: 'sumit_4',
-    phone: '916352454247',
-    sender_type: 'customer',
-    sender_name: '@sumitchauhan63524 (You)',
-    message_body: '📷 Live Transaction Screenshot',
-    media_type: 'image',
-    media_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80',
-    media_caption: 'This is a live transaction. Refund will be initiated automatically.',
-    created_at: '2026-09-15 12:44:00',
-    status: 'read'
-  },
-  {
-    id: 'sumit_5',
-    phone: '916352454247',
-    sender_type: 'company',
-    sender_name: 'Eco Green Desk',
-    message_body: 'eco-green-complain.vprotech.online\nhttps://eco-green-complain.vprotech.online/\neco-green-complain.vprotech.online\nhttps://eco-green-complain.vprotech.online/',
-    is_link_preview: true,
-    link_url: 'https://eco-green-complain.vprotech.online/',
-    link_title: 'eco-green-complain.vprotech.online',
-    created_at: '2026-09-15 12:49:00',
-    status: 'read'
-  },
-  {
-    id: 'sumit_6',
-    phone: '916352454247',
-    sender_type: 'company',
-    sender_name: 'Eco Green Desk',
-    message_body: 'WhatsApp Business account ID: 1015288491554000',
-    created_at: '2026-09-15 13:59:00',
-    status: 'read'
-  },
-  {
-    id: 'sumit_7',
-    phone: '916352454247',
-    sender_type: 'company',
-    sender_name: 'Eco Green Desk',
-    message_body: 'EAAeu6xsMI2sBSUlmL0tvSALfdQQ3Sgr2g6cu86UfSZAJfF0ml2NvtrgxBZCrClyktx7FZATEeANimtuRAemTzYplaBFGWgMSCjZBTSJKRZBAogI9IPf6EttFW8w3JPREZB17RZBIFAxM1ExryweDPfdHcn1UB8PQayEJELhkhwYDMkqMjhyfU8KQegG8N2mu66N7hpwZDZD',
-    created_at: '2026-09-15 14:01:00',
-    status: 'read'
-  },
-  {
-    id: 'sumit_8',
-    phone: '916352454247',
-    sender_type: 'customer',
-    sender_name: '@sumitchauhan63524 (You)',
-    message_body: 'temp',
-    quoted_text: 'EAAeu6xsMI2sBSVEjELDrpT4InlgD2AshVo55ftGyCGZzUd3p2ogM1vlY9D2RU0fibnZAmYxiNiAL7mkjSMLCOxhCK0VKTB0Cj6s7XwZB79pB67aYz464cwR83y1brEPQG0UhLH0wXMjxFc4Zctu3P7zPXY8ZbstcylZBUO1svZC1Hi6AY7uaGQBIG6YZbXEzT3ZCC79yFoXUeeN3chIea4ZASwyi5mGJLIeMiEGDB0yHSSABZCZCIYYZcbzUdeBuGENDeKNX8w9ZART7y5ZWY7KQV8C1L3',
-    created_at: '2026-09-15 14:01:30',
-    status: 'read'
-  },
-  {
-    id: 'sumit_9',
-    phone: '916352454247',
-    sender_type: 'customer',
-    sender_name: '@sumitchauhan63524 (You)',
-    message_body: 'hii',
-    created_at: '2026-09-15 16:26:00',
-    status: 'read'
   }
 ];
 
@@ -219,12 +83,12 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
   const [conversations, setConversations] = useState(FALLBACK_CONVERSATIONS);
   const [loadingConversations, setLoadingConversations] = useState(false);
-  const [selectedPhone, setSelectedPhone] = useState('916352454247');
-  const [messages, setMessages] = useState(FALLBACK_SUMIT_MESSAGES);
+  const [selectedPhone, setSelectedPhone] = useState('918758883888');
+  const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [contactInfo, setContactInfo] = useState({
-    phone: '916352454247',
-    sender_name: '@sumitchauhan63524 (You)'
+    phone: '918758883888',
+    sender_name: 'JAVIA BANSIKUMAR CHANDULAL'
   });
 
   const [replyText, setReplyText] = useState('');
@@ -245,7 +109,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations) && res.conversations.length > 0) {
         setConversations(res.conversations);
-        if (!selectedPhone) {
+        if (!selectedPhone || !res.conversations.find(c => c.phone === selectedPhone)) {
           setSelectedPhone(res.conversations[0].phone);
         }
       } else {
@@ -269,9 +133,6 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
       if (res && Array.isArray(res.messages) && res.messages.length > 0) {
         setMessages(res.messages);
         setContactInfo(res.contact || null);
-      } else if (phone === '916352454247') {
-        setMessages(FALLBACK_SUMIT_MESSAGES);
-        setContactInfo({ phone, sender_name: '@sumitchauhan63524 (You)' });
       } else {
         // Lookup from conversation list
         const c = conversations.find(x => x.phone === phone);
@@ -288,13 +149,12 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
               status: 'read'
             }
           ]);
+        } else {
+          setMessages([]);
         }
       }
     } catch (err) {
       console.warn('Backend chat history fallback:', err);
-      if (phone === '916352454247') {
-        setMessages(FALLBACK_SUMIT_MESSAGES);
-      }
     } finally {
       if (!silent) setLoadingMessages(false);
     }
@@ -413,7 +273,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
   const filteredConversations = conversations.filter(conv => {
     if (activeFilter === 'unread' && !conv.unread_count) return false;
     if (activeFilter === 'favorites' && !conv.is_pinned) return false;
-    if (activeFilter === 'groups' && !conv.sender_name?.includes('છાપરા') && !conv.sender_name?.includes('Group')) return false;
+    if (activeFilter === 'groups' && !conv.sender_name?.toLowerCase().includes('group') && !conv.is_group) return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -693,7 +553,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
           </div>
         </div>
 
-        {/* Authentic Filter Pills Matching Screenshot 4 */}
+        {/* WhatsApp Filter Pills */}
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 border-b border-[#f0f2f5]">
           <button
             type="button"
@@ -716,7 +576,12 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
             }`}
           >
-            Unread <span className="font-mono text-[10px] ml-0.5">100</span>
+            <span>Unread</span>
+            {conversations.filter(c => c.unread_count > 0).length > 0 && (
+              <span className="font-mono text-[10px] ml-1 bg-[#25d366] text-white px-1.5 py-0.2 rounded-full">
+                {conversations.filter(c => c.unread_count > 0).length}
+              </span>
+            )}
           </button>
 
           <button
@@ -740,7 +605,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
             }`}
           >
-            Groups <span className="font-mono text-[10px] ml-0.5">4</span>
+            Groups
           </button>
 
           <button
@@ -883,34 +748,17 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 </div>
               </div>
 
-              {/* Right Action Icons (Video, Search, Menu, Ticket Conversion) */}
+              {/* Right Action Icons (Video, Search, Menu, Ticket Pill) */}
               <div className="flex items-center gap-2 shrink-0">
-                {selectedConv?.complaint_id ? (
+                {selectedConv?.complaint_id && (
                   <button
                     type="button"
                     onClick={() => onOpenComplaint && onOpenComplaint(selectedConv.complaint_id)}
                     className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    title="View Ticket in CMS"
                   >
                     <Ticket className="w-3.5 h-3.5 text-blue-700" />
                     <span>#{selectedConv.ticket_id}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onNewComplaintWithData) {
-                        const firstCustMsg = messages.find(m => m.sender_type === 'customer');
-                        onNewComplaintWithData({
-                          customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
-                          customer_phone: selectedPhone.replace(/^91/, ''),
-                          issue_description: firstCustMsg?.message_body || 'Customer contacted via WhatsApp'
-                        });
-                      }
-                    }}
-                    className="px-2.5 py-1 bg-[#00a884] hover:bg-[#008f72] text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                    title="Convert to Ticket"
-                  >
-                    <span>+ Ticket</span>
                   </button>
                 )}
 
@@ -940,6 +788,34 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 </button>
               </div>
             </div>
+
+            {/* Prominent Yellow/Amber Bar to Raise / Convert to Ticket for general inquiries */}
+            {!selectedConv?.complaint_id && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs text-amber-900 shrink-0 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="truncate sm:whitespace-normal font-medium">
+                    This customer does not have an active complaint ticket registered. All documents and chats received are preserved here.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNewComplaintWithData) {
+                      const firstCustMsg = messages.find(m => m.sender_type === 'customer');
+                      onNewComplaintWithData({
+                        customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
+                        customer_phone: selectedPhone.replace(/^91/, ''),
+                        issue_description: firstCustMsg?.message_body || 'Customer contacted via WhatsApp'
+                      });
+                    }
+                  }}
+                  className="font-bold underline text-amber-800 hover:text-amber-950 shrink-0 cursor-pointer ml-3 flex items-center gap-1"
+                >
+                  <span>Convert to Complaint →</span>
+                </button>
+              </div>
+            )}
 
             {/* Main Messages Stream (Authentic WhatsApp Doodle Background) */}
             <div 
