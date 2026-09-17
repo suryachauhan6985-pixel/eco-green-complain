@@ -7,7 +7,7 @@ import {
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
-  MessageCircle, Copy, Eye, FileText, UserCheck
+  MessageCircle, Copy, Eye, FileText, UserCheck, Trash2
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -446,6 +446,27 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
+  const handleDeleteComplaint = async () => {
+    if (!ticket) return;
+    const ok = await confirm({
+      title: 'Delete Complaint Ticket?',
+      message: `Are you sure you want to permanently delete Ticket #${ticket.ticket_id} for "${ticket.customer_name}"? All timeline events, attachments, and alerts will be deleted permanently. This cannot be undone.`,
+      type: 'danger',
+      confirmText: 'Delete Permanently',
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteComplaint(ticket.id);
+      showToast(`Ticket #${ticket.ticket_id} deleted successfully!`, 'success');
+      if (onComplaintUpdated) onComplaintUpdated();
+      onClose();
+    } catch (err) {
+      showToast('Failed to delete complaint: ' + err.message, 'error');
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -492,14 +513,24 @@ export const ComplaintDetailDrawer = ({
             {/* Action & Close Buttons */}
             <div className="flex items-center gap-2 shrink-0">
               {['admin', 'staff'].includes(currentUser?.role) && ticket && (
-                <button
-                  onClick={openEditModal}
-                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
-                  title="Edit all complaint details"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Edit Details</span>
-                </button>
+                <>
+                  <button
+                    onClick={openEditModal}
+                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                    title="Edit all complaint details"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Edit Details</span>
+                  </button>
+                  <button
+                    onClick={handleDeleteComplaint}
+                    className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                    title="Delete Complaint Permanently"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Delete</span>
+                  </button>
+                </>
               )}
 
               <button 

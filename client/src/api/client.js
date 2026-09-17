@@ -73,13 +73,36 @@ export function saveComplaintsPermanently(complaints) {
   }
 }
 
+export function deleteComplaintPermanently(idOrTicketId) {
+  if (!idOrTicketId) return;
+  try {
+    const list = getPermanentComplaints();
+    const updated = list.filter(c => String(c.id) !== String(idOrTicketId) && c.ticket_id !== String(idOrTicketId));
+    localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Failed to delete complaint from permanent storage:', e);
+  }
+}
+
 // Permanent Local Storage Backup Key for WhatsApp Messages (prevents loss on container restart)
 const PERMANENT_WHATSAPP_KEY = 'egs_permanent_whatsapp_messages';
+
+export function clearPermanentWhatsAppMessages() {
+  try {
+    localStorage.removeItem(PERMANENT_WHATSAPP_KEY);
+  } catch (e) {}
+}
 
 export function getPermanentWhatsAppMessages() {
   try {
     const list = JSON.parse(localStorage.getItem(PERMANENT_WHATSAPP_KEY) || '[]');
-    const cleaned = list.filter(m => !m.wam_id?.startsWith('wam_seed_'));
+    // Filter out any mock dummy messages
+    const mockWamPrefixes = ['wam_seed_', 'wam_javia', 'wam_ananya', 'wam_rajesh', 'wam_panchal', 'wam_jigar', 'wam_deepak', 'wam_official', 'initial_'];
+    const cleaned = list.filter(m => {
+      if (!m || !m.message_body) return false;
+      if (m.wam_id && mockWamPrefixes.some(p => m.wam_id.startsWith(p))) return false;
+      return true;
+    });
     if (cleaned.length !== list.length) {
       localStorage.setItem(PERMANENT_WHATSAPP_KEY, JSON.stringify(cleaned));
     }
@@ -444,6 +467,14 @@ class LocalMockStore {
     return comp;
   }
 
+  deleteComplaint(id) {
+    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const filtered = list.filter(c => String(c.id) !== String(id) && c.ticket_id !== String(id));
+    localStorage.setItem('egs_mock_complaints', JSON.stringify(filtered));
+    deleteComplaintPermanently(id);
+    return { success: true };
+  }
+
   submitFeedback(id, { rating, feedback_comments }) {
     const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
     const comp = list.find(c => String(c.id) === String(id) || c.ticket_id === String(id));
@@ -639,6 +670,13 @@ function fallbackHandler(endpoint, options) {
       const comp = mockStore.updateComplaint(id, options.body);
       saveComplaintPermanently(comp);
       return { message: 'Complaint updated successfully', complaint: comp };
+    }
+
+    if (method === 'DELETE') {
+      const id = endpoint.split('/')[2];
+      mockStore.deleteComplaint(id);
+      deleteComplaintPermanently(id);
+      return { success: true, message: 'Complaint deleted successfully' };
     }
   }
 
@@ -846,6 +884,12 @@ export const api = {
     }
     return res;
   },
+  deleteComplaint: async (id) => {
+    deleteComplaintPermanently(id);
+    return request(`/complaints/${id}`, {
+      method: 'DELETE'
+    });
+  },
   submitFeedback: (id, { rating, feedback_comments }) => request(`/complaints/${id}/feedback`, {
     method: 'POST',
     body: JSON.stringify({ rating, feedback_comments })
@@ -1016,6 +1060,10 @@ export const api = {
     }
 
     return res;
-  }
+  },
+  verifyWhatsAppNumber: (phone) => request(`/whatsapp/verify-number/${encodeURIComponent(phone)}`),
+  clearWhatsAppChat: (phone) => request(`/whatsapp/clear-chat/${encodeURIComponent(phone)}`, {
+    method: 'POST'
+  })
 };
 

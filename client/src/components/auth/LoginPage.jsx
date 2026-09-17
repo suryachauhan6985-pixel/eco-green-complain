@@ -75,19 +75,13 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
         {/* Left Side: Brand Visual & Features */}
         <div className="lg:col-span-5 bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 p-6 sm:p-8 text-white flex flex-col justify-between relative overflow-hidden">
           <div className="relative z-10">
-            {/* Logo */}
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-950/40">
-                <Sun className="w-7 h-7 text-amber-300 fill-amber-300" />
-              </div>
-              <div>
-                <h1 className="font-black text-xl tracking-tight text-white leading-tight">
-                  Eco Green <span className="text-emerald-400">Solar</span>
-                </h1>
-                <span className="text-[11px] font-mono text-emerald-300 uppercase tracking-wider">
-                  Complaint Management
-                </span>
-              </div>
+            {/* Official Company Logo */}
+            <div className="bg-white/95 rounded-2xl p-2.5 inline-block shadow-lg mb-6 border border-emerald-500/20">
+              <img 
+                src="/company-logo.png" 
+                alt="Eco Green Solar" 
+                className="h-10 sm:h-11 w-auto object-contain" 
+              />
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black text-white leading-tight mb-2">

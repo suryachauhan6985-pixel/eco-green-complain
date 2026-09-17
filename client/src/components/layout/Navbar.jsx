@@ -34,24 +34,16 @@ export const Navbar = ({
           <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 min-w-0">
             <div 
               onClick={() => setCurrentTab('complaints')}
-              className="flex items-center gap-2 cursor-pointer group shrink-0"
+              className="flex items-center gap-2.5 cursor-pointer group shrink-0"
             >
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-md shadow-emerald-700/20 group-hover:scale-105 transition-transform shrink-0">
-                <Sun className="w-4 h-4 sm:w-6 sm:h-6 text-amber-300 fill-amber-300" />
-              </div>
-              <div>
-                <div className="flex items-center gap-1">
-                  <span className="font-extrabold text-sm sm:text-lg tracking-tight text-slate-900 whitespace-nowrap">
-                    Eco Green <span className="text-emerald-600">Solar</span>
-                  </span>
-                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1 py-0.2 rounded tracking-wide shrink-0">
-                    CMS
-                  </span>
-                </div>
-                <p className="hidden sm:block text-[11px] text-slate-500 font-medium -mt-0.5">
-                  Complaint Management & Field Service
-                </p>
-              </div>
+              <img 
+                src="/company-logo.png" 
+                alt="Eco Green Solar" 
+                className="h-9 sm:h-10 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity" 
+              />
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0 hidden sm:inline-block">
+                CMS
+              </span>
             </div>
 
             {/* Desktop Navigation Tabs - Dynamically Filtered by Active Role */}

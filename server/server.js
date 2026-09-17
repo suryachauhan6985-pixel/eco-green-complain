@@ -175,6 +175,7 @@ app.post('/api/complaints/:id/note', authenticateToken, complaintController.addT
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), complaintController.resolveComplaint);
 app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 'staff'), complaintController.closeComplaint);
 app.post('/api/complaints/:id/reopen', authenticateToken, complaintController.reopenComplaint);
+app.delete('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.deleteComplaint);
 
 // ================= TECHNICIAN ROUTES =================
 app.get('/api/technicians', authenticateToken, technicianController.listTechnicians);
@@ -715,6 +716,67 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, requireRole('admin', 's
   } catch (err) {
     console.error('WhatsApp sync backup error:', err);
     res.status(500).json({ error: 'Failed to sync whatsapp backup: ' + err.message });
+  }
+});
+
+// 9. Verify phone number for WhatsApp compatibility
+app.get('/api/whatsapp/verify-number/:phone', (req, res) => {
+  try {
+    const rawPhone = req.params.phone || '';
+    const cleanDigits = rawPhone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    // Check Indian 10-digit mobile number format (starts with 6, 7, 8, or 9)
+    const isIndianMobile = /^[6-9]\d{9}$/.test(last10);
+    if (!isIndianMobile) {
+      return res.json({
+        valid: false,
+        phone: rawPhone,
+        status: 'invalid_format',
+        message: 'Mobile number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9.'
+      });
+    }
+
+    // Check if customer exists in installed_customers, complaints, or whatsapp_messages
+    const existingCust = db.prepare('SELECT customer_name, city_village FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+    const existingComp = db.prepare('SELECT customer_name, ticket_id FROM complaints WHERE customer_phone LIKE ? LIMIT 1').get(`%${last10}%`);
+    const existingChat = db.prepare('SELECT sender_name FROM whatsapp_messages WHERE phone LIKE ? LIMIT 1').get(`%${last10}%`);
+
+    const customerName = existingCust?.customer_name || existingComp?.customer_name || existingChat?.sender_name || null;
+
+    res.json({
+      valid: true,
+      phone: last10,
+      formattedPhone: `91${last10}`,
+      customerName: customerName,
+      city: existingCust?.city_village || null,
+      ticketId: existingComp?.ticket_id || null,
+      hasChatHistory: Boolean(existingChat),
+      status: 'verified',
+      message: 'WhatsApp compatible mobile number verified ✓'
+    });
+  } catch (err) {
+    console.error('Verify phone error:', err);
+    res.status(500).json({ error: 'Verification failed: ' + err.message });
+  }
+});
+
+// 10. Clear chat history for a specific phone number
+app.post('/api/whatsapp/clear-chat/:phone', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const rawPhone = req.params.phone || '';
+    const cleanDigits = rawPhone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    const info = db.prepare('DELETE FROM whatsapp_messages WHERE phone LIKE ?').run(`%${last10}%`);
+    res.json({
+      success: true,
+      message: `Chat history cleared (${info.changes} messages removed)`,
+      deletedCount: info.changes
+    });
+  } catch (err) {
+    console.error('Clear chat error:', err);
+    res.status(500).json({ error: 'Failed to clear chat: ' + err.message });
   }
 });
 

@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   Search, Filter, Plus, Download, RefreshCw, Sun, Droplets, Wind, 
   User, Calendar, Clock, ChevronRight, AlertCircle, CheckCircle2, Wrench,
   MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
-  AlertTriangle, Gauge, Layers
+  AlertTriangle, Gauge, Layers, Trash2
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
 
-export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKey, initialFilters }) => {
+export const ComplaintList = ({ 
+  onSelectComplaint, 
+  onOpenNewComplaint, 
+  onOpenWhatsAppChat,
+  refreshKey, 
+  initialFilters 
+}) => {
   const { currentUser } = useAuth();
+  const { confirm, alert, showToast } = useDialog();
   const [complaints, setComplaints] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -109,6 +117,49 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
       showToast(`₹${amount} received and settled with company!`, 'success');
     } catch (err) {
       showToast('Failed to settle payment: ' + err.message, 'error');
+    }
+  };
+
+  const handleDeleteComplaint = async (e, complaint) => {
+    e.stopPropagation();
+    const ok = await confirm({
+      title: 'Delete Complaint Ticket?',
+      message: `Are you sure you want to permanently delete Ticket #${complaint.ticket_id} for "${complaint.customer_name}"? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: 'Delete Permanently',
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteComplaint(complaint.id);
+      showToast(`Ticket #${complaint.ticket_id} deleted successfully!`, 'success');
+      fetchComplaints();
+    } catch (err) {
+      showToast('Failed to delete complaint: ' + err.message, 'error');
+    }
+  };
+
+  const handleWhatsAppChatClick = (e, c) => {
+    e.stopPropagation();
+    const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
+    if (!cleanPhone) return;
+
+    // If logged in as technician, keep opening external WhatsApp app
+    if (currentUser?.role === 'technician') {
+      const displayStatus = getDisplayStatus(c.status);
+      const waMessage = encodeURIComponent(
+        `Namaste ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${displayStatus}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
+      );
+      window.open(`https://wa.me/${cleanPhone}?text=${waMessage}`, '_blank');
+      return;
+    }
+
+    // If Admin or Staff, redirect inside CMS to the WhatsApp Hub for this customer!
+    if (onOpenWhatsAppChat) {
+      onOpenWhatsAppChat(cleanPhone, c.customer_name, c.ticket_id, c.id);
+    } else {
+      window.location.hash = `#whatsapp-inbox?phone=${cleanPhone}`;
     }
   };
 
@@ -516,19 +567,27 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                           {cleanPhone && (
-                            <a
-                              href={waUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Chat on WhatsApp"
+                            <button
+                              type="button"
+                              onClick={(e) => handleWhatsAppChatClick(e, c)}
+                              title={currentUser?.role === 'technician' ? 'Open WhatsApp App' : 'Open in CMS WhatsApp Hub'}
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                             >
                               <MessageCircle className="w-4 h-4" />
-                            </a>
+                            </button>
                           )}
                           <button
+                            type="button"
+                            onClick={(e) => handleDeleteComplaint(e, c)}
+                            title="Delete Complaint Permanently"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => onSelectComplaint(c.id)}
                             className="p-1.5 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-slate-100 transition-colors"
                             title="Open Details"
@@ -672,23 +731,38 @@ export const ComplaintList = ({ onSelectComplaint, onOpenNewComplaint, refreshKe
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* Free WhatsApp Link Button */}
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {/* WhatsApp Button */}
                       {cleanPhone && (
-                        <a
-                          href={waUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          title="Free WhatsApp Chat with Customer"
+                        <button
+                          type="button"
+                          onClick={(e) => handleWhatsAppChatClick(e, c)}
+                          title={currentUser?.role === 'technician' ? 'Open WhatsApp App' : 'Open in CMS WhatsApp Hub'}
                           className="text-emerald-600 hover:text-emerald-700 p-1 rounded-md hover:bg-emerald-50 transition-colors flex items-center gap-1 text-[11px] font-medium"
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
                           <span className="hidden sm:inline">WhatsApp</span>
-                        </a>
+                        </button>
                       )}
 
-                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+                      {/* Delete Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteComplaint(e, c)}
+                        title="Delete Complaint Permanently"
+                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onSelectComplaint(c.id)}
+                        className="text-slate-300 hover:text-emerald-600 p-1 transition-colors"
+                        title="Open Details"
+                      >
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-all" />
+                      </button>
                     </div>
                   </div>
                 </div>

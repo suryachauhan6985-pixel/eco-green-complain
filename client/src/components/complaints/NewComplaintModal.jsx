@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
-  X, Sun, Droplets, Wind, AlertTriangle, Upload, 
+  X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
@@ -128,6 +128,32 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [categoriesList, setCategoriesList] = useState([]);
   const [previewItem, setPreviewItem] = useState(null);
+  const [phoneVerification, setPhoneVerification] = useState(null);
+  const [verifyingPhone, setVerifyingPhone] = useState(false);
+
+  // Debounced real-time WhatsApp phone verification
+  useEffect(() => {
+    const raw = (formData.customer_phone || '').replace(/\D/g, '');
+    if (!raw || raw.length < 5) {
+      setPhoneVerification(null);
+      setVerifyingPhone(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setVerifyingPhone(true);
+      try {
+        const res = await api.verifyWhatsAppNumber(formData.customer_phone);
+        setPhoneVerification(res);
+      } catch (e) {
+        setPhoneVerification(null);
+      } finally {
+        setVerifyingPhone(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [formData.customer_phone]);
 
   useEffect(() => {
     if (isOpen) {
@@ -359,6 +385,8 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     });
     setFileList([]);
     setSelectedCustomer(null);
+    setPhoneVerification(null);
+    setVerifyingPhone(false);
     setFormData({
       customer_name: '',
       customer_phone: '',
@@ -818,15 +846,60 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Mobile Phone (WhatsApp) *</label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="e.g., +91 98765 43210"
-                      value={formData.customer_phone}
-                      onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600">Mobile Phone (WhatsApp) *</label>
+                      {verifyingPhone && (
+                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                          Checking...
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="tel"
+                        required
+                        placeholder="e.g., 9876543210 or +91 98765 43210"
+                        value={formData.customer_phone}
+                        onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
+                        className={`w-full text-xs px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 font-mono ${
+                          phoneVerification
+                            ? phoneVerification.isVerified
+                              ? 'border-emerald-500 focus:ring-emerald-500 pr-8'
+                              : 'border-rose-400 focus:ring-rose-400 pr-8'
+                            : 'border-slate-300 focus:ring-emerald-500'
+                        }`}
+                      />
+                      {phoneVerification && (
+                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                          {phoneVerification.isVerified ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-500" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Live WhatsApp Verification Badge */}
+                    {phoneVerification && (
+                      <div className="mt-1.5 animate-in fade-in duration-150">
+                        {phoneVerification.isVerified ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                            <span>WhatsApp Linked & Active ({phoneVerification.formatted})</span>
+                            {phoneVerification.isExistingCustomer && (
+                              <span className="ml-auto text-[10px] font-bold text-emerald-900 bg-emerald-200/80 px-1.5 py-0.2 rounded">Existing Customer</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-1 rounded-md">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                            <span>Invalid Indian WhatsApp number. Must be 10 digits (6-9xxxxxxxxx).</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

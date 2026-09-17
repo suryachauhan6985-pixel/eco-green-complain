@@ -8,89 +8,34 @@ import {
   ExternalLink, RefreshCw, AlertCircle, ArrowLeft, Download,
   Maximize2, X, Filter, Smile, MoreVertical, MessageSquarePlus,
   FileCheck, Shield, ChevronRight, Video, Mic, Pin, Compass,
-  Users, Sparkles, Settings, MessageSquare, Radio
+  Users, Sparkles, Settings, MessageSquare, Radio, Copy,
+  Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck
 } from 'lucide-react';
 
-// Authentic Solar CMS fallback conversations
-const FALLBACK_CONVERSATIONS = [
-  {
-    phone: '918758883888',
-    sender_name: 'JAVIA BANSIKUMAR CHANDULAL',
-    complaint_customer_name: 'JAVIA BANSIKUMAR CHANDULAL',
-    ticket_id: 'EGS-2026-000114',
-    product_type: 'Solar Rooftop Systems',
-    last_message: 'Ok sir, please send the technician in the morning before 12 PM.',
-    last_sender_type: 'customer',
-    last_activity: '16:22',
-    unread_count: 0
-  },
-  {
-    phone: '919845012345',
-    sender_name: 'Ananya Sharma',
-    complaint_customer_name: 'Ananya Sharma',
-    ticket_id: 'EGS-2026-000101',
-    product_type: 'Solar Rooftop Systems',
-    last_message: 'Thank you! When can we expect his visit?',
-    last_sender_type: 'customer',
-    last_activity: '11:25',
-    unread_count: 0
-  },
-  {
-    phone: '919886098765',
-    sender_name: 'Rajesh Kulkarni',
-    complaint_customer_name: 'Rajesh Kulkarni',
-    ticket_id: 'EGS-2026-000102',
-    product_type: 'Solar Water Heaters',
-    last_message: 'Water heater temperature is not exceeding 40 degrees...',
-    last_sender_type: 'customer',
-    last_activity: '09:40',
-    unread_count: 0
-  },
-  {
-    phone: '919898012345',
-    sender_name: 'Panchal Solar Inquiry',
-    last_message: 'PM Surya Ghar Solar Rooftop Subsidy Guidelines & Technical Specs.pdf',
-    last_media_type: 'document',
-    last_sender_type: 'company',
-    last_activity: '14:16',
-    unread_count: 0
-  },
-  {
-    phone: '916354687931',
-    sender_name: 'Jignesh Patel',
-    ticket_id: 'EGS-2026-000113',
-    product_type: 'Solar Rooftop Systems',
-    last_message: 'Generation fluctuating continuously between 1kW and 4kW.',
-    last_sender_type: 'customer',
-    last_activity: '10:35',
-    unread_count: 0
-  },
-  {
-    phone: '919731055667',
-    sender_name: 'Deepak Verma',
-    ticket_id: 'EGS-2026-000104',
-    product_type: 'Solar Rooftop Systems',
-    last_message: 'Technician visited today and replaced faulty MC4 connector.',
-    last_sender_type: 'customer',
-    last_activity: 'Yesterday',
-    unread_count: 0
-  }
-];
+const EMOJI_CATEGORIES = {
+  'Smileys': ['😀', '😃', '😄', '😁', '😊', '😇', '🙂', '😉', '😌', '😍', '🥰', '😘', '🤗', '🤔', '🤨', '😐', '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐', '😯', '😪', '😫', '😴', '😌', '😛', '😜', '😝', '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲'],
+  'Solar & Work': ['☀️', '⚡', '🔋', '🔌', '💡', '🔧', '🔨', '🛠️', '⚙️', '🧰', '📐', '📋', '📝', '📄', '📑', '📍', '🏢', '🏠', '🏡', '🚚', '🚗', '🛵', '📞', '📱', '💬', '✅', '❌', '⚠️', '🚨', '💰', '💵', '₹', '⭐'],
+  'Gestures': ['👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '✋', '🤚', '🖐️', '🖖', '👋', '🤝', '🙏', '👏', '🙌', '👐', '🤲', '💪']
+};
 
-export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) => {
+export const WhatsAppWebInbox = ({ 
+  onOpenComplaint, 
+  onNewComplaintWithData, 
+  initialTarget, 
+  onClearInitialTarget 
+}) => {
   const { currentUser } = useAuth();
-  const { showToast } = useDialog();
+  const { confirm, alert, showToast } = useDialog();
 
-  const [conversations, setConversations] = useState(FALLBACK_CONVERSATIONS);
+  // Active chat state
+  const [conversations, setConversations] = useState([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
-  const [selectedPhone, setSelectedPhone] = useState('918758883888');
+  const [selectedPhone, setSelectedPhone] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [contactInfo, setContactInfo] = useState({
-    phone: '918758883888',
-    sender_name: 'JAVIA BANSIKUMAR CHANDULAL'
-  });
+  const [contactInfo, setContactInfo] = useState(null);
 
+  // Message compose state
   const [replyText, setReplyText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
@@ -99,26 +44,97 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'favorites' | 'groups'
   const [previewMedia, setPreviewMedia] = useState(null);
 
+  // Interactive Controls state
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [activeEmojiTab, setActiveEmojiTab] = useState('Smileys');
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [showSidebarMenu, setShowSidebarMenu] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
+
+  // Sound notification preference
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem('egs_wa_sound') !== 'false';
+  });
+
+  // New Chat Modal state
+  const [newChatPhone, setNewChatPhone] = useState('');
+  const [newChatName, setNewChatName] = useState('');
+  const [newChatMessage, setNewChatMessage] = useState('Namaste, greetings from Eco Green Solar! How can we assist you today?');
+  const [newChatVerifying, setNewChatVerifying] = useState(false);
+  const [newChatVerification, setNewChatVerification] = useState(null);
+  const [startingChat, setStartingChat] = useState(false);
+  const [recentComplaintsList, setRecentComplaintsList] = useState([]);
+  const [loadingRecent, setLoadingRecent] = useState(false);
+
   const fileInputRef = useRef(null);
+  const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const previousMessageCountRef = useRef(0);
+
+  // Synthesize notification chime using Web Audio API
+  const playNotificationChime = () => {
+    try {
+      if (!soundEnabled) return;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch (e) {}
+  };
+
+  const handleToggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    localStorage.setItem('egs_wa_sound', String(next));
+    if (next) playNotificationChime();
+  };
+
+  // Close open popups when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('#header-menu-container') && !e.target.closest('#header-menu-button')) {
+        setShowHeaderMenu(false);
+      }
+      if (!e.target.closest('#sidebar-menu-container') && !e.target.closest('#sidebar-menu-button')) {
+        setShowSidebarMenu(false);
+      }
+      if (!e.target.closest('#emoji-picker-container') && !e.target.closest('#emoji-picker-button')) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   // Load conversation list from server
   const loadConversations = async (silent = false) => {
     if (!silent) setLoadingConversations(true);
     try {
       const res = await api.getWhatsAppConversations();
-      if (res && Array.isArray(res.conversations) && res.conversations.length > 0) {
+      if (res && Array.isArray(res.conversations)) {
         setConversations(res.conversations);
-        if (!selectedPhone || !res.conversations.find(c => c.phone === selectedPhone)) {
-          setSelectedPhone(res.conversations[0].phone);
+        if (res.conversations.length > 0) {
+          if (!selectedPhone || !res.conversations.find(c => c.phone === selectedPhone)) {
+            if (!selectedPhone && !initialTarget) {
+              setSelectedPhone(res.conversations[0].phone);
+            }
+          }
         }
       } else {
-        // Keep fallback list so screen is never blank
-        setConversations(FALLBACK_CONVERSATIONS);
+        setConversations([]);
       }
     } catch (err) {
-      console.warn('Backend conversations fallback:', err);
-      setConversations(FALLBACK_CONVERSATIONS);
+      console.warn('Error loading conversations:', err);
+      setConversations([]);
     } finally {
       if (!silent) setLoadingConversations(false);
     }
@@ -126,39 +142,70 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
   // Load messages for the selected phone
   const loadMessages = async (phone, silent = false) => {
-    if (!phone) return;
+    if (!phone) {
+      setMessages([]);
+      return;
+    }
     if (!silent) setLoadingMessages(true);
     try {
       const res = await api.getWhatsAppChatHistory(phone);
-      if (res && Array.isArray(res.messages) && res.messages.length > 0) {
-        setMessages(res.messages);
-        setContactInfo(res.contact || null);
-      } else {
-        // Lookup from conversation list
-        const c = conversations.find(x => x.phone === phone);
-        if (c) {
-          setContactInfo({ phone, sender_name: c.sender_name, complaint: c.ticket_id ? { ticket_id: c.ticket_id, id: c.complaint_id } : null });
-          setMessages([
-            {
-              id: 'initial_' + phone,
-              phone,
-              sender_type: c.last_sender_type || 'customer',
-              sender_name: c.sender_name,
-              message_body: c.last_message || 'Hello',
-              created_at: c.last_activity || new Date().toISOString(),
-              status: 'read'
-            }
-          ]);
-        } else {
-          setMessages([]);
+      if (res && Array.isArray(res.messages)) {
+        if (previousMessageCountRef.current > 0 && res.messages.length > previousMessageCountRef.current) {
+          const latest = res.messages[res.messages.length - 1];
+          if (latest?.sender_type === 'customer') {
+            playNotificationChime();
+          }
         }
+        previousMessageCountRef.current = res.messages.length;
+        setMessages(res.messages);
+        if (res.contact) {
+          setContactInfo(res.contact);
+        }
+      } else {
+        setMessages([]);
       }
     } catch (err) {
-      console.warn('Backend chat history fallback:', err);
+      console.warn('Error loading chat history:', err);
+      setMessages([]);
     } finally {
       if (!silent) setLoadingMessages(false);
     }
   };
+
+  // Handle incoming initialTarget prop (from complaints desk)
+  useEffect(() => {
+    if (initialTarget && initialTarget.phone) {
+      const clean = String(initialTarget.phone).replace(/\D/g, '');
+      const fullPhone = clean.startsWith('91') && clean.length === 12 ? clean : clean.length === 10 ? '91' + clean : clean;
+      setSelectedPhone(fullPhone);
+      setContactInfo({
+        phone: fullPhone,
+        sender_name: initialTarget.customerName || 'Customer',
+        ticket_id: initialTarget.ticketId || null,
+        complaint: initialTarget.complaintId ? { id: initialTarget.complaintId, ticket_id: initialTarget.ticketId } : null
+      });
+
+      // Ensure conversation item is visible in list
+      setConversations(prev => {
+        if (prev.find(c => c.phone === fullPhone)) return prev;
+        return [
+          {
+            phone: fullPhone,
+            sender_name: initialTarget.customerName || 'Customer',
+            ticket_id: initialTarget.ticketId || null,
+            complaint_id: initialTarget.complaintId || null,
+            last_message: 'Chat initiated from complaints desk',
+            last_activity: 'Just now',
+            unread_count: 0
+          },
+          ...prev
+        ];
+      });
+
+      loadMessages(fullPhone);
+      if (onClearInitialTarget) onClearInitialTarget();
+    }
+  }, [initialTarget]);
 
   // Initial load
   useEffect(() => {
@@ -171,17 +218,19 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
       loadMessages(selectedPhone);
       setSelectedFile(null);
       setFilePreview(null);
+      setShowEmojiPicker(false);
+      setShowHeaderMenu(false);
     }
   }, [selectedPhone]);
 
-  // Polling every 5 seconds for incoming WhatsApp messages
+  // Polling every 4 seconds for incoming WhatsApp messages
   useEffect(() => {
     const interval = setInterval(() => {
       loadConversations(true);
       if (selectedPhone) {
         loadMessages(selectedPhone, true);
       }
-    }, 5000);
+    }, 4000);
     return () => clearInterval(interval);
   }, [selectedPhone]);
 
@@ -257,16 +306,179 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
     setMessages(prev => [...prev, optimisticMsg]);
     setReplyText('');
     handleClearSelectedFile();
+    setShowEmojiPicker(false);
 
     try {
       setSendingReply(true);
       await api.sendWhatsAppDirectReply(selectedPhone, currentText, currentFile);
-      setTimeout(() => loadMessages(selectedPhone, true), 1000);
+      setTimeout(() => loadMessages(selectedPhone, true), 800);
+      loadConversations(true);
     } catch (err) {
-      console.warn('Direct reply sent with local cache:', err.message);
+      showToast('Error sending message: ' + err.message, 'error');
     } finally {
       setSendingReply(false);
     }
+  };
+
+  // Insert emoji into reply text
+  const handleInsertEmoji = (emoji) => {
+    setReplyText(prev => prev + emoji);
+    messageInputRef.current?.focus();
+  };
+
+  // Header 3-Dots actions
+  const handleCopyPhone = () => {
+    setShowHeaderMenu(false);
+    if (!selectedPhone) return;
+    const clean = selectedPhone.replace(/^91/, '');
+    navigator.clipboard?.writeText(clean);
+    showToast(`Copied +91 ${clean} to clipboard!`, 'success');
+  };
+
+  const handleClearChat = async () => {
+    setShowHeaderMenu(false);
+    if (!selectedPhone) return;
+    const ok = await confirm({
+      title: 'Clear WhatsApp Chat History?',
+      message: `Are you sure you want to clear all message history with ${contactInfo?.sender_name || selectedPhone}? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: 'Clear Chat',
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
+    try {
+      await api.clearWhatsAppChat(selectedPhone);
+      setMessages([]);
+      showToast('Chat history cleared successfully', 'success');
+      loadConversations(true);
+    } catch (err) {
+      showToast('Failed to clear chat: ' + err.message, 'error');
+    }
+  };
+
+  // New Chat Phone Verification Effect
+  useEffect(() => {
+    const raw = (newChatPhone || '').replace(/\D/g, '');
+    if (!raw || raw.length < 5) {
+      setNewChatVerification(null);
+      setNewChatVerifying(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setNewChatVerifying(true);
+      try {
+        const res = await api.verifyWhatsAppNumber(newChatPhone);
+        setNewChatVerification(res);
+      } catch (e) {
+        setNewChatVerification(null);
+      } finally {
+        setNewChatVerifying(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [newChatPhone]);
+
+  // Fetch recent complaints when New Chat modal opens
+  useEffect(() => {
+    if (isNewChatModalOpen) {
+      setLoadingRecent(true);
+      api.getComplaints({ limit: 12 })
+        .then(res => {
+          if (res && Array.isArray(res.complaints)) {
+            setRecentComplaintsList(res.complaints);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingRecent(false));
+    }
+  }, [isNewChatModalOpen]);
+
+  // Handle starting a new chat
+  const handleStartNewChat = async (e) => {
+    e?.preventDefault();
+    const raw = (newChatPhone || '').replace(/\D/g, '');
+    const clean = raw.length === 12 && raw.startsWith('91') ? raw.slice(2) : raw;
+
+    if (!/^[6-9]\d{9}$/.test(clean)) {
+      showToast('Please enter a valid 10-digit Indian WhatsApp mobile number', 'error');
+      return;
+    }
+
+    const fullPhone = '91' + clean;
+    setStartingChat(true);
+
+    try {
+      if (newChatMessage.trim()) {
+        await api.sendWhatsAppDirectReply(fullPhone, newChatMessage.trim());
+      }
+
+      setSelectedPhone(fullPhone);
+      setContactInfo({
+        phone: fullPhone,
+        sender_name: newChatName.trim() || `Customer (+91 ${clean})`
+      });
+
+      // Add to conversations
+      setConversations(prev => {
+        if (prev.find(c => c.phone === fullPhone)) return prev;
+        return [
+          {
+            phone: fullPhone,
+            sender_name: newChatName.trim() || `Customer (+91 ${clean})`,
+            last_message: newChatMessage.trim() || 'Chat initiated',
+            last_activity: 'Just now',
+            unread_count: 0
+          },
+          ...prev
+        ];
+      });
+
+      setIsNewChatModalOpen(false);
+      setNewChatPhone('');
+      setNewChatName('');
+      loadMessages(fullPhone);
+      showToast(`Chat started with +91 ${clean}!`, 'success');
+    } catch (err) {
+      showToast('Failed to start chat: ' + err.message, 'error');
+    } finally {
+      setStartingChat(false);
+    }
+  };
+
+  const handlePickRecentTicket = (complaint) => {
+    const raw = (complaint.customer_phone || '').replace(/\D/g, '');
+    const clean = raw.length === 12 && raw.startsWith('91') ? raw.slice(2) : raw;
+    const fullPhone = '91' + clean;
+
+    setSelectedPhone(fullPhone);
+    setContactInfo({
+      phone: fullPhone,
+      sender_name: complaint.customer_name,
+      ticket_id: complaint.ticket_id,
+      complaint: { id: complaint.id, ticket_id: complaint.ticket_id }
+    });
+
+    setConversations(prev => {
+      if (prev.find(c => c.phone === fullPhone)) return prev;
+      return [
+        {
+          phone: fullPhone,
+          sender_name: complaint.customer_name,
+          ticket_id: complaint.ticket_id,
+          complaint_id: complaint.id,
+          last_message: `Ticket #${complaint.ticket_id}`,
+          last_activity: 'Just now',
+          unread_count: 0
+        },
+        ...prev
+      ];
+    });
+
+    setIsNewChatModalOpen(false);
+    loadMessages(fullPhone);
   };
 
   // Filter conversations
@@ -289,26 +501,25 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
   // Group messages by day for authentic WhatsApp dividers
   const renderMessageGroups = () => {
+    if (messages.length === 0) {
+      return (
+        <div className="py-16 text-center text-[#8696a0] text-xs space-y-2">
+          <div className="w-12 h-12 rounded-full bg-white/80 text-[#00a884] mx-auto flex items-center justify-center shadow-xs">
+            <MessageSquare className="w-6 h-6" />
+          </div>
+          <p className="font-semibold text-[#111b21]">No messages in this chat yet</p>
+          <p className="text-[11px] text-[#667781] max-w-xs mx-auto">
+            Type a message below or attach a photo/document to start the conversation with this customer.
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-2">
-        {/* Sunday Date divider */}
         <div className="flex justify-center my-3">
           <span className="px-3 py-1 bg-white/90 text-[#54656f] text-[11px] font-semibold rounded-lg shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] select-none">
-            Sunday
-          </span>
-        </div>
-
-        {/* Yesterday Date divider */}
-        <div className="flex justify-center my-3">
-          <span className="px-3 py-1 bg-white/90 text-[#54656f] text-[11px] font-semibold rounded-lg shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] select-none">
-            Yesterday
-          </span>
-        </div>
-
-        {/* Today Date divider */}
-        <div className="flex justify-center my-3">
-          <span className="px-3 py-1 bg-white/90 text-[#54656f] text-[11px] font-semibold rounded-lg shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] select-none">
-            Today
+            Messages Saved Permanently in Database & Files
           </span>
         </div>
 
@@ -348,40 +559,50 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                     <img
                       src={msg.media_url}
                       alt="WhatsApp photo"
+                      className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
                       onClick={() => setPreviewMedia({ url: msg.media_url, type: 'image' })}
-                      className="max-h-72 w-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
                     />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadFile(msg.media_url, msg.media_caption || 'whatsapp_photo.jpg');
-                      }}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-colors cursor-pointer shadow-md"
-                      title="Download photo"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    {msg.media_caption && (
-                      <p className="p-2 text-xs text-[#111b21] leading-relaxed bg-white/60">
-                        {msg.media_caption}
-                      </p>
-                    )}
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMedia({ url: msg.media_url, type: 'image' })}
+                        className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
+                        title="View Full Size"
+                      >
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(msg.media_url, `whatsapp_${msg.id}.jpg`)}
+                        className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
+                        title="Download Photo"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                {/* Media: Document PDF preview with download button */}
-                {msg.media_url && msg.media_type !== 'image' && !msg.media_type?.includes('image') && (
-                  <div className="mb-2 flex items-center gap-2.5 p-2.5 bg-[#f0f2f5] rounded-lg border border-[#d1d7db]">
-                    <FileText className="w-7 h-7 text-rose-500 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-xs text-[#111b21] truncate">{msg.media_caption || 'Document.pdf'}</p>
-                      <p className="text-[10px] text-[#667781] font-mono">PDF Document</p>
+                {/* Media: PDF Document Card with Download Action */}
+                {msg.media_url && (msg.media_type === 'document' || msg.media_type?.includes('pdf') || msg.media_type?.includes('document')) && (
+                  <div className="mb-2 p-3 bg-black/5 hover:bg-black/10 rounded-lg flex items-center justify-between gap-3 border border-black/5 transition-colors">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded bg-[#d9fdd3] text-[#008069] flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-xs text-[#111b21] truncate max-w-[200px]">
+                          {msg.media_caption || 'Attached Document.pdf'}
+                        </p>
+                        <span className="text-[10px] text-[#667781] uppercase font-mono">
+                          PDF • Click to open
+                        </span>
+                      </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleDownloadFile(msg.media_url, msg.media_caption || 'document.pdf')}
-                      className="p-1.5 bg-white hover:bg-slate-100 border border-[#d1d7db] text-[#111b21] rounded-lg transition-colors cursor-pointer shadow-xs"
+                      className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/60 rounded-full transition-colors cursor-pointer"
                       title="Download PDF"
                     >
                       <Download className="w-4 h-4" />
@@ -389,14 +610,22 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                   </div>
                 )}
 
-                {/* Rich Link Preview Box if link detected */}
-                {msg.is_link_preview || (msg.message_body && msg.message_body.includes('vprotech.online')) ? (
-                  <div className="mb-1.5 bg-black/5 rounded-lg p-2.5 border border-black/5 text-xs">
-                    <p className="font-bold text-[#00a884]">{msg.link_title || 'eco-green-complain.vprotech.online'}</p>
+                {/* Link Preview Card */}
+                {msg.link_url || (msg.message_body && msg.message_body.includes('http')) ? (
+                  <div className="mb-2 p-2 rounded-lg bg-black/5 border border-black/5 text-xs">
+                    <div className="flex items-center gap-1.5 text-[#008069] font-semibold text-[11px] mb-0.5">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>{msg.link_title || 'Eco Green Customer Portal'}</span>
+                    </div>
+                    {msg.link_description && (
+                      <p className="text-[#54656f] text-[11px] line-clamp-2">
+                        {msg.link_description}
+                      </p>
+                    )}
                     <a
                       href={msg.link_url || 'https://eco-green-complain.vprotech.online/'}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="text-[#027eb5] hover:underline break-all text-[11px] block mt-0.5"
                     >
                       {msg.link_url || 'https://eco-green-complain.vprotech.online/'}
@@ -479,20 +708,35 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
           </button>
         </div>
 
-        {/* Bottom Icons: Settings & Avatar */}
+        {/* Bottom Icons: Sound, Settings & Avatar */}
         <div className="flex flex-col items-center gap-3 w-full">
+          {/* Audio Notification Toggle */}
           <button
             type="button"
+            onClick={handleToggleSound}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+              soundEnabled ? 'text-[#008069] hover:bg-[#e9edef]' : 'text-slate-400 hover:bg-[#e9edef]'
+            }`}
+            title={soundEnabled ? 'Sound Notifications Active (Click to mute)' : 'Sound Notifications Muted'}
+          >
+            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
+
+          {/* Settings Button */}
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
             className="w-10 h-10 rounded-xl hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-all cursor-pointer"
-            title="Settings"
+            title="WhatsApp Settings & Cloud API Status"
           >
             <Settings className="w-5 h-5" />
           </button>
 
           {/* Profile Circle Avatar */}
           <div 
+            onClick={() => setIsSettingsModalOpen(true)}
             className="w-9 h-9 rounded-full bg-[#00a884] text-white flex items-center justify-center font-bold text-xs shadow-xs cursor-pointer"
-            title="Eco Green Desk (+91 78784 44414)"
+            title="Eco Green Solar (+91 78784 44414)"
           >
             EG
           </div>
@@ -507,26 +751,72 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
             WhatsApp
           </h2>
 
-          <div className="flex items-center gap-2 text-[#54656f]">
-            {/* New Chat Button */}
+          <div className="flex items-center gap-1.5 text-[#54656f] relative">
+            {/* New Chat Button (+) */}
             <button
               type="button"
-              onClick={() => showToast('Enter customer phone number to initiate new chat', 'info')}
-              className="w-8 h-8 rounded-full hover:bg-[#f0f2f5] text-[#54656f] flex items-center justify-center transition-colors cursor-pointer"
-              title="New Chat"
+              onClick={() => setIsNewChatModalOpen(true)}
+              className="w-8 h-8 rounded-full hover:bg-[#f0f2f5] text-[#54656f] hover:text-[#008069] flex items-center justify-center transition-colors cursor-pointer"
+              title="Start New WhatsApp Chat"
             >
               <MessageSquarePlus className="w-5 h-5" />
             </button>
 
-            {/* Menu 3 Dots */}
+            {/* Menu 3 Dots Button */}
             <button
+              id="sidebar-menu-button"
               type="button"
-              onClick={() => loadConversations()}
-              className="w-8 h-8 rounded-full hover:bg-[#f0f2f5] text-[#54656f] flex items-center justify-center transition-colors cursor-pointer"
-              title="Menu / Refresh"
+              onClick={() => setShowSidebarMenu(!showSidebarMenu)}
+              className="w-8 h-8 rounded-full hover:bg-[#f0f2f5] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-colors cursor-pointer"
+              title="Menu Options"
             >
               <MoreVertical className="w-5 h-5" />
             </button>
+
+            {/* Sidebar 3-Dots Dropdown Menu */}
+            {showSidebarMenu && (
+              <div 
+                id="sidebar-menu-container"
+                className="absolute right-0 top-10 w-52 bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+              >
+                <button
+                  type="button"
+                  onClick={() => { setShowSidebarMenu(false); setIsNewChatModalOpen(true); }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-[#008069]" />
+                  <span>New Chat</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowSidebarMenu(false); setIsSettingsModalOpen(true); }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                >
+                  <Settings className="w-4 h-4 text-slate-600" />
+                  <span>Settings & WABA</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowSidebarMenu(false); loadConversations(); showToast('Chats refreshed', 'success'); }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4 text-slate-600" />
+                  <span>Refresh Conversations</span>
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                <button
+                  type="button"
+                  onClick={() => { 
+                    setShowSidebarMenu(false); 
+                    setActiveFilter(activeFilter === 'unread' ? 'all' : 'unread'); 
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                >
+                  <Filter className="w-4 h-4 text-slate-600" />
+                  <span>{activeFilter === 'unread' ? 'Show All Chats' : 'Filter Unread Chats'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -610,15 +900,15 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
           <button
             type="button"
-            onClick={() => showToast('Add new custom filter category', 'info')}
+            onClick={() => setIsNewChatModalOpen(true)}
             className="w-7 h-7 rounded-full bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef] flex items-center justify-center text-sm font-bold shrink-0 cursor-pointer"
-            title="Add filter list"
+            title="Start New Chat"
           >
             +
           </button>
         </div>
 
-        {/* Scrollable Conversation List (Single Scrollbar on This Panel Only) */}
+        {/* Scrollable Conversation List */}
         <div className="flex-1 overflow-y-auto divide-y divide-[#f5f6f6] bg-white">
           {loadingConversations && conversations.length === 0 ? (
             <div className="p-8 text-center text-[#8696a0] text-xs">
@@ -626,11 +916,22 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
               <span>Loading WhatsApp chats...</span>
             </div>
           ) : filteredConversations.length === 0 ? (
-            <div className="p-8 text-center text-[#8696a0] text-xs space-y-2">
-              <p className="font-semibold text-[#111b21]">No chats found</p>
+            <div className="p-8 text-center text-[#8696a0] text-xs space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 text-[#008069] flex items-center justify-center mx-auto">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <p className="font-semibold text-[#111b21]">No WhatsApp chats yet</p>
               <p className="text-[11px] text-[#667781] leading-relaxed">
-                Messages from customers will appear here automatically.
+                Start a new conversation with any customer or incoming webhook messages will appear here.
               </p>
+              <button
+                type="button"
+                onClick={() => setIsNewChatModalOpen(true)}
+                className="px-3.5 py-1.5 bg-[#00a884] hover:bg-[#008f72] text-white rounded-lg text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Start New Chat</span>
+              </button>
             </div>
           ) : (
             filteredConversations.map(conv => {
@@ -639,7 +940,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 ? (conv.last_activity.includes(':') && conv.last_activity.length <= 8)
                   ? conv.last_activity
                   : new Date(conv.last_activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : 'Yesterday';
+                : 'Recent';
 
               return (
                 <div
@@ -703,12 +1004,19 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
           )}
         </div>
 
-        {/* Windows App Prompt Banner at bottom of Chat List */}
-        <div className="p-3 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center justify-center gap-2 shrink-0">
-          <div className="w-6 h-6 rounded-full bg-[#25d366] text-white flex items-center justify-center text-xs font-black">
-            W
+        {/* WABA Active Banner at bottom of Chat List */}
+        <div className="p-2.5 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center justify-between px-4 shrink-0 text-[11px] text-[#54656f]">
+          <div className="flex items-center gap-1.5 font-mono">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <strong className="text-[#111b21]">+91 78784 44414</strong>
           </div>
-          <span className="text-xs font-semibold text-[#008069]">Get WhatsApp for Windows</span>
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="text-[#008069] font-bold hover:underline"
+          >
+            Cloud API Active
+          </button>
         </div>
       </div>
 
@@ -718,10 +1026,15 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
           <>
             {/* Top WhatsApp Conversation Header */}
             <div className="bg-[#f0f2f5] px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
+              <div 
+                onClick={() => setIsContactInfoOpen(true)}
+                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                title="Click to view contact info"
+              >
                 {/* Mobile Back button */}
                 <button
-                  onClick={() => setSelectedPhone(null)}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSelectedPhone(null); }}
                   className="sm:hidden p-1 text-[#54656f] hover:text-[#111b21] rounded-full cursor-pointer"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -738,32 +1051,50 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                   {(contactInfo?.sender_name || selectedConv?.sender_name || 'U').charAt(0).toUpperCase()}
                 </div>
 
+                {/* Name & Live Status */}
                 <div className="min-w-0">
-                  <h3 className="font-semibold text-sm text-[#111b21] truncate leading-tight">
-                    {contactInfo?.sender_name || selectedConv?.sender_name || `+${selectedPhone}`}
+                  <h3 className="font-semibold text-sm text-[#111b21] truncate group-hover:text-[#008069] transition-colors flex items-center gap-1.5">
+                    <span>{contactInfo?.sender_name || selectedConv?.sender_name || `+${selectedPhone}`}</span>
                   </h3>
-                  <p className="text-[11px] text-[#667781] leading-tight truncate">
-                    {selectedConv?.is_pinned ? 'Message yourself' : selectedConv?.ticket_id ? `Ticket #${selectedConv.ticket_id} • ${selectedConv.product_type || 'Solar'}` : 'online'}
+                  <p className="text-[11px] text-[#667781] truncate font-mono">
+                    +91 {selectedPhone.replace(/^91/, '')} • <span className="text-[#008069]">online / WhatsApp</span>
                   </p>
                 </div>
               </div>
 
-              {/* Right Action Icons (Video, Search, Menu, Ticket Pill) */}
-              <div className="flex items-center gap-2 shrink-0">
-                {selectedConv?.complaint_id && (
+              {/* Right Action Icons (Ticket Pill, Video, Search, Menu 3-Dots) */}
+              <div className="flex items-center gap-1.5 shrink-0 relative">
+                {(contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) && (
                   <button
                     type="button"
-                    onClick={() => onOpenComplaint && onOpenComplaint(selectedConv.complaint_id)}
-                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    onClick={() => {
+                      const cId = contactInfo?.complaint?.id || selectedConv?.complaint_id;
+                      if (onOpenComplaint && cId) {
+                        onOpenComplaint(cId);
+                      } else {
+                        setIsContactInfoOpen(true);
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer mr-1"
                     title="View Ticket in CMS"
                   >
                     <Ticket className="w-3.5 h-3.5 text-blue-700" />
-                    <span>#{selectedConv.ticket_id}</span>
+                    <span>#{contactInfo?.ticket_id || selectedConv?.ticket_id}</span>
                   </button>
                 )}
 
                 <button
                   type="button"
+                  onClick={() => setIsContactInfoOpen(true)}
+                  className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
+                  title="Contact Information"
+                >
+                  <User className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => showToast('In-app voice & video calling via WebRTC coming soon', 'info')}
                   className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
                   title="Video Call"
                 >
@@ -772,30 +1103,83 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
                 <button
                   type="button"
+                  onClick={() => handleCopyPhone()}
                   className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
-                  title="Search in Chat"
+                  title="Copy Phone"
                 >
-                  <Search className="w-4 h-4" />
+                  <Copy className="w-4 h-4" />
                 </button>
 
+                {/* Header 3-Dots Button */}
                 <button
+                  id="header-menu-button"
                   type="button"
-                  onClick={() => loadMessages(selectedPhone)}
-                  className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
-                  title="Refresh / More Options"
+                  onClick={() => setShowHeaderMenu(!showHeaderMenu)}
+                  className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] hover:text-[#111b21] transition-colors cursor-pointer"
+                  title="More Options"
                 >
                   <MoreVertical className="w-4 h-4" />
                 </button>
+
+                {/* Header 3-Dots Dropdown Menu */}
+                {showHeaderMenu && (
+                  <div 
+                    id="header-menu-container"
+                    className="absolute right-0 top-10 w-52 bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); setIsContactInfoOpen(true); }}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <User className="w-4 h-4 text-slate-600" />
+                      <span>Contact Info</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyPhone}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Copy className="w-4 h-4 text-slate-600" />
+                      <span>Copy Phone Number</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); loadMessages(selectedPhone); showToast('Messages refreshed', 'success'); }}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-4 h-4 text-slate-600" />
+                      <span>Refresh Messages</span>
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={handleClearChat}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <X className="w-4 h-4 text-rose-600" />
+                      <span>Clear Chat History</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); setSelectedPhone(null); }}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-slate-400" />
+                      <span>Close Chat</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Prominent Yellow/Amber Bar to Raise / Convert to Ticket for general inquiries */}
-            {!selectedConv?.complaint_id && (
+            {/* Prominent Yellow/Amber Bar to Raise / Convert to Ticket if general inquiry */}
+            {!(contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs text-amber-900 shrink-0 shadow-2xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                   <span className="truncate sm:whitespace-normal font-medium">
-                    This customer does not have an active complaint ticket registered. All documents and chats received are preserved here.
+                    This customer does not have an active complaint ticket.
                   </span>
                 </div>
                 <button
@@ -812,7 +1196,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                   }}
                   className="font-bold underline text-amber-800 hover:text-amber-950 shrink-0 cursor-pointer ml-3 flex items-center gap-1"
                 >
-                  <span>Convert to Complaint →</span>
+                  <span>+ Register Ticket</span>
                 </button>
               </div>
             )}
@@ -856,6 +1240,53 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
               </div>
             )}
 
+            {/* Interactive Emoji Picker Popover */}
+            {showEmojiPicker && (
+              <div 
+                id="emoji-picker-container"
+                className="absolute bottom-16 left-4 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200 w-80 p-3 animate-in fade-in slide-in-from-bottom-2 duration-150"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    {Object.keys(EMOJI_CATEGORIES).map(cat => (
+                      <button
+                        type="button"
+                        key={cat}
+                        onClick={() => setActiveEmojiTab(cat)}
+                        className={`text-xs px-2 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                          activeEmojiTab === cat
+                            ? 'bg-[#d9fdd3] text-[#008069]'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(false)}
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-8 gap-1.5 max-h-48 overflow-y-auto p-1">
+                  {EMOJI_CATEGORIES[activeEmojiTab].map((em, idx) => (
+                    <button
+                      type="button"
+                      key={idx}
+                      onClick={() => handleInsertEmoji(em)}
+                      className="w-8 h-8 rounded hover:bg-[#f0f2f5] text-lg flex items-center justify-center transition-transform hover:scale-125 cursor-pointer"
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Bottom Message Input Bar */}
             <form onSubmit={handleSendReply} className="px-3 py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-2 shrink-0">
               {/* Hidden File Input */}
@@ -869,9 +1300,13 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
               {/* Emoji Smiley Button */}
               <button
+                id="emoji-picker-button"
                 type="button"
-                className="p-2 text-[#54656f] hover:text-[#111b21] rounded-full transition-colors cursor-pointer shrink-0"
-                title="Emojis"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className={`p-2 rounded-full transition-colors cursor-pointer shrink-0 ${
+                  showEmojiPicker ? 'bg-[#d9fdd3] text-[#008069]' : 'text-[#54656f] hover:text-[#111b21]'
+                }`}
+                title="Emojis & Symbols"
               >
                 <Smile className="w-5 h-5" />
               </button>
@@ -889,6 +1324,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
 
               {/* Text Input Box */}
               <input
+                ref={messageInputRef}
                 type="text"
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
@@ -897,7 +1333,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
                 disabled={sendingReply}
               />
 
-              {/* Mic Icon OR WhatsApp Green Circular Send Button */}
+              {/* Send Button */}
               {replyText.trim() || selectedFile ? (
                 <button
                   type="submit"
@@ -910,6 +1346,7 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
               ) : (
                 <button
                   type="button"
+                  onClick={() => showToast('Voice note recording ready via browser microphone', 'info')}
                   className="p-2 text-[#54656f] hover:text-[#111b21] rounded-full transition-colors cursor-pointer shrink-0"
                   title="Voice Message"
                 >
@@ -924,19 +1361,446 @@ export const WhatsAppWebInbox = ({ onOpenComplaint, onNewComplaintWithData }) =>
             <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-md mb-4 text-[#00a884]">
               <Phone className="w-10 h-10" />
             </div>
-            <h3 className="text-xl font-bold text-[#111b21]">WhatsApp Web</h3>
+            <h3 className="text-xl font-bold text-[#111b21]">Eco Green Solar WhatsApp Hub</h3>
             <p className="text-xs text-[#667781] max-w-sm mt-2 leading-relaxed">
-              Send and receive messages with solar rooftop and water heater customers in real time. Select any conversation from the left to start chatting.
+              Send and receive WhatsApp messages with solar customers in real time. All incoming customer messages and staff replies are recorded permanently in database and file storage.
             </p>
-            <div className="flex items-center gap-1.5 text-xs text-[#8696a0] mt-6 font-mono">
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsNewChatModalOpen(true)}
+                className="px-4 py-2 bg-[#00a884] hover:bg-[#008f72] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Start New Chat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Settings className="w-4 h-4 text-slate-500" />
+                <span>View Settings & Status</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-[#8696a0] mt-8 font-mono">
               <Shield className="w-3.5 h-3.5 text-[#00a884]" />
-              <span>End-to-end encrypted official Meta Cloud API</span>
+              <span>Connected to Meta Cloud API (+91 78784 44414)</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* MEDIA PREVIEW MODAL (Zoomed View with Download Button) */}
+      {/* ================= MODAL: START NEW CHAT ================= */}
+      {isNewChatModalOpen && (
+        <div 
+          onClick={() => setIsNewChatModalOpen(false)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200"
+          >
+            {/* Header */}
+            <div className="px-5 py-4 bg-[#008069] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <MessageSquarePlus className="w-5 h-5 text-emerald-200" />
+                <div>
+                  <h3 className="font-bold text-sm">Start New WhatsApp Chat</h3>
+                  <p className="text-[11px] text-emerald-100">Send WhatsApp from official number +91 78784 44414</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNewChatModalOpen(false)}
+                className="p-1 hover:bg-white/10 rounded-full text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form Body */}
+            <form onSubmit={handleStartNewChat} className="p-5 space-y-4">
+              {/* Phone Input with Live WhatsApp Verification */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">Customer Mobile Phone *</label>
+                  {newChatVerifying && (
+                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin text-[#008069]" />
+                      Verifying...
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    required
+                    placeholder="Enter 10-digit mobile (e.g., 9876543210)"
+                    value={newChatPhone}
+                    onChange={(e) => setNewChatPhone(e.target.value)}
+                    className={`w-full text-xs px-3.5 py-2.5 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 font-mono ${
+                      newChatVerification
+                        ? newChatVerification.isVerified
+                          ? 'border-emerald-500 focus:ring-emerald-500 pr-8'
+                          : 'border-rose-400 focus:ring-rose-400 pr-8'
+                        : 'border-slate-300 focus:ring-[#008069]'
+                    }`}
+                  />
+                  {newChatVerification && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {newChatVerification.isVerified ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-500" />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Verification Badge */}
+                {newChatVerification && (
+                  <div className="mt-1.5">
+                    {newChatVerification.isVerified ? (
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                        <span>WhatsApp Active ({newChatVerification.formatted})</span>
+                        {newChatVerification.isExistingCustomer && (
+                          <span className="ml-auto text-[10px] font-bold text-emerald-900 bg-emerald-200/80 px-1.5 py-0.2 rounded">Customer</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>Invalid Indian WhatsApp number format.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Customer / Contact Name (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Rajesh Sharma"
+                  value={newChatName}
+                  onChange={(e) => setNewChatName(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#008069]"
+                />
+              </div>
+
+              {/* Initial Greeting Message */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Initial Greeting Message</label>
+                <textarea
+                  rows={2}
+                  value={newChatMessage}
+                  onChange={(e) => setNewChatMessage(e.target.value)}
+                  placeholder="Type initial greeting..."
+                  className="w-full text-xs px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#008069] resize-none"
+                />
+              </div>
+
+              {/* Quick Pick from Recent Complaints */}
+              <div>
+                <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Or Pick from Recent Complaints:
+                </span>
+                <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-slate-50">
+                  {loadingRecent ? (
+                    <div className="p-4 text-center text-xs text-slate-400">Loading complaints...</div>
+                  ) : recentComplaintsList.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">No recent complaints</div>
+                  ) : (
+                    recentComplaintsList.slice(0, 5).map(c => (
+                      <div
+                        key={c.id}
+                        onClick={() => handlePickRecentTicket(c)}
+                        className="p-2.5 hover:bg-emerald-50/70 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                      >
+                        <div className="min-w-0">
+                          <strong className="text-slate-900 block truncate">{c.customer_name}</strong>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            📞 {c.customer_phone} • #{c.ticket_id}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-[#008069] shrink-0">
+                          Select →
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={startingChat}
+                  className="px-5 py-2 bg-[#00a884] hover:bg-[#008f72] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {startingChat ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>Open WhatsApp Thread</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: WHATSAPP SETTINGS & WABA ================= */}
+      {isSettingsModalOpen && (
+        <div 
+          onClick={() => setIsSettingsModalOpen(false)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200"
+          >
+            {/* Header */}
+            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Settings className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-bold text-sm">WhatsApp Cloud API & Settings</h3>
+                  <p className="text-[11px] text-slate-400">Meta Business Suite Integration Parameters</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(false)}
+                className="p-1 hover:bg-white/10 rounded-full text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 text-xs text-slate-700 max-h-[80vh] overflow-y-auto">
+              {/* Account Status Card */}
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Meta Cloud API Status
+                  </span>
+                  <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] font-bold">
+                    CONNECTED & LIVE
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800">
+                  Two-way messaging with customers is active. All inbound webhooks and outbound replies are permanently logged.
+                </p>
+              </div>
+
+              {/* Technical Parameters Table */}
+              <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100 font-mono text-[11px]">
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">Business Name:</span>
+                  <strong className="text-slate-900 font-sans">Eco Green Solar</strong>
+                </div>
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">Registered Number:</span>
+                  <strong className="text-emerald-700 font-bold">+91 78784 44414</strong>
+                </div>
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">Phone Number ID:</span>
+                  <span className="text-slate-800">1387211441132836</span>
+                </div>
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">WABA ID:</span>
+                  <span className="text-slate-800">1015283491554000</span>
+                </div>
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">Meta App ID:</span>
+                  <span className="text-slate-800">2162649631332203</span>
+                </div>
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">Quality Rating:</span>
+                  <span className="text-emerald-700 font-bold">HIGH (Green)</span>
+                </div>
+                <div className="p-2.5 flex justify-between">
+                  <span className="text-slate-500 font-sans">Permanent Storage:</span>
+                  <span className="text-slate-800">SQLite + /uploads/</span>
+                </div>
+              </div>
+
+              {/* Sound & Notifications Preference */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-800 flex items-center gap-1.5">
+                    {soundEnabled ? <Volume2 className="w-4 h-4 text-[#008069]" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                    Message Chime Sound
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Play notification audio when customer messages arrive
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={playNotificationChime}
+                    className="text-[10px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToggleSound}
+                    className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      soundEnabled ? 'bg-[#00a884]' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span className={`w-5 h-5 rounded-full bg-white block transition-transform absolute top-0.5 shadow-sm ${
+                      soundEnabled ? 'right-0.5' : 'left-0.5'
+                    }`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(false)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Close Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: CONTACT INFO ================= */}
+      {isContactInfoOpen && (
+        <div 
+          onClick={() => setIsContactInfoOpen(false)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200"
+          >
+            {/* Header */}
+            <div className="p-6 bg-gradient-to-b from-[#008069] to-[#005c4b] text-white text-center relative">
+              <button
+                type="button"
+                onClick={() => setIsContactInfoOpen(false)}
+                className="absolute right-3 top-3 p-1 hover:bg-white/10 rounded-full text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="w-20 h-20 rounded-full bg-white text-[#008069] flex items-center justify-center font-bold text-2xl mx-auto shadow-lg mb-2">
+                {(contactInfo?.sender_name || selectedConv?.sender_name || 'U').charAt(0).toUpperCase()}
+              </div>
+
+              <h3 className="text-base font-bold truncate">
+                {contactInfo?.sender_name || selectedConv?.sender_name || 'Customer'}
+              </h3>
+              <p className="text-xs text-emerald-200 font-mono mt-0.5">
+                +91 {selectedPhone?.replace(/^91/, '')}
+              </p>
+            </div>
+
+            {/* Content Details */}
+            <div className="p-5 space-y-3.5 text-xs text-slate-700">
+              {/* Linked Complaint Ticket */}
+              {contactInfo?.ticket_id || selectedConv?.ticket_id ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-950 flex items-center gap-1.5">
+                      <Ticket className="w-3.5 h-3.5 text-blue-700" />
+                      Active Ticket #{contactInfo?.ticket_id || selectedConv?.ticket_id}
+                    </span>
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                      {selectedConv?.product_type || 'Solar System'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsContactInfoOpen(false);
+                      const cId = contactInfo?.complaint?.id || selectedConv?.complaint_id;
+                      if (onOpenComplaint && cId) onOpenComplaint(cId);
+                    }}
+                    className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-all text-xs flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <span>Open Complaint Drawer</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-semibold">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span>No complaint registered for this contact yet.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsContactInfoOpen(false);
+                      if (onNewComplaintWithData) {
+                        onNewComplaintWithData({
+                          customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
+                          customer_phone: selectedPhone?.replace(/^91/, ''),
+                          issue_description: 'Registered from WhatsApp conversation'
+                        });
+                      }
+                    }}
+                    className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold transition-all text-xs flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <span>+ Register New Complaint Ticket</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Quick Contact Actions */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyPhone}
+                  className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Phone</span>
+                </button>
+                <a
+                  href={`tel:+91${selectedPhone?.replace(/^91/, '')}`}
+                  className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-700 flex items-center justify-center gap-1.5 transition-all text-center"
+                >
+                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Direct Call</span>
+                </a>
+              </div>
+
+              {/* Clear Chat Button */}
+              <button
+                type="button"
+                onClick={() => { setIsContactInfoOpen(false); handleClearChat(); }}
+                className="w-full py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl font-bold transition-all text-xs cursor-pointer"
+              >
+                Clear This Chat History
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MEDIA PREVIEW MODAL ================= */}
       {previewMedia && (
         <div 
           onClick={() => setPreviewMedia(null)}

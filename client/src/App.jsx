@@ -117,6 +117,12 @@ function AppContent() {
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [selectedComplaintId, setSelectedComplaintId] = useState(null);
   const [historyPhone, setHistoryPhone] = useState(null);
+  const [activeWhatsAppPhone, setActiveWhatsAppPhone] = useState(null);
+
+  const handleOpenWhatsAppChat = (phone, customerName, ticketId, complaintId) => {
+    setActiveWhatsAppPhone({ phone, customerName, ticketId, complaintId });
+    handleTabChange('whatsapp-inbox');
+  };
 
   // Onboarding Tour state - temporarily disabled by default as requested
   const [isTourOpen, setIsTourOpen] = useState(false);
@@ -255,6 +261,7 @@ function AppContent() {
             initialFilters={complaintFilters}
             onSelectComplaint={(id) => setSelectedComplaintId(id)}
             onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+            onOpenWhatsAppChat={handleOpenWhatsAppChat}
           />
         )}
 
@@ -288,6 +295,8 @@ function AppContent() {
         {currentTab === 'whatsapp-inbox' && (
           <WhatsAppWebInbox
             key={`wa-inbox-${refreshKey}`}
+            initialTarget={activeWhatsAppPhone}
+            onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
             onOpenComplaint={(complaintId) => setSelectedComplaintId(complaintId)}
             onNewComplaintWithData={(data) => {
               setNewComplaintInitialData(data);

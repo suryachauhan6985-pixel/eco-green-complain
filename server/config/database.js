@@ -522,53 +522,18 @@ function seedAuthenticWhatsAppRecords() {
       comp113Id = info.lastInsertRowid;
     }
 
-    // 3. Seed professional customer service WhatsApp messages
-    const insertMsg = db.prepare(`
-      INSERT OR IGNORE INTO whatsapp_messages (
-        complaint_id, phone, sender_type, sender_name, message_body,
-        media_id, media_type, media_url, media_caption, wam_id, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const realMessages = [
-      // +91 87588 83888 (JAVIA BANSIKUMAR CHANDULAL - Ticket EGS-2026-000114)
-      [comp114Id, '918758883888', 'company', 'Eco Green Desk', '☀️ *Eco Green Solar Update*\n\nHello JAVIA BANSIKUMAR CHANDULAL, a service ticket *#EGS-2026-000114* has been registered for your Solar Rooftop system.\n\n👨‍🔧 *Technician:* Manoj Sharma (+919876543213)\n📅 *Expected Visit:* 2026-09-16\n\n🔗 *Track Live Status:* https://eco-green-complain.vprotech.online/#complaints', null, null, null, null, 'wam_javia_1', 'read', '2026-09-15 16:19:00'],
-      [comp114Id, '918758883888', 'customer', 'JAVIA BANSIKUMAR CHANDULAL', 'Ok sir, please send the technician in the morning before 12 PM.', null, null, null, null, 'wam_javia_2', 'read', '2026-09-15 16:22:00'],
-      [comp114Id, '918758883888', 'customer', 'JAVIA BANSIKUMAR CHANDULAL', '📷 Inverter display photo', 'med_inverter_e04', 'image', '/uploads/inverter_diagram.png', 'Inverter display blinking red with Error Code E04', 'wam_javia_3', 'read', '2026-09-15 16:25:00'],
-
-      // +91 98450 12345 (Ananya Sharma - Ticket EGS-2026-000101)
-      [comp101Id, '919845012345', 'customer', 'Ananya Sharma', 'Hello Eco Green support, solar rooftop generation has been zero since yesterday afternoon.', null, null, null, null, 'wam_ananya_1', 'read', '2026-09-15 11:15:00'],
-      [comp101Id, '919845012345', 'company', 'Eco Green Desk', 'Namaste Ananya ji, Ticket #EGS-2026-000101 has been registered. Technician Rajesh Patel has been assigned.', null, null, null, null, 'wam_ananya_2', 'read', '2026-09-15 11:20:00'],
-      [comp101Id, '919845012345', 'customer', 'Ananya Sharma', 'Thank you! When can we expect his visit?', null, null, null, null, 'wam_ananya_3', 'read', '2026-09-15 11:25:00'],
-
-      // +91 98860 98765 (Rajesh Kulkarni - Ticket EGS-2026-000102)
-      [comp102Id, '919886098765', 'customer', 'Rajesh Kulkarni', 'Solar water heater water temperature is not exceeding 40 degrees even during peak sun.', null, null, null, null, 'wam_rajesh_1', 'read', '2026-09-15 09:30:00'],
-      [comp102Id, '919886098765', 'company', 'Eco Green Desk', 'Hello Rajesh ji, Ticket #EGS-2026-000102 registered for Solar Water Heater. Technician Manoj Sharma will inspect heating tubes.', null, null, null, null, 'wam_rajesh_2', 'read', '2026-09-15 09:40:00'],
-
-      // +91 98980 12345 (Panchal Solar Inquiry - General Contact with NO Ticket, showing yellow bar)
-      [null, '919898012345', 'customer', 'Panchal Solar Inquiry', 'Hello Eco Green Solar, could you please send the brochure and subsidy calculation for a 5kW rooftop solar plant?', null, null, null, null, 'wam_panchal_1', 'read', '2026-09-15 14:10:00'],
-      [null, '919898012345', 'company', 'Eco Green Desk', 'Hello! Under the PM Surya Ghar scheme, 3kW-5kW systems are eligible for ₹78,000 subsidy. Sharing the official brochure below.', null, null, null, null, 'wam_panchal_2', 'read', '2026-09-15 14:15:00'],
-      [null, '919898012345', 'company', 'Eco Green Desk', '📄 Document', 'med_panchal_brochure', 'document', '/uploads/sample_receipt.png', 'PM Surya Ghar Solar Rooftop Subsidy Guidelines & Technical Specs.pdf', 'wam_panchal_3', 'read', '2026-09-15 14:16:00'],
-
-      // +91 63546 87931 (Jignesh Patel - Ticket EGS-2026-000113)
-      [comp113Id, '916354687931', 'customer', 'Jignesh Patel', 'Generation fluctuating continuously between 1kW and 4kW.', null, null, null, null, 'wam_jignesh_1', 'read', '2026-09-15 10:15:00'],
-      [comp113Id, '916354687931', 'company', 'Eco Green Desk', 'Hello Jignesh bhai, ticket #EGS-2026-000113 status update: technician Rohit Kumar assigned.', null, null, null, null, 'wam_jignesh_2', 'read', '2026-09-15 10:35:00'],
-
-      // +91 97310 55667 (Deepak Verma - Ticket EGS-2026-000104)
-      [comp104Id, '919731055667', 'customer', 'Deepak Verma', 'Technician visited today and replaced faulty MC4 connector. System is working fine now.', null, null, null, null, 'wam_deepak_1', 'read', '2026-09-14 16:30:00'],
-      [comp104Id, '919731055667', 'company', 'Eco Green Desk', 'Thank you for confirming, Deepak ji! Ticket #EGS-2026-000104 has been marked as Resolved.', null, null, null, null, 'wam_deepak_2', 'read', '2026-09-14 16:40:00']
-    ];
-
-    for (const msg of realMessages) {
-      insertMsg.run(...msg);
-    }
+    // No mock messages seeded. Real messages will be permanently recorded via webhooks and staff replies.
   } catch (err) {
-    console.warn('[Database] seedAuthenticWhatsAppRecords note:', err.message);
+    console.warn('[Database] initialization note:', err.message);
   }
 }
 
+// Clean out legacy mock messages if any exist
+try {
+  db.prepare("DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam_%'").run();
+} catch (e) {}
+
 initializeSchema();
 migrateComplaintsTable();
-seedAuthenticWhatsAppRecords();
 
 module.exports = db;

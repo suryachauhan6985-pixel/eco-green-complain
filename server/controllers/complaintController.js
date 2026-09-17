@@ -904,6 +904,40 @@ async function reopenComplaint(req, res) {
   }
 }
 
+async function deleteComplaint(req, res) {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ? OR ticket_id = ?').get(id, id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const compId = complaint.id;
+
+    // Delete related child records cleanly in a transaction
+    const deleteTx = db.transaction(() => {
+      db.prepare('DELETE FROM complaint_timelines WHERE complaint_id = ?').run(compId);
+      db.prepare('DELETE FROM complaint_attachments WHERE complaint_id = ?').run(compId);
+      db.prepare('DELETE FROM notification_logs WHERE complaint_id = ?').run(compId);
+      db.prepare('UPDATE whatsapp_messages SET complaint_id = NULL WHERE complaint_id = ?').run(compId);
+      db.prepare('DELETE FROM complaints WHERE id = ?').run(compId);
+    });
+
+    deleteTx();
+
+    console.log(`[ComplaintController] Deleted ticket #${complaint.ticket_id} (ID: ${compId})`);
+    res.json({
+      success: true,
+      message: `Complaint ticket #${complaint.ticket_id} has been permanently deleted`,
+      deletedId: compId,
+      deletedTicketId: complaint.ticket_id
+    });
+  } catch (err) {
+    console.error('Delete complaint error:', err);
+    res.status(500).json({ error: 'Failed to delete complaint: ' + err.message });
+  }
+}
+
 function submitFeedback(req, res) {
   try {
     const { id } = req.params;
@@ -1024,6 +1058,7 @@ module.exports = {
   resolveComplaint,
   closeComplaint,
   reopenComplaint,
+  deleteComplaint,
   submitFeedback,
   syncBackupComplaints,
   listCategories,

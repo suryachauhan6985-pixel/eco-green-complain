@@ -116,8 +116,8 @@ export const CustomerPublicPortal = ({
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Customer Header Banner */}
       <div className="text-center py-6 px-4 bg-gradient-to-b from-emerald-800 to-teal-900 text-white rounded-3xl shadow-lg">
-        <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-3">
-          <Sun className="w-7 h-7 text-amber-300" />
+        <div className="bg-white/95 rounded-2xl p-2.5 inline-block shadow-md mx-auto mb-3">
+          <img src="/company-logo.png" alt="Eco Green Solar" className="h-9 sm:h-11 w-auto object-contain" />
         </div>
         <h2 className="text-xl sm:text-2xl font-black">Customer Service & Ticket Tracker</h2>
         <p className="text-xs sm:text-sm text-emerald-100 max-w-md mx-auto mt-1">
@@ -246,16 +246,6 @@ export const CustomerPublicPortal = ({
                   </p>
                 </div>
               </div>
-
-              {trackingData.complaint.technician_phone && (
-                <a
-                  href={`tel:${trackingData.complaint.technician_phone}`}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  Call
-                </a>
-              )}
             </div>
           ) : (
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
@@ -386,15 +376,10 @@ export const CustomerPublicPortal = ({
         {/* Top Standalone Header */}
         <header className="bg-white border-b border-slate-200 shadow-2xs px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-700 to-teal-800 text-white flex items-center justify-center shadow-xs">
-              <Sun className="w-5 h-5 text-amber-300" />
-            </div>
-            <div>
-              <span className="text-sm font-black text-slate-900 tracking-tight block">Eco Green Solar Care</span>
-              <span className="text-[10px] font-bold text-emerald-700 block -mt-0.5 uppercase tracking-wide">
-                Customer Service & Tracking Desk
-              </span>
-            </div>
+            <img src="/company-logo.png" alt="Eco Green Solar" className="h-9 sm:h-10 w-auto object-contain shrink-0" />
+            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded tracking-wide uppercase hidden sm:inline-block">
+              Tracking Portal
+            </span>
           </div>
 
           <div className="flex items-center gap-3">
