@@ -547,14 +547,14 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
 
       // 3. Installed customers (Excel Database)
       if (!customerName || customerName === 'Customer') {
-        const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+        const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE REPLACE(REPLACE(consumer_mobile, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
         if (inst?.customer_name) customerName = inst.customer_name;
       }
 
       // 4. Permanent WhatsApp Number Registry (Manual staff rename or Meta online profile name)
       if (!customerName || customerName === 'Customer') {
         try {
-          const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ? LIMIT 1').get(last10, `%${last10}%`);
+          const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
           if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
             customerName = reg.customer_name;
           }
@@ -635,12 +635,12 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
         contactName = complaint.customer_name;
       }
       if (!contactName) {
-        const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+        const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE REPLACE(REPLACE(consumer_mobile, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
         if (inst?.customer_name) contactName = inst.customer_name;
       }
       if (!contactName) {
         try {
-          const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ? LIMIT 1').get(last10, `%${last10}%`);
+          const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
           if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
             contactName = reg.customer_name;
           }
@@ -711,33 +711,49 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, (req, res) => {
   try {
     const { messages } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
-      return res.json({ success: true, count: 0 });
+      return res.json({ success: true, restored: 0 });
     }
 
     const insertStmt = db.prepare(`
       INSERT INTO whatsapp_messages (
-        complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, status, wam_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, status, wam_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const checkExists = db.prepare(`
       SELECT id FROM whatsapp_messages WHERE wam_id = ? AND wam_id IS NOT NULL LIMIT 1
     `);
 
+    const personalPhones = ['6352454247', '9426529550', '9662729804', '9825112345', '9825099887', '9825011223', '9900011223'];
+
     let restored = 0;
     const tx = db.transaction(() => {
       for (const m of messages) {
         if (!m || !m.phone || !m.message_body) continue;
+        const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+        if (personalPhones.some(bad => cleanPhone.includes(bad)) ||
+            (m.sender_name && /akshar|અક્ષર|jay|જય|dhaval|ધવલ|sumit|સુમિત/i.test(m.sender_name)) ||
+            (m.message_body && /akshar|અક્ષર|instagram\.com\/reel/i.test(m.message_body))) {
+          continue;
+        }
+
         if (m.wam_id && checkExists.get(m.wam_id)) continue;
+
+        const isCompany = m.sender_type === 'company' || m.sender_type === 'staff';
+        const senderName = m.sender_name && m.sender_name !== 'Customer'
+          ? m.sender_name
+          : (isCompany ? 'Eco Green Support' : 'Customer');
+
         insertStmt.run(
           m.complaint_id || null,
           m.phone,
-          m.sender_type || 'company',
-          m.sender_name || 'Eco Green Solar',
+          isCompany ? 'company' : 'customer',
+          senderName,
           m.message_body,
           m.media_url || null,
           m.media_type || null,
-          m.status || 'sent',
+          m.media_caption || null,
+          m.status || 'delivered',
           m.wam_id || null,
           m.created_at || new Date().toISOString()
         );
@@ -850,59 +866,6 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
   }
 });
 
-// 8. Universal WhatsApp Web Inbox: Sync & restore backup messages (prevents data loss across redeploys)
-app.post('/api/whatsapp/sync-backup', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
-  try {
-    const { messages } = req.body;
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.json({ success: true, synced: 0 });
-    }
-
-    const insertStmt = db.prepare(`
-      INSERT OR IGNORE INTO whatsapp_messages (
-        complaint_id, phone, sender_type, sender_name,
-        message_body, media_url, media_type, media_caption, wam_id, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    let count = 0;
-    const syncTx = db.transaction(() => {
-      for (const m of messages) {
-        if (!m.phone || !m.message_body) continue;
-        const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
-        const personalPhones = ['6352454247', '9426529550', '9662729804', '9825112345', '9825099887', '9825011223', '9900011223'];
-        if (personalPhones.some(bad => cleanPhone.includes(bad)) ||
-            (m.sender_name && /akshar|અક્ષર|jay|જય|dhaval|ધવલ|sumit|સુમિત/i.test(m.sender_name)) ||
-            (m.message_body && /akshar|અક્ષર|instagram\.com\/reel/i.test(m.message_body))) {
-          continue;
-        }
-        const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
-        
-        insertStmt.run(
-          m.complaint_id || null,
-          formattedPhone,
-          m.sender_type || 'customer',
-          m.sender_name || 'Customer',
-          m.message_body,
-          m.media_url || null,
-          m.media_type || null,
-          m.media_caption || null,
-          m.wam_id || `backup_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-          m.status || 'delivered',
-          m.created_at || new Date().toISOString()
-        );
-        count++;
-      }
-    });
-
-    syncTx();
-    console.log(`[WhatsAppBackupSync] Restored/Synced ${count} messages to database.`);
-    res.json({ success: true, synced: count });
-  } catch (err) {
-    console.error('WhatsApp sync backup error:', err);
-    res.status(500).json({ error: 'Failed to sync whatsapp backup: ' + err.message });
-  }
-});
 
 // 9. Verify phone number for WhatsApp compatibility
 app.get('/api/whatsapp/verify-number/:phone', (req, res) => {

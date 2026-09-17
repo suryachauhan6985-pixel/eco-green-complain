@@ -108,6 +108,7 @@ export function getPermanentWhatsAppMessages() {
       const combined = `${m.sender_name || ''} ${m.message_body || ''}`;
       if (personalPattern.test(combined)) return false;
       if (m.wam_id && mockWamPrefixes.some(p => m.wam_id.startsWith(p))) return false;
+      if (m.message_body.includes('localhost:5173') || m.message_body.includes('1800-ECO-SOLAR')) return false;
       return true;
     });
     if (cleaned.length !== list.length) {
@@ -126,11 +127,13 @@ export function saveWhatsAppMessagesPermanently(messages) {
     const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
 
     const realMessages = messages.filter(m => {
+      if (!m || !m.message_body) return false;
       if (m.wam_id?.startsWith('wam_seed_')) return false;
       const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
       if (personalPhoneRegex.test(cleanPhone)) return false;
       const combined = `${m.sender_name || ''} ${m.message_body || ''}`;
       if (personalPattern.test(combined)) return false;
+      if (m.message_body.includes('localhost:5173') || m.message_body.includes('1800-ECO-SOLAR')) return false;
       return true;
     });
     if (realMessages.length === 0) return;
@@ -1024,6 +1027,7 @@ export const api = {
     // Helper: Synthesize conversation list from local permanent messages
     const buildLocalConversations = () => {
       if (!permMessages || permMessages.length === 0) return [];
+      const permComplaints = getPermanentComplaints();
       const map = new Map();
       permMessages.forEach(m => {
         if (!m || !m.phone) return;
@@ -1032,11 +1036,34 @@ export const api = {
         const existing = map.get(last10);
         const mTime = new Date(m.created_at || 0).getTime();
         const exTime = existing ? new Date(existing.created_at || 0).getTime() : 0;
+
+        let resolvedName = null;
+        if (cleanPhone.endsWith('9876543210') || m.sender_name?.includes('Rohit') || m.recipient_name?.includes('Rohit')) {
+          resolvedName = 'Rohit Kumar (Technician)';
+        } else if (cleanPhone.endsWith('9876543211') || m.sender_name?.includes('Vikram') || m.recipient_name?.includes('Vikram')) {
+          resolvedName = 'Vikram Singh (Technician)';
+        } else if (cleanPhone.endsWith('9876543212') || m.sender_name?.includes('Suresh') || m.recipient_name?.includes('Suresh')) {
+          resolvedName = 'Suresh Patel (Technician)';
+        } else if (cleanPhone.endsWith('9876543213') || m.sender_name?.includes('Manoj') || m.recipient_name?.includes('Manoj')) {
+          resolvedName = 'Manoj Sharma (Technician)';
+        } else {
+          const matchedComplaint = permComplaints.find(c => (c.customer_phone || '').replace(/[^0-9]/g, '').endsWith(last10));
+          if (matchedComplaint && matchedComplaint.customer_name) {
+            resolvedName = matchedComplaint.customer_name;
+          } else if (m.sender_name && m.sender_name !== 'Eco Green Solar' && !m.sender_name.startsWith('+')) {
+            resolvedName = m.sender_name;
+          } else if (m.recipient_name && m.recipient_name !== 'Eco Green Solar' && !m.recipient_name.startsWith('+')) {
+            resolvedName = m.recipient_name;
+          }
+        }
+
+        const formattedPhone = last10.length === 10 ? `+91 ${last10.slice(0, 5)} ${last10.slice(5)}` : `+${cleanPhone}`;
+
         if (!existing || mTime > exTime) {
           map.set(last10, {
             phone: cleanPhone,
             complaint_id: m.complaint_id || null,
-            sender_name: m.sender_name && m.sender_name !== 'Eco Green Solar' ? m.sender_name : (m.sender_type === 'company' ? (m.recipient_name || `+${cleanPhone}`) : `+${cleanPhone}`),
+            sender_name: resolvedName || formattedPhone,
             last_sender_type: m.sender_type || 'company',
             last_message: m.message_body,
             last_activity: m.created_at || new Date().toISOString(),
@@ -1121,12 +1148,22 @@ export const api = {
         body: JSON.stringify({ messages: localMatches })
       }).catch(() => {});
 
+      let fallbackName = null;
+      if (cleanPhone.endsWith('9876543210')) fallbackName = 'Rohit Kumar (Technician)';
+      else if (cleanPhone.endsWith('9876543211')) fallbackName = 'Vikram Singh (Technician)';
+      else if (cleanPhone.endsWith('9876543212')) fallbackName = 'Suresh Patel (Technician)';
+      else if (cleanPhone.endsWith('9876543213')) fallbackName = 'Manoj Sharma (Technician)';
+      else {
+        const c = getPermanentComplaints().find(comp => (comp.customer_phone || '').replace(/[^0-9]/g, '').endsWith(last10));
+        if (c && c.customer_name) fallbackName = c.customer_name;
+      }
+
       return {
         success: true,
         messages: localMatches,
         contact: res?.contact || {
           phone: cleanPhone,
-          sender_name: `+${cleanPhone}`
+          sender_name: fallbackName || `+${cleanPhone}`
         }
       };
     }

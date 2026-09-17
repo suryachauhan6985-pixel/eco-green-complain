@@ -166,9 +166,23 @@ async function processSingleMessage(msg, contact) {
 
   // Resolve sender name: online profile name -> registry -> excel -> complaint -> Customer
   let senderName = contact?.profile?.name || null;
+  if (senderName && senderName !== 'Customer' && !/^[0-9+ ]+$/.test(senderName)) {
+    try {
+      db.prepare(`
+        INSERT INTO whatsapp_number_registry (phone, customer_name, is_whatsapp_active, status, source, updated_at)
+        VALUES (?, ?, 1, 'verified', 'meta_webhook_profile', CURRENT_TIMESTAMP)
+        ON CONFLICT(phone) DO UPDATE SET
+          customer_name = excluded.customer_name,
+          is_whatsapp_active = 1,
+          status = 'verified',
+          updated_at = CURRENT_TIMESTAMP
+      `).run(last10, senderName);
+    } catch (e) {}
+  }
+
   if (!senderName || senderName === 'Customer') {
     try {
-      const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ?').get(last10, `%${last10}%`);
+      const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
       if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
         senderName = reg.customer_name;
       }

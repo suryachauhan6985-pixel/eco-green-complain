@@ -56,7 +56,7 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
         ]
       };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
-      deliveredText = `Technician Assigned - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician has been assigned to your Eco Green Solar ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician: ${cleanParam(variables.technician_name, 'Field Technician')}\nContact: ${cleanParam(variables.technician_phone, '+91 78784 44414')}\nExpected Visit: ${cleanParam(variables.expected_visit_date, 'Within 24-48 Hours')}\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
+      deliveredText = `Technician Assigned - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician has been assigned to your Eco Green Solar ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician: ${cleanParam(variables.technician_name, 'Field Technician')}\nContact: Helpline (+91 78784 44414)\nExpected Visit: Scheduled as per mutual coordination\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
 
       payload.type = 'template';
       payload.template = {
@@ -69,8 +69,8 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
               { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
               { type: 'text', text: cleanParam(variables.complaint_id || ticket_id, 'Ticket') },
               { type: 'text', text: cleanParam(variables.technician_name, 'Field Technician') },
-              { type: 'text', text: cleanParam(variables.technician_phone, '+91 78784 44414') },
-              { type: 'text', text: cleanParam(variables.expected_visit_date, 'Within 24-48 Hours') },
+              { type: 'text', text: 'Helpline: +91 78784 44414' },
+              { type: 'text', text: 'Scheduled as per mutual coordination' },
               { type: 'text', text: cleanTrackingUrl }
             ]
           }
