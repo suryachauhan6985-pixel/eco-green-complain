@@ -1474,7 +1474,7 @@ export const WhatsAppWebInbox = ({
                   />
                   {newChatVerification && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      {newChatVerification.isVerified ? (
+                      {(newChatVerification.isVerified ?? newChatVerification.valid) ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                       ) : (
                         <AlertCircle className="w-4 h-4 text-rose-500" />
@@ -1486,18 +1486,27 @@ export const WhatsAppWebInbox = ({
                 {/* Verification Badge */}
                 {newChatVerification && (
                   <div className="mt-1.5">
-                    {newChatVerification.isVerified ? (
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                        <span>WhatsApp Active ({newChatVerification.formatted})</span>
+                    {(newChatVerification.isVerified ?? newChatVerification.valid) ? (
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                          <span>WhatsApp Active ({newChatVerification.formatted || newChatVerification.formattedPhone || newChatPhone})</span>
+                          {newChatVerification.carrier && (
+                            <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded font-mono">
+                              {newChatVerification.carrier}
+                            </span>
+                          )}
+                        </div>
                         {newChatVerification.isExistingCustomer && (
-                          <span className="ml-auto text-[10px] font-bold text-emerald-900 bg-emerald-200/80 px-1.5 py-0.2 rounded">Customer</span>
+                          <span className="ml-auto text-[10px] font-bold text-emerald-900 bg-emerald-200/90 px-1.5 py-0.5 rounded">
+                            {newChatVerification.customerName || 'Existing Customer'}
+                          </span>
                         )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                         <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                        <span>Invalid Indian WhatsApp number format.</span>
+                        <span>{newChatVerification.message || 'Invalid Indian WhatsApp number format.'}</span>
                       </div>
                     )}
                   </div>

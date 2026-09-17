@@ -864,7 +864,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
                         className={`w-full text-xs px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 font-mono ${
                           phoneVerification
-                            ? phoneVerification.isVerified
+                            ? (phoneVerification.isVerified ?? phoneVerification.valid)
                               ? 'border-emerald-500 focus:ring-emerald-500 pr-8'
                               : 'border-rose-400 focus:ring-rose-400 pr-8'
                             : 'border-slate-300 focus:ring-emerald-500'
@@ -872,7 +872,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       />
                       {phoneVerification && (
                         <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                          {phoneVerification.isVerified ? (
+                          {(phoneVerification.isVerified ?? phoneVerification.valid) ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           ) : (
                             <AlertCircle className="w-4 h-4 text-rose-500" />
@@ -884,18 +884,48 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     {/* Live WhatsApp Verification Badge */}
                     {phoneVerification && (
                       <div className="mt-1.5 animate-in fade-in duration-150">
-                        {phoneVerification.isVerified ? (
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                            <span>WhatsApp Linked & Active ({phoneVerification.formatted})</span>
+                        {(phoneVerification.isVerified ?? phoneVerification.valid) ? (
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
+                              <span>WhatsApp Verified • {phoneVerification.formatted || phoneVerification.formattedPhone || formData.customer_phone}</span>
+                              {phoneVerification.carrier && (
+                                <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100/80 px-1.5 py-0.2 rounded font-mono">
+                                  {phoneVerification.carrier}
+                                </span>
+                              )}
+                            </div>
                             {phoneVerification.isExistingCustomer && (
-                              <span className="ml-auto text-[10px] font-bold text-emerald-900 bg-emerald-200/80 px-1.5 py-0.2 rounded">Existing Customer</span>
+                              <div className="flex items-center gap-1.5 ml-auto">
+                                <span className="text-[10px] font-bold text-emerald-950 bg-emerald-200/90 px-1.5 py-0.5 rounded">
+                                  {phoneVerification.customerName || 'Existing Customer'}
+                                </span>
+                                {phoneVerification.customerName && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        customer_name: phoneVerification.customerName || prev.customer_name,
+                                        city: phoneVerification.city || prev.city,
+                                        consumer_no: phoneVerification.consumerNo || prev.consumer_no,
+                                        order_no: phoneVerification.orderNo || prev.order_no,
+                                        product_serial: phoneVerification.inverterSerial || prev.product_serial,
+                                        is_in_warranty: phoneVerification.isInWarranty !== null ? (phoneVerification.isInWarranty ? 1 : 0) : prev.is_in_warranty
+                                      }));
+                                    }}
+                                    className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-all cursor-pointer"
+                                  >
+                                    Auto-fill Details
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-1 rounded-md">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg">
                             <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                            <span>Invalid Indian WhatsApp number. Must be 10 digits (6-9xxxxxxxxx).</span>
+                            <span>{phoneVerification.message || 'Invalid Indian WhatsApp number. Must be 10 digits (6-9xxxxxxxxx).'}</span>
                           </div>
                         )}
                       </div>

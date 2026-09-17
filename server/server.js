@@ -735,34 +735,99 @@ app.get('/api/whatsapp/verify-number/:phone', (req, res) => {
     const cleanDigits = rawPhone.replace(/[^0-9]/g, '');
     const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
 
+    // Check for dummy repeating digits (e.g., 0000000000, 1111111111, 9999999999)
+    if (/^(\d)\1{9}$/.test(last10)) {
+      return res.json({
+        valid: false,
+        isVerified: false,
+        phone: rawPhone,
+        status: 'dummy_number',
+        message: 'Invalid number: Repeated digits detected. Please enter a genuine mobile number.'
+      });
+    }
+
+    // Check for sequential dummy sequences (e.g., 1234567890, 9876543210)
+    if (last10 === '1234567890' || last10 === '9876543210' || last10 === '0123456789') {
+      return res.json({
+        valid: false,
+        isVerified: false,
+        phone: rawPhone,
+        status: 'dummy_number',
+        message: 'Invalid number: Sequential test number detected. Please enter a genuine mobile number.'
+      });
+    }
+
     // Check Indian 10-digit mobile number format (starts with 6, 7, 8, or 9)
     const isIndianMobile = /^[6-9]\d{9}$/.test(last10);
     if (!isIndianMobile) {
       return res.json({
         valid: false,
+        isVerified: false,
         phone: rawPhone,
         status: 'invalid_format',
         message: 'Mobile number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9.'
       });
     }
 
+    // Detect telecom series / carrier
+    let carrier = 'Indian Mobile Network';
+    if (/^(62|63|70|79)/.test(last10)) {
+      carrier = 'Reliance Jio (4G/5G)';
+    } else if (/^(98|99|97|96|81|80|75)/.test(last10)) {
+      carrier = 'Bharti Airtel';
+    } else if (/^(90|91|92|93|94|95|82|83|84|85|86|87|88|89|77|78)/.test(last10)) {
+      carrier = 'Vi / BSNL / Mobile Network';
+    }
+
     // Check if customer exists in installed_customers, complaints, or whatsapp_messages
-    const existingCust = db.prepare('SELECT customer_name, city_village FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
-    const existingComp = db.prepare('SELECT customer_name, ticket_id FROM complaints WHERE customer_phone LIKE ? LIMIT 1').get(`%${last10}%`);
-    const existingChat = db.prepare('SELECT sender_name FROM whatsapp_messages WHERE phone LIKE ? LIMIT 1').get(`%${last10}%`);
+    const existingCust = db.prepare(`
+      SELECT id, customer_name, city_village, consumer_no, order_no, inverter_serial, panel_make, inverter_make, is_in_warranty 
+      FROM installed_customers 
+      WHERE consumer_mobile LIKE ? 
+      LIMIT 1
+    `).get(`%${last10}%`);
+
+    const existingComp = db.prepare(`
+      SELECT customer_name, ticket_id, city, product_type 
+      FROM complaints 
+      WHERE customer_phone LIKE ? 
+      LIMIT 1
+    `).get(`%${last10}%`);
+
+    const existingChat = db.prepare(`
+      SELECT sender_name 
+      FROM whatsapp_messages 
+      WHERE phone LIKE ? 
+      LIMIT 1
+    `).get(`%${last10}%`);
 
     const customerName = existingCust?.customer_name || existingComp?.customer_name || existingChat?.sender_name || null;
+    const city = existingCust?.city_village || existingComp?.city || null;
+    const isExisting = Boolean(existingCust || existingComp);
+    const formatted = `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`;
 
     res.json({
       valid: true,
+      isVerified: true,
       phone: last10,
-      formattedPhone: `91${last10}`,
+      formattedPhone: formatted,
+      formatted: formatted,
+      carrier: carrier,
+      isExistingCustomer: isExisting,
       customerName: customerName,
-      city: existingCust?.city_village || null,
+      city: city,
+      consumerNo: existingCust?.consumer_no || null,
+      orderNo: existingCust?.order_no || null,
+      inverterSerial: existingCust?.inverter_serial || null,
+      panelMake: existingCust?.panel_make || null,
+      inverterMake: existingCust?.inverter_make || null,
+      isInWarranty: existingCust ? Boolean(existingCust.is_in_warranty) : null,
       ticketId: existingComp?.ticket_id || null,
       hasChatHistory: Boolean(existingChat),
       status: 'verified',
-      message: 'WhatsApp compatible mobile number verified ✓'
+      message: isExisting
+        ? `Verified WhatsApp Customer: ${customerName} (${city || 'Gujarat'})`
+        : `WhatsApp Linked & Active (${formatted})`
     });
   } catch (err) {
     console.error('Verify phone error:', err);
