@@ -56,7 +56,7 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
         ]
       };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
-      deliveredText = `Technician Assigned - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician has been assigned to your Eco Green Solar ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician: ${cleanParam(variables.technician_name, 'Field Technician')}\nContact: Helpline (+91 78784 44414)\nExpected Visit: Scheduled as per mutual coordination\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
+      deliveredText = `Namaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician of Eco Green Solar has been assigned to your ticket No: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician Name: *${cleanParam(variables.technician_name, 'Field Technician')}*\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
 
       payload.type = 'template';
       payload.template = {
@@ -69,8 +69,6 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
               { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
               { type: 'text', text: cleanParam(variables.complaint_id || ticket_id, 'Ticket') },
               { type: 'text', text: cleanParam(variables.technician_name, 'Field Technician') },
-              { type: 'text', text: 'Helpline: +91 78784 44414' },
-              { type: 'text', text: 'Scheduled as per mutual coordination' },
               { type: 'text', text: cleanTrackingUrl }
             ]
           }
