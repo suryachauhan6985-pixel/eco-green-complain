@@ -188,12 +188,36 @@ function initializeSchema() {
       media_caption TEXT,
       wam_id TEXT UNIQUE,
       status TEXT DEFAULT 'received',
+      template_name TEXT,
+      template_version TEXT,
+      failure_reason TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS whatsapp_raw_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT,
+      wam_id TEXT,
+      waba_id TEXT,
+      phone_number_id TEXT,
+      sender_phone TEXT,
+      recipient_phone TEXT,
+      direction TEXT CHECK(direction IN ('inbound', 'outbound', 'status')),
+      event_type TEXT,
+      status TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      raw_payload TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_whatsapp_msg_complaint ON whatsapp_messages(complaint_id);
     CREATE INDEX IF NOT EXISTS idx_whatsapp_msg_phone ON whatsapp_messages(phone);
+    CREATE INDEX IF NOT EXISTS idx_raw_events_wamid ON whatsapp_raw_events(wam_id);
+    CREATE INDEX IF NOT EXISTS idx_raw_events_phone ON whatsapp_raw_events(sender_phone);
+    CREATE INDEX IF NOT EXISTS idx_raw_events_dir ON whatsapp_raw_events(direction);
 
     CREATE INDEX IF NOT EXISTS idx_complaints_ticket ON complaints(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status);
@@ -485,104 +509,25 @@ function migrateComplaintsTable() {
   }
 }
 
-function seedAuthenticWhatsAppRecords() {
+function migrateWhatsAppMessagesTable() {
   try {
-    // 1. Purge personal numbers that were accidentally imported from local desktop WhatsApp
-    const badPhones = [
-      '916352454247', '919426529550', '919662729804', '919825112345', 
-      '919825099887', '918000123456', '919825011223', '919979795214', '919900011223'
-    ];
-    const placeholders = badPhones.map(() => '?').join(',');
-    db.prepare(`DELETE FROM whatsapp_messages WHERE phone IN (${placeholders}) OR wam_id LIKE 'wam_sumit_%' OR wam_id LIKE 'wam_jay_%' OR wam_id LIKE 'wam_dhaval_%' OR wam_id LIKE 'wam_akshar_%' OR wam_id LIKE 'wam_maa_%' OR wam_id LIKE 'wam_office_%' OR wam_id LIKE 'wam_ge_%' OR wam_id LIKE 'wam_flipkart_%' OR wam_id LIKE 'wam_99797_%'`).run(...badPhones);
-
-    // 2. Ensure real complaints from tickets exist
-    const comp114 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000114');
-    let comp114Id = comp114?.id;
-    if (!comp114Id) {
-      const info = db.prepare(`
-        INSERT INTO complaints (
-          ticket_id, customer_name, customer_phone, customer_email, customer_address,
-          city, consumer_no, order_no, is_in_warranty, estimated_charges,
-          payment_status, product_type, product_serial, installation_id,
-          issue_category, issue_description, priority, status, assigned_technician_id,
-          expected_visit_date, created_at, status_updated_at
-        ) VALUES (
-          'EGS-2026-000114', 'JAVIA BANSIKUMAR CHANDULAL', '+918758883888', 'javia.solar@gmail.com', 'B-204, Green Heights, Opp. Reliance Town',
-          'Rajkot', 'CONS-GUJ-88388', 'ORD-2026-9901', 1, 0,
-          'Unpaid', 'Solar Rooftop Systems', 'EGS-RT-5KW-9912', 'INST-GUJ-2025-412',
-          'Inverter Fault / Zero Generation', 'Inverter display blinking red with Error Code E04, solar generation zero since yesterday morning.', 'High', 'Assigned', 4,
-          '2026-09-16', '2026-09-15 16:15:00', '2026-09-15 16:19:00'
-        )
-      `).run();
-      comp114Id = info.lastInsertRowid;
+    const cols = db.prepare("PRAGMA table_info(whatsapp_messages)").all().map(c => c.name);
+    if (!cols.includes('template_name')) {
+      db.exec("ALTER TABLE whatsapp_messages ADD COLUMN template_name TEXT");
     }
-
-    const comp101 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000101');
-    const comp101Id = comp101?.id;
-
-    const comp102 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000102');
-    const comp102Id = comp102?.id;
-
-    const comp104 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000104');
-    const comp104Id = comp104?.id;
-
-    const comp113 = db.prepare('SELECT id FROM complaints WHERE ticket_id = ?').get('EGS-2026-000113');
-    let comp113Id = comp113?.id;
-    if (!comp113Id) {
-      const info = db.prepare(`
-        INSERT INTO complaints (
-          ticket_id, customer_name, customer_phone, customer_email, customer_address,
-          city, consumer_no, order_no, is_in_warranty, estimated_charges,
-          payment_status, product_type, product_serial, installation_id,
-          issue_category, issue_description, priority, status, assigned_technician_id,
-          expected_visit_date, created_at, status_updated_at
-        ) VALUES (
-          'EGS-2026-000113', 'Jignesh Patel', '+916354687931', 'jignesh.patel@gmail.com', '45, Sardar Patel Society, Near Kalawad Road',
-          'Rajkot', 'CONS-GUJ-77123', 'ORD-2026-8840', 1, 0,
-          'Unpaid', 'Solar Rooftop Systems', 'EGS-RT-3KW-5510', 'INST-GUJ-2024-819',
-          'Generation Fluctuation', 'Solar generation drops sharply in afternoon, requesting technician site inspection.', 'Medium', 'In Progress', 1,
-          '2026-09-15', '2026-09-15 10:15:00', '2026-09-15 10:35:00'
-        )
-      `).run();
-      comp113Id = info.lastInsertRowid;
+    if (!cols.includes('template_version')) {
+      db.exec("ALTER TABLE whatsapp_messages ADD COLUMN template_version TEXT");
     }
-
-    // No mock messages seeded. Real messages will be permanently recorded via webhooks and staff replies.
-  } catch (err) {
-    console.warn('[Database] initialization note:', err.message);
+    if (!cols.includes('failure_reason')) {
+      db.exec("ALTER TABLE whatsapp_messages ADD COLUMN failure_reason TEXT");
+    }
+    if (!cols.includes('updated_at')) {
+      db.exec("ALTER TABLE whatsapp_messages ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+    }
+  } catch (e) {
+    console.warn('[Database] WhatsApp messages migration note:', e.message);
   }
 }
-
-// Clean out legacy mock messages, queue, and personal chats from desktop WhatsApp
-try {
-  db.prepare("DELETE FROM whatsapp_outgoing_queue").run();
-} catch (e) {}
-
-try {
-  // Clean only synthetic mock seed IDs (escaped so underscore is not a wildcard, NEVER deleting Meta 'wamid.' messages)
-  db.prepare("DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam\\_seed\\_%' ESCAPE '\\' OR wam_id LIKE 'wam\\_mock\\_%' ESCAPE '\\'").run();
-  db.prepare(`
-    DELETE FROM whatsapp_messages 
-    WHERE phone LIKE '%6352454247%' 
-       OR phone LIKE '%9426529550%'
-       OR phone LIKE '%9662729804%'
-       OR phone LIKE '%9825112345%'
-       OR phone LIKE '%9825099887%'
-       OR phone LIKE '%9825011223%'
-       OR phone LIKE '%9900011223%'
-       OR sender_name LIKE '%akshar%' 
-       OR sender_name LIKE '%અક્ષર%' 
-       OR sender_name LIKE '%jay%' 
-       OR sender_name LIKE '%જય%' 
-       OR sender_name LIKE '%dhaval%' 
-       OR sender_name LIKE '%ધવલ%' 
-       OR sender_name LIKE '%sumit%'
-       OR message_body LIKE '%અક્ષર%'
-       OR message_body LIKE '%instagram.com/reel%'
-       OR wam_id LIKE 'wam_jay_%'
-       OR wam_id LIKE 'wam_dhaval_%'
-  `).run();
-} catch (e) {}
 
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
@@ -590,5 +535,6 @@ try {
 
 initializeSchema();
 migrateComplaintsTable();
+migrateWhatsAppMessagesTable();
 
 module.exports = db;

@@ -726,7 +726,22 @@ export const WhatsAppWebInbox = ({
                 <div className="flex items-center justify-end gap-1 text-[10px] text-[#667781] mt-1 ml-3 select-none float-right">
                   <span>{timeStr}</span>
                   {!isCustomer && (
-                    <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                    <span className="inline-flex items-center ml-0.5" title={`Status: ${msg.status || 'sent'}${msg.failure_reason ? ' (' + msg.failure_reason + ')' : ''}`}>
+                      {msg.status === 'read' ? (
+                        <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                      ) : msg.status === 'delivered' ? (
+                        <CheckCheck className="w-3.5 h-3.5 text-[#8696a0]" />
+                      ) : msg.status === 'failed' ? (
+                        <span className="inline-flex items-center gap-0.5 text-rose-600 font-bold text-[9px] bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
+                          <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                          <span>Failed</span>
+                        </span>
+                      ) : msg.status === 'pending' ? (
+                        <Clock className="w-3 h-3 text-[#8696a0]" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5 text-[#8696a0]" />
+                      )}
+                    </span>
                   )}
                 </div>
               </div>
@@ -740,7 +755,7 @@ export const WhatsAppWebInbox = ({
   return (
     <div className="w-full flex-1 h-full flex overflow-hidden bg-[#efeae2] select-none">
       {/* ================= FAR LEFT APP RAIL (WHATSAPP WEB DESKTOP ICON BAR) ================= */}
-      <div className="w-14 bg-[#f0f2f5] border-r border-[#d1d7db] flex flex-col justify-between items-center py-3 shrink-0 z-20">
+      <div className="hidden md:flex w-14 bg-[#f0f2f5] border-r border-[#d1d7db] flex-col justify-between items-center py-3 shrink-0 z-20">
         {/* Top Icons */}
         <div className="flex flex-col items-center gap-4 w-full">
           {/* WhatsApp Chats Icon (Active) */}
@@ -826,7 +841,7 @@ export const WhatsAppWebInbox = ({
       </div>
 
       {/* ================= MIDDLE CHAT LIST PANE (AUTHENTIC WHATSAPP WEB) ================= */}
-      <div className={`w-full sm:w-[380px] lg:w-[410px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden sm:flex' : 'flex'}`}>
+      <div className={`w-full md:w-[380px] lg:w-[410px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {/* Header: WhatsApp Title & Action Buttons */}
         <div className="bg-white px-4 pt-3 pb-2 flex items-center justify-between shrink-0">
           <h2 className="text-xl font-bold text-[#111b21] tracking-tight">
@@ -1099,21 +1114,21 @@ export const WhatsAppWebInbox = ({
       </div>
 
       {/* ================= RIGHT MAIN CHAT AREA (AUTHENTIC WHATSAPP WEB REPLICA) ================= */}
-      <div className={`flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden sm:flex' : 'flex'}`}>
+      <div className={`flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {selectedPhone ? (
           <>
             {/* Top WhatsApp Conversation Header */}
-            <div className="bg-[#f0f2f5] px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0">
+            <div className="bg-[#f0f2f5] px-3 sm:px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0">
               <div 
                 onClick={() => setIsContactInfoOpen(true)}
-                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                className="flex items-center gap-2 sm:gap-3 min-w-0 cursor-pointer group"
                 title="Click to view contact info"
               >
                 {/* Mobile Back button */}
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setSelectedPhone(null); }}
-                  className="sm:hidden p-1 text-[#54656f] hover:text-[#111b21] rounded-full cursor-pointer"
+                  className="md:hidden p-1 text-[#54656f] hover:text-[#111b21] rounded-full cursor-pointer shrink-0"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
@@ -1383,7 +1398,7 @@ export const WhatsAppWebInbox = ({
             )}
 
             {/* Bottom Message Input Bar */}
-            <form onSubmit={handleSendReply} className="px-3 py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-2 shrink-0">
+            <form onSubmit={handleSendReply} className="px-2 py-2 sm:px-3 sm:py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-1 sm:gap-2 shrink-0">
               {/* Hidden File Input */}
               <input
                 ref={fileInputRef}

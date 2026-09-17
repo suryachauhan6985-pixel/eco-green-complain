@@ -96,6 +96,8 @@ async function downloadMedia(mediaId, mimeType, originalName = null) {
   }
 }
 
+const { normalizePhone, getLast10Digits } = require('../utils/phoneNormalizer');
+
 /**
  * Handle incoming Meta Webhook events (POST request)
  */
@@ -110,32 +112,53 @@ async function handleIncomingWebhook(req, res) {
 
   try {
     for (const entry of body.entry || []) {
+      const wabaId = entry.id;
       for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue;
         const value = change.value;
         if (!value) continue;
+        const phoneNumberId = value.metadata?.phone_number_id;
 
         // 1. Handle incoming message statuses (Delivered, Read, Sent, Failed)
         if (value.statuses && Array.isArray(value.statuses)) {
           for (const st of value.statuses) {
             const wamId = st.id;
             const newStatus = st.status;
+            const recipientPhone = st.recipient_id ? normalizePhone(st.recipient_id) : null;
+            const errCode = st.errors?.[0]?.code ? String(st.errors[0].code) : null;
+            const errMsg = st.errors?.[0]?.message || st.errors?.[0]?.title || null;
+
+            // Raw Event Audit Log
             try {
-              db.prepare('UPDATE whatsapp_messages SET status = ? WHERE wam_id = ?').run(newStatus, wamId);
+              db.prepare(`
+                INSERT INTO whatsapp_raw_events (
+                  event_id, wam_id, waba_id, phone_number_id, recipient_phone, direction, event_type, status, error_code, error_message, raw_payload
+                ) VALUES (?, ?, ?, ?, ?, 'status', 'status', ?, ?, ?, ?)
+              `).run(st.id, wamId, wabaId, phoneNumberId, recipientPhone, newStatus, errCode, errMsg, JSON.stringify(st));
+            } catch (e) {
+              console.warn('[WhatsAppWebhook] Raw status event log note:', e.message);
+            }
+
+            try {
+              db.prepare(`
+                UPDATE whatsapp_messages 
+                SET status = ?, failure_reason = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE wam_id = ?
+              `).run(newStatus, errMsg, wamId);
             } catch (e) {
               // Ignore if not present
             }
 
             if (newStatus === 'failed') {
               const isNotOnWa = (st.errors || []).some(err => err.code === 131026 || String(err.message || '').toLowerCase().includes('not a valid whatsapp user'));
-              if (isNotOnWa && st.recipient_id) {
-                const recipientPhone = st.recipient_id.replace(/[^0-9]/g, '').slice(-10);
+              if (isNotOnWa && recipientPhone) {
+                const last10 = getLast10Digits(recipientPhone);
                 try {
                   db.prepare(`
                     INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, source, notes, updated_at)
                     VALUES (?, 0, 'invite_required', 'meta_delivery_failed_131026', 'Recipient is not a valid WhatsApp user', CURRENT_TIMESTAMP)
-                  `).run(recipientPhone);
-                  console.log(`[WhatsAppWebhook] Marked ${recipientPhone} as invite_required due to Meta error 131026`);
+                  `).run(last10);
+                  console.log(`[WhatsAppWebhook] Marked ${last10} as invite_required due to Meta error 131026`);
                 } catch (e) {}
               }
             }
@@ -150,6 +173,18 @@ async function handleIncomingWebhook(req, res) {
               const cDigits = (c.wa_id || '').replace(/[^0-9]/g, '');
               return cDigits === fromDigits || fromDigits.endsWith(cDigits) || cDigits.endsWith(fromDigits.slice(-10));
             }) || value.contacts?.[0];
+
+            // Raw Event Audit Log for Inbound Message
+            try {
+              db.prepare(`
+                INSERT INTO whatsapp_raw_events (
+                  event_id, wam_id, waba_id, phone_number_id, sender_phone, direction, event_type, status, raw_payload
+                ) VALUES (?, ?, ?, ?, ?, 'inbound', ?, 'received', ?)
+              `).run(msg.id, msg.id, wabaId, phoneNumberId, normalizePhone(msg.from), msg.type || 'message', JSON.stringify({ message: msg, contact: matchingContact }));
+            } catch (e) {
+              console.warn('[WhatsAppWebhook] Raw inbound message event log note:', e.message);
+            }
+
             await processSingleMessage(msg, matchingContact);
           }
         }
@@ -161,51 +196,21 @@ async function handleIncomingWebhook(req, res) {
 }
 
 async function processSingleMessage(msg, contact) {
-  const from = (msg.from || '').replace(/[^0-9]/g, '');
-  const last10 = from.length >= 10 ? from.slice(-10) : from;
-
-  // Resolve sender name: online profile name -> registry -> excel -> complaint -> Customer
-  let senderName = contact?.profile?.name || null;
-  if (senderName && senderName !== 'Customer' && !/^[0-9+ ]+$/.test(senderName)) {
-    try {
-      db.prepare(`
-        INSERT INTO whatsapp_number_registry (phone, customer_name, is_whatsapp_active, status, source, updated_at)
-        VALUES (?, ?, 1, 'verified', 'meta_webhook_profile', CURRENT_TIMESTAMP)
-        ON CONFLICT(phone) DO UPDATE SET
-          customer_name = excluded.customer_name,
-          is_whatsapp_active = 1,
-          status = 'verified',
-          updated_at = CURRENT_TIMESTAMP
-      `).run(last10, senderName);
-    } catch (e) {}
-  }
-
-  if (!senderName || senderName === 'Customer') {
-    try {
-      const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
-      if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
-        senderName = reg.customer_name;
-      }
-    } catch (e) {}
-  }
-  if (!senderName || senderName === 'Customer') {
-    const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
-    if (inst?.customer_name) senderName = inst.customer_name;
-  }
-  if (!senderName || senderName === 'Customer') {
-    const comp = db.prepare(`
-      SELECT customer_name FROM complaints 
-      WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
-      ORDER BY id DESC LIMIT 1
-    `).get(`%${last10}%`);
-    if (comp?.customer_name && comp.customer_name !== 'Customer') senderName = comp.customer_name;
-  }
-  if (!senderName) {
-    senderName = 'Customer';
-  }
-
   const wamId = msg.id;
-  const msgType = msg.type;
+  const msgType = msg.type || 'text';
+
+  // Idempotency: Skip duplicate message processing
+  if (wamId) {
+    const existing = db.prepare('SELECT id FROM whatsapp_messages WHERE wam_id = ? LIMIT 1').get(wamId);
+    if (existing) {
+      console.log(`[WhatsAppWebhook] Inbound message ${wamId} already processed. Skipping duplicate.`);
+      return;
+    }
+  }
+
+  const rawFrom = msg.from || '';
+  const canonicalPhone = normalizePhone(rawFrom);
+  const last10 = getLast10Digits(rawFrom);
 
   // Find matching complaint by customer_phone (match last 10 digits)
   const complaint = db.prepare(`
@@ -215,6 +220,48 @@ async function processSingleMessage(msg, contact) {
   `).get(`%${last10}%`);
 
   const complaintId = complaint ? complaint.id : null;
+
+  // Store Meta profile name in registry if present
+  if (contact?.profile?.name && !/^[0-9+ ]+$/.test(contact.profile.name)) {
+    try {
+      db.prepare(`
+        INSERT INTO whatsapp_number_registry (phone, customer_name, is_whatsapp_active, status, source, updated_at)
+        VALUES (?, ?, 1, 'verified', 'meta_webhook_profile', CURRENT_TIMESTAMP)
+        ON CONFLICT(phone) DO UPDATE SET
+          customer_name = excluded.customer_name,
+          is_whatsapp_active = 1,
+          status = 'verified',
+          updated_at = CURRENT_TIMESTAMP
+      `).run(last10, contact.profile.name);
+    } catch (e) {}
+  }
+
+  // 3-Tier Contact Resolution:
+  // Priority 1: Our database customer/contact name
+  let senderName = null;
+  if (complaint?.customer_name && complaint.customer_name !== 'Customer') {
+    senderName = complaint.customer_name;
+  }
+  if (!senderName) {
+    const inst = db.prepare("SELECT customer_name FROM installed_customers WHERE REPLACE(REPLACE(consumer_mobile, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
+    if (inst?.customer_name) senderName = inst.customer_name;
+  }
+  // Priority 2: Meta Profile Name
+  if (!senderName && contact?.profile?.name && !/^[0-9+ ]+$/.test(contact.profile.name)) {
+    senderName = contact.profile.name;
+  }
+  if (!senderName) {
+    try {
+      const reg = db.prepare("SELECT customer_name FROM whatsapp_number_registry WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
+      if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
+        senderName = reg.customer_name;
+      }
+    } catch (e) {}
+  }
+  // Priority 3: Formatted phone number
+  if (!senderName) {
+    senderName = formatDisplayPhone(canonicalPhone);
+  }
 
   let messageBody = '';
   let mediaId = null;
@@ -276,7 +323,7 @@ async function processSingleMessage(msg, contact) {
 
   const res = insertStmt.run(
     complaintId,
-    from,
+    canonicalPhone,
     senderName,
     messageBody,
     mediaId,
@@ -288,7 +335,7 @@ async function processSingleMessage(msg, contact) {
 
   // Save online profile name and mark number as active in whatsapp_number_registry
   try {
-    const finalProfileName = contact?.profile?.name || (senderName !== 'Customer' ? senderName : null);
+    const finalProfileName = contact?.profile?.name || (senderName !== formatDisplayPhone(canonicalPhone) ? senderName : null);
     if (finalProfileName) {
       db.prepare(`
         INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes, updated_at)
@@ -315,7 +362,7 @@ async function processSingleMessage(msg, contact) {
     id: res.lastInsertRowid,
     complaint_id: complaintId,
     ticket_id: complaint?.ticket_id || null,
-    phone: from,
+    phone: canonicalPhone,
     sender_type: 'customer',
     sender_name: senderName,
     message_body: messageBody,
@@ -369,7 +416,7 @@ async function processSingleMessage(msg, contact) {
     console.warn('[WhatsApp Webhook] SSE emit error:', sseErr.message);
   }
 
-  console.log(`[WhatsApp Webhook] Processed incoming message from ${from} (${senderName}) for Ticket: ${complaint?.ticket_id || 'None'}`);
+  console.log(`[WhatsApp Webhook] Processed incoming message from ${canonicalPhone} (${senderName}) for Ticket: ${complaint?.ticket_id || 'None'}`);
 }
 
 module.exports = {

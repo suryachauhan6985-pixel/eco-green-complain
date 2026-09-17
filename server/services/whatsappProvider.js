@@ -124,6 +124,28 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
 
     let data = await response.json();
 
+    // Log raw outbound event for complete audit trail
+    try {
+      const db = require('../config/database');
+      db.prepare(`
+        INSERT INTO whatsapp_raw_events (
+          event_id, wam_id, phone_number_id, recipient_phone, direction, event_type, status, error_code, error_message, raw_payload
+        ) VALUES (?, ?, ?, ?, 'outbound', ?, ?, ?, ?, ?)
+      `).run(
+        data.messages?.[0]?.id || null,
+        data.messages?.[0]?.id || null,
+        phoneNumberId,
+        formattedPhone,
+        payload.type,
+        response.ok ? 'sent' : 'failed',
+        data.error?.code ? String(data.error.code) : null,
+        data.error?.message || null,
+        JSON.stringify({ request: payload, response: data })
+      );
+    } catch (auditErr) {
+      console.warn('[WhatsAppProvider] Audit log note:', auditErr.message);
+    }
+
     // Fallback: If template fails, try direct text fallback
     if (!response.ok && payload.type === 'template') {
       console.warn('[Meta Cloud API] Template failed, trying direct text fallback:', data.error?.message);
@@ -142,14 +164,23 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       });
       const textData = await textResponse.json();
       if (textResponse.ok) {
-        return { success: true, provider: 'META_CLOUD_API', messageId: textData.messages?.[0]?.id, deliveredMessage: deliveredText };
+        try {
+          const db = require('../config/database');
+          db.prepare(`
+            INSERT INTO whatsapp_raw_events (
+              event_id, wam_id, phone_number_id, recipient_phone, direction, event_type, status, raw_payload
+            ) VALUES (?, ?, ?, ?, 'outbound', 'text_fallback', 'sent', ?)
+          `).run(textData.messages?.[0]?.id || null, textData.messages?.[0]?.id || null, phoneNumberId, formattedPhone, JSON.stringify(textData));
+        } catch (e) {}
+
+        return { success: true, provider: 'META_CLOUD_API', messageId: textData.messages?.[0]?.id, deliveredMessage: deliveredText || message };
       }
     }
 
     if (!response.ok) {
       throw new Error(data.error ? data.error.message : 'Meta WhatsApp API error');
     }
-    return { success: true, provider: 'META_CLOUD_API', messageId: data.messages?.[0]?.id, deliveredMessage: deliveredText };
+    return { success: true, provider: 'META_CLOUD_API', messageId: data.messages?.[0]?.id, deliveredMessage: deliveredText || message };
   }
 
   if (provider === 'TWILIO') {

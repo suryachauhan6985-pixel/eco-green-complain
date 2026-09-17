@@ -88,6 +88,8 @@ class NotificationService extends EventEmitter {
 
       // Send WhatsApp if phone present and channel selected
       if (channels.includes('whatsapp') && targetPhone) {
+        const { normalizePhone } = require('../utils/phoneNormalizer');
+        const canonicalTargetPhone = normalizePhone(targetPhone);
         const renderedWhatsApp = this.renderTemplate(template.whatsapp_body, mergedData);
         let status = 'sent';
         let errorMsg = null;
@@ -96,7 +98,7 @@ class NotificationService extends EventEmitter {
 
         try {
           sendRes = await sendWhatsAppMessage({
-            to: targetPhone,
+            to: canonicalTargetPhone,
             message: renderedWhatsApp,
             templateName: templateKey,
             variables: mergedData
@@ -105,7 +107,7 @@ class NotificationService extends EventEmitter {
         } catch (err) {
           status = 'failed';
           errorMsg = err.message;
-          console.error(`WhatsApp dispatch failed to ${targetPhone}:`, err.message);
+          console.error(`WhatsApp dispatch failed to ${canonicalTargetPhone}:`, err.message);
         }
 
         const messageDelivered = sendRes?.deliveredMessage || renderedWhatsApp;
@@ -116,7 +118,7 @@ class NotificationService extends EventEmitter {
         `);
         const logResult = logStmt.run(
           complaintId || null,
-          targetPhone,
+          canonicalTargetPhone,
           templateKey,
           messageDelivered,
           status,
@@ -128,9 +130,17 @@ class NotificationService extends EventEmitter {
         try {
           db.prepare(`
             INSERT INTO whatsapp_messages (
-              complaint_id, phone, sender_type, sender_name, message_body, status, wam_id
-            ) VALUES (?, ?, 'company', 'Eco Green Solar', ?, ?, ?)
-          `).run(complaintId || null, targetPhone, messageDelivered, status, sendRes?.messageId || null);
+              complaint_id, phone, sender_type, sender_name, message_body, status, wam_id, template_name, failure_reason
+            ) VALUES (?, ?, 'company', 'Eco Green Solar', ?, ?, ?, ?, ?)
+          `).run(
+            complaintId || null,
+            canonicalTargetPhone,
+            messageDelivered,
+            status,
+            sendRes?.messageId || null,
+            templateKey,
+            errorMsg || null
+          );
         } catch (waMsgErr) {
           console.warn('[NotificationService] Error saving to whatsapp_messages:', waMsgErr.message);
         }

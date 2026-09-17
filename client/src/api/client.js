@@ -1014,162 +1014,27 @@ export const api = {
     body: JSON.stringify({ message })
   }),
 
-  // Universal WhatsApp Web Inbox API with Automatic Cloud Persistence
+  // Universal WhatsApp Web Inbox API (Direct Server Source of Truth)
   getWhatsAppConversations: async () => {
-    let res = null;
     try {
-      res = await request('/whatsapp/conversations');
+      const res = await request('/whatsapp/conversations');
+      return res || { success: true, conversations: [] };
     } catch (e) {
       console.warn('Error fetching conversations from server:', e.message);
+      return { success: false, error: e.message, conversations: [] };
     }
-    const permMessages = getPermanentWhatsAppMessages();
-
-    // Helper: Synthesize conversation list from local permanent messages
-    const buildLocalConversations = () => {
-      if (!permMessages || permMessages.length === 0) return [];
-      const permComplaints = getPermanentComplaints();
-      const map = new Map();
-      permMessages.forEach(m => {
-        if (!m || !m.phone) return;
-        const cleanPhone = m.phone.replace(/[^0-9]/g, '');
-        const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
-        const existing = map.get(last10);
-        const mTime = new Date(m.created_at || 0).getTime();
-        const exTime = existing ? new Date(existing.created_at || 0).getTime() : 0;
-
-        let resolvedName = null;
-        if (cleanPhone.endsWith('9876543210') || m.sender_name?.includes('Rohit') || m.recipient_name?.includes('Rohit')) {
-          resolvedName = 'Rohit Kumar (Technician)';
-        } else if (cleanPhone.endsWith('9876543211') || m.sender_name?.includes('Vikram') || m.recipient_name?.includes('Vikram')) {
-          resolvedName = 'Vikram Singh (Technician)';
-        } else if (cleanPhone.endsWith('9876543212') || m.sender_name?.includes('Suresh') || m.recipient_name?.includes('Suresh')) {
-          resolvedName = 'Suresh Patel (Technician)';
-        } else if (cleanPhone.endsWith('9876543213') || m.sender_name?.includes('Manoj') || m.recipient_name?.includes('Manoj')) {
-          resolvedName = 'Manoj Sharma (Technician)';
-        } else {
-          const matchedComplaint = permComplaints.find(c => (c.customer_phone || '').replace(/[^0-9]/g, '').endsWith(last10));
-          if (matchedComplaint && matchedComplaint.customer_name) {
-            resolvedName = matchedComplaint.customer_name;
-          } else if (m.sender_name && m.sender_name !== 'Eco Green Solar' && !m.sender_name.startsWith('+')) {
-            resolvedName = m.sender_name;
-          } else if (m.recipient_name && m.recipient_name !== 'Eco Green Solar' && !m.recipient_name.startsWith('+')) {
-            resolvedName = m.recipient_name;
-          }
-        }
-
-        const formattedPhone = last10.length === 10 ? `+91 ${last10.slice(0, 5)} ${last10.slice(5)}` : `+${cleanPhone}`;
-
-        if (!existing || mTime > exTime) {
-          map.set(last10, {
-            phone: cleanPhone,
-            complaint_id: m.complaint_id || null,
-            sender_name: resolvedName || formattedPhone,
-            last_sender_type: m.sender_type || 'company',
-            last_message: m.message_body,
-            last_activity: m.created_at || new Date().toISOString(),
-            unread_count: 0
-          });
-        }
-      });
-      return Array.from(map.values());
-    };
-
-    if (permMessages.length > 0) {
-      // If server returned 0 conversations OR has fewer conversations than local backup, auto-restore!
-      if (!res || !Array.isArray(res.conversations) || res.conversations.length === 0) {
-        console.log(`[PermanentWhatsAppSync] Restoring ${permMessages.length} whatsapp messages to server...`);
-        try {
-          await request('/whatsapp/sync-backup', {
-            method: 'POST',
-            body: JSON.stringify({ messages: permMessages })
-          });
-          const restoredRes = await request('/whatsapp/conversations');
-          if (restoredRes && Array.isArray(restoredRes.conversations) && restoredRes.conversations.length > 0) {
-            return restoredRes;
-          }
-        } catch (e) {
-          console.warn('[PermanentWhatsAppSync] Sync error:', e.message);
-        }
-        // Return local synthesized conversations so user NEVER sees empty state!
-        return { success: true, conversations: buildLocalConversations() };
-      }
-    }
-
-    // Even if server has conversations, if local has messages for phone numbers not present on server, merge them!
-    if (res && Array.isArray(res.conversations)) {
-      const serverPhones = new Set(res.conversations.map(c => (c.phone || '').replace(/[^0-9]/g, '').slice(-10)));
-      const localConvs = buildLocalConversations();
-      const missingLocals = localConvs.filter(lc => !serverPhones.has(lc.phone.slice(-10)));
-      if (missingLocals.length > 0) {
-        // Sync missing messages to server in background
-        const missingMessages = permMessages.filter(m => {
-          const l10 = (m.phone || '').replace(/[^0-9]/g, '').slice(-10);
-          return missingLocals.some(ml => ml.phone.endsWith(l10));
-        });
-        if (missingMessages.length > 0) {
-          request('/whatsapp/sync-backup', {
-            method: 'POST',
-            body: JSON.stringify({ messages: missingMessages })
-          }).catch(() => {});
-        }
-        return {
-          ...res,
-          conversations: [...res.conversations, ...missingLocals]
-        };
-      }
-    }
-
-    return res || { success: true, conversations: buildLocalConversations() };
   },
 
   getWhatsAppChatHistory: async (phone) => {
-    const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
-    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
-    let res = null;
     try {
-      res = await request(`/whatsapp/chats/${phone}`);
+      const res = await request(`/whatsapp/chats/${encodeURIComponent(phone)}`);
+      return res || { success: true, messages: [] };
     } catch (e) {
       console.warn('Error fetching chat history from server:', e.message);
+      return { success: false, error: e.message, messages: [] };
     }
-    const permMessages = getPermanentWhatsAppMessages();
-    const localMatches = permMessages.filter(m => (m.phone || '').replace(/[^0-9]/g, '').endsWith(last10));
-
-    if (res && Array.isArray(res.messages)) {
-      if (res.messages.length > 0) {
-        saveWhatsAppMessagesPermanently(res.messages);
-        return res;
-      }
-    }
-
-    // If server returned 0 or error, but we have local permanent messages, restore them to server and return!
-    if (localMatches.length > 0) {
-      request('/whatsapp/sync-backup', {
-        method: 'POST',
-        body: JSON.stringify({ messages: localMatches })
-      }).catch(() => {});
-
-      let fallbackName = null;
-      if (cleanPhone.endsWith('9876543210')) fallbackName = 'Rohit Kumar (Technician)';
-      else if (cleanPhone.endsWith('9876543211')) fallbackName = 'Vikram Singh (Technician)';
-      else if (cleanPhone.endsWith('9876543212')) fallbackName = 'Suresh Patel (Technician)';
-      else if (cleanPhone.endsWith('9876543213')) fallbackName = 'Manoj Sharma (Technician)';
-      else {
-        const c = getPermanentComplaints().find(comp => (comp.customer_phone || '').replace(/[^0-9]/g, '').endsWith(last10));
-        if (c && c.customer_name) fallbackName = c.customer_name;
-      }
-
-      return {
-        success: true,
-        messages: localMatches,
-        contact: res?.contact || {
-          phone: cleanPhone,
-          sender_name: fallbackName || `+${cleanPhone}`
-        }
-      };
-    }
-
-    return res || { success: true, messages: [] };
   },
+  getWhatsAppRawEvents: (phone) => request(`/whatsapp/raw-events/${encodeURIComponent(phone)}`),
   syncBackupWhatsApp: (messages) => request('/whatsapp/sync-backup', {
     method: 'POST',
     body: JSON.stringify({ messages })
