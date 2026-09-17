@@ -318,6 +318,8 @@ export const ComplaintDetailDrawer = ({
       city: ticket.city || '',
       consumer_no: ticket.consumer_no || '',
       order_no: ticket.order_no || '',
+      invoice_no: ticket.invoice_no || '',
+      invoice_date: ticket.invoice_date || '',
       location_url: ticket.location_url || '',
       is_in_warranty: ticket.is_in_warranty !== undefined ? ticket.is_in_warranty : 1,
       estimated_charges: ticket.estimated_charges !== undefined ? ticket.estimated_charges : 0,
@@ -693,7 +695,15 @@ export const ComplaintDetailDrawer = ({
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-700">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs text-slate-700">
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Invoice No:</span>
+                          <span className="font-mono font-semibold text-slate-800">{ticket.invoice_no || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Invoice Date:</span>
+                          <span className="font-mono font-semibold text-slate-800">{ticket.invoice_date || 'N/A'}</span>
+                        </div>
                         <div>
                           <span className="text-slate-400 block text-[11px]">Consumer No:</span>
                           <span className="font-mono font-semibold text-slate-800">{ticket.consumer_no || 'N/A'}</span>
@@ -1530,6 +1540,27 @@ export const ComplaintDetailDrawer = ({
                       type="text"
                       value={editFormData.order_no || ''}
                       onChange={(e) => setEditFormData({ ...editFormData, order_no: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Invoice No. (Billing / Excel)</label>
+                    <input
+                      type="text"
+                      value={editFormData.invoice_no || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, invoice_no: e.target.value })}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Invoice Date</label>
+                    <input
+                      type="date"
+                      value={editFormData.invoice_date || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, invoice_date: e.target.value })}
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
                     />
                   </div>

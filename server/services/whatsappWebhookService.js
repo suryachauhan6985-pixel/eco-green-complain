@@ -125,6 +125,20 @@ async function handleIncomingWebhook(req, res) {
             } catch (e) {
               // Ignore if not present
             }
+
+            if (newStatus === 'failed') {
+              const isNotOnWa = (st.errors || []).some(err => err.code === 131026 || String(err.message || '').toLowerCase().includes('not a valid whatsapp user'));
+              if (isNotOnWa && st.recipient_id) {
+                const recipientPhone = st.recipient_id.replace(/[^0-9]/g, '').slice(-10);
+                try {
+                  db.prepare(`
+                    INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, source, notes, updated_at)
+                    VALUES (?, 0, 'invite_required', 'meta_delivery_failed_131026', 'Recipient is not a valid WhatsApp user', CURRENT_TIMESTAMP)
+                  `).run(recipientPhone);
+                  console.log(`[WhatsAppWebhook] Marked ${recipientPhone} as invite_required due to Meta error 131026`);
+                } catch (e) {}
+              }
+            }
           }
         }
 
@@ -226,6 +240,14 @@ async function processSingleMessage(msg, contact) {
     mediaCaption,
     wamId
   );
+
+  // Mark number as active in whatsapp_number_registry
+  try {
+    db.prepare(`
+      INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes, updated_at)
+      VALUES (?, 1, 'verified', ?, 'incoming_whatsapp_message', 'Confirmed active WhatsApp user via incoming message', CURRENT_TIMESTAMP)
+    `).run(last10, senderName);
+  } catch (e) {}
 
   const messageRecord = {
     id: res.lastInsertRowid,

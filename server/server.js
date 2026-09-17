@@ -740,6 +740,7 @@ app.get('/api/whatsapp/verify-number/:phone', (req, res) => {
       return res.json({
         valid: false,
         isVerified: false,
+        isWhatsApp: false,
         phone: rawPhone,
         status: 'dummy_number',
         message: 'Invalid number: Repeated digits detected. Please enter a genuine mobile number.'
@@ -751,6 +752,7 @@ app.get('/api/whatsapp/verify-number/:phone', (req, res) => {
       return res.json({
         valid: false,
         isVerified: false,
+        isWhatsApp: false,
         phone: rawPhone,
         status: 'dummy_number',
         message: 'Invalid number: Sequential test number detected. Please enter a genuine mobile number.'
@@ -763,32 +765,46 @@ app.get('/api/whatsapp/verify-number/:phone', (req, res) => {
       return res.json({
         valid: false,
         isVerified: false,
+        isWhatsApp: false,
         phone: rawPhone,
         status: 'invalid_format',
         message: 'Mobile number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9.'
       });
     }
 
-    // Detect telecom series / carrier
-    let carrier = 'Indian Mobile Network';
-    if (/^(62|63|70|79)/.test(last10)) {
-      carrier = 'Reliance Jio (4G/5G)';
-    } else if (/^(98|99|97|96|81|80|75)/.test(last10)) {
-      carrier = 'Bharti Airtel';
-    } else if (/^(90|91|92|93|94|95|82|83|84|85|86|87|88|89|77|78)/.test(last10)) {
-      carrier = 'Vi / BSNL / Mobile Network';
+    const formatted = `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`;
+
+    // 1. Check permanent WhatsApp registry (records verified vs invite-required numbers)
+    let reg = null;
+    try {
+      reg = db.prepare('SELECT * FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ?').get(last10, `%${last10}%`);
+    } catch (e) {}
+
+    if (reg && reg.is_whatsapp_active === 0) {
+      return res.json({
+        valid: true,
+        isVerified: false,
+        isWhatsApp: false,
+        phone: last10,
+        formattedPhone: formatted,
+        formatted: formatted,
+        status: 'invite_required',
+        message: 'Not on WhatsApp (Invite to WhatsApp required)',
+        customerName: reg.customer_name || null,
+        notes: reg.notes || 'Customer does not have an active WhatsApp account'
+      });
     }
 
-    // Check if customer exists in installed_customers, complaints, or whatsapp_messages
+    // 2. Check if customer exists in installed_customers, complaints, or whatsapp_messages
     const existingCust = db.prepare(`
-      SELECT id, customer_name, city_village, consumer_no, order_no, inverter_serial, panel_make, inverter_make, is_in_warranty 
+      SELECT id, customer_name, city_village, consumer_no, order_no, invoice_no, invoice_date, inverter_serial, panel_make, inverter_make, is_in_warranty 
       FROM installed_customers 
       WHERE consumer_mobile LIKE ? 
       LIMIT 1
     `).get(`%${last10}%`);
 
     const existingComp = db.prepare(`
-      SELECT customer_name, ticket_id, city, product_type 
+      SELECT customer_name, ticket_id, city, product_type, invoice_no, invoice_date 
       FROM complaints 
       WHERE customer_phone LIKE ? 
       LIMIT 1
@@ -801,37 +817,101 @@ app.get('/api/whatsapp/verify-number/:phone', (req, res) => {
       LIMIT 1
     `).get(`%${last10}%`);
 
-    const customerName = existingCust?.customer_name || existingComp?.customer_name || existingChat?.sender_name || null;
+    const customerName = existingCust?.customer_name || existingComp?.customer_name || existingChat?.sender_name || (reg?.customer_name || null);
     const city = existingCust?.city_village || existingComp?.city || null;
     const isExisting = Boolean(existingCust || existingComp);
-    const formatted = `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`;
+    const invoiceNo = existingCust?.invoice_no || existingComp?.invoice_no || null;
+    const invoiceDate = existingCust?.invoice_date || existingComp?.invoice_date || null;
 
-    res.json({
+    // Determine accurate WhatsApp status:
+    // - If in registry as active (1), or has chat history, or is verified installed customer: verified
+    // - Otherwise: unconfirmed (valid mobile format, but WhatsApp active status not confirmed yet)
+    const isExplicitlyVerified = Boolean((reg && reg.is_whatsapp_active === 1) || existingChat || isExisting);
+
+    if (isExplicitlyVerified) {
+      return res.json({
+        valid: true,
+        isVerified: true,
+        isWhatsApp: true,
+        phone: last10,
+        formattedPhone: formatted,
+        formatted: formatted,
+        isExistingCustomer: isExisting,
+        customerName: customerName,
+        city: city,
+        consumerNo: existingCust?.consumer_no || null,
+        orderNo: existingCust?.order_no || null,
+        invoiceNo: invoiceNo,
+        invoiceDate: invoiceDate,
+        inverterSerial: existingCust?.inverter_serial || null,
+        panelMake: existingCust?.panel_make || null,
+        inverterMake: existingCust?.inverter_make || null,
+        isInWarranty: existingCust ? Boolean(existingCust.is_in_warranty) : null,
+        ticketId: existingComp?.ticket_id || null,
+        hasChatHistory: Boolean(existingChat),
+        status: 'verified',
+        message: isExisting
+          ? `Verified Customer: ${customerName} (${city || 'Gujarat'})`
+          : `WhatsApp Active & Verified (${formatted})`
+      });
+    }
+
+    // Number has valid 10-digit mobile format, but WhatsApp presence is unconfirmed
+    return res.json({
       valid: true,
-      isVerified: true,
+      isVerified: false,
+      isWhatsApp: null,
       phone: last10,
       formattedPhone: formatted,
       formatted: formatted,
-      carrier: carrier,
-      isExistingCustomer: isExisting,
-      customerName: customerName,
-      city: city,
-      consumerNo: existingCust?.consumer_no || null,
-      orderNo: existingCust?.order_no || null,
-      inverterSerial: existingCust?.inverter_serial || null,
-      panelMake: existingCust?.panel_make || null,
-      inverterMake: existingCust?.inverter_make || null,
-      isInWarranty: existingCust ? Boolean(existingCust.is_in_warranty) : null,
-      ticketId: existingComp?.ticket_id || null,
-      hasChatHistory: Boolean(existingChat),
-      status: 'verified',
-      message: isExisting
-        ? `Verified WhatsApp Customer: ${customerName} (${city || 'Gujarat'})`
-        : `WhatsApp Linked & Active (${formatted})`
+      isExistingCustomer: false,
+      customerName: null,
+      city: null,
+      consumerNo: null,
+      orderNo: null,
+      invoiceNo: null,
+      invoiceDate: null,
+      inverterSerial: null,
+      panelMake: null,
+      inverterMake: null,
+      isInWarranty: null,
+      ticketId: null,
+      hasChatHistory: false,
+      status: 'unconfirmed',
+      message: `Mobile Validated (${formatted}) • WhatsApp presence not yet confirmed`
     });
   } catch (err) {
     console.error('Verify phone error:', err);
     res.status(500).json({ error: 'Verification failed: ' + err.message });
+  }
+});
+
+// 9b. Update / Set phone number WhatsApp status in registry
+app.post('/api/whatsapp/set-number-status', (req, res) => {
+  try {
+    const { phone, isActive, status, customerName, notes } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+    const cleanDigits = phone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    const activeVal = (isActive === false || status === 'invite_required') ? 0 : 1;
+    const statusVal = activeVal === 0 ? 'invite_required' : 'verified';
+
+    db.prepare(`
+      INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes, updated_at)
+      VALUES (?, ?, ?, ?, 'manual_override', ?, CURRENT_TIMESTAMP)
+    `).run(last10, activeVal, statusVal, customerName || null, notes || (activeVal === 0 ? 'Marked as Not on WhatsApp' : 'Confirmed on WhatsApp'));
+
+    res.json({
+      success: true,
+      phone: last10,
+      isWhatsApp: Boolean(activeVal),
+      status: statusVal,
+      message: activeVal === 0 ? 'Number marked as Not on WhatsApp (Invite Required)' : 'Number confirmed as WhatsApp Active'
+    });
+  } catch (err) {
+    console.error('Set number status error:', err);
+    res.status(500).json({ error: 'Failed to update status: ' + err.message });
   }
 });
 

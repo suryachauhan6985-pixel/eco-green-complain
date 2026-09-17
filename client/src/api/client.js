@@ -1073,6 +1073,10 @@ export const api = {
     return res;
   },
   verifyWhatsAppNumber: (phone) => request(`/whatsapp/verify-number/${encodeURIComponent(phone)}`),
+  setWhatsAppNumberStatus: (data) => request('/whatsapp/set-number-status', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
   clearWhatsAppChat: (phone) => request(`/whatsapp/clear-chat/${encodeURIComponent(phone)}`, {
     method: 'POST'
   })

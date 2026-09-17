@@ -52,6 +52,8 @@ function initializeSchema() {
       city TEXT,
       consumer_no TEXT,
       order_no TEXT,
+      invoice_no TEXT,
+      invoice_date TEXT,
       location_url TEXT,
       is_in_warranty INTEGER DEFAULT 1,
       estimated_charges REAL DEFAULT 0,
@@ -439,6 +441,8 @@ function migrateComplaintsTable() {
         { name: 'city', type: 'TEXT' },
         { name: 'consumer_no', type: 'TEXT' },
         { name: 'order_no', type: 'TEXT' },
+        { name: 'invoice_no', type: 'TEXT' },
+        { name: 'invoice_date', type: 'TEXT' },
         { name: 'location_url', type: 'TEXT' },
         { name: 'is_in_warranty', type: 'INTEGER DEFAULT 1' },
         { name: 'estimated_charges', type: 'REAL DEFAULT 0' },
@@ -454,6 +458,27 @@ function migrateComplaintsTable() {
         }
       }
       db.exec(`UPDATE complaints SET status_updated_at = created_at WHERE status_updated_at IS NULL`);
+
+      // WhatsApp Number Registry (tracks verified vs non-WhatsApp/Invite-required numbers)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS whatsapp_number_registry (
+          phone TEXT PRIMARY KEY,
+          is_whatsapp_active INTEGER NOT NULL DEFAULT 1,
+          status TEXT NOT NULL DEFAULT 'verified',
+          customer_name TEXT,
+          source TEXT,
+          notes TEXT,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Seed 9510244013 as Invite Required / No WhatsApp
+      try {
+        db.prepare(`
+          INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes)
+          VALUES ('9510244013', 0, 'invite_required', 'Unknown / Non-WhatsApp User', 'whatsapp_app_check', 'Customer has not registered on WhatsApp. Invite to WhatsApp required.')
+        `).run();
+      } catch (e) {}
     }
   } catch (e) {
     console.warn('Complaints table migration note:', e.message);

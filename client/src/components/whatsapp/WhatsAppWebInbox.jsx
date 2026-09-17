@@ -1486,27 +1486,44 @@ export const WhatsAppWebInbox = ({
                 {/* Verification Badge */}
                 {newChatVerification && (
                   <div className="mt-1.5">
-                    {(newChatVerification.isVerified ?? newChatVerification.valid) ? (
+                    {(newChatVerification.status === 'invite_required' || newChatVerification.isWhatsApp === false) ? (
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                        <div className="flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>🔴 Not on WhatsApp (Invite Required)</span>
+                        </div>
+                        <a
+                          href={`https://wa.me/91${(newChatPhone || '').replace(/\D/g, '').slice(-10)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-auto text-[10px] bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-all"
+                        >
+                          Invite to WhatsApp
+                        </a>
+                      </div>
+                    ) : (newChatVerification.status === 'verified' || newChatVerification.isWhatsApp === true) ? (
                       <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
                         <div className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
-                          <span>WhatsApp Active ({newChatVerification.formatted || newChatVerification.formattedPhone || newChatPhone})</span>
-                          {newChatVerification.carrier && (
-                            <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded font-mono">
-                              {newChatVerification.carrier}
-                            </span>
-                          )}
+                          <span>🟢 WhatsApp Active ({newChatVerification.formatted || newChatVerification.formattedPhone || newChatPhone})</span>
                         </div>
                         {newChatVerification.isExistingCustomer && (
                           <span className="ml-auto text-[10px] font-bold text-emerald-900 bg-emerald-200/90 px-1.5 py-0.5 rounded">
-                            {newChatVerification.customerName || 'Existing Customer'}
+                            {newChatVerification.customerName || 'Registered Customer'}
                           </span>
                         )}
+                      </div>
+                    ) : newChatVerification.status === 'unconfirmed' ? (
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+                          <span>🟡 Valid Mobile ({newChatVerification.formatted}) • WhatsApp Unconfirmed</span>
+                        </div>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                         <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                        <span>{newChatVerification.message || 'Invalid Indian WhatsApp number format.'}</span>
+                        <span>{newChatVerification.message || 'Invalid Indian mobile number format.'}</span>
                       </div>
                     )}
                   </div>

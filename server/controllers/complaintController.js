@@ -65,9 +65,9 @@ function listComplaints(req, res) {
     }
 
     if (search) {
-      query += ` AND (c.ticket_id LIKE ? OR c.customer_name LIKE ? OR c.customer_phone LIKE ? OR c.product_serial LIKE ? OR c.city LIKE ? OR c.consumer_no LIKE ? OR c.order_no LIKE ?) `;
+      query += ` AND (c.ticket_id LIKE ? OR c.customer_name LIKE ? OR c.customer_phone LIKE ? OR c.product_serial LIKE ? OR c.city LIKE ? OR c.consumer_no LIKE ? OR c.order_no LIKE ? OR c.invoice_no LIKE ?) `;
       const term = `%${search}%`;
-      params.push(term, term, term, term, term, term, term);
+      params.push(term, term, term, term, term, term, term, term);
     }
 
     if (status && status !== 'all') {
@@ -220,6 +220,8 @@ async function createComplaint(req, res) {
       city,
       consumer_no,
       order_no,
+      invoice_no,
+      invoice_date,
       location_url,
       is_in_warranty,
       estimated_charges = 0,
@@ -248,13 +250,13 @@ async function createComplaint(req, res) {
     const insertStmt = db.prepare(`
       INSERT INTO complaints (
         ticket_id, customer_name, customer_phone, customer_email, customer_address,
-        city, consumer_no, order_no, location_url, is_in_warranty,
+        city, consumer_no, order_no, invoice_no, invoice_date, location_url, is_in_warranty,
         estimated_charges, notify_charges, payment_collected, payment_status,
         product_type, product_serial, installation_id, issue_category, issue_description,
         priority, status, registered_by_user_id, created_at, status_updated_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
         ?, ?, 0, 'Unpaid',
         ?, ?, ?, ?, ?,
         ?, 'Unassigned', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -270,6 +272,8 @@ async function createComplaint(req, res) {
       city ? city.trim() : null,
       consumer_no ? consumer_no.trim() : null,
       order_no ? order_no.trim() : null,
+      invoice_no ? invoice_no.trim() : null,
+      invoice_date ? invoice_date.trim() : null,
       location_url ? location_url.trim() : null,
       warrantyVal,
       cleanCharges,
@@ -346,6 +350,8 @@ async function updateComplaint(req, res) {
       city,
       consumer_no,
       order_no,
+      invoice_no,
+      invoice_date,
       location_url,
       is_in_warranty,
       estimated_charges,
@@ -376,6 +382,8 @@ async function updateComplaint(req, res) {
         city = ?,
         consumer_no = ?,
         order_no = ?,
+        invoice_no = ?,
+        invoice_date = ?,
         location_url = ?,
         is_in_warranty = ?,
         estimated_charges = ?,
@@ -396,6 +404,8 @@ async function updateComplaint(req, res) {
       city !== undefined ? (city ? city.trim() : null) : existing.city,
       consumer_no !== undefined ? (consumer_no ? consumer_no.trim() : null) : existing.consumer_no,
       order_no !== undefined ? (order_no ? order_no.trim() : null) : existing.order_no,
+      invoice_no !== undefined ? (invoice_no ? invoice_no.trim() : null) : existing.invoice_no,
+      invoice_date !== undefined ? (invoice_date ? invoice_date.trim() : null) : existing.invoice_date,
       location_url !== undefined ? (location_url ? location_url.trim() : null) : existing.location_url,
       warrantyVal,
       cleanCharges,
