@@ -528,9 +528,10 @@ function seedAuthenticWhatsAppRecords() {
   }
 }
 
-// Clean out legacy mock messages if any exist
+// Clean out legacy mock messages and personal number test messages
 try {
   db.prepare("DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam_%'").run();
+  db.prepare("DELETE FROM whatsapp_messages WHERE phone LIKE '%6352454247%' OR sender_name LIKE '%akshar%' OR sender_name LIKE '%અક્ષર%' OR message_body LIKE '%અક્ષર%'").run();
 } catch (e) {}
 
 initializeSchema();

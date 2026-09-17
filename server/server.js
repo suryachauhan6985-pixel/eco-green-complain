@@ -460,6 +460,10 @@ app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, requireRole('a
 // 5. Universal WhatsApp Web Inbox: Get all conversation threads (linked or unlinked)
 app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
+    try {
+      db.prepare("DELETE FROM whatsapp_messages WHERE phone LIKE '%6352454247%' OR sender_name LIKE '%akshar%' OR sender_name LIKE '%અક્ષર%' OR message_body LIKE '%અક્ષર%'").run();
+    } catch (e) {}
+
     // Group by cleaned phone number
     const rows = db.prepare(`
       WITH RankedMessages AS (
@@ -691,6 +695,11 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, requireRole('admin', 's
       for (const m of messages) {
         if (!m.phone || !m.message_body) continue;
         const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+        if (cleanPhone.includes('6352454247') ||
+            (m.sender_name && /akshar|અક્ષર/i.test(m.sender_name)) ||
+            (m.message_body && /akshar|અક્ષર/i.test(m.message_body))) {
+          continue;
+        }
         const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
         
         insertStmt.run(

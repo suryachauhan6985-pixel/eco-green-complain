@@ -96,10 +96,14 @@ export function clearPermanentWhatsAppMessages() {
 export function getPermanentWhatsAppMessages() {
   try {
     const list = JSON.parse(localStorage.getItem(PERMANENT_WHATSAPP_KEY) || '[]');
-    // Filter out any mock dummy messages
+    // Filter out any mock dummy messages and personal number 6352454247 / Akshar Restaurant
     const mockWamPrefixes = ['wam_seed_', 'wam_javia', 'wam_ananya', 'wam_rajesh', 'wam_panchal', 'wam_jigar', 'wam_deepak', 'wam_official', 'initial_'];
     const cleaned = list.filter(m => {
       if (!m || !m.message_body) return false;
+      const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+      if (cleanPhone.includes('6352454247')) return false;
+      const combined = `${m.sender_name || ''} ${m.message_body || ''}`.toLowerCase();
+      if (combined.includes('akshar') || combined.includes('અક્ષર')) return false;
       if (m.wam_id && mockWamPrefixes.some(p => m.wam_id.startsWith(p))) return false;
       return true;
     });
@@ -115,7 +119,14 @@ export function getPermanentWhatsAppMessages() {
 export function saveWhatsAppMessagesPermanently(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
   try {
-    const realMessages = messages.filter(m => !m.wam_id?.startsWith('wam_seed_'));
+    const realMessages = messages.filter(m => {
+      if (m.wam_id?.startsWith('wam_seed_')) return false;
+      const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+      if (cleanPhone.includes('6352454247')) return false;
+      const combined = `${m.sender_name || ''} ${m.message_body || ''}`.toLowerCase();
+      if (combined.includes('akshar') || combined.includes('અક્ષર')) return false;
+      return true;
+    });
     if (realMessages.length === 0) return;
     const existing = getPermanentWhatsAppMessages();
     const map = new Map();

@@ -121,11 +121,20 @@ export const WhatsAppWebInbox = ({
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
-        setConversations(res.conversations);
-        if (res.conversations.length > 0) {
-          if (!selectedPhone || !res.conversations.find(c => c.phone === selectedPhone)) {
+        const cleaned = res.conversations.filter(c => {
+          const p = (c.phone || '').replace(/[^0-9]/g, '');
+          if (p.includes('6352454247') ||
+              (c.sender_name && /akshar|અક્ષર/i.test(c.sender_name)) ||
+              (c.last_message && /akshar|અક્ષર/i.test(c.last_message))) {
+            return false;
+          }
+          return true;
+        });
+        setConversations(cleaned);
+        if (cleaned.length > 0) {
+          if (!selectedPhone || !cleaned.find(c => c.phone === selectedPhone)) {
             if (!selectedPhone && !initialTarget) {
-              setSelectedPhone(res.conversations[0].phone);
+              setSelectedPhone(cleaned[0].phone);
             }
           }
         }
@@ -481,8 +490,24 @@ export const WhatsAppWebInbox = ({
     loadMessages(fullPhone);
   };
 
+  // Helper to render avatar initials or clean user icon when name starts with '+' or digits
+  const renderAvatarContent = (name, phone, iconClass = "w-5 h-5") => {
+    const cleanName = (name || '').trim();
+    if (!cleanName || cleanName.startsWith('+') || /^\d/.test(cleanName)) {
+      return <User className={iconClass} />;
+    }
+    return cleanName.charAt(0).toUpperCase();
+  };
+
   // Filter conversations
   const filteredConversations = conversations.filter(conv => {
+    const p = (conv.phone || '').replace(/[^0-9]/g, '');
+    if (p.includes('6352454247') ||
+        (conv.sender_name && /akshar|અક્ષર/i.test(conv.sender_name)) ||
+        (conv.last_message && /akshar|અક્ષર/i.test(conv.last_message))) {
+      return false;
+    }
+
     if (activeFilter === 'unread' && !conv.unread_count) return false;
     if (activeFilter === 'favorites' && !conv.is_pinned) return false;
     if (activeFilter === 'groups' && !conv.sender_name?.toLowerCase().includes('group') && !conv.is_group) return false;
@@ -958,7 +983,7 @@ export const WhatsAppWebInbox = ({
                         ? 'bg-[#00a884] text-white' 
                         : 'bg-[#dfe5e7] text-[#54656f]'
                   }`}>
-                    {(conv.sender_name || 'U').charAt(0).toUpperCase()}
+                    {renderAvatarContent(conv.sender_name, conv.phone, "w-5 h-5")}
                   </div>
 
                   {/* Body Content */}
@@ -1048,7 +1073,7 @@ export const WhatsAppWebInbox = ({
                       ? 'bg-[#00a884] text-white' 
                       : 'bg-[#dfe5e7] text-[#54656f]'
                 }`}>
-                  {(contactInfo?.sender_name || selectedConv?.sender_name || 'U').charAt(0).toUpperCase()}
+                  {renderAvatarContent(contactInfo?.sender_name || selectedConv?.sender_name, selectedPhone, "w-4 h-4")}
                 </div>
 
                 {/* Name & Live Status */}
@@ -1705,7 +1730,7 @@ export const WhatsAppWebInbox = ({
               </button>
 
               <div className="w-20 h-20 rounded-full bg-white text-[#008069] flex items-center justify-center font-bold text-2xl mx-auto shadow-lg mb-2">
-                {(contactInfo?.sender_name || selectedConv?.sender_name || 'U').charAt(0).toUpperCase()}
+                {renderAvatarContent(contactInfo?.sender_name || selectedConv?.sender_name, selectedPhone, "w-10 h-10 text-[#008069]")}
               </div>
 
               <h3 className="text-base font-bold truncate">
