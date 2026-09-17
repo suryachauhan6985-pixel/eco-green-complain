@@ -145,7 +145,12 @@ async function handleIncomingWebhook(req, res) {
         // 2. Handle actual incoming customer messages
         if (value.messages && Array.isArray(value.messages)) {
           for (const msg of value.messages) {
-            await processSingleMessage(msg, value.contacts?.[0]);
+            const fromDigits = (msg.from || '').replace(/[^0-9]/g, '');
+            const matchingContact = (value.contacts || []).find(c => {
+              const cDigits = (c.wa_id || '').replace(/[^0-9]/g, '');
+              return cDigits === fromDigits || fromDigits.endsWith(cDigits) || cDigits.endsWith(fromDigits.slice(-10));
+            }) || value.contacts?.[0];
+            await processSingleMessage(msg, matchingContact);
           }
         }
       }
@@ -157,12 +162,38 @@ async function handleIncomingWebhook(req, res) {
 
 async function processSingleMessage(msg, contact) {
   const from = (msg.from || '').replace(/[^0-9]/g, '');
-  const senderName = contact?.profile?.name || 'Customer';
+  const last10 = from.length >= 10 ? from.slice(-10) : from;
+
+  // Resolve sender name: online profile name -> registry -> excel -> complaint -> Customer
+  let senderName = contact?.profile?.name || null;
+  if (!senderName || senderName === 'Customer') {
+    try {
+      const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ?').get(last10, `%${last10}%`);
+      if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
+        senderName = reg.customer_name;
+      }
+    } catch (e) {}
+  }
+  if (!senderName || senderName === 'Customer') {
+    const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+    if (inst?.customer_name) senderName = inst.customer_name;
+  }
+  if (!senderName || senderName === 'Customer') {
+    const comp = db.prepare(`
+      SELECT customer_name FROM complaints 
+      WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+      ORDER BY id DESC LIMIT 1
+    `).get(`%${last10}%`);
+    if (comp?.customer_name && comp.customer_name !== 'Customer') senderName = comp.customer_name;
+  }
+  if (!senderName) {
+    senderName = 'Customer';
+  }
+
   const wamId = msg.id;
   const msgType = msg.type;
 
   // Find matching complaint by customer_phone (match last 10 digits)
-  const last10 = from.length >= 10 ? from.slice(-10) : from;
   const complaint = db.prepare(`
     SELECT * FROM complaints 
     WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
@@ -241,13 +272,30 @@ async function processSingleMessage(msg, contact) {
     wamId
   );
 
-  // Mark number as active in whatsapp_number_registry
+  // Save online profile name and mark number as active in whatsapp_number_registry
   try {
-    db.prepare(`
-      INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes, updated_at)
-      VALUES (?, 1, 'verified', ?, 'incoming_whatsapp_message', 'Confirmed active WhatsApp user via incoming message', CURRENT_TIMESTAMP)
-    `).run(last10, senderName);
-  } catch (e) {}
+    const finalProfileName = contact?.profile?.name || (senderName !== 'Customer' ? senderName : null);
+    if (finalProfileName) {
+      db.prepare(`
+        INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes, updated_at)
+        VALUES (?, 1, 'verified', ?, 'incoming_whatsapp_message', 'Confirmed active WhatsApp profile', CURRENT_TIMESTAMP)
+      `).run(last10, finalProfileName);
+
+      // Retroactively update earlier messages for this phone that have generic or missing names
+      db.prepare(`
+        UPDATE whatsapp_messages 
+        SET sender_name = ? 
+        WHERE phone LIKE ? AND sender_type = 'customer' AND (sender_name IS NULL OR sender_name = 'Customer' OR sender_name LIKE '%+%' OR sender_name GLOB '[0-9]*')
+      `).run(finalProfileName, `%${last10}%`);
+    } else {
+      db.prepare(`
+        INSERT OR REPLACE INTO whatsapp_number_registry (phone, is_whatsapp_active, status, source, notes, updated_at)
+        VALUES (?, 1, 'verified', 'incoming_whatsapp_message', 'Confirmed active WhatsApp user via incoming message', CURRENT_TIMESTAMP)
+      `).run(last10);
+    }
+  } catch (e) {
+    console.warn('[WhatsAppWebhook] Registry update note:', e.message);
+  }
 
   const messageRecord = {
     id: res.lastInsertRowid,

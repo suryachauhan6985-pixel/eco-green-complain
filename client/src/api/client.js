@@ -1079,6 +1079,10 @@ export const api = {
   }),
   clearWhatsAppChat: (phone) => request(`/whatsapp/clear-chat/${encodeURIComponent(phone)}`, {
     method: 'POST'
+  }),
+  updateWhatsAppContactName: (phone, name) => request('/whatsapp/update-contact-name', {
+    method: 'POST',
+    body: JSON.stringify({ phone, name })
   })
 };
 

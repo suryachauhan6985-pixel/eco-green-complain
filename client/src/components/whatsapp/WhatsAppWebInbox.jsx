@@ -9,7 +9,8 @@ import {
   Maximize2, X, Filter, Smile, MoreVertical, MessageSquarePlus,
   FileCheck, Shield, ChevronRight, Video, Mic, Pin, Compass,
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
-  Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck
+  Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
+  Edit2
 } from 'lucide-react';
 
 const EMOJI_CATEGORIES = {
@@ -52,6 +53,9 @@ export const WhatsAppWebInbox = ({
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
+  const [isEditNameModalOpen, setIsEditNameModalOpen] = useState(false);
+  const [editedContactName, setEditedContactName] = useState('');
+  const [savingContactName, setSavingContactName] = useState(false);
 
   // Sound notification preference
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -131,13 +135,6 @@ export const WhatsAppWebInbox = ({
           return true;
         });
         setConversations(cleaned);
-        if (cleaned.length > 0) {
-          if (!selectedPhone || !cleaned.find(c => c.phone === selectedPhone)) {
-            if (!selectedPhone && !initialTarget) {
-              setSelectedPhone(cleaned[0].phone);
-            }
-          }
-        }
       } else {
         setConversations([]);
       }
@@ -488,6 +485,26 @@ export const WhatsAppWebInbox = ({
 
     setIsNewChatModalOpen(false);
     loadMessages(fullPhone);
+  };
+
+  const handleSaveContactName = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedPhone || !editedContactName.trim()) return;
+    try {
+      setSavingContactName(true);
+      const cleanName = editedContactName.trim();
+      const res = await api.updateWhatsAppContactName(selectedPhone, cleanName);
+      if (res && res.success) {
+        setContactInfo(prev => prev ? { ...prev, sender_name: cleanName } : { phone: selectedPhone, sender_name: cleanName });
+        setConversations(prev => prev.map(c => c.phone === selectedPhone ? { ...c, sender_name: cleanName } : c));
+        showToast('Contact name updated successfully', 'success');
+        setIsEditNameModalOpen(false);
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to update contact name', 'error');
+    } finally {
+      setSavingContactName(false);
+    }
   };
 
   // Helper to render avatar initials or clean user icon when name starts with '+' or digits
@@ -1079,7 +1096,19 @@ export const WhatsAppWebInbox = ({
                 {/* Name & Live Status */}
                 <div className="min-w-0">
                   <h3 className="font-semibold text-sm text-[#111b21] truncate group-hover:text-[#008069] transition-colors flex items-center gap-1.5">
-                    <span>{contactInfo?.sender_name || selectedConv?.sender_name || `+${selectedPhone}`}</span>
+                    <span className="truncate">{contactInfo?.sender_name || selectedConv?.sender_name || `+${selectedPhone}`}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditedContactName(contactInfo?.sender_name || selectedConv?.sender_name || '');
+                        setIsEditNameModalOpen(true);
+                      }}
+                      className="p-1 hover:bg-[#dfe5e7] rounded-full text-slate-400 hover:text-[#008069] transition-colors cursor-pointer shrink-0"
+                      title="Edit Contact Name"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
                   </h3>
                   <p className="text-[11px] text-[#667781] truncate font-mono">
                     +91 {selectedPhone.replace(/^91/, '')} • <span className="text-[#008069]">online / WhatsApp</span>
@@ -1759,9 +1788,22 @@ export const WhatsAppWebInbox = ({
                 {renderAvatarContent(contactInfo?.sender_name || selectedConv?.sender_name, selectedPhone, "w-10 h-10 text-[#008069]")}
               </div>
 
-              <h3 className="text-base font-bold truncate">
-                {contactInfo?.sender_name || selectedConv?.sender_name || 'Customer'}
-              </h3>
+              <div className="flex items-center justify-center gap-1.5 max-w-xs mx-auto">
+                <h3 className="text-base font-bold truncate">
+                  {contactInfo?.sender_name || selectedConv?.sender_name || 'Customer'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditedContactName(contactInfo?.sender_name || selectedConv?.sender_name || '');
+                    setIsEditNameModalOpen(true);
+                  }}
+                  className="p-1 hover:bg-white/20 rounded-full text-white cursor-pointer shrink-0"
+                  title="Edit Contact Name"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <p className="text-xs text-emerald-200 font-mono mt-0.5">
                 +91 {selectedPhone?.replace(/^91/, '')}
               </p>
@@ -1838,6 +1880,19 @@ export const WhatsAppWebInbox = ({
                 </a>
               </div>
 
+              {/* Edit Contact Name Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditedContactName(contactInfo?.sender_name || selectedConv?.sender_name || '');
+                  setIsEditNameModalOpen(true);
+                }}
+                className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-[#008069]" />
+                <span>Edit Contact Name</span>
+              </button>
+
               {/* Clear Chat Button */}
               <button
                 type="button"
@@ -1878,6 +1933,79 @@ export const WhatsAppWebInbox = ({
               alt="Zoomed attachment"
               className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl border border-white/10"
             />
+          </div>
+        </div>
+      )}
+      {/* ================= MODAL: EDIT CONTACT NAME ================= */}
+      {isEditNameModalOpen && (
+        <div 
+          onClick={() => setIsEditNameModalOpen(false)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200"
+          >
+            <div className="px-5 py-4 bg-gradient-to-r from-[#008069] to-[#005c4b] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-4 h-4" />
+                <h3 className="font-bold text-sm">Edit Contact Name</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditNameModalOpen(false)}
+                className="p-1 hover:bg-white/10 rounded-full text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveContactName} className="p-5 space-y-4 text-xs text-slate-700">
+              <div>
+                <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Mobile Number
+                </span>
+                <span className="block font-mono font-bold text-slate-900 bg-slate-100 px-3 py-2 rounded-xl text-xs">
+                  +91 {selectedPhone?.replace(/^91/, '')}
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Contact / Customer Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={editedContactName}
+                  onChange={(e) => setEditedContactName(e.target.value)}
+                  placeholder="e.g. Ramesh Patel"
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#008069] font-medium"
+                />
+                <span className="block text-[10px] text-slate-400 mt-1">
+                  This name will appear on WhatsApp Web and all conversation records.
+                </span>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditNameModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingContactName || !editedContactName.trim()}
+                  className="px-5 py-2 bg-[#00a884] hover:bg-[#008f72] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {savingContactName ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Save Name</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

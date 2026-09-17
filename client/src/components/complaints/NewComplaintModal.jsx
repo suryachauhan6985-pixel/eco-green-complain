@@ -853,175 +853,69 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-semibold text-slate-600">Mobile Phone (WhatsApp) *</label>
-                      {verifyingPhone && (
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
-                          Checking...
-                        </span>
-                      )}
+                      <label className="block text-[11px] font-semibold text-slate-600">Mobile Phone *</label>
                     </div>
                     <div className="relative">
                       <input
                         type="tel"
                         required
-                        placeholder="e.g., 9876543210 or +91 98765 43210"
+                        placeholder="10-digit mobile (e.g. 9876543210)"
                         value={formData.customer_phone}
                         onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
                         className={`w-full text-xs px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 font-mono ${
                           phoneVerification
-                            ? (phoneVerification.status === 'verified' || phoneVerification.isWhatsApp === true)
+                            ? phoneVerification.valid
                               ? 'border-emerald-500 focus:ring-emerald-500 pr-8'
-                              : (phoneVerification.status === 'invite_required' || !phoneVerification.valid)
-                                ? 'border-rose-400 focus:ring-rose-400 pr-8'
-                                : 'border-amber-400 focus:ring-amber-400 pr-8'
+                              : 'border-rose-400 focus:ring-rose-400 pr-8'
                             : 'border-slate-300 focus:ring-emerald-500'
                         }`}
                       />
                       {phoneVerification && (
                         <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                          {(phoneVerification.status === 'verified' || phoneVerification.isWhatsApp === true) ? (
+                          {phoneVerification.valid ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          ) : phoneVerification.status === 'invite_required' || !phoneVerification.valid ? (
-                            <AlertCircle className="w-4 h-4 text-rose-500" />
                           ) : (
-                            <AlertCircle className="w-4 h-4 text-amber-500" />
+                            <AlertCircle className="w-4 h-4 text-rose-500" />
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Accurate Real-Time WhatsApp Verification Badge */}
+                    {/* Simple Customer Match & Auto-fill */}
                     {phoneVerification && (
                       <div className="mt-1.5 animate-in fade-in duration-150">
-                        {/* 1. Verified & Active on WhatsApp */}
-                        {(phoneVerification.status === 'verified' || phoneVerification.isWhatsApp === true) && (
-                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
-                              <span>🟢 WhatsApp Active & Verified • {phoneVerification.formatted || phoneVerification.formattedPhone || formData.customer_phone}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 ml-auto">
-                              {phoneVerification.isExistingCustomer && (
-                                <span className="text-[10px] font-bold text-emerald-950 bg-emerald-200/90 px-1.5 py-0.5 rounded">
-                                  {phoneVerification.customerName || 'Registered Customer'}
-                                </span>
-                              )}
-                              {phoneVerification.customerName && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData(prev => ({
-                                      ...prev,
-                                      customer_name: phoneVerification.customerName || prev.customer_name,
-                                      city: phoneVerification.city || prev.city,
-                                      consumer_no: phoneVerification.consumerNo || prev.consumer_no,
-                                      order_no: phoneVerification.orderNo || prev.order_no,
-                                      invoice_no: phoneVerification.invoiceNo || prev.invoice_no,
-                                      invoice_date: phoneVerification.invoiceDate || prev.invoice_date,
-                                      product_serial: phoneVerification.inverterSerial || prev.product_serial,
-                                      is_in_warranty: phoneVerification.isInWarranty !== null ? (phoneVerification.isInWarranty ? 1 : 0) : prev.is_in_warranty
-                                    }));
-                                  }}
-                                  className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-all cursor-pointer"
-                                >
-                                  Auto-fill Details
-                                </button>
-                              )}
+                        {phoneVerification.valid ? (
+                          phoneVerification.isExistingCustomer && (
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
+                              <div className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>Registered Customer: <strong className="text-emerald-950">{phoneVerification.customerName}</strong> ({phoneVerification.city || 'Gujarat'})</span>
+                              </div>
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  try {
-                                    await api.setWhatsAppNumberStatus({ phone: formData.customer_phone, isActive: false, status: 'invite_required' });
-                                    const res = await api.verifyWhatsAppNumber(formData.customer_phone);
-                                    setPhoneVerification(res);
-                                  } catch (e) {}
+                                onClick={() => {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    customer_name: phoneVerification.customerName || prev.customer_name,
+                                    city: phoneVerification.city || prev.city,
+                                    consumer_no: phoneVerification.consumerNo || prev.consumer_no,
+                                    order_no: phoneVerification.orderNo || prev.order_no,
+                                    invoice_no: phoneVerification.invoiceNo || prev.invoice_no,
+                                    invoice_date: phoneVerification.invoiceDate || prev.invoice_date,
+                                    product_serial: phoneVerification.inverterSerial || prev.product_serial,
+                                    is_in_warranty: phoneVerification.isInWarranty !== null ? (phoneVerification.isInWarranty ? 1 : 0) : prev.is_in_warranty
+                                  }));
                                 }}
-                                className="text-[10px] text-slate-500 hover:text-rose-700 underline cursor-pointer ml-1"
-                                title="Click if customer does not have WhatsApp"
+                                className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-0.5 rounded shadow-2xs transition-all cursor-pointer ml-auto"
                               >
-                                Mark Not on WhatsApp
+                                Auto-fill Details
                               </button>
                             </div>
-                          </div>
-                        )}
-
-                        {/* 2. Number NOT on WhatsApp (Invite Required) */}
-                        {(phoneVerification.status === 'invite_required' || phoneVerification.isWhatsApp === false) && (
-                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
-                            <div className="flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                              <span>🔴 Not on WhatsApp (Invite to WhatsApp Required) • {phoneVerification.formatted || formData.customer_phone}</span>
-                            </div>
-                            <div className="flex items-center gap-2 ml-auto">
-                              <a
-                                href={`https://wa.me/91${(formData.customer_phone || '').replace(/\D/g, '').slice(-10)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] bg-rose-600 hover:bg-rose-700 text-white font-bold px-2.5 py-1 rounded shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
-                              >
-                                <span>Invite to WhatsApp</span>
-                              </a>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await api.setWhatsAppNumberStatus({ phone: formData.customer_phone, isActive: true, status: 'verified' });
-                                    const res = await api.verifyWhatsAppNumber(formData.customer_phone);
-                                    setPhoneVerification(res);
-                                  } catch (e) {}
-                                }}
-                                className="text-[10px] text-slate-600 hover:text-emerald-700 underline cursor-pointer"
-                              >
-                                Mark Active
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 3. Valid Indian Mobile but WhatsApp Unconfirmed */}
-                        {phoneVerification.status === 'unconfirmed' && (
-                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse"></span>
-                              <span>🟡 Valid Mobile Format • {phoneVerification.formatted} (WhatsApp Unconfirmed)</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 ml-auto">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await api.setWhatsAppNumberStatus({ phone: formData.customer_phone, isActive: true, status: 'verified' });
-                                    const res = await api.verifyWhatsAppNumber(formData.customer_phone);
-                                    setPhoneVerification(res);
-                                  } catch (e) {}
-                                }}
-                                className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-all cursor-pointer"
-                              >
-                                Confirm Active
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await api.setWhatsAppNumberStatus({ phone: formData.customer_phone, isActive: false, status: 'invite_required' });
-                                    const res = await api.verifyWhatsAppNumber(formData.customer_phone);
-                                    setPhoneVerification(res);
-                                  } catch (e) {}
-                                }}
-                                className="text-[10px] bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-all cursor-pointer"
-                              >
-                                Invite Required
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 4. Invalid Format or Dummy Number */}
-                        {!phoneVerification.valid && (
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg">
+                          )
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                             <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                            <span>{phoneVerification.message || 'Invalid Indian mobile number. Must be genuine 10 digits.'}</span>
+                            <span>{phoneVerification.message || 'Please enter a genuine 10-digit Indian mobile number.'}</span>
                           </div>
                         )}
                       </div>
