@@ -10,17 +10,7 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
   const cleanTo = (to || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanTo.startsWith('91') ? cleanTo : (cleanTo.length === 10 ? `91${cleanTo}` : cleanTo);
 
-  // 1. Primary Priority: Enqueue into WhatsApp Master PC Relay Queue
-  try {
-    const stmt = db.prepare(`
-      INSERT INTO whatsapp_outgoing_queue (phone, message, ticket_id, recipient_name, status)
-      VALUES (?, ?, ?, ?, 'pending')
-    `);
-    const info = stmt.run(formattedPhone, message, ticket_id || null, recipient_name || null);
-    console.log(`[WhatsAppProvider] Enqueued message #${info.lastInsertRowid} for Master PC Relay to ${formattedPhone}`);
-  } catch (e) {
-    console.warn('[WhatsAppProvider] Notice enqueueing to relay:', e.message);
-  }
+  let deliveredText = message;
 
   if (provider === 'META_CLOUD_API') {
     const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
@@ -35,8 +25,13 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       to: formattedPhone
     };
 
+    const cleanTrackingUrl = (variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}`)
+      .replace(/http:\/\/localhost:\d+/g, 'https://eco-green-complain.vprotech.online');
+
     // If template matches Meta registered templates, send as template message
     if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
+      deliveredText = `Eco Green Solar Support\nNamaste ${variables.customer_name || 'Valued Customer'},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${variables.complaint_id || ticket_id || 'Ticket'}\nProduct: ${variables.product_type || 'Solar Equipment'}\nIssue: ${variables.issue_category || 'Service Request'}\n\nTrack ticket: ${cleanTrackingUrl}\n\nHelpline: +91 78784 44414\nThank you for choosing Eco Green Solar.`;
+
       payload.type = 'template';
       payload.template = {
         name: 'complaint_registered',
@@ -49,12 +44,14 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
               { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
               { type: 'text', text: variables.product_type || 'Solar Equipment' },
               { type: 'text', text: variables.issue_category || 'Service Request' },
-              { type: 'text', text: variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}` }
+              { type: 'text', text: `${cleanTrackingUrl}\n\nHelpline: +91 78784 44414` }
             ]
           }
         ]
       };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
+      deliveredText = `Eco Green Solar Update\nNamaste ${variables.customer_name || 'Valued Customer'},\n\nA service technician has been assigned to your complaint ${variables.complaint_id || ticket_id || 'Ticket'}.\nTechnician: ${variables.technician_name || 'Field Technician'} (${variables.technician_phone || '+91 78784 44414'})\nExpected Visit: ${variables.expected_visit_date || 'Today'}\n\nTrack ticket: ${cleanTrackingUrl}\n\nHelpline: +91 78784 44414\nThank you for choosing Eco Green Solar.`;
+
       payload.type = 'template';
       payload.template = {
         name: 'technician_assigned',
@@ -66,14 +63,16 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
               { type: 'text', text: variables.customer_name || 'Valued Customer' },
               { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
               { type: 'text', text: variables.technician_name || 'Field Technician' },
-              { type: 'text', text: variables.technician_phone || 'Support' },
+              { type: 'text', text: variables.technician_phone || '+91 78784 44414' },
               { type: 'text', text: variables.expected_visit_date || 'Today' },
-              { type: 'text', text: variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}` }
+              { type: 'text', text: `${cleanTrackingUrl}\n\nHelpline: +91 78784 44414` }
             ]
           }
         ]
       };
     } else if (templateName === 'complaint_resolved') {
+      deliveredText = `Eco Green Solar Resolution\nNamaste ${variables.customer_name || 'Valued Customer'},\n\nYour service complaint ${variables.complaint_id || ticket_id || 'Ticket'} has been resolved.\nTechnician: ${variables.technician_name || 'Technician'}\nNotes: ${variables.notes || 'Service inspection completed successfully.'}\n\nTrack ticket: ${cleanTrackingUrl}\n\nHelpline: +91 78784 44414\nThank you for choosing Eco Green Solar.`;
+
       payload.type = 'template';
       payload.template = {
         name: 'complaint_resolved',
@@ -86,7 +85,7 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
               { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
               { type: 'text', text: variables.technician_name || 'Technician' },
               { type: 'text', text: variables.notes || 'Service inspection completed successfully.' },
-              { type: 'text', text: variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}` }
+              { type: 'text', text: `${cleanTrackingUrl}\n\nHelpline: +91 78784 44414` }
             ]
           }
         ]
@@ -115,7 +114,7 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
 
     let data = await response.json();
 
-    // Fallback: If template is still pending approval, try direct text
+    // Fallback: If template fails, try direct text fallback
     if (!response.ok && payload.type === 'template') {
       console.warn('[Meta Cloud API] Template failed, trying direct text fallback:', data.error?.message);
       const textResponse = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
@@ -128,19 +127,19 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
           messaging_product: 'whatsapp',
           to: formattedPhone,
           type: 'text',
-          text: { body: message }
+          text: { body: deliveredText || message }
         })
       });
       const textData = await textResponse.json();
       if (textResponse.ok) {
-        return { success: true, provider: 'META_CLOUD_API', messageId: textData.messages?.[0]?.id };
+        return { success: true, provider: 'META_CLOUD_API', messageId: textData.messages?.[0]?.id, deliveredMessage: deliveredText };
       }
     }
 
     if (!response.ok) {
       throw new Error(data.error ? data.error.message : 'Meta WhatsApp API error');
     }
-    return { success: true, provider: 'META_CLOUD_API', messageId: data.messages?.[0]?.id };
+    return { success: true, provider: 'META_CLOUD_API', messageId: data.messages?.[0]?.id, deliveredMessage: deliveredText };
   }
 
   if (provider === 'TWILIO') {

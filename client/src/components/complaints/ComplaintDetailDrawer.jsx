@@ -1851,9 +1851,9 @@ export const ComplaintDetailDrawer = ({
                   <CheckCircle className="w-4 h-4" />
                 </div>
                 <div className="text-xs text-emerald-950">
-                  <strong className="block font-bold">⚡ Auto-Queued for Master PC WhatsApp Relay</strong>
+                  <strong className="block font-bold">⚡ Dispatched via Official WhatsApp Cloud API (+91 78784 44414)</strong>
                   <span className="text-[11px] text-emerald-800">
-                    Customer aur Technician ke alerts server queue mein add ho chuke hain. Office Master PC background mein bina koi tab khole inhein automatically deliver kar dega!
+                    Customer aur Technician ke alerts direct official WhatsApp Meta Cloud API (+91 78784 44414) se deliver kiye gaye hain!
                   </span>
                 </div>
               </div>
@@ -1871,7 +1871,7 @@ export const ComplaintDetailDrawer = ({
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Auto-Queued
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Dispatched (Meta API)
                   </span>
                 </div>
 
@@ -1900,7 +1900,7 @@ export const ComplaintDetailDrawer = ({
                     rel="noopener noreferrer"
                     className="text-[11px] text-slate-400 hover:text-emerald-700 flex items-center gap-1 underline transition-colors"
                   >
-                    <span>Manual Fallback (if Master PC OFF)</span>
+                    <span>Open WhatsApp Web</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
@@ -1919,7 +1919,7 @@ export const ComplaintDetailDrawer = ({
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span> Auto-Queued
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span> Dispatched (Meta API)
                   </span>
                 </div>
 
@@ -1948,7 +1948,7 @@ export const ComplaintDetailDrawer = ({
                     rel="noopener noreferrer"
                     className="text-[11px] text-slate-400 hover:text-teal-700 flex items-center gap-1 underline transition-colors"
                   >
-                    <span>Manual Fallback (if Master PC OFF)</span>
+                    <span>Open WhatsApp Web</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>

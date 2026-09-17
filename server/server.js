@@ -283,30 +283,15 @@ app.post('/api/whatsapp/queue', (req, res) => {
   }
 });
 
-// 2. Master PC Relay Extension polls for pending messages
+// 2. Master PC Relay is permanently decommissioned in favor of official Meta Cloud API (+91 78784 44414)
 app.get('/api/whatsapp/relay/pending', (req, res) => {
   try {
-    // Update heartbeat of Master PC
-    db.prepare(`
-      UPDATE whatsapp_relay_heartbeat 
-      SET last_heartbeat = CURRENT_TIMESTAMP, ip = ? 
-      WHERE id = 1
-    `).run(req.ip || 'local');
-
-    // Fetch up to 3 pending messages (FIFO order)
-    const pending = db.prepare(`
-      SELECT * FROM whatsapp_outgoing_queue 
-      WHERE status = 'pending' 
-      ORDER BY id ASC LIMIT 3
-    `).all();
-
-    res.json({
-      success: true,
-      pending: pending || []
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    db.prepare("DELETE FROM whatsapp_outgoing_queue").run();
+  } catch (e) {}
+  res.json({
+    success: true,
+    pending: []
+  });
 });
 
 // 3. Master PC Relay updates status after sending
@@ -461,7 +446,27 @@ app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, requireRole('a
 app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
     try {
-      db.prepare("DELETE FROM whatsapp_messages WHERE phone LIKE '%6352454247%' OR sender_name LIKE '%akshar%' OR sender_name LIKE '%અક્ષર%' OR message_body LIKE '%અક્ષર%'").run();
+      db.prepare(`
+        DELETE FROM whatsapp_messages 
+        WHERE phone LIKE '%6352454247%' 
+           OR phone LIKE '%9426529550%'
+           OR phone LIKE '%9662729804%'
+           OR phone LIKE '%9825112345%'
+           OR phone LIKE '%9825099887%'
+           OR phone LIKE '%9825011223%'
+           OR phone LIKE '%9900011223%'
+           OR sender_name LIKE '%akshar%' 
+           OR sender_name LIKE '%અક્ષર%' 
+           OR sender_name LIKE '%jay%' 
+           OR sender_name LIKE '%જય%' 
+           OR sender_name LIKE '%dhaval%' 
+           OR sender_name LIKE '%ધવલ%' 
+           OR sender_name LIKE '%sumit%'
+           OR message_body LIKE '%અક્ષર%'
+           OR message_body LIKE '%instagram.com/reel%'
+           OR wam_id LIKE 'wam_jay_%'
+           OR wam_id LIKE 'wam_dhaval_%'
+      `).run();
     } catch (e) {}
 
     // Group by cleaned phone number
@@ -778,9 +783,10 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, requireRole('admin', 's
       for (const m of messages) {
         if (!m.phone || !m.message_body) continue;
         const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
-        if (cleanPhone.includes('6352454247') ||
-            (m.sender_name && /akshar|અક્ષર/i.test(m.sender_name)) ||
-            (m.message_body && /akshar|અક્ષર/i.test(m.message_body))) {
+        const personalPhones = ['6352454247', '9426529550', '9662729804', '9825112345', '9825099887', '9825011223', '9900011223'];
+        if (personalPhones.some(bad => cleanPhone.includes(bad)) ||
+            (m.sender_name && /akshar|અક્ષર|jay|જય|dhaval|ધવલ|sumit|સુમિત/i.test(m.sender_name)) ||
+            (m.message_body && /akshar|અક્ષર|instagram\.com\/reel/i.test(m.message_body))) {
           continue;
         }
         const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);

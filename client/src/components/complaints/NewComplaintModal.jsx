@@ -523,12 +523,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
               {(() => {
                 const cleanPhone = (createdTicket.customer_phone || '').replace(/[^0-9]/g, '');
                 const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
-                const trackingUrl = `${window.location.origin}/track/${createdTicket.ticket_id}`;
+                const trackingUrl = `https://eco-green-complain.vprotech.online/track/${createdTicket.ticket_id}`;
                 const chargesLine = (createdTicket.notify_charges && createdTicket.estimated_charges > 0)
-                  ? `\n💰 *Estimated Service Charge:* ₹${createdTicket.estimated_charges} (Standard Visit & Diagnostic Fee)`
+                  ? `\n💰 *Estimated Service Charge:* ₹${createdTicket.estimated_charges}`
                   : '';
 
-                const defaultFallbackText = `☀️ *Eco Green Solar Support*\n\nDear ${createdTicket.customer_name}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* ${createdTicket.ticket_id}\n🔧 *Product:* ${createdTicket.product_type}\n📅 *Date:* ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}${chargesLine}\n\nOur team is reviewing your ticket and will assign a service technician shortly.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`;
+                const defaultFallbackText = `Eco Green Solar Support\nNamaste ${createdTicket.customer_name} Bhai, your service complaint has been successfully registered.\n\nTicket ID: ${createdTicket.ticket_id}\nProduct: ${createdTicket.product_type || 'Solar System'}\nDate: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}${chargesLine}\n\nTrack ticket: ${trackingUrl}\n\nHelpline: +91 78784 44414`;
 
                 const finalWaText = waData?.rawText || defaultFallbackText;
                 const finalWaUrl = waData?.sendUrl || `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(finalWaText)}`;
@@ -543,12 +543,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         <div>
                           <h4 className="text-xs font-black text-emerald-950">Official Customer WhatsApp Alert</h4>
                           <p className="text-[11px] text-emerald-800">
-                            Sent automatically to <strong>{createdTicket.customer_phone}</strong> via Office Master PC Relay
+                            Sent automatically to <strong>{createdTicket.customer_phone}</strong> via Official WhatsApp (+91 78784 44414)
                           </p>
                         </div>
                       </div>
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Auto-Queued
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Dispatched (Meta API)
                       </span>
                     </div>
 
@@ -577,7 +577,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         rel="noopener noreferrer"
                         className="text-[11px] text-slate-400 hover:text-emerald-700 flex items-center gap-1 underline transition-colors"
                       >
-                        <span>Manual Fallback (if Master PC OFF)</span>
+                        <span>Open WhatsApp Web</span>
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>

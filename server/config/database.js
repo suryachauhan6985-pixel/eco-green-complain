@@ -553,10 +553,38 @@ function seedAuthenticWhatsAppRecords() {
   }
 }
 
-// Clean out legacy mock messages and personal number test messages
+// Clean out legacy mock messages, queue, and personal chats from desktop WhatsApp
+try {
+  db.prepare("DELETE FROM whatsapp_outgoing_queue").run();
+} catch (e) {}
+
 try {
   db.prepare("DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam_%'").run();
-  db.prepare("DELETE FROM whatsapp_messages WHERE phone LIKE '%6352454247%' OR sender_name LIKE '%akshar%' OR sender_name LIKE '%અક્ષર%' OR message_body LIKE '%અક્ષર%'").run();
+  db.prepare(`
+    DELETE FROM whatsapp_messages 
+    WHERE phone LIKE '%6352454247%' 
+       OR phone LIKE '%9426529550%'
+       OR phone LIKE '%9662729804%'
+       OR phone LIKE '%9825112345%'
+       OR phone LIKE '%9825099887%'
+       OR phone LIKE '%9825011223%'
+       OR phone LIKE '%9900011223%'
+       OR sender_name LIKE '%akshar%' 
+       OR sender_name LIKE '%અક્ષર%' 
+       OR sender_name LIKE '%jay%' 
+       OR sender_name LIKE '%જય%' 
+       OR sender_name LIKE '%dhaval%' 
+       OR sender_name LIKE '%ધવલ%' 
+       OR sender_name LIKE '%sumit%'
+       OR message_body LIKE '%અક્ષર%'
+       OR message_body LIKE '%instagram.com/reel%'
+       OR wam_id LIKE 'wam_jay_%'
+       OR wam_id LIKE 'wam_dhaval_%'
+  `).run();
+} catch (e) {}
+
+try {
+  db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
 } catch (e) {}
 
 initializeSchema();

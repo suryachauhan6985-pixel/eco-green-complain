@@ -125,13 +125,14 @@ export const WhatsAppWebInbox = ({
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
+        const personalPhoneRegex = /6352454247|9426529550|9662729804|9825112345|9825099887/;
+        const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
+
         const cleaned = res.conversations.filter(c => {
           const p = (c.phone || '').replace(/[^0-9]/g, '');
-          if (p.includes('6352454247') ||
-              (c.sender_name && /akshar|અક્ષર/i.test(c.sender_name)) ||
-              (c.last_message && /akshar|અક્ષર/i.test(c.last_message))) {
-            return false;
-          }
+          if (personalPhoneRegex.test(p)) return false;
+          const combined = `${c.sender_name || ''} ${c.last_message || ''}`;
+          if (personalPattern.test(combined)) return false;
           return true;
         });
         setConversations(cleaned);
@@ -519,11 +520,12 @@ export const WhatsAppWebInbox = ({
   // Filter conversations
   const filteredConversations = conversations.filter(conv => {
     const p = (conv.phone || '').replace(/[^0-9]/g, '');
-    if (p.includes('6352454247') ||
-        (conv.sender_name && /akshar|અક્ષર/i.test(conv.sender_name)) ||
-        (conv.last_message && /akshar|અક્ષર/i.test(conv.last_message))) {
-      return false;
-    }
+    const personalPhoneRegex = /6352454247|9426529550|9662729804|9825112345|9825099887/;
+    const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
+
+    if (personalPhoneRegex.test(p)) return false;
+    const combined = `${conv.sender_name || ''} ${conv.last_message || ''}`;
+    if (personalPattern.test(combined)) return false;
 
     if (activeFilter === 'unread' && !conv.unread_count) return false;
     if (activeFilter === 'favorites' && !conv.is_pinned) return false;

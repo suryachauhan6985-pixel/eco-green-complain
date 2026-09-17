@@ -59,7 +59,7 @@ function generateBrandedEmailHtml({ title, preheader, bodyHtml, ticketId, detail
 
               ${ticketId ? `
               <div style="text-align: center; margin: 28px 0 16px 0;">
-                <a href="${process.env.APP_URL || 'http://localhost:5173'}/track/${ticketId}" 
+                <a href="${(process.env.APP_URL && !process.env.APP_URL.includes('localhost')) ? process.env.APP_URL : 'https://eco-green-complain.vprotech.online'}/track/${ticketId}" 
                    style="background-color: #16a34a; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);">
                   Track Ticket Status Online
                 </a>
@@ -72,7 +72,7 @@ function generateBrandedEmailHtml({ title, preheader, bodyHtml, ticketId, detail
           <tr>
             <td style="background-color: #f9fafb; padding: 20px 24px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #6b7280; line-height: 1.5;">
               <p style="margin: 0 0 4px 0;">Eco Green Solar Pvt. Ltd. — Powering a Cleaner Tomorrow</p>
-              <p style="margin: 0 0 4px 0;">Toll-Free Helpline: 1800-ECO-SOLAR | support@ecogreensolar.com</p>
+              <p style="margin: 0 0 4px 0;">Official Helpline: +91 78784 44414 | support@ecogreensolar.com</p>
               <p style="margin: 0; font-size: 11px; color: #9ca3af;">This is an automated service notification regarding your complaint.</p>
             </td>
           </tr>

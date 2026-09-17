@@ -51,73 +51,80 @@ class NotificationService extends EventEmitter {
       ? db.prepare('SELECT * FROM complaints WHERE id = ?').get(complaintId)
       : null;
 
-    const mergedData = {
-      customer_name: complaint?.customer_name || data?.customer_name || 'Valued Customer',
-      complaint_id: complaint?.ticket_id || data?.ticket_id || '',
-      product_type: complaint?.product_type || data?.product_type || '',
-      issue_category: complaint?.issue_category || data?.issue_category || '',
-      status: complaint?.status || data?.status || '',
-      technician_name: data?.technician_name || 'Eco Green Service Specialist',
-      technician_phone: data?.technician_phone || '',
-      expected_visit_date: data?.expected_visit_date || 'Within 24-48 Hours',
-      notes: data?.notes || '',
-      estimated_charges: complaint?.estimated_charges || data?.estimated_charges || 0,
-      charges_line: (complaint?.notify_charges || data?.notify_charges) && (complaint?.estimated_charges || data?.estimated_charges) > 0
-        ? `\n💰 *Estimated Service Charge:* ₹${complaint?.estimated_charges || data?.estimated_charges}`
-        : '',
-      feedback_url: `${process.env.APP_URL || 'http://localhost:5173'}/track/${complaint?.ticket_id || ''}`,
-      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-      ...data
-    };
+      const liveAppUrl = (process.env.APP_URL && !process.env.APP_URL.includes('localhost'))
+        ? process.env.APP_URL
+        : 'https://eco-green-complain.vprotech.online';
 
-    const targetPhone = forceWhatsAppTo || complaint?.customer_phone || data?.phone;
-    const targetEmail = forceEmailTo || complaint?.customer_email || data?.email;
+      const mergedData = {
+        customer_name: complaint?.customer_name || data?.customer_name || 'Valued Customer',
+        complaint_id: complaint?.ticket_id || data?.ticket_id || '',
+        product_type: complaint?.product_type || data?.product_type || '',
+        issue_category: complaint?.issue_category || data?.issue_category || '',
+        status: complaint?.status || data?.status || '',
+        technician_name: data?.technician_name || 'Eco Green Service Specialist',
+        technician_phone: data?.technician_phone || '+91 78784 44414',
+        expected_visit_date: data?.expected_visit_date || 'Within 24-48 Hours',
+        notes: data?.notes || '',
+        estimated_charges: complaint?.estimated_charges || data?.estimated_charges || 0,
+        charges_line: (complaint?.notify_charges || data?.notify_charges) && (complaint?.estimated_charges || data?.estimated_charges) > 0
+          ? `\n💰 *Estimated Service Charge:* ₹${complaint?.estimated_charges || data?.estimated_charges}`
+          : '',
+        feedback_url: `${liveAppUrl}/track/${complaint?.ticket_id || data?.ticket_id || ''}`,
+        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        ...data
+      };
 
-    // Send WhatsApp if phone present and channel selected
-    if (channels.includes('whatsapp') && targetPhone) {
-      const renderedWhatsApp = this.renderTemplate(template.whatsapp_body, mergedData);
-      let status = 'sent';
-      let errorMsg = null;
-      let providerName = process.env.WHATSAPP_PROVIDER || 'SIMULATED';
+      const targetPhone = forceWhatsAppTo || complaint?.customer_phone || data?.phone;
+      const targetEmail = forceEmailTo || complaint?.customer_email || data?.email;
 
-      try {
-        const res = await sendWhatsAppMessage({
-          to: targetPhone,
-          message: renderedWhatsApp,
-          templateName: templateKey,
-          variables: mergedData
-        });
-        providerName = res.provider;
-      } catch (err) {
-        status = 'failed';
-        errorMsg = err.message;
-        console.error(`WhatsApp dispatch failed to ${targetPhone}:`, err.message);
-      }
+      // Send WhatsApp if phone present and channel selected
+      if (channels.includes('whatsapp') && targetPhone) {
+        const renderedWhatsApp = this.renderTemplate(template.whatsapp_body, mergedData);
+        let status = 'sent';
+        let errorMsg = null;
+        let providerName = process.env.WHATSAPP_PROVIDER || 'SIMULATED';
+        let sendRes = null;
 
-      const logStmt = db.prepare(`
-        INSERT INTO notification_logs (complaint_id, channel, recipient, template_key, rendered_content, status, error_message, provider)
-        VALUES (?, 'whatsapp', ?, ?, ?, ?, ?, ?)
-      `);
-      const logResult = logStmt.run(
-        complaintId || null,
-        targetPhone,
-        templateKey,
-        renderedWhatsApp,
-        status,
-        errorMsg,
-        providerName
-      );
+        try {
+          sendRes = await sendWhatsAppMessage({
+            to: targetPhone,
+            message: renderedWhatsApp,
+            templateName: templateKey,
+            variables: mergedData
+          });
+          providerName = sendRes.provider;
+        } catch (err) {
+          status = 'failed';
+          errorMsg = err.message;
+          console.error(`WhatsApp dispatch failed to ${targetPhone}:`, err.message);
+        }
 
-      // Also record into whatsapp_messages for the 2-way chat conversation
-      try {
-        db.prepare(`
-          INSERT INTO whatsapp_messages (
-            complaint_id, phone, sender_type, sender_name, message_body, status
-          ) VALUES (?, ?, 'company', 'Eco Green Solar', ?, ?)
-        `).run(complaintId || null, targetPhone, renderedWhatsApp, status);
-      } catch (waMsgErr) {
-        console.warn('[NotificationService] Error saving to whatsapp_messages:', waMsgErr.message);
-      }
+        const messageDelivered = sendRes?.deliveredMessage || renderedWhatsApp;
+
+        const logStmt = db.prepare(`
+          INSERT INTO notification_logs (complaint_id, channel, recipient, template_key, rendered_content, status, error_message, provider)
+          VALUES (?, 'whatsapp', ?, ?, ?, ?, ?, ?)
+        `);
+        const logResult = logStmt.run(
+          complaintId || null,
+          targetPhone,
+          templateKey,
+          messageDelivered,
+          status,
+          errorMsg,
+          providerName
+        );
+
+        // Also record into whatsapp_messages for the 2-way chat conversation
+        try {
+          db.prepare(`
+            INSERT INTO whatsapp_messages (
+              complaint_id, phone, sender_type, sender_name, message_body, status, wam_id
+            ) VALUES (?, ?, 'company', 'Eco Green Solar', ?, ?, ?)
+          `).run(complaintId || null, targetPhone, messageDelivered, status, sendRes?.messageId || null);
+        } catch (waMsgErr) {
+          console.warn('[NotificationService] Error saving to whatsapp_messages:', waMsgErr.message);
+        }
 
       const logItem = {
         id: logResult.lastInsertRowid,

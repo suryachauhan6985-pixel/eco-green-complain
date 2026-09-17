@@ -416,7 +416,7 @@ export const INITIAL_SIMULATED_NOTIFICATIONS = [
     channel: 'whatsapp',
     recipient: '+919945033445',
     template_key: 'complaint_registered',
-    rendered_content: `☀️ *Eco Green Solar Support*\n\nDear Kavita Menon, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* EGS-2026-000103\n🔧 *Product:* Heat Pumps\n📅 *Date:* 14 Sept 2026\n⏱️ *Expected Response:* Within 24 Hours\n\nOur team is reviewing your ticket and will assign a specialist technician shortly.\n\n🔗 *Track Live Status:* http://localhost:5173/track/EGS-2026-000103\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`,
+    rendered_content: `☀️ *Eco Green Solar Support*\n\nDear Kavita Menon, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* EGS-2026-000103\n🔧 *Product:* Heat Pumps\n📅 *Date:* 14 Sept 2026\n⏱️ *Expected Response:* Within 24 Hours\n\nOur team is reviewing your ticket and will assign a specialist technician shortly.\n\n🔗 *Track Live Status:* https://eco-green-complain.vprotech.online/track/EGS-2026-000103\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
     status: 'sent',
     provider: 'SIMULATED',
     created_at: new Date(Date.now() - 7200000).toISOString()
@@ -428,7 +428,7 @@ export const INITIAL_SIMULATED_NOTIFICATIONS = [
     channel: 'whatsapp',
     recipient: '+919844077889',
     template_key: 'complaint_closed',
-    rendered_content: `☀️ *Eco Green Solar Closure*\n\nDear Meera Rao, your complaint *EGS-2026-000105* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\nhttp://localhost:5173/track/EGS-2026-000105\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
+    rendered_content: `☀️ *Eco Green Solar Closure*\n\nDear Meera Rao, your complaint *EGS-2026-000105* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\nhttps://eco-green-complain.vprotech.online/track/EGS-2026-000105\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
     status: 'sent',
     provider: 'SIMULATED',
     created_at: new Date(Date.now() - 86400000).toISOString()
@@ -440,7 +440,7 @@ export const INITIAL_TEMPLATES = [
     id: 1,
     template_key: 'complaint_registered',
     name: 'Complaint Registered Notification',
-    whatsapp_body: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: 1800-ECO-SOLAR | Eco Green Solar Care`,
+    whatsapp_body: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
     email_subject: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}{{charges_line}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
   },
