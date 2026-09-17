@@ -1013,32 +1013,125 @@ export const api = {
 
   // Universal WhatsApp Web Inbox API with Automatic Cloud Persistence
   getWhatsAppConversations: async () => {
-    const res = await request('/whatsapp/conversations');
+    let res = null;
+    try {
+      res = await request('/whatsapp/conversations');
+    } catch (e) {
+      console.warn('Error fetching conversations from server:', e.message);
+    }
     const permMessages = getPermanentWhatsAppMessages();
-    if (res && Array.isArray(res.conversations)) {
-      // If server database was restarted/rebuilt and has 0 conversations, auto-restore from local backup!
-      if (res.conversations.length === 0 && permMessages.length > 0) {
+
+    // Helper: Synthesize conversation list from local permanent messages
+    const buildLocalConversations = () => {
+      if (!permMessages || permMessages.length === 0) return [];
+      const map = new Map();
+      permMessages.forEach(m => {
+        if (!m || !m.phone) return;
+        const cleanPhone = m.phone.replace(/[^0-9]/g, '');
+        const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+        const existing = map.get(last10);
+        const mTime = new Date(m.created_at || 0).getTime();
+        const exTime = existing ? new Date(existing.created_at || 0).getTime() : 0;
+        if (!existing || mTime > exTime) {
+          map.set(last10, {
+            phone: cleanPhone,
+            complaint_id: m.complaint_id || null,
+            sender_name: m.sender_name && m.sender_name !== 'Eco Green Solar' ? m.sender_name : (m.sender_type === 'company' ? (m.recipient_name || `+${cleanPhone}`) : `+${cleanPhone}`),
+            last_sender_type: m.sender_type || 'company',
+            last_message: m.message_body,
+            last_activity: m.created_at || new Date().toISOString(),
+            unread_count: 0
+          });
+        }
+      });
+      return Array.from(map.values());
+    };
+
+    if (permMessages.length > 0) {
+      // If server returned 0 conversations OR has fewer conversations than local backup, auto-restore!
+      if (!res || !Array.isArray(res.conversations) || res.conversations.length === 0) {
         console.log(`[PermanentWhatsAppSync] Restoring ${permMessages.length} whatsapp messages to server...`);
         try {
           await request('/whatsapp/sync-backup', {
             method: 'POST',
             body: JSON.stringify({ messages: permMessages })
           });
-          // Re-fetch restored conversations
-          return await request('/whatsapp/conversations');
+          const restoredRes = await request('/whatsapp/conversations');
+          if (restoredRes && Array.isArray(restoredRes.conversations) && restoredRes.conversations.length > 0) {
+            return restoredRes;
+          }
         } catch (e) {
-          console.warn('[PermanentWhatsAppSync] Background sync notice:', e.message);
+          console.warn('[PermanentWhatsAppSync] Sync error:', e.message);
         }
+        // Return local synthesized conversations so user NEVER sees empty state!
+        return { success: true, conversations: buildLocalConversations() };
       }
     }
-    return res;
-  },
-  getWhatsAppChatHistory: async (phone) => {
-    const res = await request(`/whatsapp/chats/${phone}`);
-    if (res && Array.isArray(res.messages) && res.messages.length > 0) {
-      saveWhatsAppMessagesPermanently(res.messages);
+
+    // Even if server has conversations, if local has messages for phone numbers not present on server, merge them!
+    if (res && Array.isArray(res.conversations)) {
+      const serverPhones = new Set(res.conversations.map(c => (c.phone || '').replace(/[^0-9]/g, '').slice(-10)));
+      const localConvs = buildLocalConversations();
+      const missingLocals = localConvs.filter(lc => !serverPhones.has(lc.phone.slice(-10)));
+      if (missingLocals.length > 0) {
+        // Sync missing messages to server in background
+        const missingMessages = permMessages.filter(m => {
+          const l10 = (m.phone || '').replace(/[^0-9]/g, '').slice(-10);
+          return missingLocals.some(ml => ml.phone.endsWith(l10));
+        });
+        if (missingMessages.length > 0) {
+          request('/whatsapp/sync-backup', {
+            method: 'POST',
+            body: JSON.stringify({ messages: missingMessages })
+          }).catch(() => {});
+        }
+        return {
+          ...res,
+          conversations: [...res.conversations, ...missingLocals]
+        };
+      }
     }
-    return res;
+
+    return res || { success: true, conversations: buildLocalConversations() };
+  },
+
+  getWhatsAppChatHistory: async (phone) => {
+    const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+    let res = null;
+    try {
+      res = await request(`/whatsapp/chats/${phone}`);
+    } catch (e) {
+      console.warn('Error fetching chat history from server:', e.message);
+    }
+    const permMessages = getPermanentWhatsAppMessages();
+    const localMatches = permMessages.filter(m => (m.phone || '').replace(/[^0-9]/g, '').endsWith(last10));
+
+    if (res && Array.isArray(res.messages)) {
+      if (res.messages.length > 0) {
+        saveWhatsAppMessagesPermanently(res.messages);
+        return res;
+      }
+    }
+
+    // If server returned 0 or error, but we have local permanent messages, restore them to server and return!
+    if (localMatches.length > 0) {
+      request('/whatsapp/sync-backup', {
+        method: 'POST',
+        body: JSON.stringify({ messages: localMatches })
+      }).catch(() => {});
+
+      return {
+        success: true,
+        messages: localMatches,
+        contact: res?.contact || {
+          phone: cleanPhone,
+          sender_name: `+${cleanPhone}`
+        }
+      };
+    }
+
+    return res || { success: true, messages: [] };
   },
   syncBackupWhatsApp: (messages) => request('/whatsapp/sync-backup', {
     method: 'POST',

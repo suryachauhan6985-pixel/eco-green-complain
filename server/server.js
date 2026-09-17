@@ -706,6 +706,54 @@ app.post('/api/whatsapp/update-contact-name', authenticateToken, requireRole('ad
   }
 });
 
+// 6c. Universal WhatsApp Web Inbox: Sync & Restore Messages from client backup
+app.post('/api/whatsapp/sync-backup', authenticateToken, (req, res) => {
+  try {
+    const { messages } = req.body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT INTO whatsapp_messages (
+        complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, status, wam_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const checkExists = db.prepare(`
+      SELECT id FROM whatsapp_messages WHERE wam_id = ? AND wam_id IS NOT NULL LIMIT 1
+    `);
+
+    let restored = 0;
+    const tx = db.transaction(() => {
+      for (const m of messages) {
+        if (!m || !m.phone || !m.message_body) continue;
+        if (m.wam_id && checkExists.get(m.wam_id)) continue;
+        insertStmt.run(
+          m.complaint_id || null,
+          m.phone,
+          m.sender_type || 'company',
+          m.sender_name || 'Eco Green Solar',
+          m.message_body,
+          m.media_url || null,
+          m.media_type || null,
+          m.status || 'sent',
+          m.wam_id || null,
+          m.created_at || new Date().toISOString()
+        );
+        restored++;
+      }
+    });
+
+    tx();
+    console.log(`[PermanentSync] Restored ${restored} messages to server database`);
+    res.json({ success: true, restored });
+  } catch (err) {
+    console.error('Error in sync-backup:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 7. Universal WhatsApp Web Inbox: Direct reply to any phone number (with optional attachment)
 app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', 'staff'), upload.single('attachment'), async (req, res) => {
   try {

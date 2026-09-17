@@ -559,7 +559,8 @@ try {
 } catch (e) {}
 
 try {
-  db.prepare("DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam_%'").run();
+  // Clean only synthetic mock seed IDs (escaped so underscore is not a wildcard, NEVER deleting Meta 'wamid.' messages)
+  db.prepare("DELETE FROM whatsapp_messages WHERE wam_id LIKE 'wam\\_seed\\_%' ESCAPE '\\' OR wam_id LIKE 'wam\\_mock\\_%' ESCAPE '\\'").run();
   db.prepare(`
     DELETE FROM whatsapp_messages 
     WHERE phone LIKE '%6352454247%' 
