@@ -28,9 +28,15 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
     const cleanTrackingUrl = (variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}`)
       .replace(/http:\/\/localhost:\d+/g, 'https://eco-green-complain.vprotech.online');
 
+    // Clean helper to ensure Meta Cloud API parameters never contain newlines/tabs
+    const cleanParam = (val, fallback = '') => {
+      const s = String(val || fallback).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      return s || fallback;
+    };
+
     // If template matches Meta registered templates, send as template message
     if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
-      deliveredText = `Eco Green Solar Support\nNamaste ${variables.customer_name || 'Valued Customer'},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${variables.complaint_id || ticket_id || 'Ticket'}\nProduct: ${variables.product_type || 'Solar Equipment'}\nIssue: ${variables.issue_category || 'Service Request'}\n\nTrack ticket: ${cleanTrackingUrl}\n\nHelpline: +91 78784 44414\nThank you for choosing Eco Green Solar.`;
+      deliveredText = `Eco Green Solar Support\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}\nProduct: ${cleanParam(variables.product_type, 'Solar Equipment')}\nIssue: ${cleanParam(variables.issue_category, 'Service Request')}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -40,17 +46,17 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: variables.customer_name || 'Valued Customer' },
-              { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
-              { type: 'text', text: variables.product_type || 'Solar Equipment' },
-              { type: 'text', text: variables.issue_category || 'Service Request' },
-              { type: 'text', text: `${cleanTrackingUrl}\n\nHelpline: +91 78784 44414` }
+              { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
+              { type: 'text', text: cleanParam(variables.complaint_id || ticket_id, 'Ticket') },
+              { type: 'text', text: cleanParam(variables.product_type, 'Solar Equipment') },
+              { type: 'text', text: cleanParam(variables.issue_category, 'Service Request') },
+              { type: 'text', text: cleanTrackingUrl }
             ]
           }
         ]
       };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
-      deliveredText = `Eco Green Solar Update\nNamaste ${variables.customer_name || 'Valued Customer'},\n\nA service technician has been assigned to your complaint ${variables.complaint_id || ticket_id || 'Ticket'}.\nTechnician: ${variables.technician_name || 'Field Technician'} (${variables.technician_phone || '+91 78784 44414'})\nExpected Visit: ${variables.expected_visit_date || 'Today'}\n\nTrack ticket: ${cleanTrackingUrl}\n\nHelpline: +91 78784 44414\nThank you for choosing Eco Green Solar.`;
+      deliveredText = `Technician Assigned - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician has been assigned to your Eco Green Solar ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician: ${cleanParam(variables.technician_name, 'Field Technician')}\nContact: ${cleanParam(variables.technician_phone, '+91 78784 44414')}\nExpected Visit: ${cleanParam(variables.expected_visit_date, 'Within 24-48 Hours')}\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
 
       payload.type = 'template';
       payload.template = {
@@ -60,18 +66,18 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: variables.customer_name || 'Valued Customer' },
-              { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
-              { type: 'text', text: variables.technician_name || 'Field Technician' },
-              { type: 'text', text: variables.technician_phone || '+91 78784 44414' },
-              { type: 'text', text: variables.expected_visit_date || 'Today' },
-              { type: 'text', text: `${cleanTrackingUrl}\n\nHelpline: +91 78784 44414` }
+              { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
+              { type: 'text', text: cleanParam(variables.complaint_id || ticket_id, 'Ticket') },
+              { type: 'text', text: cleanParam(variables.technician_name, 'Field Technician') },
+              { type: 'text', text: cleanParam(variables.technician_phone, '+91 78784 44414') },
+              { type: 'text', text: cleanParam(variables.expected_visit_date, 'Within 24-48 Hours') },
+              { type: 'text', text: cleanTrackingUrl }
             ]
           }
         ]
       };
     } else if (templateName === 'complaint_resolved') {
-      deliveredText = `Eco Green Solar Resolution\nNamaste ${variables.customer_name || 'Valued Customer'},\n\nYour service complaint ${variables.complaint_id || ticket_id || 'Ticket'} has been resolved.\nTechnician: ${variables.technician_name || 'Technician'}\nNotes: ${variables.notes || 'Service inspection completed successfully.'}\n\nTrack ticket: ${cleanTrackingUrl}\n\nHelpline: +91 78784 44414\nThank you for choosing Eco Green Solar.`;
+      deliveredText = `Service Resolved - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nYour solar equipment complaint for Ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')} has been marked RESOLVED by technician ${cleanParam(variables.technician_name, 'Technician')}.\n\nResolution Notes: ${cleanParam(variables.notes, 'Service inspection completed successfully.')}\n\nPlease rate your service experience here: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -81,15 +87,19 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: variables.customer_name || 'Valued Customer' },
-              { type: 'text', text: variables.complaint_id || ticket_id || 'Ticket' },
-              { type: 'text', text: variables.technician_name || 'Technician' },
-              { type: 'text', text: variables.notes || 'Service inspection completed successfully.' },
-              { type: 'text', text: `${cleanTrackingUrl}\n\nHelpline: +91 78784 44414` }
+              { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
+              { type: 'text', text: cleanParam(variables.complaint_id || ticket_id, 'Ticket') },
+              { type: 'text', text: cleanParam(variables.technician_name, 'Technician') },
+              { type: 'text', text: cleanParam(variables.notes, 'Service inspection completed successfully.') },
+              { type: 'text', text: cleanTrackingUrl }
             ]
           }
         ]
       };
+    } else if (templateName === 'technician_work_order') {
+      deliveredText = message;
+      payload.type = 'text';
+      payload.text = { body: message };
     } else if (mediaUrl) {
       if (mediaType === 'image') {
         payload.type = 'image';

@@ -25,6 +25,15 @@ class NotificationService extends EventEmitter {
   }
 
   getTemplate(templateKey) {
+    if (templateKey === 'technician_work_order') {
+      return {
+        template_key: 'technician_work_order',
+        name: 'Technician Field Work Order',
+        whatsapp_body: '{{whatsapp_body}}',
+        email_subject: 'Work Order: {{complaint_id}}',
+        email_body: '{{whatsapp_body}}'
+      };
+    }
     const row = db.prepare('SELECT * FROM notification_templates WHERE template_key = ?').get(templateKey);
     return row;
   }

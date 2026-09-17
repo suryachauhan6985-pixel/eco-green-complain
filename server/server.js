@@ -442,6 +442,16 @@ app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, requireRole('a
   }
 });
 
+function formatIsoUtc(dateStr) {
+  if (!dateStr) return null;
+  const s = String(dateStr).trim();
+  if (s.includes('T') && s.endsWith('Z')) return s;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) {
+    return s.replace(' ', 'T') + 'Z';
+  }
+  return s;
+}
+
 // 5. Universal WhatsApp Web Inbox: Get all conversation threads (linked or unlinked)
 app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
@@ -487,6 +497,7 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
         rm.created_at as last_activity,
         c.ticket_id,
         c.customer_name as complaint_customer_name,
+        c.customer_phone as complaint_customer_phone,
         c.product_type,
         c.status as complaint_status
       FROM RankedMessages rm
@@ -501,34 +512,46 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
       const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
       
       let customerName = null;
-      let complaintId = r.complaint_id;
-      let ticketId = r.ticket_id;
+      let complaintId = null;
+      let ticketId = null;
 
-      // 1. Complaint record match
-      if (r.complaint_customer_name && r.complaint_customer_name !== 'Customer') {
-        customerName = r.complaint_customer_name;
-      } else {
-        const matchedComp = db.prepare(`
-          SELECT id, ticket_id, customer_name FROM complaints 
-          WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
-          ORDER BY id DESC LIMIT 1
-        `).get(`%${last10}%`);
-        if (matchedComp) {
-          complaintId = matchedComp.id;
-          ticketId = matchedComp.ticket_id;
-          if (matchedComp.customer_name && matchedComp.customer_name !== 'Customer') {
-            customerName = matchedComp.customer_name;
+      // 1. Check if this phone belongs to a Technician
+      const tech = db.prepare('SELECT id, name, phone FROM technicians WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
+      if (tech?.name) {
+        customerName = `${tech.name} (Technician)`;
+      }
+
+      // 2. Complaint record match - ONLY IF this phone is actually the complaint's customer_phone!
+      if (!customerName) {
+        const cleanCustPhone = (r.complaint_customer_phone || '').replace(/[^0-9]/g, '');
+        if (cleanCustPhone && cleanCustPhone.slice(-10) === last10 && r.complaint_customer_name && r.complaint_customer_name !== 'Customer') {
+          customerName = r.complaint_customer_name;
+          complaintId = r.complaint_id;
+          ticketId = r.ticket_id;
+        } else {
+          // Look up if any complaint matches this phone as the customer
+          const matchedComp = db.prepare(`
+            SELECT id, ticket_id, customer_name FROM complaints 
+            WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+            ORDER BY id DESC LIMIT 1
+          `).get(`%${last10}%`);
+          if (matchedComp) {
+            complaintId = matchedComp.id;
+            ticketId = matchedComp.ticket_id;
+            if (matchedComp.customer_name && matchedComp.customer_name !== 'Customer') {
+              customerName = matchedComp.customer_name;
+            }
           }
         }
       }
 
-      // 2. Installed customers (Excel Database)
+      // 3. Installed customers (Excel Database)
       if (!customerName || customerName === 'Customer') {
         const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
         if (inst?.customer_name) customerName = inst.customer_name;
       }
 
-      // 3. Permanent WhatsApp Number Registry (Manual staff rename or Meta online profile name)
+      // 4. Permanent WhatsApp Number Registry (Manual staff rename or Meta online profile name)
       if (!customerName || customerName === 'Customer') {
         try {
           const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ? LIMIT 1').get(last10, `%${last10}%`);
@@ -538,7 +561,7 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
         } catch (e) {}
       }
 
-      // 4. Any customer incoming message with sender_name
+      // 5. Any customer incoming message with sender_name
       if (!customerName || customerName === 'Customer') {
         const custMsg = db.prepare(`
           SELECT sender_name FROM whatsapp_messages 
@@ -550,7 +573,7 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
         }
       }
 
-      // 5. Fallback if r.sender_name is not staff or generic digits
+      // 6. Fallback if r.sender_name is not staff or generic digits
       if (!customerName && r.sender_name && r.sender_name !== 'Customer' && r.sender_name !== 'Eco Green Support' && !/^[0-9+ ]+$/.test(r.sender_name)) {
         customerName = r.sender_name;
       }
@@ -561,7 +584,9 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
         ...r,
         complaint_id: complaintId,
         ticket_id: ticketId,
-        sender_name: customerName || formattedPhone
+        sender_name: customerName || formattedPhone,
+        last_activity: formatIsoUtc(r.last_activity),
+        created_at: formatIsoUtc(r.created_at)
       };
     });
 
@@ -579,39 +604,52 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
     const cleanPhone = (rawPhone || '').replace(/[^0-9]/g, '');
     const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
 
-    const messages = db.prepare(`
+    const rawMessages = db.prepare(`
       SELECT * FROM whatsapp_messages
       WHERE phone LIKE ?
       ORDER BY created_at ASC
     `).all(`%${last10}%`);
 
-    // Find linked complaint if any
-    const complaint = db.prepare(`
-      SELECT id, ticket_id, customer_name, customer_phone, product_type, status 
-      FROM complaints 
-      WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
-      ORDER BY id DESC LIMIT 1
-    `).get(`%${last10}%`);
+    const messages = (rawMessages || []).map(m => ({
+      ...m,
+      created_at: formatIsoUtc(m.created_at)
+    }));
 
+    // 1. Check if phone belongs to a Technician FIRST!
+    const tech = db.prepare('SELECT id, name, phone, area_zone FROM technicians WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ? LIMIT 1').get(`%${last10}%`);
     let contactName = null;
-    if (complaint?.customer_name && complaint.customer_name !== 'Customer') {
-      contactName = complaint.customer_name;
-    }
-    if (!contactName) {
-      const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
-      if (inst?.customer_name) contactName = inst.customer_name;
-    }
-    if (!contactName) {
-      try {
-        const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ? LIMIT 1').get(last10, `%${last10}%`);
-        if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
-          contactName = reg.customer_name;
-        }
-      } catch (e) {}
-    }
-    if (!contactName && messages.length > 0) {
-      const custMsg = messages.find(m => m.sender_type === 'customer' && m.sender_name && m.sender_name !== 'Customer' && !/^[0-9+ ]+$/.test(m.sender_name));
-      if (custMsg) contactName = custMsg.sender_name;
+    let complaint = null;
+
+    if (tech?.name) {
+      contactName = `${tech.name} (Technician)`;
+    } else {
+      // Find linked complaint if any (ONLY for actual customer)
+      complaint = db.prepare(`
+        SELECT id, ticket_id, customer_name, customer_phone, product_type, status 
+        FROM complaints 
+        WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+        ORDER BY id DESC LIMIT 1
+      `).get(`%${last10}%`);
+
+      if (complaint?.customer_name && complaint.customer_name !== 'Customer') {
+        contactName = complaint.customer_name;
+      }
+      if (!contactName) {
+        const inst = db.prepare('SELECT customer_name FROM installed_customers WHERE consumer_mobile LIKE ? LIMIT 1').get(`%${last10}%`);
+        if (inst?.customer_name) contactName = inst.customer_name;
+      }
+      if (!contactName) {
+        try {
+          const reg = db.prepare('SELECT customer_name FROM whatsapp_number_registry WHERE phone = ? OR phone LIKE ? LIMIT 1').get(last10, `%${last10}%`);
+          if (reg?.customer_name && reg.customer_name !== 'Customer' && !/^[0-9+ ]+$/.test(reg.customer_name)) {
+            contactName = reg.customer_name;
+          }
+        } catch (e) {}
+      }
+      if (!contactName && messages.length > 0) {
+        const custMsg = messages.find(m => m.sender_type === 'customer' && m.sender_name && m.sender_name !== 'Customer' && !/^[0-9+ ]+$/.test(m.sender_name));
+        if (custMsg) contactName = custMsg.sender_name;
+      }
     }
 
     const formattedPhone = last10.length === 10 ? `+91 ${last10.slice(0, 5)} ${last10.slice(5)}` : `+${cleanPhone}`;
@@ -622,6 +660,7 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
       contact: {
         phone: cleanPhone,
         sender_name: contactName || formattedPhone,
+        is_technician: !!tech,
         complaint: complaint || null
       }
     });

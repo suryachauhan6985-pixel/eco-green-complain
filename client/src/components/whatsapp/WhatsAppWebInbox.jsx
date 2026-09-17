@@ -19,6 +19,48 @@ const EMOJI_CATEGORIES = {
   'Gestures': ['👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '✋', '🤚', '🖐️', '🖖', '👋', '🤝', '🙏', '👏', '🙌', '👐', '🤲', '💪']
 };
 
+// Helper: Ensure SQLite UTC timestamps are converted to local browser time (e.g. IST)
+function parseToLocalDate(dateInput) {
+  if (!dateInput) return null;
+  let dStr = String(dateInput).trim();
+  // If 'YYYY-MM-DD HH:MM:SS' without timezone, treat as UTC
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(dStr)) {
+    dStr = dStr.replace(' ', 'T') + 'Z';
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(dStr)) {
+    dStr = dStr + 'Z';
+  }
+  const d = new Date(dStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatWhatsAppTime(dateInput) {
+  if (!dateInput) return '';
+  const d = parseToLocalDate(dateInput);
+  if (!d) return String(dateInput);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatWhatsAppListTime(dateInput) {
+  if (!dateInput) return 'Recent';
+  const d = parseToLocalDate(dateInput);
+  if (!d) return String(dateInput);
+
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+
+  if (isToday) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  if (isYesterday) {
+    return 'Yesterday';
+  }
+  return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
+}
+
 export const WhatsAppWebInbox = ({ 
   onOpenComplaint, 
   onNewComplaintWithData, 
@@ -569,11 +611,7 @@ export const WhatsAppWebInbox = ({
 
         {messages.map((msg, idx) => {
           const isCustomer = msg.sender_type === 'customer';
-          const timeStr = msg.created_at
-            ? (msg.created_at.includes(':') && msg.created_at.length <= 8)
-              ? msg.created_at
-              : new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : '12:00 PM';
+          const timeStr = formatWhatsAppTime(msg.created_at) || '12:00 PM';
 
           return (
             <div
@@ -980,11 +1018,7 @@ export const WhatsAppWebInbox = ({
           ) : (
             filteredConversations.map(conv => {
               const isSelected = conv.phone === selectedPhone;
-              const formattedTime = conv.last_activity
-                ? (conv.last_activity.includes(':') && conv.last_activity.length <= 8)
-                  ? conv.last_activity
-                  : new Date(conv.last_activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : 'Recent';
+              const formattedTime = formatWhatsAppListTime(conv.last_activity);
 
               return (
                 <div
@@ -1120,7 +1154,12 @@ export const WhatsAppWebInbox = ({
 
               {/* Right Action Icons (Ticket Pill, Video, Search, Menu 3-Dots) */}
               <div className="flex items-center gap-1.5 shrink-0 relative">
-                {(contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) && (
+                {contactInfo?.is_technician ? (
+                  <span className="px-2.5 py-1 bg-teal-50 border border-teal-200 text-teal-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs mr-1">
+                    <Wrench className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Field Technician</span>
+                  </span>
+                ) : (contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -1137,7 +1176,7 @@ export const WhatsAppWebInbox = ({
                     <Ticket className="w-3.5 h-3.5 text-blue-700" />
                     <span>#{contactInfo?.ticket_id || selectedConv?.ticket_id}</span>
                   </button>
-                )}
+                ) : null}
 
                 <button
                   type="button"

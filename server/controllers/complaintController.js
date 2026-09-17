@@ -690,11 +690,13 @@ async function assignTechnician(req, res) {
 
       notificationService.dispatchAsync({
         complaintId: id,
-        templateKey: 'technician_assigned',
+        templateKey: 'technician_work_order',
         channels: ['whatsapp'],
         forceWhatsAppTo: technician.phone,
         data: {
-          whatsapp_body: techMsg
+          whatsapp_body: techMsg,
+          technician_name: technician.name,
+          ticket_id: complaint.ticket_id
         }
       });
     }
