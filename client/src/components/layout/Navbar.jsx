@@ -14,7 +14,7 @@ export const Navbar = ({
   onOpenTour,
   onReloadDemoData
 }) => {
-  const { currentUser, switchRole, logout, unreadSimulatedCount } = useAuth();
+  const { currentUser, logout, unreadSimulatedCount } = useAuth();
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
 
   const roles = [

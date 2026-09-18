@@ -52,6 +52,25 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('egs_logged_out', 'true');
   };
 
+  const switchRole = (role) => {
+    if (role === 'customer') {
+      setCurrentUser({
+        id: 0,
+        name: 'Public Customer Portal',
+        role: 'customer',
+        email: 'customer@portal.local'
+      });
+      return;
+    }
+    const profile = DEMO_PROFILES[role];
+    if (profile) {
+      setCurrentUser({
+        id: profile.role === 'admin' ? 1 : profile.role === 'staff' ? 2 : 3,
+        ...profile
+      });
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
