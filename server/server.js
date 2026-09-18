@@ -733,24 +733,23 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const checkExists = db.prepare(`
-      SELECT id FROM whatsapp_messages WHERE wam_id = ? AND wam_id IS NOT NULL LIMIT 1
+    const checkDuplicate = db.prepare(`
+      SELECT id FROM whatsapp_messages 
+      WHERE (wam_id = ? AND ? IS NOT NULL)
+         OR (phone = ? AND message_body = ? AND created_at = ?)
+      LIMIT 1
     `);
-
-    const personalPhones = ['6352454247', '9426529550', '9662729804', '9825112345', '9825099887', '9825011223', '9900011223'];
 
     let restored = 0;
     const tx = db.transaction(() => {
       for (const m of messages) {
         if (!m || !m.phone || !m.message_body) continue;
         const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
-        if (personalPhones.some(bad => cleanPhone.includes(bad)) ||
-            (m.sender_name && /akshar|અક્ષર|jay|જય|dhaval|ધવલ|sumit|સુમિત/i.test(m.sender_name)) ||
-            (m.message_body && /akshar|અક્ષર|instagram\.com\/reel/i.test(m.message_body))) {
+        if (!cleanPhone || cleanPhone.length < 5) continue;
+
+        if (checkDuplicate.get(m.wam_id || null, m.wam_id || null, m.phone, m.message_body, m.created_at || '')) {
           continue;
         }
-
-        if (m.wam_id && checkExists.get(m.wam_id)) continue;
 
         const isCompany = m.sender_type === 'company' || m.sender_type === 'staff';
         const senderName = m.sender_name && m.sender_name !== 'Customer'

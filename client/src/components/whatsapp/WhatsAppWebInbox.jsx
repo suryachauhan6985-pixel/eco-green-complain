@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api } from '../../api/client';
+import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { 
@@ -167,17 +167,7 @@ export const WhatsAppWebInbox = ({
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
-        const personalPhoneRegex = /6352454247|9426529550|9662729804|9825112345|9825099887/;
-        const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
-
-        const cleaned = res.conversations.filter(c => {
-          const p = (c.phone || '').replace(/[^0-9]/g, '');
-          if (personalPhoneRegex.test(p)) return false;
-          const combined = `${c.sender_name || ''} ${c.last_message || ''}`;
-          if (personalPattern.test(combined)) return false;
-          return true;
-        });
-        setConversations(cleaned);
+        setConversations(res.conversations);
       } else {
         setConversations([]);
       }
@@ -210,6 +200,8 @@ export const WhatsAppWebInbox = ({
         if (res.contact) {
           setContactInfo(res.contact);
         }
+        // Save to browser persistent backup so history survives container sleep/restart
+        saveWhatsAppMessagesPermanently(res.messages);
       } else {
         setMessages([]);
       }
@@ -256,9 +248,22 @@ export const WhatsAppWebInbox = ({
     }
   }, [initialTarget]);
 
-  // Initial load
+  // Initial load with automatic client-side backup restoration
   useEffect(() => {
-    loadConversations();
+    const initInbox = async () => {
+      // 1. Sync any cached messages from browser localStorage to server (in case container restarted)
+      const localBackup = getPermanentWhatsAppMessages();
+      if (Array.isArray(localBackup) && localBackup.length > 0) {
+        try {
+          await api.syncBackupWhatsApp(localBackup);
+        } catch (e) {
+          console.warn('Backup sync note:', e.message);
+        }
+      }
+      // 2. Load latest conversations
+      await loadConversations();
+    };
+    initInbox();
   }, []);
 
   // When selectedPhone changes, load thread

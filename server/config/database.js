@@ -2,12 +2,25 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const defaultDir = fs.existsSync('/data') ? '/data' : path.join(__dirname, '..');
+const bundledDbPath = path.join(__dirname, '..', 'ecogreen_cms.db');
+const hasPersistentDataDir = fs.existsSync('/data');
+const defaultDir = hasPersistentDataDir ? '/data' : path.join(__dirname, '..');
 const dbPath = process.env.DATABASE_PATH || path.join(defaultDir, 'ecogreen_cms.db');
 const dbDir = path.dirname(dbPath);
 
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
+}
+
+// If persistent volume is attached at /data and ecogreen_cms.db doesn't exist yet, seed it from the bundled db
+if (hasPersistentDataDir && dbPath === '/data/ecogreen_cms.db' && !fs.existsSync(dbPath) && fs.existsSync(bundledDbPath)) {
+  console.log('[Database] First persistent run: copying bundled database to /data/ecogreen_cms.db...');
+  try {
+    fs.copyFileSync(bundledDbPath, dbPath);
+    console.log('[Database] Bundled database successfully seeded to persistent volume.');
+  } catch (err) {
+    console.error('[Database] Failed to seed persistent database:', err.message);
+  }
 }
 
 const db = new Database(dbPath);

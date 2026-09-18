@@ -5,16 +5,21 @@
 
 const db = require('../config/database');
 
+// Official Eco Green Solar Meta Cloud API Credentials (+91 78784 44414)
+const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '1387211441132836';
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
+const META_BUSINESS_ACCOUNT_ID = process.env.META_BUSINESS_ACCOUNT_ID || '1015283491554000';
+
 async function sendWhatsAppMessage({ to, message, templateName, variables = {}, ticket_id, recipient_name, mediaUrl, mediaType, mediaFileName }) {
-  const provider = process.env.WHATSAPP_PROVIDER || 'SIMULATED';
+  const provider = process.env.WHATSAPP_PROVIDER || (META_ACCESS_TOKEN ? 'META_CLOUD_API' : 'SIMULATED');
   const cleanTo = (to || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanTo.startsWith('91') ? cleanTo : (cleanTo.length === 10 ? `91${cleanTo}` : cleanTo);
 
   let deliveredText = message;
 
   if (provider === 'META_CLOUD_API') {
-    const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
-    const accessToken = process.env.META_ACCESS_TOKEN;
+    const phoneNumberId = META_PHONE_NUMBER_ID;
+    const accessToken = META_ACCESS_TOKEN;
 
     if (!phoneNumberId || !accessToken) {
       throw new Error('Meta Cloud API credentials missing (META_PHONE_NUMBER_ID, META_ACCESS_TOKEN)');
@@ -176,7 +181,10 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
     }
 
     if (!response.ok) {
-      throw new Error(data.error ? data.error.message : 'Meta WhatsApp API error');
+      if (data.error?.code === 131047) {
+        throw new Error('WhatsApp 24-hour customer window is closed. Freeform messages require the customer to message +91 78784 44414 within the last 24h, or send an official approved template.');
+      }
+      throw new Error(data.error ? `${data.error.message} (Meta Code: ${data.error.code})` : 'Meta WhatsApp API error');
     }
     return { success: true, provider: 'META_CLOUD_API', messageId: data.messages?.[0]?.id, deliveredMessage: deliveredText || message };
   }

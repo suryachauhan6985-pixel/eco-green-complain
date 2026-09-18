@@ -96,17 +96,11 @@ export function clearPermanentWhatsAppMessages() {
 export function getPermanentWhatsAppMessages() {
   try {
     const list = JSON.parse(localStorage.getItem(PERMANENT_WHATSAPP_KEY) || '[]');
-    // Filter out mock dummy messages and personal numbers/contacts
+    // Only filter out old mock dummy seed data
     const mockWamPrefixes = ['wam_seed_', 'wam_javia', 'wam_ananya', 'wam_rajesh', 'wam_panchal', 'wam_jigar', 'wam_deepak', 'wam_official', 'initial_'];
-    const personalPhoneRegex = /6352454247|9426529550|9662729804|9825112345|9825099887/;
-    const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
 
     const cleaned = list.filter(m => {
       if (!m || !m.message_body) return false;
-      const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
-      if (personalPhoneRegex.test(cleanPhone)) return false;
-      const combined = `${m.sender_name || ''} ${m.message_body || ''}`;
-      if (personalPattern.test(combined)) return false;
       if (m.wam_id && mockWamPrefixes.some(p => m.wam_id.startsWith(p))) return false;
       if (m.message_body.includes('localhost:5173') || m.message_body.includes('1800-ECO-SOLAR')) return false;
       return true;
@@ -123,16 +117,11 @@ export function getPermanentWhatsAppMessages() {
 export function saveWhatsAppMessagesPermanently(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
   try {
-    const personalPhoneRegex = /6352454247|9426529550|9662729804|9825112345|9825099887/;
-    const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
+    const mockWamPrefixes = ['wam_seed_', 'wam_javia', 'wam_ananya', 'wam_rajesh', 'wam_panchal', 'wam_jigar', 'wam_deepak', 'wam_official', 'initial_'];
 
     const realMessages = messages.filter(m => {
       if (!m || !m.message_body) return false;
-      if (m.wam_id?.startsWith('wam_seed_')) return false;
-      const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
-      if (personalPhoneRegex.test(cleanPhone)) return false;
-      const combined = `${m.sender_name || ''} ${m.message_body || ''}`;
-      if (personalPattern.test(combined)) return false;
+      if (m.wam_id && mockWamPrefixes.some(p => m.wam_id.startsWith(p))) return false;
       if (m.message_body.includes('localhost:5173') || m.message_body.includes('1800-ECO-SOLAR')) return false;
       return true;
     });

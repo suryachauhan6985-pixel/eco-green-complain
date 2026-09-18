@@ -13,3 +13,13 @@ services:
         generateValue: true
       - key: PORT
         value: 10000
+      - key: WHATSAPP_PROVIDER
+        value: META_CLOUD_API
+      - key: META_PHONE_NUMBER_ID
+        value: "1387211441132836"
+      - key: META_ACCESS_TOKEN
+        value: "EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD"
+      - key: META_BUSINESS_ACCOUNT_ID
+        value: "1015283491554000"
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        value: "ecogreen_solar_webhook_verify_2026"

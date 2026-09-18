@@ -34,7 +34,7 @@ function verifyWebhook(req, res) {
  * Download media from Meta Graph API using media ID
  */
 async function downloadMedia(mediaId, mimeType, originalName = null) {
-  const accessToken = process.env.META_ACCESS_TOKEN;
+  const accessToken = process.env.META_ACCESS_TOKEN || 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
   if (!accessToken) {
     console.error('[WhatsApp Webhook] Cannot download media: META_ACCESS_TOKEN is missing');
     return null;
