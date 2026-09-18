@@ -1,9 +1,10 @@
-const CACHE_NAME = 'ecogreen-cms-v2';
+const CACHE_NAME = 'ecogreen-cms-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
   '/support-icon-192.png',
   '/support-icon-512.png',
+  '/support-icon-maskable-512.png',
   '/company-logo.png',
   '/company-logo-white.png'
 ];
