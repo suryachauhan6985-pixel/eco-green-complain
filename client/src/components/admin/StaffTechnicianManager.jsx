@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { 
   Users, Wrench, Plus, Trash2, CheckCircle2, XCircle, 
   Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X, Edit3, IndianRupee,
-  Layers, Tag
+  Layers, Tag, Key
 } from 'lucide-react';
 import { useDialog } from '../../context/DialogContext';
 
@@ -31,11 +31,9 @@ export const StaffTechnicianManager = () => {
   const [editingMember, setEditingMember] = useState(null);
   const [editFormData, setEditFormData] = useState({
     name: '',
+    username: '',
     phone: '',
     email: '',
-    area_zone: 'North Zone (Indiranagar / Hebbal)',
-    specialization: 'Solar Rooftop Systems',
-    daily_capacity: 5,
     role: 'staff',
     password: ''
   });
@@ -43,12 +41,11 @@ export const StaffTechnicianManager = () => {
   // Add Form State
   const [formData, setFormData] = useState({
     name: '',
+    username: '',
     email: '',
     phone: '',
     password: '',
-    role: 'technician',
-    area_zone: 'North Zone (Indiranagar / Hebbal)',
-    specialization: 'Solar Rooftop Systems'
+    role: 'technician'
   });
 
   useEffect(() => {
@@ -58,13 +55,12 @@ export const StaffTechnicianManager = () => {
 
   const openEditModal = (member, isTech = false) => {
     setEditingMember({ ...member, isTech });
+    const cleanEmail = member.email && member.email.endsWith('.internal') ? '' : (member.email || '');
     setEditFormData({
       name: member.name || '',
+      username: member.username || (member.email ? member.email.split('@')[0] : ''),
       phone: member.phone || '',
-      email: member.email || '',
-      area_zone: member.area_zone || 'North Zone (Indiranagar / Hebbal)',
-      specialization: member.specialization || 'Solar Rooftop Systems',
-      daily_capacity: member.daily_capacity || 5,
+      email: cleanEmail,
       role: member.role || 'staff',
       password: ''
     });
@@ -77,28 +73,27 @@ export const StaffTechnicianManager = () => {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    if (!editFormData.username?.trim()) {
+      showGlobalToast('User ID / Username is required', 'error');
+      return;
+    }
     try {
+      const payload = {
+        name: editFormData.name,
+        username: editFormData.username.trim().toLowerCase(),
+        phone: editFormData.phone,
+        email: editFormData.email?.trim() || undefined
+      };
+      if (editFormData.password && editFormData.password.trim()) {
+        payload.password = editFormData.password.trim();
+      }
+
       if (editingMember?.isTech) {
-        await api.updateTechnician(editingMember.id, {
-          name: editFormData.name,
-          phone: editFormData.phone,
-          email: editFormData.email,
-          area_zone: editFormData.area_zone,
-          specialization: editFormData.specialization,
-          daily_capacity: editFormData.daily_capacity
-        });
+        await api.updateTechnician(editingMember.id, payload);
         showToast(`Technician ${editFormData.name} updated successfully!`);
       } else {
-        const updatePayload = {
-          name: editFormData.name,
-          phone: editFormData.phone,
-          email: editFormData.email,
-          role: editFormData.role
-        };
-        if (editFormData.password && editFormData.password.trim()) {
-          updatePayload.password = editFormData.password.trim();
-        }
-        await api.updateUser(editingMember.id, updatePayload);
+        payload.role = editFormData.role;
+        await api.updateUser(editingMember.id, payload);
         showToast(`Staff member ${editFormData.name} updated successfully!`);
       }
       setIsEditModalOpen(false);
@@ -273,18 +268,29 @@ export const StaffTechnicianManager = () => {
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.username?.trim()) {
+      showGlobalToast('User ID / Username is required', 'error');
+      return;
+    }
+    if (!formData.password?.trim()) {
+      showGlobalToast('Login Password is required', 'error');
+      return;
+    }
     try {
-      await api.createUser(formData);
+      await api.createUser({
+        ...formData,
+        username: formData.username.trim().toLowerCase(),
+        email: formData.email?.trim() || undefined
+      });
       showToast(`New ${formData.role} created successfully!`);
       setIsAddModalOpen(false);
       setFormData({
         name: '',
+        username: '',
         email: '',
         phone: '',
         password: '',
-        role: 'technician',
-        area_zone: 'North Zone (Indiranagar / Hebbal)',
-        specialization: 'Solar Rooftop Systems'
+        role: 'technician'
       });
       loadData();
     } catch (err) {
@@ -412,7 +418,9 @@ export const StaffTechnicianManager = () => {
                           </span>
                         )}
                       </h4>
-                      <p className="text-[11px] text-slate-500">{t.email}</p>
+                      <p className="text-[11px] font-mono text-emerald-700 font-semibold">
+                        ID: @{t.username || t.email?.split('@')[0]}
+                      </p>
                     </div>
                   </div>
 
@@ -428,18 +436,20 @@ export const StaffTechnicianManager = () => {
 
                 {/* Details */}
                 <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50/90 px-2 py-1 rounded-md border border-emerald-200/60">
+                    <Key className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>User ID: <span className="font-bold text-slate-900">{t.username || t.email?.split('@')[0]}</span></span>
+                  </div>
                   <div className="flex items-center gap-1.5 text-[11px]">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span>{t.phone || 'No phone set'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="truncate">{t.area_zone || 'General Zone'}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <Award className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="font-semibold text-emerald-800">{t.specialization || 'All Products'}</span>
-                  </div>
+                  {t.email && !t.email.endsWith('.internal') && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{t.email}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Off-duty dispatch note */}
@@ -549,7 +559,9 @@ export const StaffTechnicianManager = () => {
                           </span>
                         )}
                       </h4>
-                      <p className="text-[11px] text-slate-500">{u.email}</p>
+                      <p className="text-[11px] font-mono text-blue-700 font-semibold">
+                        ID: @{u.username || u.email?.split('@')[0]}
+                      </p>
                     </div>
                   </div>
 
@@ -560,14 +572,20 @@ export const StaffTechnicianManager = () => {
 
                 {/* Details */}
                 <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-800 bg-blue-50/90 px-2 py-1 rounded-md border border-blue-200/60">
+                    <Key className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>User ID: <span className="font-bold text-slate-900">{u.username || u.email?.split('@')[0]}</span></span>
+                  </div>
                   <div className="flex items-center gap-1.5 text-[11px]">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span>{u.phone || 'No phone set'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <Mail className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="truncate">{u.email}</span>
-                  </div>
+                  {u.email && !u.email.endsWith('.internal') && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{u.email}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -801,14 +819,14 @@ export const StaffTechnicianManager = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Email Address *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">User ID / Username *</label>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    placeholder="ramesh@ecogreensolar.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    placeholder="e.g. ramesh, tech01"
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-medium"
                   />
                 </div>
                 <div>
@@ -816,7 +834,7 @@ export const StaffTechnicianManager = () => {
                   <input
                     type="tel"
                     required
-                    placeholder="+919876543210"
+                    placeholder="6352454247"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
@@ -825,49 +843,29 @@ export const StaffTechnicianManager = () => {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Temporary Password *</label>
+                <label className="block font-semibold text-slate-700 mb-1">Login Password *</label>
                 <input
                   type="password"
                   required
-                  placeholder="Minimum 6 characters"
+                  placeholder="Enter login password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
                 />
               </div>
 
-              {formData.role === 'technician' && (
-                <>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Service Area / Zone</label>
-                    <select
-                      value={formData.area_zone}
-                      onChange={(e) => setFormData({ ...formData, area_zone: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                    >
-                      <option value="North Zone (Indiranagar / Hebbal)">North Zone (Indiranagar / Hebbal)</option>
-                      <option value="South Zone (Jayanagar / Koramangala)">South Zone (Jayanagar / Koramangala)</option>
-                      <option value="East Zone (Whitefield / Marathahalli)">East Zone (Whitefield / Marathahalli)</option>
-                      <option value="West Zone (Rajajinagar / Malleshwaram)">West Zone (Rajajinagar / Malleshwaram)</option>
-                      <option value="Central & Outer Zone">Central & Outer Zone</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Product Specialization</label>
-                    <select
-                      value={formData.specialization}
-                      onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                    >
-                      <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
-                      <option value="Solar Water Heaters">Solar Water Heaters</option>
-                      <option value="Heat Pumps">Heat Pumps</option>
-                      <option value="All Products">All Solar Products</option>
-                    </select>
-                  </div>
-                </>
-              )}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Email Address <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="Optional (leave blank if not using email)"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                />
+              </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
@@ -920,13 +918,14 @@ export const StaffTechnicianManager = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Email Address *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">User ID / Username *</label>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={editFormData.email}
-                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    placeholder="e.g. ramesh, tech01"
+                    value={editFormData.username}
+                    onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-medium"
                   />
                 </div>
                 <div>
@@ -941,63 +940,45 @@ export const StaffTechnicianManager = () => {
                 </div>
               </div>
 
-              {editType === 'technician' ? (
-                <>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Service Area / Zone</label>
-                    <select
-                      value={editFormData.area_zone}
-                      onChange={(e) => setEditFormData({ ...editFormData, area_zone: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                    >
-                      <option value="North Zone (Indiranagar / Hebbal)">North Zone (Indiranagar / Hebbal)</option>
-                      <option value="South Zone (Jayanagar / Koramangala)">South Zone (Jayanagar / Koramangala)</option>
-                      <option value="East Zone (Whitefield / Marathahalli)">East Zone (Whitefield / Marathahalli)</option>
-                      <option value="West Zone (Rajajinagar / Malleshwaram)">West Zone (Rajajinagar / Malleshwaram)</option>
-                      <option value="Central & Outer Zone">Central & Outer Zone</option>
-                    </select>
-                  </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Email Address <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="Optional (leave blank if not using email)"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                />
+              </div>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Product Specialization</label>
-                    <select
-                      value={editFormData.specialization}
-                      onChange={(e) => setEditFormData({ ...editFormData, specialization: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                    >
-                      <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
-                      <option value="Solar Water Heaters">Solar Water Heaters</option>
-                      <option value="Heat Pumps">Heat Pumps</option>
-                      <option value="All Products">All Solar Products</option>
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Access Role</label>
-                    <select
-                      value={editFormData.role}
-                      onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                    >
-                      <option value="staff">Support Staff (Ticket Management)</option>
-                      <option value="admin">Admin Supervisor (Full Access)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Change Password (leave empty to keep existing)</label>
-                    <input
-                      type="password"
-                      placeholder="Enter new password (optional)"
-                      value={editFormData.password}
-                      onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                    />
-                  </div>
-                </>
+              {editType !== 'technician' && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Access Role</label>
+                  <select
+                    value={editFormData.role}
+                    onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                  >
+                    <option value="staff">Support Staff (Ticket Management)</option>
+                    <option value="admin">Admin Supervisor (Full Access)</option>
+                  </select>
+                </div>
               )}
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Login Password <span className="text-slate-400 font-normal">(leave blank to keep existing)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="Enter new password to change (optional)"
+                  value={editFormData.password}
+                  onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                />
+              </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button

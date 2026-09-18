@@ -239,6 +239,40 @@ class LocalMockStore {
     return { success: true, message: 'Technician removed' };
   }
 
+  updateUser(id, data) {
+    let users = this.getUsers();
+    const userIndex = users.findIndex(u => String(u.id) === String(id));
+    if (userIndex !== -1) {
+      users[userIndex] = { ...users[userIndex], ...data };
+      localStorage.setItem('egs_mock_users', JSON.stringify(users));
+    }
+    let techs = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
+    const techIndex = techs.findIndex(t => String(t.user_id) === String(id));
+    if (techIndex !== -1) {
+      techs[techIndex] = { ...techs[techIndex], name: data.name || techs[techIndex].name, phone: data.phone || techs[techIndex].phone, email: data.email || techs[techIndex].email, username: data.username || techs[techIndex].username };
+      localStorage.setItem('egs_mock_technicians', JSON.stringify(techs));
+    }
+    return { success: true, message: 'User updated successfully' };
+  }
+
+  updateTechnician(id, data) {
+    let techs = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
+    const techIndex = techs.findIndex(t => String(t.id) === String(id));
+    if (techIndex !== -1) {
+      techs[techIndex] = { ...techs[techIndex], ...data };
+      localStorage.setItem('egs_mock_technicians', JSON.stringify(techs));
+      if (techs[techIndex].user_id) {
+        let users = this.getUsers();
+        const userIndex = users.findIndex(u => String(u.id) === String(techs[techIndex].user_id));
+        if (userIndex !== -1) {
+          users[userIndex] = { ...users[userIndex], name: data.name || users[userIndex].name, phone: data.phone || users[userIndex].phone, email: data.email || users[userIndex].email, username: data.username || users[userIndex].username };
+          localStorage.setItem('egs_mock_users', JSON.stringify(users));
+        }
+      }
+    }
+    return { success: true, message: 'Technician updated successfully' };
+  }
+
   updateTechnicianAvailability(id, isAvailable) {
     let techs = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
     const tech = techs.find(t => String(t.id) === String(id));
@@ -693,6 +727,11 @@ function fallbackHandler(endpoint, options) {
     if (method === 'GET') {
       return { users: mockStore.getUsers() };
     }
+    if (method === 'PUT') {
+      const id = endpoint.split('/').pop();
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+      return mockStore.updateUser(id, body);
+    }
     if (method === 'DELETE') {
       const id = endpoint.split('/').pop();
       return mockStore.deleteUser(id);
@@ -713,6 +752,11 @@ function fallbackHandler(endpoint, options) {
       const id = endpoint.split('/')[2];
       const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
       return mockStore.updateTechnicianAvailability(id, body?.is_available);
+    }
+    if (method === 'PUT') {
+      const id = endpoint.split('/')[2];
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+      return mockStore.updateTechnician(id, body);
     }
     return { technicians: JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]') };
   }

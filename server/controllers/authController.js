@@ -172,11 +172,19 @@ function deleteUser(req, res) {
 async function updateUser(req, res) {
   try {
     const { id } = req.params;
-    const { name, email, role, phone, password } = req.body;
+    let { name, username, email, role, phone, password } = req.body;
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (username) {
+      username = username.trim().toLowerCase();
+      const existingUser = db.prepare('SELECT id FROM users WHERE LOWER(username) = ? AND id != ?').get(username, id);
+      if (existingUser) {
+        return res.status(400).json({ error: 'User with this User ID / Username already exists' });
+      }
     }
 
     if (email && email !== user.email) {
@@ -194,12 +202,13 @@ async function updateUser(req, res) {
     db.prepare(`
       UPDATE users 
       SET name = COALESCE(?, name),
+          username = COALESCE(?, username),
           email = COALESCE(?, email),
           role = COALESCE(?, role),
           phone = COALESCE(?, phone),
           password_hash = ?
       WHERE id = ?
-    `).run(name || null, email || null, role || null, phone || null, passwordHash, id);
+    `).run(name || null, username || null, email || null, role || null, phone || null, passwordHash, id);
 
     // If technician, also sync technician record
     db.prepare(`
@@ -210,7 +219,7 @@ async function updateUser(req, res) {
       WHERE user_id = ?
     `).run(name || null, email || null, phone || null, id);
 
-    const updated = db.prepare('SELECT id, name, email, role, phone, is_active FROM users WHERE id = ?').get(id);
+    const updated = db.prepare('SELECT id, name, username, email, role, phone, is_active FROM users WHERE id = ?').get(id);
     res.json({ message: 'User updated successfully', user: updated });
   } catch (err) {
     console.error('Update user error:', err);
