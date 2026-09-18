@@ -881,11 +881,11 @@ export const WhatsAppWebInbox = ({
         {/* Header: Eco Green Solar Brand & Action Buttons */}
         <div className="bg-[#f0f2f5] px-4 py-3 border-b border-[#d1d7db] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex items-center justify-center p-0.5 shrink-0 overflow-hidden">
+            <div className="w-10 h-10 rounded-xl bg-[#085235] border border-emerald-800/40 shadow-xs flex items-center justify-center shrink-0 overflow-hidden">
               <img 
                 src="/support-icon-192.png" 
-                alt="Eco Green Solar Support" 
-                className="w-full h-full object-contain"
+                alt="Eco Green Solar Customer Care" 
+                className="w-full h-full object-cover"
                 onError={(e) => { e.currentTarget.src = '/company-logo-green.png'; }}
               />
             </div>
@@ -1536,15 +1536,15 @@ export const WhatsAppWebInbox = ({
         ) : (
           /* Empty State: Eco Green Solar Communication Desk */
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#f8fafc] border-b-8 border-emerald-600 select-none">
-            <div className="w-24 h-24 rounded-3xl bg-white border-2 border-emerald-100 shadow-md mb-4 p-1.5 flex items-center justify-center overflow-hidden">
+            <div className="w-24 h-24 rounded-3xl bg-[#085235] border-2 border-emerald-800/50 shadow-md mb-4 flex items-center justify-center overflow-hidden">
               <img 
                 src="/support-icon-512.png" 
-                alt="Eco Green Solar Support Desk" 
-                className="w-full h-full object-contain drop-shadow-xs"
+                alt="Eco Green Solar Customer Care" 
+                className="w-full h-full object-cover"
                 onError={(e) => { e.currentTarget.src = '/company-logo-green.png'; }}
               />
             </div>
-            <h3 className="text-xl font-bold text-slate-900">Eco Green Solar Support Desk</h3>
+            <h3 className="text-xl font-bold text-slate-900">Eco Green Solar Customer Care</h3>
             <p className="text-xs text-slate-500 max-w-md mt-2 leading-relaxed">
               Official two-way communication channel for customers and service technicians. All incoming inquiries, automated job assignments, and staff replies are recorded and synchronized in real time.
             </p>
