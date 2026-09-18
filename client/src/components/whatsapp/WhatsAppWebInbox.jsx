@@ -10,7 +10,7 @@ import {
   FileCheck, Shield, ChevronRight, Video, Mic, Pin, Compass,
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
-  Edit2
+  Edit2, Trash2, ChevronDown
 } from 'lucide-react';
 
 const EMOJI_CATEGORIES = {
@@ -99,6 +99,13 @@ export const WhatsAppWebInbox = ({
   const [editedContactName, setEditedContactName] = useState('');
   const [savingContactName, setSavingContactName] = useState(false);
 
+  // Message edit & delete states
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+  const [actionMessageMenuId, setActionMessageMenuId] = useState(null);
+  const [savingEditMessage, setSavingEditMessage] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState(null);
+
   // Sound notification preference
   const [soundEnabled, setSoundEnabled] = useState(() => {
     return localStorage.getItem('egs_wa_sound') !== 'false';
@@ -155,6 +162,9 @@ export const WhatsAppWebInbox = ({
       }
       if (!e.target.closest('#emoji-picker-container') && !e.target.closest('#emoji-picker-button')) {
         setShowEmojiPicker(false);
+      }
+      if (!e.target.closest('.msg-action-menu-container') && !e.target.closest('.msg-action-trigger')) {
+        setActionMessageMenuId(null);
       }
     };
     document.addEventListener('click', handleClickOutside);
@@ -555,6 +565,48 @@ export const WhatsAppWebInbox = ({
     }
   };
 
+  // Start editing message inline
+  const handleStartEditMessage = (msg) => {
+    setEditingMessageId(msg.id);
+    setEditingMessageText(msg.message_body || '');
+    setActionMessageMenuId(null);
+  };
+
+  // Save edited message to backend & Turso Cloud
+  const handleSaveEditMessage = async (msgId) => {
+    if (!editingMessageText.trim()) return;
+    try {
+      setSavingEditMessage(true);
+      await api.editWhatsAppMessage(msgId, editingMessageText.trim());
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, message_body: editingMessageText.trim(), is_edited: true, updated_at: new Date().toISOString() } : m));
+      setEditingMessageId(null);
+      setEditingMessageText('');
+      showToast('Message edited successfully', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to edit message', 'error');
+    } finally {
+      setSavingEditMessage(false);
+    }
+  };
+
+  // Delete message from conversation & Turso Cloud
+  const handleDeleteMessage = async (msgId) => {
+    setActionMessageMenuId(null);
+    const ok = await confirm('Delete Message', 'Are you sure you want to delete this message? It will be removed from this conversation permanently.');
+    if (!ok) return;
+    try {
+      setDeletingMessageId(msgId);
+      await api.deleteWhatsAppMessage(msgId);
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+      loadConversations(true);
+      showToast('Message deleted successfully', 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to delete message', 'error');
+    } finally {
+      setDeletingMessageId(null);
+    }
+  };
+
   // Helper to render avatar initials or clean user icon when name starts with '+' or digits
   const renderAvatarContent = (name, phone, iconClass = "w-5 h-5") => {
     const cleanName = (name || '').trim();
@@ -564,16 +616,8 @@ export const WhatsAppWebInbox = ({
     return cleanName.charAt(0).toUpperCase();
   };
 
-  // Filter conversations
+  // Filter conversations (All incoming & outgoing conversations are fully preserved and visible)
   const filteredConversations = conversations.filter(conv => {
-    const p = (conv.phone || '').replace(/[^0-9]/g, '');
-    const personalPhoneRegex = /6352454247|9426529550|9662729804|9825112345|9825099887/;
-    const personalPattern = /akshar|અક્ષર|jay\s*bhai|dhaval|sumit|instagram\.com|linktr\.ee|reels/i;
-
-    if (personalPhoneRegex.test(p)) return false;
-    const combined = `${conv.sender_name || ''} ${conv.last_message || ''}`;
-    if (personalPattern.test(combined)) return false;
-
     if (activeFilter === 'unread' && !conv.unread_count) return false;
     if (activeFilter === 'favorites' && !conv.is_pinned) return false;
     if (activeFilter === 'groups' && !conv.sender_name?.toLowerCase().includes('group') && !conv.is_group) return false;
@@ -621,7 +665,7 @@ export const WhatsAppWebInbox = ({
           return (
             <div
               key={msg.id || idx}
-              className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2`}
+              className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group`}
             >
               <div
                 className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg ${
@@ -630,6 +674,46 @@ export const WhatsAppWebInbox = ({
                     : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
                 }`}
               >
+                {/* Message Action Trigger Button (Revealed on hover) */}
+                {['admin', 'staff'].includes(currentUser?.role) && !editingMessageId && (
+                  <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActionMessageMenuId(actionMessageMenuId === msg.id ? null : msg.id);
+                      }}
+                      className="msg-action-trigger p-1 rounded-full bg-black/5 hover:bg-black/15 text-[#54656f] transition-colors cursor-pointer"
+                      title="Message options"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Popover Action Menu */}
+                    {actionMessageMenuId === msg.id && (
+                      <div className="msg-action-menu-container absolute right-0 top-6 w-32 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-30 text-xs text-slate-700 animate-in fade-in zoom-in-95 duration-100">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditMessage(msg)}
+                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          disabled={deletingMessageId === msg.id}
+                          className="w-full px-3 py-1.5 text-left hover:bg-rose-50 text-rose-600 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Quoted Reply Preview block if present */}
                 {msg.quoted_text && (
                   <div className="mb-2 p-2 rounded bg-black/5 border-l-4 border-[#25d366] text-xs">
@@ -720,15 +804,48 @@ export const WhatsAppWebInbox = ({
                   </div>
                 ) : null}
 
-                {/* Main Message Text */}
-                {msg.message_body && (
-                  <p className="whitespace-pre-wrap break-words leading-relaxed select-text font-normal text-[13px]">
-                    {msg.message_body}
-                  </p>
+                {/* Main Message Text or Inline Edit Mode */}
+                {editingMessageId === msg.id ? (
+                  <div className="my-1 space-y-1.5">
+                    <textarea
+                      value={editingMessageText}
+                      onChange={(e) => setEditingMessageText(e.target.value)}
+                      className="w-full text-xs p-2 rounded-lg border border-[#00a884] bg-white text-[#111b21] focus:outline-none resize-y min-h-[50px] shadow-xs"
+                      placeholder="Edit message..."
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingMessageId(null)}
+                        disabled={savingEditMessage}
+                        className="px-2.5 py-1 text-[11px] text-[#54656f] hover:bg-black/5 rounded cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEditMessage(msg.id)}
+                        disabled={savingEditMessage || !editingMessageText.trim()}
+                        className="px-3 py-1 text-[11px] font-semibold bg-[#00a884] hover:bg-[#008f6f] text-white rounded cursor-pointer disabled:opacity-50"
+                      >
+                        {savingEditMessage ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  msg.message_body && (
+                    <p className="whitespace-pre-wrap break-words leading-relaxed select-text font-normal text-[13px] pr-3">
+                      {msg.message_body}
+                    </p>
+                  )
                 )}
 
                 {/* Timestamp & Delivery Checkmarks */}
                 <div className="flex items-center justify-end gap-1 text-[10px] text-[#667781] mt-1 ml-3 select-none float-right">
+                  {(msg.is_edited || (msg.updated_at && msg.updated_at !== msg.created_at)) && (
+                    <span className="italic text-[9px] text-[#8696a0] mr-0.5 font-sans">(edited)</span>
+                  )}
                   <span>{timeStr}</span>
                   {!isCustomer && (
                     <span className="inline-flex items-center ml-0.5" title={`Status: ${msg.status || 'sent'}${msg.failure_reason ? ' (' + msg.failure_reason + ')' : ''}`}>

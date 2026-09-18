@@ -1073,6 +1073,13 @@ export const api = {
   updateWhatsAppContactName: (phone, name) => request('/whatsapp/update-contact-name', {
     method: 'POST',
     body: JSON.stringify({ phone, name })
+  }),
+  editWhatsAppMessage: (id, message_body) => request(`/whatsapp/messages/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ message_body })
+  }),
+  deleteWhatsAppMessage: (id) => request(`/whatsapp/messages/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
   })
 };
 

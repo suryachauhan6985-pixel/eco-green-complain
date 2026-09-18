@@ -508,6 +508,14 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
         isTechnician = true;
       }
 
+      // 1b. Check if this phone belongs to internal staff / admin user
+      if (!customerName) {
+        const appUser = db.prepare("SELECT id, name, role FROM users WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
+        if (appUser?.name) {
+          customerName = `${appUser.name} (${appUser.role === 'admin' ? 'Admin' : 'Staff'})`;
+        }
+      }
+
       // 2. Complaint record match (Priority 1 for customers)
       if (!customerName) {
         const cleanCustPhone = (r.complaint_customer_phone || '').replace(/[^0-9]/g, '');
@@ -532,13 +540,7 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
         }
       }
 
-      // 3. Installed customers (Excel Database)
-      if (!customerName || customerName === 'Customer') {
-        const inst = db.prepare("SELECT customer_name FROM installed_customers WHERE REPLACE(REPLACE(consumer_mobile, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
-        if (inst?.customer_name) customerName = inst.customer_name;
-      }
-
-      // 4. Meta Profile Name / Registry (Priority 2)
+      // 3. Custom / Verified Name from whatsapp_number_registry (manual rename takes priority over excel)
       if (!customerName || customerName === 'Customer') {
         try {
           const reg = db.prepare("SELECT customer_name FROM whatsapp_number_registry WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
@@ -546,6 +548,12 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
             customerName = reg.customer_name;
           }
         } catch (e) {}
+      }
+
+      // 4. Installed customers (Excel Database fallback)
+      if (!customerName || customerName === 'Customer') {
+        const inst = db.prepare("SELECT customer_name FROM installed_customers WHERE REPLACE(REPLACE(consumer_mobile, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
+        if (inst?.customer_name) customerName = inst.customer_name;
       }
 
       // 5. Incoming customer message sender_name
@@ -719,7 +727,60 @@ app.post('/api/whatsapp/update-contact-name', authenticateToken, requireRole('ad
   }
 });
 
-// 6c. Universal WhatsApp Web Inbox: Sync & Restore Messages from client backup
+// 6c. Universal WhatsApp Web Inbox: Edit a message
+app.put('/api/whatsapp/messages/:id', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message_body } = req.body;
+    if (!message_body || !message_body.trim()) {
+      return res.status(400).json({ error: 'Message content cannot be empty' });
+    }
+
+    const existing = db.prepare('SELECT id FROM whatsapp_messages WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    db.prepare(`
+      UPDATE whatsapp_messages 
+      SET message_body = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(message_body.trim(), id);
+
+    res.json({
+      success: true,
+      id: Number(id),
+      message_body: message_body.trim()
+    });
+  } catch (err) {
+    console.error('Error editing WhatsApp message:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6d. Universal WhatsApp Web Inbox: Delete a message
+app.delete('/api/whatsapp/messages/:id', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = db.prepare('SELECT id FROM whatsapp_messages WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    db.prepare('DELETE FROM whatsapp_messages WHERE id = ?').run(id);
+
+    res.json({
+      success: true,
+      id: Number(id),
+      message: 'Message deleted successfully'
+    });
+  } catch (err) {
+    console.error('Error deleting WhatsApp message:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6e. Universal WhatsApp Web Inbox: Sync & Restore Messages from client backup
 app.post('/api/whatsapp/sync-backup', authenticateToken, (req, res) => {
   try {
     const { messages } = req.body;
