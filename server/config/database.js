@@ -485,6 +485,8 @@ function migrateComplaintsTable() {
         { name: 'estimated_charges', type: 'REAL DEFAULT 0' },
         { name: 'notify_charges', type: 'INTEGER DEFAULT 0' },
         { name: 'payment_collected', type: 'REAL DEFAULT 0' },
+        { name: 'payment_collected_at', type: 'DATETIME' },
+        { name: 'payment_mode', type: "TEXT DEFAULT 'Cash'" },
         { name: 'payment_status', type: "TEXT DEFAULT 'Unpaid'" },
         { name: 'status_updated_at', type: 'DATETIME' }
       ];
@@ -495,6 +497,7 @@ function migrateComplaintsTable() {
         }
       }
       db.exec(`UPDATE complaints SET status_updated_at = created_at WHERE status_updated_at IS NULL`);
+      db.exec(`UPDATE complaints SET payment_collected_at = status_updated_at WHERE payment_collected > 0 AND payment_collected_at IS NULL`);
 
       // WhatsApp Number Registry (tracks verified vs non-WhatsApp/Invite-required numbers)
       db.exec(`

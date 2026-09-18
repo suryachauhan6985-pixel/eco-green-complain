@@ -820,9 +820,9 @@ export const ComplaintDetailDrawer = ({
                             </div>
                             <p className="text-[11px] text-slate-600 leading-relaxed">
                               {ticket.company_settlement_status === 'Settled with Company' ? (
-                                <>Amount ₹<strong>{ticket.payment_collected}</strong> received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
+                                <>Amount ₹<strong>{ticket.payment_collected}</strong> {ticket.payment_collected_at ? `(collected on ${new Date(ticket.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at ${new Date(ticket.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })})` : ''} received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
                               ) : (
-                                <>₹<strong>{ticket.payment_collected}</strong> was collected by <strong>{ticket.assigned_tech_name || ticket.technician_name || 'the technician'}</strong> and is currently in technician's possession.</>
+                                <>₹<strong>{ticket.payment_collected}</strong> was collected {ticket.payment_collected_at ? `on ${new Date(ticket.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at ${new Date(ticket.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''} by <strong>{ticket.assigned_tech_name || ticket.technician_name || 'the technician'}</strong> and is currently in technician's possession.</>
                               )}
                             </p>
                           </div>

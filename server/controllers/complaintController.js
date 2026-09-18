@@ -490,13 +490,15 @@ async function recordPayment(req, res) {
     db.prepare(`
       UPDATE complaints SET
         payment_collected = ?,
+        payment_collected_at = CURRENT_TIMESTAMP,
+        payment_mode = ?,
         payment_status = ?,
         company_settlement_status = ?,
         company_settled_at = ?,
         company_settled_by = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(amount, paymentStatus, settlementStatus, settledAt, settledBy, id);
+    `).run(amount, payment_mode, paymentStatus, settlementStatus, settledAt, settledBy, id);
 
     const noteText = `Payment of ₹${amount} recorded via ${payment_mode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''} ${notes ? `• ${notes}` : ''}`;
 

@@ -147,13 +147,29 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
     };
   });
 
-  // Grand totals across all technicians
+  // Scoped Technician Profiles
+  const myTechData = techCashBreakdown.find(t => 
+    (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
+    (techProfile && String(t.id) === String(techProfile.id)) ||
+    (currentUser?.email && t.email === currentUser.email)
+  ) || techCashBreakdown[0];
+
+  const visibleTechs = currentUser?.role === 'technician'
+    ? (myTechData ? [myTechData] : [])
+    : techCashBreakdown;
+
+  // Grand totals across all technicians (for admin/staff)
   const overallCashCollected = techCashBreakdown.reduce((sum, t) => sum + t.totalCollected, 0);
   const overallCashSettled = techCashBreakdown.reduce((sum, t) => sum + t.totalSettled, 0);
   const overallCashDue = techCashBreakdown.reduce((sum, t) => sum + t.cashInHandDue, 0);
 
-  const activeComplaints = complaints.filter(c => ['Assigned', 'In Progress', 'On Hold', 'Reopened'].includes(c.status));
-  const resolvedComplaints = complaints.filter(c => ['Resolved', 'Closed'].includes(c.status));
+  // Scoped complaints: If logged in as technician, ONLY show jobs assigned to this technician!
+  const scopedComplaints = currentUser?.role === 'technician' && myTechData
+    ? complaints.filter(c => String(c.assigned_technician_id) === String(myTechData.id) || String(c.technician_id) === String(myTechData.id))
+    : complaints;
+
+  const activeComplaints = scopedComplaints.filter(c => ['Assigned', 'In Progress', 'On Hold', 'Reopened'].includes(c.status));
+  const resolvedComplaints = scopedComplaints.filter(c => ['Resolved', 'Closed'].includes(c.status));
 
   const currentTabList = activeTab === 'active' ? activeComplaints : resolvedComplaints;
 
@@ -228,96 +244,140 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <IndianRupee className="w-4 h-4 text-emerald-600" />
-              <span>Technician Cash Collection & Company Settlement Register</span>
+              <span>{currentUser?.role === 'technician' ? 'My Cash Collection & Company Settlement Register' : 'Technician Cash Collection & Company Settlement Register'}</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Track cash collected from customers by each technician, inspect ticket breakdown, and settle balances.
+              {currentUser?.role === 'technician' 
+                ? 'Track cash you collected from customers, verify ticket dates & timestamps, and review settlement status.' 
+                : 'Track cash collected from customers by each technician, inspect ticket breakdown, and settle balances.'}
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <span className="text-[11px] font-mono px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg font-semibold">
-              {technicians.length} Registered Techs
+              {currentUser?.role === 'technician' ? (techProfile?.name || 'Technician Desk') : `${technicians.length} Registered Techs`}
             </span>
           </div>
         </div>
 
-        {/* Company Overview Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
-            <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Customer Cash Collected</span>
-            <strong className="text-lg font-black text-slate-800 font-mono block mt-1">₹{overallCashCollected}</strong>
-            <span className="text-[10px] text-slate-400">Across all field service jobs</span>
-          </div>
-
-          <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200/80">
-            <span className="text-[10px] uppercase font-bold text-emerald-800 block">Deposited / Settled with Company</span>
-            <strong className="text-lg font-black text-emerald-700 font-mono block mt-1">₹{overallCashSettled}</strong>
-            <span className="text-[10px] text-emerald-600 font-medium">Safe in company bank/office accounts</span>
-          </div>
-
-          <div className={`p-3.5 rounded-xl border ${
-            overallCashDue > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
-          }`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-[10px] uppercase font-bold block ${overallCashDue > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
-                Cash in Hand (Due from Techs)
-              </span>
-              {overallCashDue > 0 && (
-                <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
-                  Deposit Pending
-                </span>
-              )}
+        {/* Overview Cards: Scoped to logged-in tech if technician, or company-wide if admin */}
+        {currentUser?.role === 'technician' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] uppercase font-bold text-slate-500 block">My Customer Cash Collected</span>
+              <strong className="text-lg font-black text-slate-800 font-mono block mt-1">₹{myTechData?.totalCollected || 0}</strong>
+              <span className="text-[10px] text-slate-400">Total collected across your assigned jobs</span>
             </div>
-            <strong className={`text-lg font-black font-mono block mt-1 ${overallCashDue > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
-              ₹{overallCashDue}
-            </strong>
-            <span className="text-[10px] text-amber-800">
-              {overallCashDue > 0 ? 'Cash currently with field technicians' : 'All collected cash has been deposited'}
-            </span>
-          </div>
-        </div>
 
-        {/* Technician-Wise Breakdown List */}
+            <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200/80">
+              <span className="text-[10px] uppercase font-bold text-emerald-800 block">Deposited / Settled with Company</span>
+              <strong className="text-lg font-black text-emerald-700 font-mono block mt-1">₹{myTechData?.totalSettled || 0}</strong>
+              <span className="text-[10px] text-emerald-600 font-medium">Safe & verified in company accounts</span>
+            </div>
+
+            <div className={`p-3.5 rounded-xl border ${
+              (myTechData?.cashInHandDue || 0) > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] uppercase font-bold block ${(myTechData?.cashInHandDue || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
+                  Cash in Hand (To Deposit)
+                </span>
+                {(myTechData?.cashInHandDue || 0) > 0 && (
+                  <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
+                    Deposit Pending
+                  </span>
+                )}
+              </div>
+              <strong className={`text-lg font-black font-mono block mt-1 ${(myTechData?.cashInHandDue || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
+                ₹{myTechData?.cashInHandDue || 0}
+              </strong>
+              <span className="text-[10px] text-amber-800">
+                {(myTechData?.cashInHandDue || 0) > 0 ? 'Please deposit this cash at the company office/account' : 'All collected cash has been deposited'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Customer Cash Collected</span>
+              <strong className="text-lg font-black text-slate-800 font-mono block mt-1">₹{overallCashCollected}</strong>
+              <span className="text-[10px] text-slate-400">Across all field service jobs</span>
+            </div>
+
+            <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200/80">
+              <span className="text-[10px] uppercase font-bold text-emerald-800 block">Deposited / Settled with Company</span>
+              <strong className="text-lg font-black text-emerald-700 font-mono block mt-1">₹{overallCashSettled}</strong>
+              <span className="text-[10px] text-emerald-600 font-medium">Safe in company bank/office accounts</span>
+            </div>
+
+            <div className={`p-3.5 rounded-xl border ${
+              overallCashDue > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] uppercase font-bold block ${overallCashDue > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
+                  Cash in Hand (Due from Techs)
+                </span>
+                {overallCashDue > 0 && (
+                  <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
+                    Deposit Pending
+                  </span>
+                )}
+              </div>
+              <strong className={`text-lg font-black font-mono block mt-1 ${overallCashDue > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
+                ₹{overallCashDue}
+              </strong>
+              <span className="text-[10px] text-amber-800">
+                {overallCashDue > 0 ? 'Cash currently with field technicians' : 'All collected cash has been deposited'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Cash Details & Applications Breakdown: ONLY show logged-in tech for technicians, or full list for admin/staff */}
         <div className="space-y-3 pt-2">
           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            Technicians Cash Details & Applications Breakdown
+            {currentUser?.role === 'technician' ? 'My Cash Collection Tickets & Timestamp History' : 'Technicians Cash Details & Applications Breakdown'}
           </h4>
 
           <div className="space-y-3">
-            {techCashBreakdown.map((tech) => {
-              const isExpanded = expandedTechId === tech.id;
-              const hasDue = tech.cashInHandDue > 0;
+            {visibleTechs.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                No cash collection records found.
+              </div>
+            ) : (
+              visibleTechs.map((tech) => {
+                const isExpanded = currentUser?.role === 'technician' || expandedTechId === tech.id;
+                const hasDue = tech.cashInHandDue > 0;
 
-              return (
-                <div 
-                  key={tech.id} 
-                  className={`rounded-2xl border transition-all overflow-hidden ${
-                    hasDue ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  {/* Technician Summary Header Bar */}
-                  <div className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                        hasDue ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'
-                      }`}>
-                        {tech.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-sm text-slate-900">{tech.name}</h4>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            tech.is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {tech.is_available ? '🟢 On Duty' : '⚪ Off Duty'}
-                          </span>
+                return (
+                  <div 
+                    key={tech.id} 
+                    className={`rounded-2xl border transition-all overflow-hidden ${
+                      hasDue ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    {/* Technician Summary Header Bar */}
+                    <div className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                          hasDue ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {tech.name.charAt(0).toUpperCase()}
                         </div>
-                        <p className="text-xs text-slate-500 font-mono">
-                          +{tech.phone} • Zone: <strong>{tech.area_zone}</strong>
-                        </p>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm text-slate-900">{tech.name}</h4>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                              tech.is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {tech.is_available ? '🟢 On Duty' : '⚪ Off Duty'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono">
+                            {tech.phone ? (tech.phone.startsWith('+') ? tech.phone : `+${tech.phone}`) : 'No phone set'} • Zone: <strong>{tech.area_zone}</strong>
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
                     {/* Cash Totals for this Technician */}
                     <div className="flex flex-wrap items-center gap-3 sm:gap-4 self-start md:self-auto text-xs">
@@ -419,6 +479,14 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                                     <td className="py-2.5 px-3 font-mono">
                                       <strong className="text-slate-900 text-xs font-black">₹{comp.payment_collected || 0}</strong>
                                       <span className="text-[10px] text-slate-400 block">({comp.payment_status || 'Paid'})</span>
+                                      {comp.payment_collected_at ? (
+                                        <span className="text-[9px] text-slate-600 font-sans block mt-0.5" title="Payment Collection Date & Timestamp">
+                                          📅 {new Date(comp.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{' '}
+                                          ⏰ {new Date(comp.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] text-slate-400 font-sans block mt-0.5">Date recorded</span>
+                                      )}
                                     </td>
                                     <td className="py-2.5 px-3">
                                       {isSettled ? (
@@ -461,7 +529,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
       </div>
