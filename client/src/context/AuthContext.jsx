@@ -4,9 +4,9 @@ import { api, setAuthToken, getAuthToken } from '../api/client';
 const AuthContext = createContext();
 
 export const DEMO_PROFILES = {
-  admin: { email: 'admin@ecogreensolar.com', name: 'Admin Supervisor', role: 'admin' },
-  staff: { email: 'staff@ecogreensolar.com', name: 'Pooja Sharma (Helpdesk)', role: 'staff' },
-  technician: { email: 'rohit.tech@ecogreensolar.com', name: 'Rohit Kumar', role: 'technician' },
+  admin: { email: 'admin@ecogreensolar.com', username: 'admin', phone: '6352454247', name: 'Admin Supervisor', role: 'admin' },
+  staff: { email: 'staff@ecogreensolar.com', username: 'staff', name: 'Pooja Sharma (Helpdesk)', role: 'staff' },
+  technician: { email: 'rohit.tech@ecogreensolar.com', username: 'rohit', name: 'Rohit Kumar', role: 'technician' },
   customer: { email: 'customer@portal.local', name: 'Customer View', role: 'customer' }
 };
 

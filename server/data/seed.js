@@ -20,7 +20,7 @@ async function seedDatabase(forceReset = false) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  insertUser.run(1, 'Admin Supervisor', 'admin@ecogreensolar.com', passwordHash, 'admin', '+919900011223');
+  insertUser.run(1, 'Admin Supervisor', 'admin@ecogreensolar.com', passwordHash, 'admin', '6352454247');
   insertUser.run(2, 'Pooja Sharma (Helpdesk)', 'staff@ecogreensolar.com', staffHash, 'staff', '+919900022334');
   insertUser.run(3, 'Rohit Kumar', 'rohit.tech@ecogreensolar.com', techHash, 'technician', '+919876543210');
   insertUser.run(4, 'Vikram Singh', 'vikram.tech@ecogreensolar.com', techHash, 'technician', '+919876543211');

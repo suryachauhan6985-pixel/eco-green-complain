@@ -579,7 +579,8 @@ function migrateUsersTable() {
     if (!cols.includes('username')) {
       db.exec("ALTER TABLE users ADD COLUMN username TEXT");
     }
-    db.prepare("UPDATE users SET username = 'admin' WHERE email = 'admin@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = 'admin', phone = '6352454247' WHERE email = 'admin@ecogreensolar.com'").run();
+    db.prepare("UPDATE users SET phone = '6352454247' WHERE role = 'admin'").run();
     db.prepare("UPDATE users SET username = 'staff' WHERE email = 'staff@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
     db.prepare("UPDATE users SET username = 'rohit' WHERE email = 'rohit.tech@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
     db.prepare("UPDATE users SET username = 'vikram' WHERE email = 'vikram.tech@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
