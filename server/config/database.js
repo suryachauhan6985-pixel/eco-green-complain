@@ -573,6 +573,24 @@ function migrateNotificationTemplates() {
   }
 }
 
+function migrateUsersTable() {
+  try {
+    const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+    if (!cols.includes('username')) {
+      db.exec("ALTER TABLE users ADD COLUMN username TEXT");
+    }
+    db.prepare("UPDATE users SET username = 'admin' WHERE email = 'admin@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = 'staff' WHERE email = 'staff@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = 'rohit' WHERE email = 'rohit.tech@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = 'vikram' WHERE email = 'vikram.tech@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = 'suresh' WHERE email = 'suresh.tech@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = 'manoj' WHERE email = 'manoj.tech@ecogreensolar.com' AND (username IS NULL OR username = '')").run();
+    db.prepare("UPDATE users SET username = SUBSTR(email, 1, INSTR(email, '@') - 1) WHERE (username IS NULL OR username = '') AND INSTR(email, '@') > 1").run();
+  } catch (e) {
+    console.warn('[Database] Users table migration note:', e.message);
+  }
+}
+
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
 } catch (e) {}
@@ -580,6 +598,7 @@ try {
 initializeSchema();
 migrateComplaintsTable();
 migrateWhatsAppMessagesTable();
+migrateUsersTable();
 
 // Attach Turso continuous cloud sync hook
 const tursoSync = require('../services/tursoSyncService');

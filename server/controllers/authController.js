@@ -5,19 +5,32 @@ const { JWT_SECRET } = require('../middleware/auth');
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const identifier = (req.body.identifier || req.body.email || req.body.username || '').trim();
+    const { password } = req.body;
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'User ID / Username and password are required' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email);
+    const cleanPhone = identifier.replace(/[^0-9]/g, '');
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '';
+
+    const user = db.prepare(`
+      SELECT * FROM users 
+      WHERE (
+        LOWER(email) = LOWER(?) 
+        OR LOWER(COALESCE(username, '')) = LOWER(?) 
+        OR (? != '' AND REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ?)
+      ) AND is_active = 1
+      LIMIT 1
+    `).get(identifier, identifier, last10, `%${last10}%`);
+
     if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid User ID or password' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid User ID or password' });
     }
 
     // Find technician record if user is technician
@@ -31,6 +44,7 @@ async function login(req, res) {
       {
         id: user.id,
         name: user.name,
+        username: user.username,
         email: user.email,
         role: user.role,
         technicianId
@@ -44,6 +58,7 @@ async function login(req, res) {
       user: {
         id: user.id,
         name: user.name,
+        username: user.username,
         email: user.email,
         role: user.role,
         phone: user.phone,
@@ -77,7 +92,7 @@ function getMe(req, res) {
 
 function listUsers(req, res) {
   try {
-    const users = db.prepare('SELECT id, name, email, role, phone, is_active, created_at FROM users ORDER BY id ASC').all();
+    const users = db.prepare('SELECT id, name, username, email, role, phone, is_active, created_at FROM users ORDER BY id ASC').all();
     res.json({ users });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch users list' });
@@ -86,23 +101,35 @@ function listUsers(req, res) {
 
 async function createUser(req, res) {
   try {
-    const { name, email, password, role, phone, area_zone, specialization } = req.body;
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ error: 'Name, email, password and role are required' });
+    let { name, username, email, password, role, phone, area_zone, specialization } = req.body;
+    if (!name || !password || !role) {
+      return res.status(400).json({ error: 'Name, password and role are required' });
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    if (!username || !username.trim()) {
+      username = (name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + Math.floor(100 + Math.random() * 900)).replace(/\.+/g, '.');
+    } else {
+      username = username.trim().toLowerCase();
+    }
+
+    if (!email || !email.trim()) {
+      email = `${username}@ecogreensolar.internal`;
+    } else {
+      email = email.trim();
+    }
+
+    const existing = db.prepare('SELECT id FROM users WHERE email = ? OR LOWER(username) = ?').get(email, username);
     if (existing) {
-      return res.status(400).json({ error: 'User with this email already exists' });
+      return res.status(400).json({ error: 'User with this User ID / Username or email already exists' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const insert = db.prepare(`
-      INSERT INTO users (name, email, password_hash, role, phone)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (name, username, email, password_hash, role, phone)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    const result = insert.run(name, email, passwordHash, role, phone || null);
+    const result = insert.run(name, username, email, passwordHash, role, phone || null);
     const userId = result.lastInsertRowid;
 
     if (role === 'technician') {
@@ -122,7 +149,7 @@ async function createUser(req, res) {
 
     res.status(201).json({
       message: 'User created successfully',
-      user: { id: userId, name, email, role, phone }
+      user: { id: userId, name, username, email, role, phone }
     });
   } catch (err) {
     console.error('Create user error:', err);

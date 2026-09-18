@@ -1,0 +1,25 @@
+﻿{
+  "name": "Eco Green Solar — Complaint Management System",
+  "short_name": "Eco Green CMS",
+  "description": "Enterprise solar rooftop, water heater and heat pump service management portal",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#064e3b",
+  "theme_color": "#047857",
+  "icons": [
+    {
+      "src": "/company-logo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/company-logo-white.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"]
+}

@@ -208,45 +208,8 @@ function AppContent() {
           onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
           onToggleNotificationDrawer={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
           onOpenTour={() => setIsTourOpen(true)}
-          onReloadDemoData={handleReloadDemoData}
         />
       </div>
-
-      {/* Demo Mode & Quick Tour Banner (Shrink-0) */}
-      <div className="shrink-0 bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 text-white px-4 py-2 text-xs shadow-xs z-20">
-        <div className="max-w-[1780px] w-full mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300"></span>
-            </span>
-            <span className="font-semibold text-emerald-100">
-              ✨ Interactive System:
-            </span>
-            <span className="text-slate-200 hidden md:inline">
-              12+ Preloaded Complaints (Rooftop Solar, Water Heaters & Heat Pumps) with live WhatsApp & Email simulation.
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            <button
-              onClick={handleReloadDemoData}
-              className="bg-white/10 hover:bg-white/20 text-emerald-100 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition-colors"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reload 12+ Dummy Tickets</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Success Toast */}
-      {resetSuccessToast && (
-        <div className="fixed bottom-14 right-6 z-50 bg-emerald-800 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold animate-in fade-in slide-in-from-bottom-5">
-          <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-          <span>Demo Data successfully reset with 12+ realistic complaints!</span>
-        </div>
-      )}
 
       {/* Main Page Content — Spreads horizontally on wide screens, responsive on mobile */}
       <main className={`flex-1 min-h-0 w-full mx-auto ${

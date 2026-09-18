@@ -29,8 +29,6 @@ export const AuthProvider = ({ children }) => {
           setAuthToken(null);
           setCurrentUser(null);
         }
-      } else if (!hasLoggedOut) {
-        await quickLogin('admin@ecogreensolar.com', 'admin123');
       } else {
         setCurrentUser(null);
       }
@@ -40,38 +38,8 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  const quickLogin = async (email, password) => {
-    try {
-      const data = await api.login(email, password);
-      setAuthToken(data.token);
-      setCurrentUser(data.user);
-      localStorage.removeItem('egs_logged_out');
-      return data.user;
-    } catch (err) {
-      console.error('Quick login failed:', err);
-    }
-  };
-
-  const switchRole = async (targetRole) => {
-    setLoading(true);
-    try {
-      if (targetRole === 'customer') {
-        setAuthToken(null);
-        setCurrentUser({ id: null, name: 'Customer (Public Portal)', role: 'customer', email: 'guest@portal' });
-      } else if (targetRole === 'admin') {
-        await quickLogin('admin@ecogreensolar.com', 'admin123');
-      } else if (targetRole === 'staff') {
-        await quickLogin('staff@ecogreensolar.com', 'staff123');
-      } else if (targetRole === 'technician') {
-        await quickLogin('rohit.tech@ecogreensolar.com', 'tech123');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const login = async (email, password) => {
-    const data = await api.login(email, password);
+  const login = async (identifier, password) => {
+    const data = await api.login(identifier, password);
     setAuthToken(data.token);
     setCurrentUser(data.user);
     localStorage.removeItem('egs_logged_out');

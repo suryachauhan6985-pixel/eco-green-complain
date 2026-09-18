@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  Sun, Shield, Users, Wrench, Search, Lock, Mail, 
-  Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles, AlertCircle 
+  Sun, Shield, Users, Wrench, Search, Lock, User, 
+  Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles, AlertCircle, Phone 
 } from 'lucide-react';
 
 const SLIDES = [
   {
+    id: 0,
+    tabName: 'Solar Care',
     badge: 'Solar Care Excellence',
     title: 'Empowering Sustainable Energy & Customer Care',
     desc: 'Dedicated service intelligence portal committed to clean energy reliability, rapid response, and seamless on-site solar assistance across Gujarat.',
@@ -17,6 +19,8 @@ const SLIDES = [
     ]
   },
   {
+    id: 1,
+    tabName: 'Field Tech',
     badge: 'Technician Mobility',
     title: 'Empowering Gujarat Field Technicians',
     desc: 'Smart mobile-optimized tooling enabling on-ground engineers to locate consumer sites, verify inverter faults, and record spare parts.',
@@ -27,6 +31,8 @@ const SLIDES = [
     ]
   },
   {
+    id: 2,
+    tabName: 'Operations',
     badge: 'Automated Operations',
     title: 'Intelligent Service Governance & SLA',
     desc: 'Real-time oversight for managers and helpdesk staff to monitor resolution velocity, technician allocations, and customer satisfaction.',
@@ -40,19 +46,19 @@ const SLIDES = [
 
 export const LoginPage = ({ onSwitchToCustomer }) => {
   const { login } = useAuth();
-  const [email, setEmail] = useState('admin@ecogreensolar.com');
+  const [identifier, setIdentifier] = useState('admin');
   const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeRoleTab, setActiveRoleTab] = useState('admin'); // admin | staff | technician
 
-  const DEMO_ACCOUNTS = [
+  const ROLE_PRESETS = [
     {
       role: 'admin',
       label: 'Admin',
       fullName: 'Admin Supervisor',
-      email: 'admin@ecogreensolar.com',
+      username: 'admin',
       password: 'admin123',
       icon: Shield,
       desc: 'Master access, user management, and full analytics'
@@ -61,7 +67,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
       role: 'staff',
       label: 'Support Staff',
       fullName: 'Pooja Sharma (Helpdesk)',
-      email: 'staff@ecogreensolar.com',
+      username: 'staff',
       password: 'staff123',
       icon: Users,
       desc: 'Register complaints, assign technicians, follow-up'
@@ -70,7 +76,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
       role: 'technician',
       label: 'Technician',
       fullName: 'Rohit Kumar (Field Tech)',
-      email: 'rohit.tech@ecogreensolar.com',
+      username: 'rohit',
       password: 'tech123',
       icon: Wrench,
       desc: 'Mobile field workspace, resolutions, spare parts'
@@ -78,17 +84,33 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
   ];
 
   const [activeSlide, setActiveSlide] = useState(0);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % SLIDES.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, []);
+    setProgress(0);
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          return 0;
+        }
+        return prev + 2;
+      });
+    }, 100);
 
-  const handleSelectDemoRole = (acc) => {
+    const slideTimer = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % SLIDES.length);
+      setProgress(0);
+    }, 5000);
+
+    return () => {
+      clearInterval(progressInterval);
+      clearInterval(slideTimer);
+    };
+  }, [activeSlide]);
+
+  const handleSelectPreset = (acc) => {
     setActiveRoleTab(acc.role);
-    setEmail(acc.email);
+    setIdentifier(acc.username);
     setPassword(acc.password);
     setError('');
   };
@@ -99,9 +121,9 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(identifier, password);
     } catch (err) {
-      setError(err.message || 'Invalid email or password. Please try again.');
+      setError(err.message || 'Invalid User ID or password. Please verify and try again.');
     } finally {
       setLoading(false);
     }
@@ -114,71 +136,86 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-teal-600/20 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 z-10">
-        {/* Left Side: Brand Visual & Features */}
+        {/* Left Side: Brand Visual & Interactive Carousel */}
         <div className="lg:col-span-5 bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 p-6 sm:p-8 text-white flex flex-col justify-between relative overflow-hidden">
           {/* Subtle moving ambient glows */}
           <div className="absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/20 rounded-full blur-2xl animate-pulse pointer-events-none" />
           <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-teal-400/20 rounded-full blur-2xl animate-pulse pointer-events-none" />
 
-          <div className="relative z-10">
-            {/* Official Transparent Company Logo (no white background box) */}
-            <div className="mb-6 flex items-center">
-              <img 
-                src="/company-logo-white.png" 
-                alt="Eco Green Solar" 
-                className="h-11 sm:h-12 w-auto object-contain filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.35)]" 
-              />
-            </div>
+          <div className="relative z-10 flex flex-col h-full justify-between">
+            <div>
+              {/* Perfectly Centered & Enlarged Transparent Logo */}
+              <div className="mb-6 flex justify-center items-center py-2">
+                <img 
+                  src="/company-logo-white.png" 
+                  alt="Eco Green Solar" 
+                  className="h-14 sm:h-16 w-auto object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] hover:scale-105 transition-transform" 
+                />
+              </div>
 
-            {/* Dynamic Animated Slide Content */}
-            <div className="transition-all duration-500 min-h-[310px] flex flex-col justify-between">
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-semibold text-emerald-300 mb-3 backdrop-blur-xs">
-                  <Sparkles className="w-3 h-3 text-emerald-300 animate-spin" style={{ animationDuration: '8s' }} />
-                  <span>{SLIDES[activeSlide].badge}</span>
-                </div>
+              {/* Interactive Carousel Slide Selector Chips */}
+              <div className="flex items-center gap-1.5 p-1 bg-white/10 backdrop-blur-md rounded-2xl mb-4 border border-white/10">
+                {SLIDES.map((slide, idx) => {
+                  const isActive = activeSlide === idx;
+                  return (
+                    <button
+                      key={slide.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSlide(idx);
+                        setProgress(0);
+                      }}
+                      className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer relative overflow-hidden text-center ${
+                        isActive 
+                          ? 'bg-emerald-500 text-white shadow-xs' 
+                          : 'text-emerald-200/70 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{slide.tabName}</span>
+                      {isActive && (
+                        <div 
+                          className="absolute bottom-0 left-0 h-0.5 bg-amber-300 transition-all duration-100" 
+                          style={{ width: `${progress}%` }} 
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
-                <h2 className="text-xl sm:text-2xl font-black text-white leading-tight mb-2 transition-all duration-300">
-                  {SLIDES[activeSlide].title}
-                </h2>
-                <p className="text-xs text-emerald-100/90 leading-relaxed mb-5">
-                  {SLIDES[activeSlide].desc}
-                </p>
+              {/* Dynamic Animated Slide Content */}
+              <div className="transition-all duration-500 min-h-[290px] flex flex-col justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-semibold text-emerald-300 mb-2.5 backdrop-blur-xs">
+                    <Sparkles className="w-3 h-3 text-emerald-300 animate-spin" style={{ animationDuration: '8s' }} />
+                    <span>{SLIDES[activeSlide].badge}</span>
+                  </div>
 
-                {/* Animated Highlights */}
-                <div className="space-y-3">
-                  {SLIDES[activeSlide].highlights.map((h, i) => (
-                    <div key={i} className="flex items-start gap-2.5 text-xs text-emerald-50/95 animate-in fade-in slide-in-from-left-2 duration-300">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span><strong>{h.label}:</strong> {h.detail}</span>
-                    </div>
-                  ))}
+                  <h2 className="text-xl sm:text-2xl font-black text-white leading-tight mb-2 transition-all duration-300">
+                    {SLIDES[activeSlide].title}
+                  </h2>
+                  <p className="text-xs text-emerald-100/90 leading-relaxed mb-4">
+                    {SLIDES[activeSlide].desc}
+                  </p>
+
+                  {/* Animated Highlights */}
+                  <div className="space-y-2.5">
+                    {SLIDES[activeSlide].highlights.map((h, i) => (
+                      <div key={i} className="flex items-start gap-2 text-xs text-emerald-50/95 animate-in fade-in slide-in-from-left-2 duration-300">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <span><strong>{h.label}:</strong> {h.detail}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Carousel Navigation Dots */}
-            <div className="flex items-center gap-2 mt-6">
-              {SLIDES.map((_, idx) => (
-                <button
-                  type="button"
-                  key={idx}
-                  onClick={() => setActiveSlide(idx)}
-                  className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                    activeSlide === idx 
-                      ? 'w-6 bg-emerald-400 shadow-sm shadow-emerald-400/50' 
-                      : 'w-1.5 bg-white/30 hover:bg-white/60'
-                  }`}
-                  aria-label={`Go to slide ${idx + 1}`}
-                />
-              ))}
+            {/* Footer note on left */}
+            <div className="mt-6 pt-3 border-t border-emerald-700/50 text-[11px] text-emerald-200/80 flex items-center justify-between">
+              <span>© 2026 Eco Green Solar</span>
+              <span className="font-mono text-[10px] bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-600/40 text-emerald-300">CMS Enterprise</span>
             </div>
-          </div>
-
-          {/* Footer note on left */}
-          <div className="mt-6 pt-4 border-t border-emerald-700/50 text-[11px] text-emerald-200/80 flex items-center justify-between relative z-10">
-            <span>© 2026 Eco Green Solar</span>
-            <span className="font-mono">v1.0.0</span>
           </div>
         </div>
 
@@ -191,26 +228,26 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                   Staff & Technician Sign In
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Select a test account or enter your company credentials
+                  Sign in with your Eco Green credentials
                 </p>
               </div>
             </div>
 
-            {/* 1-Click Role Quick Buttons */}
+            {/* Role Quick-Select Presets */}
             <div className="mb-5">
               <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Quick Role Selection
+                Quick Access Roles
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {DEMO_ACCOUNTS.map((acc) => {
+                {ROLE_PRESETS.map((acc) => {
                   const Icon = acc.icon;
                   const isSelected = activeRoleTab === acc.role;
                   return (
                     <button
                       type="button"
                       key={acc.role}
-                      onClick={() => handleSelectDemoRole(acc)}
-                      className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 ${
+                      onClick={() => handleSelectPreset(acc)}
+                      className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
                         isSelected
                           ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20 font-bold shadow-xs'
                           : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-slate-50/50'
@@ -238,16 +275,16 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Email Address
+                  User ID / Username / Mobile
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@ecogreensolar.com"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="e.g. admin, rohit, or phone number"
                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-900"
                   />
                 </div>
@@ -270,7 +307,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -310,17 +347,17 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
 
           {/* Customer Self-Service Link (Zero Login Needed) */}
           <div className="mt-6 pt-4 border-t border-slate-100">
-            <div className="p-3 bg-slate-50 hover:bg-emerald-50/50 rounded-2xl border border-slate-200 transition-colors flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-white rounded-xl text-emerald-700 border border-slate-200">
-                  <Search className="w-4 h-4" />
+            <div className="p-3.5 bg-slate-50 hover:bg-emerald-50/50 rounded-2xl border border-slate-200 transition-colors flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3 text-center sm:text-left">
+                <div className="p-2.5 bg-white rounded-xl text-emerald-700 border border-slate-200 shrink-0 shadow-2xs">
+                  <Search className="w-5 h-5" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-900">
-                    Are you a Customer?
+                    Are you an Eco Green Customer?
                   </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Track your complaint or raise service request without logging in.
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Track your complaint or raise a service ticket without logging in.
                   </p>
                 </div>
               </div>
@@ -328,7 +365,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
               <button
                 type="button"
                 onClick={onSwitchToCustomer}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-all shrink-0 active:scale-95"
+                className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all shrink-0 active:scale-95 cursor-pointer text-center"
               >
                 Public Portal →
               </button>

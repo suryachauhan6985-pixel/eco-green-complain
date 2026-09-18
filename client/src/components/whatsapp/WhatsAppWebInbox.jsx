@@ -1155,10 +1155,10 @@ export const WhatsAppWebInbox = ({
         {selectedPhone ? (
           <>
             {/* Top WhatsApp Conversation Header */}
-            <div className="bg-[#f0f2f5] px-3 sm:px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0">
+            <div className="bg-[#f0f2f5] px-2.5 sm:px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0 gap-2">
               <div 
                 onClick={() => setIsContactInfoOpen(true)}
-                className="flex items-center gap-2 sm:gap-3 min-w-0 cursor-pointer group"
+                className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 cursor-pointer group"
                 title="Click to view contact info"
               >
                 {/* Mobile Back button */}
@@ -1171,7 +1171,7 @@ export const WhatsAppWebInbox = ({
                 </button>
 
                 {/* Avatar */}
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs ${
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs ${
                   selectedConv?.is_pinned 
                     ? 'bg-slate-800 text-white' 
                     : selectedConv?.ticket_id 
@@ -1181,10 +1181,26 @@ export const WhatsAppWebInbox = ({
                   {renderAvatarContent(contactInfo?.sender_name || selectedConv?.sender_name, selectedPhone, "w-4 h-4")}
                 </div>
 
-                {/* Name & Live Status */}
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-sm text-[#111b21] truncate group-hover:text-[#008069] transition-colors flex items-center gap-1.5">
-                    <span className="truncate">{contactInfo?.sender_name || selectedConv?.sender_name || `+${selectedPhone}`}</span>
+                {/* Name & Live Status & Mobile Ticket Badge */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h3 className="font-semibold text-sm text-[#111b21] truncate group-hover:text-[#008069] transition-colors">
+                      {contactInfo?.sender_name || selectedConv?.sender_name || `+${selectedPhone}`}
+                    </h3>
+
+                    {/* Compact Ticket Badge on Mobile (Inline next to name, never overlaps) */}
+                    {(contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) && (
+                      <span className="sm:hidden px-1.5 py-0.2 bg-blue-100 text-blue-800 font-mono text-[10px] font-bold rounded shrink-0">
+                        #{contactInfo?.ticket_id || selectedConv?.ticket_id}
+                      </span>
+                    )}
+
+                    {contactInfo?.is_technician && (
+                      <span className="sm:hidden px-1.5 py-0.2 bg-teal-100 text-teal-800 text-[10px] font-bold rounded shrink-0">
+                        Tech
+                      </span>
+                    )}
+
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1197,17 +1213,19 @@ export const WhatsAppWebInbox = ({
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
-                  </h3>
-                  <p className="text-[11px] text-[#667781] truncate font-mono">
-                    +91 {selectedPhone.replace(/^91/, '')} • <span className="text-[#008069]">online / WhatsApp</span>
+                  </div>
+
+                  <p className="text-[11px] text-[#667781] truncate font-mono mt-0.2">
+                    +91 {selectedPhone.replace(/^91/, '')} • <span className="text-[#008069] font-medium">online</span>
                   </p>
                 </div>
               </div>
 
-              {/* Right Action Icons (Ticket Pill, Video, Search, Menu 3-Dots) */}
-              <div className="flex items-center gap-1.5 shrink-0 relative">
+              {/* Right Action Icons (Ticket Pill on Desktop, More Menu on Mobile) */}
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 relative">
+                {/* Desktop Full Ticket Pill */}
                 {contactInfo?.is_technician ? (
-                  <span className="px-2.5 py-1 bg-teal-50 border border-teal-200 text-teal-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs mr-1">
+                  <span className="hidden sm:inline-flex px-2.5 py-1 bg-teal-50 border border-teal-200 text-teal-800 rounded-lg text-xs font-bold items-center gap-1.5 shadow-2xs mr-1">
                     <Wrench className="w-3.5 h-3.5 text-teal-600" />
                     <span>Field Technician</span>
                   </span>
@@ -1222,7 +1240,7 @@ export const WhatsAppWebInbox = ({
                         setIsContactInfoOpen(true);
                       }
                     }}
-                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer mr-1"
+                    className="hidden sm:inline-flex px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold items-center gap-1.5 shadow-2xs transition-all cursor-pointer mr-1"
                     title="View Ticket in CMS"
                   >
                     <Ticket className="w-3.5 h-3.5 text-blue-700" />
@@ -1230,10 +1248,11 @@ export const WhatsAppWebInbox = ({
                   </button>
                 ) : null}
 
+                {/* Desktop Quick Actions */}
                 <button
                   type="button"
                   onClick={() => setIsContactInfoOpen(true)}
-                  className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
+                  className="hidden sm:inline-flex p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
                   title="Contact Information"
                 >
                   <User className="w-4 h-4" />
@@ -1242,7 +1261,7 @@ export const WhatsAppWebInbox = ({
                 <button
                   type="button"
                   onClick={() => showToast('In-app voice & video calling via WebRTC coming soon', 'info')}
-                  className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
+                  className="hidden sm:inline-flex p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
                   title="Video Call"
                 >
                   <Video className="w-4 h-4" />
@@ -1251,13 +1270,13 @@ export const WhatsAppWebInbox = ({
                 <button
                   type="button"
                   onClick={() => handleCopyPhone()}
-                  className="p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
+                  className="hidden sm:inline-flex p-1.5 hover:bg-[#e9edef] rounded-full text-[#54656f] transition-colors cursor-pointer"
                   title="Copy Phone"
                 >
                   <Copy className="w-4 h-4" />
                 </button>
 
-                {/* Header 3-Dots Button */}
+                {/* Header 3-Dots Button (Accessible on Mobile & Desktop) */}
                 <button
                   id="header-menu-button"
                   type="button"
@@ -1348,16 +1367,23 @@ export const WhatsAppWebInbox = ({
               </div>
             )}
 
-            {/* Main Messages Stream (Authentic WhatsApp Doodle Background) */}
+            {/* Main Messages Stream (Eco Green Solar Watermark Background) */}
             <div 
               className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#efeae2] relative"
               style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M9 15a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3v-6zm50 20a4 4 0 1 1 8 0 4 4 0 0 1-8 0zm35-15a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3v-8zM20 70a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm65 15a4 4 0 1 1 8 0 4 4 0 0 1-8 0zM15 105a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3v-6zm60 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' fill='%23707070' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E")`,
-                backgroundSize: '180px 180px'
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='140' height='140' viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='15' y='15' width='28' height='20' rx='2' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cline x1='29' y1='15' x2='29' y2='35' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cline x1='15' y1='25' x2='43' y2='25' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Ccircle cx='95' cy='25' r='7' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cpath d='M95 13v3 M95 34v3 M83 25h3 M104 25h3 M87 17l2 2 M101 31l2 2 M87 33l2-2 M101 19l2-2' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cpath d='M25 80 c0-8 8-12 15-12 c0 8-8 12-15 12z' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Ctext x='48' y='110' font-family='sans-serif' font-size='9' font-weight='800' fill='%23047857' fill-opacity='0.06' transform='rotate(-20 48 110)'%3EECO GREEN SOLAR%3C/text%3E%3C/svg%3E")`,
+                backgroundSize: '160px 160px'
               }}
             >
-              {renderMessageGroups()}
-              <div ref={messagesEndRef} />
+              {/* Central Translucent Company Watermark */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.035] select-none z-0">
+                <img src="/company-logo.png" alt="" className="w-72 sm:w-96 h-auto object-contain" />
+              </div>
+
+              <div className="relative z-1">
+                {renderMessageGroups()}
+                <div ref={messagesEndRef} />
+              </div>
             </div>
 
             {/* Pending File Attachment Banner */}

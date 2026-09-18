@@ -39,7 +39,7 @@ export const Navbar = ({
               <img 
                 src="/company-logo.png" 
                 alt="Eco Green Solar" 
-                className="h-9 sm:h-10 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity" 
+                className="h-11 sm:h-12 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity" 
               />
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0 hidden sm:inline-block">
                 CMS
@@ -243,7 +243,7 @@ export const Navbar = ({
                     <button
                       onClick={() => setRoleMenuOpen(!roleMenuOpen)}
                       className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold border border-slate-200 transition-colors max-w-[210px]"
-                      title="Click to Switch Portal / Role"
+                      title="Active Account & Profile"
                     >
                       <RoleIcon className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                       <span className="truncate">{currentRoleConfig.label}</span>
@@ -254,8 +254,8 @@ export const Navbar = ({
                     <button
                       onClick={() => setRoleMenuOpen(!roleMenuOpen)}
                       className="sm:hidden flex items-center gap-1 pl-1 pr-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-full border border-slate-200 shadow-2xs active:scale-95 transition-all shrink-0"
-                      title="Switch User Role"
-                      aria-label="Switch User Role"
+                      title="Active Account & Profile"
+                      aria-label="Active Account & Profile"
                     >
                       <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-2xs shrink-0">
                         <RoleIcon className="w-3.5 h-3.5 text-amber-200" />
@@ -277,63 +277,57 @@ export const Navbar = ({
                     onClick={() => setRoleMenuOpen(false)} 
                   />
 
-                  {/* Desktop Dropdown */}
-                  <div className="hidden sm:block absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="px-3.5 py-2 border-b border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        Switch Active Role / Portal
-                      </p>
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Logged in: <strong className="text-slate-900">{currentUser?.name}</strong>
+                  {/* Desktop Profile Dropdown */}
+                  <div className="hidden sm:block absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 py-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-4 pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                          {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 truncate">{currentUser?.name || 'Authorized User'}</p>
+                          <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            {currentRoleConfig.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2.5 pt-2 border-t border-slate-100/80 space-y-1 text-[11px] text-slate-500">
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-slate-400">User ID / Name:</span>
+                          <span className="font-mono text-slate-700 font-bold">{currentUser?.username || currentUser?.email?.split('@')[0] || 'admin'}</span>
+                        </div>
+                        {currentUser?.phone && (
+                          <div className="flex justify-between">
+                            <span className="font-semibold text-slate-400">Contact:</span>
+                            <span className="font-mono text-slate-700">+91 {currentUser.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100">
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        🔒 <strong>Secure Session:</strong> Direct role-switching is restricted. To switch accounts or portals, please log out and sign in with your assigned ID.
                       </p>
                     </div>
 
-                    {roles.map((r) => {
-                      const Icon = r.icon;
-                      const isSelected = currentUser?.role === r.id;
-                      return (
-                        <button
-                          key={r.id}
-                          onClick={() => {
-                            switchRole(r.id);
-                            setRoleMenuOpen(false);
-                            if (r.id === 'technician') setCurrentTab('technician');
-                            if (r.id === 'customer') setCurrentTab('customer');
-                            if (r.id === 'admin') setCurrentTab('complaints');
-                            if (r.id === 'staff') setCurrentTab('complaints');
-                          }}
-                          className={`w-full text-left px-3.5 py-2.5 flex items-start gap-2.5 hover:bg-slate-50 transition-colors ${
-                            isSelected ? 'bg-emerald-50/80 text-emerald-900 font-semibold' : 'text-slate-700'
-                          }`}
-                        >
-                          <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold flex items-center justify-between">
-                              <span>{r.label}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
-                            </div>
-                            <p className="text-[11px] text-slate-500 line-clamp-1">{r.desc}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-
                     {/* Desktop Sign Out Button */}
-                    <div className="px-2 pt-1.5 mt-1 border-t border-slate-100">
+                    <div className="px-3 pt-2">
                       <button
                         onClick={() => {
                           logout();
                           setRoleMenuOpen(false);
                         }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors"
+                        className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-98"
                       >
-                        <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                        <span>Sign Out to Login Screen</span>
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Log Out / Switch Account</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Mobile Centered Role Switcher Modal (Guaranteed No Cut-off & Perfectly Centered) */}
+                  {/* Mobile Centered Profile & Logout Modal */}
                   <div className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-4">
                     {/* Dark Backdrop */}
                     <div 
@@ -342,14 +336,14 @@ export const Navbar = ({
                     />
 
                     {/* Centered Modal Content */}
-                    <div className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-full max-w-sm max-h-[85vh] flex flex-col z-10 animate-in zoom-in-95 duration-150">
+                    <div className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-full max-w-sm flex flex-col z-10 animate-in zoom-in-95 duration-150">
                       <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 shrink-0">
                         <div>
                           <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
                             Eco Green Solar Portals
                           </p>
                           <p className="text-sm font-bold text-slate-900">
-                            Switch Active User Role
+                            Active User Account
                           </p>
                         </div>
                         <button 
@@ -361,55 +355,47 @@ export const Navbar = ({
                         </button>
                       </div>
 
-                      <div className="space-y-2 overflow-y-auto pr-0.5">
-                        {roles.map((r) => {
-                          const Icon = r.icon;
-                          const isSelected = currentUser?.role === r.id;
-                          return (
-                            <button
-                              key={r.id}
-                              onClick={() => {
-                                switchRole(r.id);
-                                setRoleMenuOpen(false);
-                                if (r.id === 'technician') setCurrentTab('technician');
-                                if (r.id === 'customer') setCurrentTab('customer');
-                                if (r.id === 'admin') setCurrentTab('complaints');
-                                if (r.id === 'staff') setCurrentTab('complaints');
-                              }}
-                              className={`w-full text-left p-3 rounded-2xl flex items-center gap-3 transition-all ${
-                                isSelected 
-                                  ? 'bg-emerald-50 text-emerald-950 font-bold border-2 border-emerald-500 shadow-xs' 
-                                  : 'bg-slate-50/90 text-slate-700 hover:bg-slate-100 border border-slate-200/70'
-                              }`}
-                            >
-                              <div className={`p-2.5 rounded-xl shrink-0 ${isSelected ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white text-slate-600 border border-slate-200'}`}>
-                                <Icon className="w-5 h-5" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-bold flex items-center justify-between">
-                                  <span className={isSelected ? 'text-emerald-950' : 'text-slate-800'}>{r.label}</span>
-                                  {isSelected && <Check className="w-4 h-4 text-emerald-600 font-bold shrink-0" />}
-                                </div>
-                                <p className="text-[11px] text-slate-500 font-normal truncate mt-0.5">{r.desc}</p>
-                              </div>
-                            </button>
-                          );
-                        })}
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 mb-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
+                            {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-sm font-bold text-slate-900 truncate">{currentUser?.name || 'User'}</h4>
+                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                              {currentRoleConfig.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs border-t border-slate-200/60 pt-2.5">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">User ID / Username:</span>
+                            <span className="font-mono font-bold text-slate-800">{currentUser?.username || currentUser?.email?.split('@')[0] || 'admin'}</span>
+                          </div>
+                          {currentUser?.phone && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">Mobile No:</span>
+                              <span className="font-mono text-slate-800">+91 {currentUser.phone}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
-                        <button
-                          onClick={() => {
-                            logout();
-                            setRoleMenuOpen(false);
-                          }}
-                          className="font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1.5 py-1"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Sign Out</span>
-                        </button>
-                        <span className="text-slate-500">{currentUser?.name}</span>
-                      </div>
+                      <p className="text-[11px] text-slate-500 mb-4 leading-relaxed bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60 text-amber-900">
+                        🔒 Direct account switching is restricted. To log into another role (Admin, Staff, Technician), please sign out to the login screen.
+                      </p>
+
+                      <button
+                        onClick={() => {
+                          logout();
+                          setRoleMenuOpen(false);
+                        }}
+                        className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Log Out / Switch Account</span>
+                      </button>
                     </div>
                   </div>
                 </>

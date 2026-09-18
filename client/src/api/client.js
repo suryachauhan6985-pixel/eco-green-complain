@@ -753,9 +753,9 @@ export const api = {
     mockStore.reset();
   },
   // Auth
-  login: (email, password) => request('/auth/login', {
+  login: (identifier, password) => request('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ identifier, email: identifier, password })
   }),
   getMe: () => request('/auth/me'),
   getUsers: () => request('/auth/users'),

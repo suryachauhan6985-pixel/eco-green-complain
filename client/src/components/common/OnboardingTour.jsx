@@ -3,7 +3,7 @@ import {
   Sun, Shield, Users, Wrench, Search, Plus, Bell, 
   CheckCircle2, ArrowRight, ArrowLeft, X, Sparkles, 
   MessageSquare, Mail, BarChart3, Star, RotateCcw, 
-  MapPin, Phone, Download, HelpCircle, Compass, Clock 
+  MapPin, Phone, Download, HelpCircle, Compass, Clock, Smartphone 
 } from 'lucide-react';
 
 const TOUR_STEPS = [
@@ -21,34 +21,34 @@ const TOUR_STEPS = [
       { icon: Sparkles, label: 'Solar Water Heaters', desc: 'ETC/FPC collector tanks, descaling AMC, valves, leakages' },
       { icon: Wrench, label: 'Heat Pumps', desc: 'Commercial & residential heating, compressors, sensor codes (F1/F2)' }
     ],
-    tip: '💡 Tip: You can switch roles or take this tour anytime using the buttons in the navigation bar!'
+    tip: '💡 Tip: You can take this tour anytime using the Tour button in the navigation bar!'
   },
   {
     id: 'roles',
     tab: 'complaints',
     icon: Shield,
-    badge: 'Step 1 of 8: User Roles',
+    badge: 'Step 1 of 9: Enterprise Security',
     badgeColor: 'bg-indigo-100 text-indigo-800',
-    title: 'Instant Role Switcher (4 Portals in One)',
-    subtitle: 'Experience the app as an Admin, Helpdesk Staff, Technician, or Customer',
-    description: 'Notice the Role Switcher pill in the top-right corner. It lets you switch perspectives with a single click without typing passwords every time:',
+    title: 'Role-Based Authentication & Portals',
+    subtitle: 'Dedicated workspaces for Admin, Helpdesk Staff, and Field Technicians',
+    description: 'Eco Green Solar enforces strict role-based access. Staff and technicians log in with their assigned User ID or Mobile number and password:',
     highlights: [
-      { icon: Shield, label: 'Admin Supervisor', desc: 'Full access to system operations, analytics reports, template manager, and CSV data export.' },
-      { icon: Users, label: 'Support Staff / Helpdesk', desc: 'Register new complaints, assign field technicians, log visit notes, and close tickets.' },
-      { icon: Wrench, label: 'Technician (Rohit Kumar)', desc: 'Mobile-first job cards for field engineers to inspect, log parts used, and mark resolved.' },
-      { icon: Search, label: 'Customer Portal', desc: 'Public tracking portal for homeowners to check progress by Ticket ID and rate service.' }
+      { icon: Shield, label: 'Admin Supervisor', desc: 'Full access to system operations, user/staff management, analytics reports, and CSV data export.' },
+      { icon: Users, label: 'Support Staff / Helpdesk', desc: 'Register complaints, assign certified technicians, manage WhatsApp chats, and follow up.' },
+      { icon: Wrench, label: 'Field Technicians', desc: 'Mobile-first job cards for engineers to locate consumer sites, record spare parts, and resolve tickets.' },
+      { icon: Search, label: 'Customer Public Portal', desc: 'Homeowners track ticket status and submit 5-star ratings without needing passwords.' }
     ],
-    tip: '💡 Try switching to "Technician" or "Customer" view from the top-right menu to see role-specific layouts!'
+    tip: '💡 For enterprise security, arbitrary role-switching is disabled. To switch accounts, simply log out and sign in with your credentials.'
   },
   {
     id: 'register',
     tab: 'complaints',
     icon: Plus,
-    badge: 'Step 2 of 8: Registration',
+    badge: 'Step 2 of 9: Registration',
     badgeColor: 'bg-emerald-100 text-emerald-800',
     title: 'Registering Complaints & Auto Ticket ID',
-    subtitle: 'Click "+ Register Complaint" to log any solar issue',
-    description: 'Whenever a customer calls helpdesk or registers online, click "+ Register Complaint" in the top bar to create a ticket with full diagnostics:',
+    subtitle: 'Click "+ Register Ticket" to log any solar issue',
+    description: 'Whenever a customer calls helpdesk or registers online, click "+ Register Ticket" in the top bar to create a ticket with full diagnostics:',
     highlights: [
       { icon: Sparkles, label: 'Auto-Generated Ticket ID', desc: 'Sequential format like EGS-2026-000101 for clear, human-readable reference.' },
       { icon: Sun, label: 'Product-Aware Fault Trees', desc: 'Categories adapt dynamically based on whether Rooftop Solar, Water Heater, or Heat Pump is selected.' },
@@ -60,7 +60,7 @@ const TOUR_STEPS = [
     id: 'desk',
     tab: 'complaints',
     icon: Search,
-    badge: 'Step 3 of 8: Complaints Desk',
+    badge: 'Step 3 of 9: Complaints Desk',
     badgeColor: 'bg-blue-100 text-blue-800',
     title: 'Complaints Desk, Search & Multi-Filters',
     subtitle: 'Find, prioritize, and track all service tickets in real time',
@@ -70,13 +70,13 @@ const TOUR_STEPS = [
       { icon: Users, label: 'Multi-Criteria Filter Ribbon', desc: 'Filter by Product Type, Priority (Urgent/High/Medium/Low), or assigned Technician.' },
       { icon: Download, label: 'One-Click CSV Export', desc: 'Export full complaint datasets with all dates, resolution notes, and customer ratings for Excel analysis.' }
     ],
-    tip: '💡 Click on any complaint row to open the detailed drawer on the right side!'
+    tip: '💡 Click on any complaint card to open the detailed drawer on the right side!'
   },
   {
     id: 'drawer',
     tab: 'complaints',
     icon: Wrench,
-    badge: 'Step 4 of 8: Ticket Drawer',
+    badge: 'Step 4 of 9: Ticket Drawer',
     badgeColor: 'bg-amber-100 text-amber-800',
     title: 'Assignment, Audit Timeline & Resolution',
     subtitle: 'Everything you need to process a ticket in a single drawer',
@@ -92,11 +92,11 @@ const TOUR_STEPS = [
     id: 'technician',
     tab: 'technician',
     icon: Wrench,
-    badge: 'Step 5 of 8: Field Portal',
+    badge: 'Step 5 of 9: Field Portal',
     badgeColor: 'bg-purple-100 text-purple-800',
     title: 'Mobile Field Technician Portal',
     subtitle: 'Optimized for solar engineers working on terraces and rooftops',
-    description: 'Switch to the "Field Technician View" tab to experience the mobile view built for service engineers on site:',
+    description: 'Switch to the "Field Operations" tab to experience the mobile view built for service engineers on site:',
     highlights: [
       { icon: Phone, label: 'One-Tap Customer Contact', desc: 'Call the customer or launch a direct WhatsApp chat with a single tap.' },
       { icon: MapPin, label: 'Google Maps Directions', desc: 'Open the customer site address directly in Google Maps for quick terrace navigation.' },
@@ -108,7 +108,7 @@ const TOUR_STEPS = [
     id: 'customer',
     tab: 'customer',
     icon: Search,
-    badge: 'Step 6 of 8: Customer Portal',
+    badge: 'Step 6 of 9: Customer Portal',
     badgeColor: 'bg-teal-100 text-teal-800',
     title: 'Public Customer Tracker & CSAT Rating',
     subtitle: 'Homeowners can track repairs and submit 5-star ratings without a password',
@@ -124,23 +124,23 @@ const TOUR_STEPS = [
     id: 'notifications',
     tab: 'complaints',
     icon: Bell,
-    badge: 'Step 7 of 8: Notifications',
+    badge: 'Step 7 of 9: WhatsApp Center',
     badgeColor: 'bg-emerald-100 text-emerald-800',
-    title: 'Live Simulated WhatsApp & Email Center',
-    subtitle: 'Watch automated alerts stream in real time as you test the app',
-    description: 'Click the Bell icon in the top navigation bar to open the slide-out Live Notification Center:',
+    title: 'Real-Time WhatsApp Web Hub',
+    subtitle: 'Two-way chat synchronized with official Meta Cloud API',
+    description: 'Open the "WhatsApp Web" tab to interact with customers in real time:',
     highlights: [
-      { icon: MessageSquare, label: 'Simulated WhatsApp Bubbles', desc: 'Inspect exact WhatsApp messages formatted with double delivery checkmarks and ticket links.' },
-      { icon: Mail, label: 'Branded HTML Emails', desc: 'Preview beautiful, responsive HTML emails featuring the Eco Green Solar header and ticket summary table.' },
-      { icon: Sparkles, label: 'Cloud API Ready', desc: 'Zero setup needed for testing! When ready for live production, easily configure Meta WhatsApp Cloud API and SMTP in server/.env.' }
+      { icon: MessageSquare, label: 'Two-Way Live Conversations', desc: 'Send and receive live WhatsApp messages, voice notes, PDFs, and invoices directly from the CMS.' },
+      { icon: CheckCircle2, label: 'Eco Green Watermarked Chat', desc: 'Branded WhatsApp experience with instant template responses and ticket linking.' },
+      { icon: Sparkles, label: 'Official Cloud API Sync', desc: 'Fully synchronized with 7878444414 and verified webhook delivery.' }
     ],
-    tip: '💡 You can resend any notification or copy the message copy directly from the drawer.'
+    tip: '💡 Use quick template replies to update customers on technician arrival time!'
   },
   {
     id: 'analytics',
     tab: 'analytics',
     icon: BarChart3,
-    badge: 'Step 8 of 8: Management',
+    badge: 'Step 8 of 9: Management',
     badgeColor: 'bg-indigo-100 text-indigo-800',
     title: 'Analytics & Notification Templates',
     subtitle: 'Data-driven service management and custom message copy',
@@ -150,7 +150,23 @@ const TOUR_STEPS = [
       { icon: Users, label: 'Technician Leaderboard', desc: 'Track jobs completed, average hours per resolution, and customer satisfaction ratings per technician.' },
       { icon: MessageSquare, label: 'Custom Message Templates', desc: 'Customize WhatsApp and Email templates with live variables like {{customer_name}}, {{complaint_id}}, {{technician_name}}.' }
     ],
-    tip: '💡 Congratulations! You now know everything needed to test and use Eco Green Solar CMS.'
+    tip: '💡 Supervisor insights help balance technician workloads across Gujarat!'
+  },
+  {
+    id: 'pwa-install',
+    tab: 'complaints',
+    icon: Smartphone,
+    badge: 'Step 9 of 9: Mobile App (PWA)',
+    badgeColor: 'bg-emerald-100 text-emerald-800',
+    title: 'Install App on iPhone & Android',
+    subtitle: 'Add Eco Green Solar CMS directly to your phone screen in seconds',
+    description: 'No App Store or Play Store download required! Install the app directly for fullscreen speed and instant offline access:',
+    highlights: [
+      { icon: Smartphone, label: 'iPhone (Safari)', desc: 'Open the website in Safari ➔ Tap the Share button (square icon with arrow pointing up at the bottom) ➔ Scroll down and tap "Add to Home Screen" ➔ Tap "Add".' },
+      { icon: Smartphone, label: 'Android (Chrome)', desc: 'Open in Chrome ➔ Tap the 3 dots in the top right ➔ Tap "Install app" or "Add to Home screen".' },
+      { icon: Sparkles, label: 'Full App Experience', desc: 'Launches full-screen with the Eco Green Solar sun icon right from your phone home screen!' }
+    ],
+    tip: '💡 Field technicians can bookmark this on their phone home screen for instant 1-tap access on terraces!'
   }
 ];
 

@@ -618,14 +618,14 @@ export const ComplaintList = ({
                 <div
                   key={c.id}
                   onClick={() => onSelectComplaint(c.id)}
-                  className={`bg-white rounded-xl border p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden ${
+                  className={`bg-white rounded-2xl border p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden ${
                     ageInfo.isOverdue 
-                      ? 'border-rose-300 ring-1 ring-rose-200 border-l-4 border-l-rose-500' 
-                      : 'border-slate-200/90 hover:border-emerald-500'
+                      ? 'border-rose-300 hover:border-rose-400 ring-1 ring-rose-200/70' 
+                      : 'border-slate-200 hover:border-emerald-500'
                   }`}
                 >
-                  {/* Product color accent bar on top */}
-                  <div className={`absolute top-0 left-0 right-0 h-1 ${
+                  {/* Product color accent bar on top (Consistent on all cards) */}
+                  <div className={`absolute top-0 left-0 right-0 h-1.5 ${
                     c.product_type === 'Solar Rooftop Systems' ? 'bg-amber-400' :
                     c.product_type === 'Solar Water Heaters' ? 'bg-blue-400' : 'bg-teal-500'
                   }`} />
