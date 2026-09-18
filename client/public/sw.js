@@ -1,10 +1,11 @@
-﻿const CACHE_NAME = 'ecogreen-cms-v1';
+const CACHE_NAME = 'ecogreen-cms-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/support-icon-192.png',
+  '/support-icon-512.png',
   '/company-logo.png',
-  '/company-logo-white.png',
-  '/favicon.svg'
+  '/company-logo-white.png'
 ];
 
 self.addEventListener('install', (event) => {
