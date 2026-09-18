@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const bundledDbPath = path.join(__dirname, '..', 'ecogreen_cms.db');
 const hasPersistentDataDir = fs.existsSync('/data');
@@ -552,5 +553,16 @@ try {
 initializeSchema();
 migrateComplaintsTable();
 migrateWhatsAppMessagesTable();
+
+// Attach Turso continuous cloud sync hook
+const tursoSync = require('../services/tursoSyncService');
+tursoSync.hookDatabase(db);
+
+// Trigger startup sync from Turso Cloud
+if (tursoSync.isEnabled) {
+  tursoSync.pullFromCloud(db).catch(err => {
+    console.error('[Database] Initial Turso pull failed:', err.message);
+  });
+}
 
 module.exports = db;
