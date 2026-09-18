@@ -46,42 +46,43 @@ const SLIDES = [
 
 export const LoginPage = ({ onSwitchToCustomer }) => {
   const { login } = useAuth();
-  const [identifier, setIdentifier] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+  const [savedProfile, setSavedProfile] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeRoleTab, setActiveRoleTab] = useState('admin'); // admin | staff | technician
 
-  const ROLE_PRESETS = [
-    {
-      role: 'admin',
-      label: 'Admin',
-      fullName: 'Admin Supervisor',
-      username: 'admin',
-      password: 'admin123',
-      icon: Shield,
-      desc: 'Master access, user management, and full analytics'
-    },
-    {
-      role: 'staff',
-      label: 'Support Staff',
-      fullName: 'Pooja Sharma (Helpdesk)',
-      username: 'staff',
-      password: 'staff123',
-      icon: Users,
-      desc: 'Register complaints, assign technicians, follow-up'
-    },
-    {
-      role: 'technician',
-      label: 'Technician',
-      fullName: 'Rohit Kumar (Field Tech)',
-      username: 'rohit',
-      password: 'tech123',
-      icon: Wrench,
-      desc: 'Mobile field workspace, resolutions, spare parts'
+  // Auto-fill saved credentials ONLY if this specific device was previously logged in
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ecogreen_device_auth_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.identifier && parsed?.password) {
+          setIdentifier(parsed.identifier);
+          setPassword(parsed.password);
+          setSavedProfile({
+            name: parsed.name || parsed.identifier,
+            role: parsed.role || 'staff',
+            identifier: parsed.identifier
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load saved device credentials:', e);
+      localStorage.removeItem('ecogreen_device_auth_v1');
     }
-  ];
+  }, []);
+
+  const handleClearSaved = () => {
+    localStorage.removeItem('ecogreen_device_auth_v1');
+    setIdentifier('');
+    setPassword('');
+    setSavedProfile(null);
+    setError('');
+  };
 
   const [activeSlide, setActiveSlide] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -108,20 +109,25 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
     };
   }, [activeSlide]);
 
-  const handleSelectPreset = (acc) => {
-    setActiveRoleTab(acc.role);
-    setIdentifier(acc.username);
-    setPassword(acc.password);
-    setError('');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      await login(identifier, password);
+      const loggedInUser = await login(identifier.trim(), password);
+      
+      // Save credentials exclusively to this local device if Remember Me is active
+      if (rememberMe) {
+        localStorage.setItem('ecogreen_device_auth_v1', JSON.stringify({
+          identifier: identifier.trim(),
+          password,
+          role: loggedInUser?.role || 'staff',
+          name: loggedInUser?.name || identifier.trim()
+        }));
+      } else {
+        localStorage.removeItem('ecogreen_device_auth_v1');
+      }
     } catch (err) {
       setError(err.message || 'Invalid User ID or password. Please verify and try again.');
     } finally {
@@ -233,35 +239,41 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
               </div>
             </div>
 
-            {/* Role Quick-Select Presets */}
-            <div className="mb-5">
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Quick Access Roles
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {ROLE_PRESETS.map((acc) => {
-                  const Icon = acc.icon;
-                  const isSelected = activeRoleTab === acc.role;
-                  return (
-                    <button
-                      type="button"
-                      key={acc.role}
-                      onClick={() => handleSelectPreset(acc)}
-                      className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                        isSelected
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20 font-bold shadow-xs'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-slate-50/50'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-emerald-600 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs">{acc.label}</span>
-                    </button>
-                  );
-                })}
+            {/* Device-Specific Profile Status or Guidance */}
+            {savedProfile ? (
+              <div className="mb-5 p-3.5 bg-emerald-50/90 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                    {savedProfile.role === 'technician' ? <Wrench className="w-4 h-4" /> : savedProfile.role === 'admin' ? <Shield className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-900 truncate">{savedProfile.name}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                        {savedProfile.role}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 truncate">Saved on this device for one-tap sign in</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearSaved}
+                  className="text-xs font-semibold text-emerald-800 hover:text-rose-600 hover:underline shrink-0 cursor-pointer"
+                >
+                  Use another account
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="mb-5 p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center gap-3 text-slate-600">
+                <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <p className="text-xs leading-relaxed">
+                  Enter the <strong>User ID</strong> and <strong>Password</strong> provided by your administrator.
+                </p>
+              </div>
+            )}
 
             {/* Error Message if any */}
             {error && (
@@ -284,7 +296,8 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="e.g. admin, rohit, or phone number"
+                    placeholder="Enter your User ID or phone"
+                    autoComplete="username"
                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-900"
                   />
                 </div>
@@ -302,6 +315,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
+                    autoComplete="current-password"
                     className="w-full text-xs pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-900"
                   />
                   <button
@@ -315,14 +329,24 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
               </div>
 
               <div className="flex items-center justify-between text-xs pt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-slate-600">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-600 select-none">
                   <input
                     type="checkbox"
-                    defaultChecked
-                    className="rounded text-emerald-600 focus:ring-emerald-500"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
                   />
-                  <span>Remember my session</span>
+                  <span className="font-medium">Save login on this device</span>
                 </label>
+                {savedProfile && (
+                  <button
+                    type="button"
+                    onClick={handleClearSaved}
+                    className="text-slate-400 hover:text-rose-600 font-medium cursor-pointer"
+                  >
+                    Clear saved
+                  </button>
+                )}
               </div>
 
               <button
