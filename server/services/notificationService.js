@@ -25,15 +25,6 @@ class NotificationService extends EventEmitter {
   }
 
   getTemplate(templateKey) {
-    if (templateKey === 'technician_work_order') {
-      return {
-        template_key: 'technician_work_order',
-        name: 'Technician Field Work Order',
-        whatsapp_body: '{{whatsapp_body}}',
-        email_subject: 'Work Order: {{complaint_id}}',
-        email_body: '{{whatsapp_body}}'
-      };
-    }
     const row = db.prepare('SELECT * FROM notification_templates WHERE template_key = ?').get(templateKey);
     return row;
   }
@@ -66,14 +57,18 @@ class NotificationService extends EventEmitter {
 
       const mergedData = {
         customer_name: complaint?.customer_name || data?.customer_name || 'Valued Customer',
+        customer_phone: complaint?.customer_phone || data?.customer_phone || '',
+        customer_address: complaint?.customer_address || data?.customer_address || '',
         complaint_id: complaint?.ticket_id || data?.ticket_id || '',
         product_type: complaint?.product_type || data?.product_type || '',
         issue_category: complaint?.issue_category || data?.issue_category || '',
         status: complaint?.status || data?.status || '',
+        priority: complaint?.priority || data?.priority || 'Normal',
         technician_name: data?.technician_name || 'Eco Green Service Specialist',
         technician_phone: data?.technician_phone || '+91 78784 44414',
+        technician_portal_url: `${liveAppUrl}/technician`,
         expected_visit_date: data?.expected_visit_date || 'Within 24-48 Hours',
-        notes: data?.notes || '',
+        notes: data?.notes || complaint?.issue_description || '',
         estimated_charges: complaint?.estimated_charges || data?.estimated_charges || 0,
         charges_line: (complaint?.notify_charges || data?.notify_charges) && (complaint?.estimated_charges || data?.estimated_charges) > 0
           ? `\n💰 *Estimated Service Charge:* ₹${complaint?.estimated_charges || data?.estimated_charges}`

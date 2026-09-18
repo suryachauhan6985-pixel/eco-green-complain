@@ -8,14 +8,18 @@ import {
 
 const PLACEHOLDERS = [
   { key: '{{customer_name}}', desc: 'Customer Full Name' },
+  { key: '{{customer_phone}}', desc: 'Customer Contact Phone Number' },
+  { key: '{{customer_address}}', desc: 'Service Site Address & City' },
   { key: '{{complaint_id}}', desc: 'Unique Ticket ID (e.g. EGS-2026-000101)' },
   { key: '{{product_type}}', desc: 'Solar Rooftop / Water Heater / Heat Pump' },
   { key: '{{issue_category}}', desc: 'Category of issue reported' },
+  { key: '{{priority}}', desc: 'Ticket Priority (High / Medium / Low / Urgent)' },
   { key: '{{technician_name}}', desc: 'Assigned Technician Name' },
   { key: '{{technician_phone}}', desc: 'Technician Contact Number' },
+  { key: '{{technician_portal_url}}', desc: 'Technician Portal Web App Link' },
   { key: '{{expected_visit_date}}', desc: 'Scheduled Visit Date' },
   { key: '{{status}}', desc: 'Current Ticket Status' },
-  { key: '{{notes}}', desc: 'Latest Follow-up / Resolution Notes' },
+  { key: '{{notes}}', desc: 'Latest Follow-up / Issue Description / Resolution Notes' },
   { key: '{{feedback_url}}', desc: 'Online Ticket Tracking & Rating Link' },
   { key: '{{date}}', desc: 'Current Date' }
 ];
@@ -27,6 +31,7 @@ export const TemplateManager = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [filterAudience, setFilterAudience] = useState('all'); // 'all' | 'customer' | 'technician'
 
   // Form state
   const [whatsappBody, setWhatsappBody] = useState('');
@@ -66,6 +71,13 @@ export const TemplateManager = () => {
     setEmailBody(tmpl.email_body || '');
     setSavedSuccess(false);
   };
+
+  const filteredTemplates = templates.filter(t => {
+    const isTech = t.template_key.startsWith('technician_');
+    if (filterAudience === 'customer') return !isTech;
+    if (filterAudience === 'technician') return isTech;
+    return true;
+  });
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -117,31 +129,91 @@ export const TemplateManager = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Template Selector List */}
-        <div className="space-y-2">
-          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block px-1">
-            System Event Triggers
-          </span>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              Notification Triggers
+            </span>
+            <span className="text-[11px] font-mono text-slate-400">
+              {filteredTemplates.length} templates
+            </span>
+          </div>
+
+          {/* Filter Tabs: All, Customers, Technicians */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
+            <button
+              type="button"
+              onClick={() => setFilterAudience('all')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
+                filterAudience === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All ({templates.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterAudience('customer')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
+                filterAudience === 'customer'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Customers ({templates.filter(t => !t.template_key.startsWith('technician_')).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterAudience('technician')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
+                filterAudience === 'technician'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Technicians ({templates.filter(t => t.template_key.startsWith('technician_')).length})
+            </button>
+          </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden divide-y divide-slate-100">
-            {(Array.isArray(templates) ? templates : []).map((tmpl) => {
-              const isSelected = selectedTemplate?.id === tmpl.id;
-              return (
-                <button
-                  key={tmpl.id}
-                  onClick={() => selectTemplate(tmpl)}
-                  className={`w-full text-left p-3.5 transition-all flex flex-col ${
-                    isSelected ? 'bg-emerald-50/80 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
-                  }`}
-                >
-                  <span className={`text-xs font-bold ${isSelected ? 'text-emerald-900' : 'text-slate-800'}`}>
-                    {tmpl.name}
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 mt-0.5">
-                    key: {tmpl.template_key}
-                  </span>
-                </button>
-              );
-            })}
+            {filteredTemplates.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400">
+                No templates match this filter
+              </div>
+            ) : (
+              filteredTemplates.map((tmpl) => {
+                const isSelected = selectedTemplate?.id === tmpl.id;
+                const isTech = tmpl.template_key.startsWith('technician_');
+                return (
+                  <button
+                    key={tmpl.id}
+                    onClick={() => selectTemplate(tmpl)}
+                    className={`w-full text-left p-3.5 transition-all flex flex-col gap-1 ${
+                      isSelected ? 'bg-emerald-50/80 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-xs font-bold leading-snug ${isSelected ? 'text-emerald-900' : 'text-slate-800'}`}>
+                        {tmpl.name}
+                      </span>
+                      {isTech ? (
+                        <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                          Technician
+                        </span>
+                      ) : (
+                        <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-sky-100 text-sky-800 border border-sky-200">
+                          Customer
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      key: {tmpl.template_key}
+                    </span>
+                  </button>
+                );
+              })
+            )}
           </div>
 
           {/* Placeholders Reference Card */}
@@ -175,7 +247,18 @@ export const TemplateManager = () => {
             <form onSubmit={handleSave} className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-5">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">{selectedTemplate.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm text-slate-900">{selectedTemplate.name}</h3>
+                    {selectedTemplate.template_key.startsWith('technician_') ? (
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                        Technician Work Order
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-sky-100 text-sky-800 border border-sky-200">
+                        Customer Alert
+                      </span>
+                    )}
+                  </div>
                   <span className="font-mono text-[11px] text-slate-400">Trigger: {selectedTemplate.template_key}</span>
                 </div>
 

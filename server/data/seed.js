@@ -92,6 +92,22 @@ async function seedDatabase(forceReset = false) {
     `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
   );
 
+  insertTemplate.run(
+    'technician_work_order',
+    'Technician Work Order (Job Assignment)',
+    `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
+    `[Eco Green Solar] Work Order: Ticket #{{complaint_id}} - {{customer_name}}`,
+    `Dear {{technician_name}},\n\nYou have been assigned to service complaint ticket #{{complaint_id}}.\n\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue Category: {{issue_category}}\nDetails: {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease log in to your Technician Portal to view complete details, update progress, and record spare parts or payment collections.`
+  );
+
+  insertTemplate.run(
+    'technician_reminder',
+    'Technician Pending Visit Reminder',
+    `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
+    `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
+    `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
+  );
+
   // 4. Seed Rich Sample Complaints
   const complaintCount = db.prepare('SELECT COUNT(*) as count FROM complaints').get().count;
   if (complaintCount === 0 || forceReset) {

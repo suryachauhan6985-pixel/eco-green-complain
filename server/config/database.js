@@ -546,6 +546,33 @@ function migrateWhatsAppMessagesTable() {
   }
 }
 
+function migrateNotificationTemplates() {
+  try {
+    const insertTmpl = db.prepare(`
+      INSERT OR IGNORE INTO notification_templates (template_key, name, whatsapp_body, email_subject, email_body)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    insertTmpl.run(
+      'technician_work_order',
+      'Technician Work Order (Job Assignment)',
+      `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
+      `[Eco Green Solar] Work Order: Ticket #{{complaint_id}} - {{customer_name}}`,
+      `Dear {{technician_name}},\n\nYou have been assigned to service complaint ticket #{{complaint_id}}.\n\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue Category: {{issue_category}}\nDetails: {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease log in to your Technician Portal to view complete details, update progress, and record spare parts or payment collections.`
+    );
+
+    insertTmpl.run(
+      'technician_reminder',
+      'Technician Pending Visit Reminder',
+      `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
+      `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
+      `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
+    );
+  } catch (e) {
+    console.warn('[Database] Notification templates migration note:', e.message);
+  }
+}
+
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
 } catch (e) {}
@@ -558,11 +585,16 @@ migrateWhatsAppMessagesTable();
 const tursoSync = require('../services/tursoSyncService');
 tursoSync.hookDatabase(db);
 
-// Trigger startup sync from Turso Cloud
+// Trigger startup sync from Turso Cloud and ensure technician templates exist
 if (tursoSync.isEnabled) {
-  tursoSync.pullFromCloud(db).catch(err => {
+  tursoSync.pullFromCloud(db).then(() => {
+    migrateNotificationTemplates();
+  }).catch(err => {
     console.error('[Database] Initial Turso pull failed:', err.message);
+    migrateNotificationTemplates();
   });
+} else {
+  migrateNotificationTemplates();
 }
 
 module.exports = db;

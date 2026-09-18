@@ -619,8 +619,8 @@ export const WhatsAppWebInbox = ({
   // Filter conversations (All incoming & outgoing conversations are fully preserved and visible)
   const filteredConversations = conversations.filter(conv => {
     if (activeFilter === 'unread' && !conv.unread_count) return false;
-    if (activeFilter === 'favorites' && !conv.is_pinned) return false;
-    if (activeFilter === 'groups' && !conv.sender_name?.toLowerCase().includes('group') && !conv.is_group) return false;
+    if (activeFilter === 'customers' && conv.is_technician) return false;
+    if (activeFilter === 'technicians' && !conv.is_technician) return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -876,109 +876,60 @@ export const WhatsAppWebInbox = ({
 
   return (
     <div className="w-full flex-1 h-full flex overflow-hidden bg-[#efeae2] select-none">
-      {/* ================= FAR LEFT APP RAIL (WHATSAPP WEB DESKTOP ICON BAR) ================= */}
-      <div className="hidden md:flex w-14 bg-[#f0f2f5] border-r border-[#d1d7db] flex-col justify-between items-center py-3 shrink-0 z-20">
-        {/* Top Icons */}
-        <div className="flex flex-col items-center gap-4 w-full">
-          {/* WhatsApp Chats Icon (Active) */}
-          <button
-            type="button"
-            className="w-10 h-10 rounded-xl bg-[#d9fdd3] text-[#008069] flex items-center justify-center transition-all cursor-pointer shadow-xs relative"
-            title="Chats"
-          >
-            <MessageSquare className="w-5 h-5 fill-[#008069]" />
-            <span className="w-2 h-2 rounded-full bg-[#008069] absolute top-1.5 right-1.5" />
-          </button>
-
-          {/* Status Updates */}
-          <button
-            type="button"
-            className="w-10 h-10 rounded-xl hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-all cursor-pointer"
-            title="Status"
-          >
-            <Radio className="w-5 h-5" />
-          </button>
-
-          {/* Channels / Broadcasts */}
-          <button
-            type="button"
-            className="w-10 h-10 rounded-xl hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-all cursor-pointer"
-            title="Channels"
-          >
-            <Compass className="w-5 h-5" />
-          </button>
-
-          {/* Communities */}
-          <button
-            type="button"
-            className="w-10 h-10 rounded-xl hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-all cursor-pointer"
-            title="Communities"
-          >
-            <Users className="w-5 h-5" />
-          </button>
-
-          {/* Meta AI */}
-          <button
-            type="button"
-            className="w-10 h-10 rounded-xl hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-all cursor-pointer"
-            title="Meta AI"
-          >
-            <Sparkles className="w-5 h-5 text-indigo-500" />
-          </button>
-        </div>
-
-        {/* Bottom Icons: Sound, Settings & Avatar */}
-        <div className="flex flex-col items-center gap-3 w-full">
-          {/* Audio Notification Toggle */}
-          <button
-            type="button"
-            onClick={handleToggleSound}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
-              soundEnabled ? 'text-[#008069] hover:bg-[#e9edef]' : 'text-slate-400 hover:bg-[#e9edef]'
-            }`}
-            title={soundEnabled ? 'Sound Notifications Active (Click to mute)' : 'Sound Notifications Muted'}
-          >
-            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-          </button>
-
-          {/* Settings Button */}
-          <button
-            type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="w-10 h-10 rounded-xl hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-all cursor-pointer"
-            title="WhatsApp Settings & Cloud API Status"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-
-          {/* Profile Circle Avatar */}
-          <div 
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="w-9 h-9 rounded-full bg-[#00a884] text-white flex items-center justify-center font-bold text-xs shadow-xs cursor-pointer"
-            title="Eco Green Solar (+91 78784 44414)"
-          >
-            EG
-          </div>
-        </div>
-      </div>
-
-      {/* ================= MIDDLE CHAT LIST PANE (AUTHENTIC WHATSAPP WEB) ================= */}
+      {/* ================= ECO GREEN SOLAR INBOX PANE ================= */}
       <div className={`w-full md:w-[380px] lg:w-[410px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
-        {/* Header: WhatsApp Title & Action Buttons */}
-        <div className="bg-white px-4 pt-3 pb-2 flex items-center justify-between shrink-0">
-          <h2 className="text-xl font-bold text-[#111b21] tracking-tight">
-            WhatsApp
-          </h2>
+        {/* Header: Eco Green Solar Brand & Action Buttons */}
+        <div className="bg-[#f0f2f5] px-4 py-3 border-b border-[#d1d7db] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
+              ☀️
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-bold text-[#111b21] tracking-tight leading-tight truncate">
+                  Eco Green Solar
+                </h2>
+                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full border border-emerald-200 shrink-0">
+                  Desk
+                </span>
+              </div>
+              <p className="text-[11px] text-[#54656f] leading-tight truncate">
+                WhatsApp Support Desk
+              </p>
+            </div>
+          </div>
 
-          <div className="flex items-center gap-1.5 text-[#54656f] relative">
+          <div className="flex items-center gap-1 text-[#54656f] relative">
+            {/* Audio Notification Toggle */}
+            <button
+              type="button"
+              onClick={handleToggleSound}
+              className={`w-8 h-8 rounded-full hover:bg-[#e9edef] flex items-center justify-center transition-colors cursor-pointer ${
+                soundEnabled ? 'text-[#008069]' : 'text-slate-400'
+              }`}
+              title={soundEnabled ? 'Chime Active (Click to mute)' : 'Chime Muted'}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+
+            {/* Refresh */}
+            <button
+              type="button"
+              onClick={() => { loadConversations(); showToast('Chats refreshed', 'success'); }}
+              className="w-8 h-8 rounded-full hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-colors cursor-pointer"
+              title="Refresh conversations"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingConversations ? 'animate-spin' : ''}`} />
+            </button>
+
             {/* New Chat Button (+) */}
             <button
               type="button"
               onClick={() => setIsNewChatModalOpen(true)}
-              className="w-8 h-8 rounded-full hover:bg-[#f0f2f5] text-[#54656f] hover:text-[#008069] flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-colors cursor-pointer shadow-xs ml-0.5"
               title="Start New WhatsApp Chat"
             >
-              <MessageSquarePlus className="w-5 h-5" />
+              <Plus className="w-4 h-4" />
             </button>
 
             {/* Menu 3 Dots Button */}
@@ -986,10 +937,10 @@ export const WhatsAppWebInbox = ({
               id="sidebar-menu-button"
               type="button"
               onClick={() => setShowSidebarMenu(!showSidebarMenu)}
-              className="w-8 h-8 rounded-full hover:bg-[#f0f2f5] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-colors cursor-pointer"
-              title="Menu Options"
+              className="w-8 h-8 rounded-full hover:bg-[#e9edef] text-[#54656f] hover:text-[#111b21] flex items-center justify-center transition-colors cursor-pointer"
+              title="More Options"
             >
-              <MoreVertical className="w-5 h-5" />
+              <MoreVertical className="w-4 h-4" />
             </button>
 
             {/* Sidebar 3-Dots Dropdown Menu */}
@@ -1012,7 +963,7 @@ export const WhatsAppWebInbox = ({
                   className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
                 >
                   <Settings className="w-4 h-4 text-slate-600" />
-                  <span>Settings & WABA</span>
+                  <span>Channel Settings</span>
                 </button>
                 <button
                   type="button"
@@ -1021,18 +972,6 @@ export const WhatsAppWebInbox = ({
                 >
                   <RefreshCw className="w-4 h-4 text-slate-600" />
                   <span>Refresh Conversations</span>
-                </button>
-                <div className="my-1 border-t border-slate-100" />
-                <button
-                  type="button"
-                  onClick={() => { 
-                    setShowSidebarMenu(false); 
-                    setActiveFilter(activeFilter === 'unread' ? 'all' : 'unread'); 
-                  }}
-                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
-                >
-                  <Filter className="w-4 h-4 text-slate-600" />
-                  <span>{activeFilter === 'unread' ? 'Show All Chats' : 'Filter Unread Chats'}</span>
                 </button>
               </div>
             )}
@@ -1047,7 +986,7 @@ export const WhatsAppWebInbox = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search or start a new chat"
+              placeholder="Search chats by name or phone..."
               className="w-full text-xs text-[#111b21] placeholder-[#8696a0] bg-transparent border-none outline-none font-normal"
             />
             {searchQuery && (
@@ -1062,7 +1001,7 @@ export const WhatsAppWebInbox = ({
           </div>
         </div>
 
-        {/* WhatsApp Filter Pills */}
+        {/* Support Desk Filter Pills: All, Customers, Technicians, Unread */}
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 border-b border-[#f0f2f5]">
           <button
             type="button"
@@ -1074,6 +1013,30 @@ export const WhatsAppWebInbox = ({
             }`}
           >
             All
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter('customers')}
+            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer shrink-0 ${
+              activeFilter === 'customers'
+                ? 'bg-[#d9fdd3] text-[#008069]'
+                : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+            }`}
+          >
+            Customers
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter('technicians')}
+            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer shrink-0 ${
+              activeFilter === 'technicians'
+                ? 'bg-[#d9fdd3] text-[#008069]'
+                : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+            }`}
+          >
+            Technicians
           </button>
 
           <button
@@ -1091,39 +1054,6 @@ export const WhatsAppWebInbox = ({
                 {conversations.filter(c => c.unread_count > 0).length}
               </span>
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveFilter('favorites')}
-            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer shrink-0 ${
-              activeFilter === 'favorites'
-                ? 'bg-[#d9fdd3] text-[#008069]'
-                : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
-            }`}
-          >
-            Favorites
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveFilter('groups')}
-            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer shrink-0 ${
-              activeFilter === 'groups'
-                ? 'bg-[#d9fdd3] text-[#008069]'
-                : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
-            }`}
-          >
-            Groups
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsNewChatModalOpen(true)}
-            className="w-7 h-7 rounded-full bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef] flex items-center justify-center text-sm font-bold shrink-0 cursor-pointer"
-            title="Start New Chat"
-          >
-            +
           </button>
         </div>
 
@@ -1217,21 +1147,6 @@ export const WhatsAppWebInbox = ({
               );
             })
           )}
-        </div>
-
-        {/* WABA Active Banner at bottom of Chat List */}
-        <div className="p-2.5 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center justify-between px-4 shrink-0 text-[11px] text-[#54656f]">
-          <div className="flex items-center gap-1.5 font-mono">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <strong className="text-[#111b21]">+91 78784 44414</strong>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="text-[#008069] font-bold hover:underline"
-          >
-            Cloud API Active
-          </button>
         </div>
       </div>
 
@@ -1588,36 +1503,36 @@ export const WhatsAppWebInbox = ({
             </form>
           </>
         ) : (
-          /* Empty State (WhatsApp Web native landing graphic) */
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#f0f2f5] border-b-8 border-[#25d366]">
-            <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-md mb-4 text-[#00a884]">
-              <Phone className="w-10 h-10" />
+          /* Empty State: Eco Green Solar Communication Desk */
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#f8fafc] border-b-8 border-emerald-600 select-none">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center shadow-md mb-4 text-white text-3xl">
+              ☀️
             </div>
-            <h3 className="text-xl font-bold text-[#111b21]">Eco Green Solar WhatsApp Hub</h3>
-            <p className="text-xs text-[#667781] max-w-sm mt-2 leading-relaxed">
-              Send and receive WhatsApp messages with solar customers in real time. All incoming customer messages and staff replies are recorded permanently in database and file storage.
+            <h3 className="text-xl font-bold text-slate-900">Eco Green Solar Support Desk</h3>
+            <p className="text-xs text-slate-500 max-w-md mt-2 leading-relaxed">
+              Official two-way communication channel for customers and service technicians. All incoming inquiries, automated job assignments, and staff replies are recorded and synchronized in real time.
             </p>
-            <div className="mt-5 flex items-center gap-3">
+            <div className="mt-6 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setIsNewChatModalOpen(true)}
-                className="px-4 py-2 bg-[#00a884] hover:bg-[#008f72] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Start New Chat</span>
               </button>
               <button
                 type="button"
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                onClick={() => { loadConversations(); showToast('Chats refreshed', 'success'); }}
+                className="px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
               >
-                <Settings className="w-4 h-4 text-slate-500" />
-                <span>View Settings & Status</span>
+                <RefreshCw className="w-4 h-4 text-slate-500" />
+                <span>Refresh Chats</span>
               </button>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-[#8696a0] mt-8 font-mono">
-              <Shield className="w-3.5 h-3.5 text-[#00a884]" />
-              <span>Connected to Meta Cloud API (+91 78784 44414)</span>
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-8 font-sans">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Eco Green Solar Communication & Support Desk</span>
             </div>
           </div>
         )}

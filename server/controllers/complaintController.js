@@ -686,19 +686,25 @@ async function assignTechnician(req, res) {
       }
     });
 
-    // 2. Notify Technician via WhatsApp (Direct dispatch)
+    // 2. Notify Technician via WhatsApp (Direct dispatch using configured notification template)
     if (technician.phone) {
-      const techMsg = `🛠️ *New Job Assignment*\n\nHello ${technician.name}, you have been assigned ticket *${complaint.ticket_id}*.\n\n👤 *Customer:* ${complaint.customer_name}\n📞 *Phone:* ${complaint.customer_phone}\n📍 *Address:* ${complaint.customer_address}${complaint.city ? ` (${complaint.city})` : ''}\n🔧 *Product:* ${complaint.product_type}\n⚠️ *Issue:* ${complaint.issue_category} - ${complaint.issue_description}\n🚨 *Priority:* ${complaint.priority}\n📅 *Expected Visit:* ${expected_visit_date || 'Immediate'}${complaint.location_url ? `\n🗺️ *Location:* ${complaint.location_url}` : ''}\n\nPlease check your Eco Green technician portal for details.`;
-
       notificationService.dispatchAsync({
         complaintId: id,
         templateKey: 'technician_work_order',
         channels: ['whatsapp'],
         forceWhatsAppTo: technician.phone,
         data: {
-          whatsapp_body: techMsg,
           technician_name: technician.name,
-          ticket_id: complaint.ticket_id
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          customer_phone: complaint.customer_phone,
+          customer_address: complaint.customer_address + (complaint.city ? ` (${complaint.city})` : ''),
+          product_type: complaint.product_type,
+          issue_category: complaint.issue_category,
+          issue_description: complaint.issue_description,
+          priority: complaint.priority,
+          expected_visit_date: expected_visit_date || 'Within 24-48 Hours',
+          notes: complaint.issue_description
         }
       });
     }
