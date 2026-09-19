@@ -854,10 +854,24 @@ export const WhatsAppWebInbox = ({
                       ) : msg.status === 'delivered' ? (
                         <CheckCheck className="w-3.5 h-3.5 text-[#8696a0]" />
                       ) : msg.status === 'failed' ? (
-                        <span className="inline-flex items-center gap-0.5 text-rose-600 font-bold text-[9px] bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const reason = msg.failure_reason || 'Unknown error';
+                            const isReengage = reason.toLowerCase().includes('re-engagement') || reason.toLowerCase().includes('131047');
+                            const helpMsg = isReengage 
+                              ? 'WhatsApp Delivery Failed:\n\nMeta 24-Hour Service Window Expired.\n\nMeta rules state that outside 24 hours of the recipient messaging your business number (+91 78784 44414), free-text messages are blocked.\n\nSolution:\n1. Ask the technician/customer to send any message (like "Hi") to +91 78784 44414 to reopen the 24h window.\n2. Or use approved WhatsApp Templates.' 
+                              : `WhatsApp Delivery Failed:\n\n${reason}`;
+                            showToast(helpMsg, 'error');
+                            alert(helpMsg);
+                          }}
+                          className="inline-flex items-center gap-0.5 text-rose-600 font-bold text-[9px] bg-rose-50 hover:bg-rose-100 px-1 py-0.5 rounded border border-rose-200 cursor-pointer transition-colors"
+                          title={`Click for reason: ${msg.failure_reason || 'Failed to deliver'}`}
+                        >
                           <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
                           <span>Failed</span>
-                        </span>
+                        </button>
                       ) : msg.status === 'pending' ? (
                         <Clock className="w-3 h-3 text-[#8696a0]" />
                       ) : (
@@ -1344,8 +1358,20 @@ export const WhatsAppWebInbox = ({
               </div>
             </div>
 
-            {/* Prominent Yellow/Amber Bar to Raise / Convert to Ticket if general inquiry */}
-            {!(contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) && (
+            {/* Context Bar: Technician Dispatch Channel OR Customer Inquiry Ticket Bar */}
+            {(contactInfo?.is_technician || selectedConv?.is_technician) ? (
+              <div className="bg-teal-50/90 border-b border-teal-200 px-4 py-2 flex items-center justify-between text-xs text-teal-900 shrink-0 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Wrench className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span className="truncate sm:whitespace-normal font-medium">
+                    Technician Dispatch Channel — Work orders and service notifications are synchronized with this technician.
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider bg-teal-100/80 px-2 py-0.5 rounded shrink-0 hidden sm:inline">
+                  Field Staff
+                </span>
+              </div>
+            ) : !(contactInfo?.ticket_id || selectedConv?.complaint_id || selectedConv?.ticket_id) && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs text-amber-900 shrink-0 shadow-2xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />

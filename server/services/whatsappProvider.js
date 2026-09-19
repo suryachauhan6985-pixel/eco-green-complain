@@ -100,9 +100,38 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
         ]
       };
     } else if (templateName === 'technician_work_order') {
-      deliveredText = message;
-      payload.type = 'text';
-      payload.text = { body: message };
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const custPhone = cleanParam(variables.customer_phone, '-');
+      const custAddr = cleanParam(variables.customer_address, '-');
+      const issueDetails = cleanParam(
+        variables.issue_category 
+          ? `${variables.issue_category}${variables.issue_description || variables.notes ? ' - ' + (variables.issue_description || variables.notes) : ''}`
+          : (variables.issue_description || variables.notes || 'Service inspection required'),
+        'Service inspection required'
+      );
+
+      deliveredText = `🛠️ *Eco Green Solar - New Job Assignment*\n\nNamaste *${techName}*,\n\nYou have been assigned complaint ticket *${tktId}*.\n\nCustomer: *${custName}*\nPhone: ${custPhone}\nAddress: ${custAddr}\nIssue: ${issueDetails}\n\nPlease visit the customer on schedule and update status in your portal.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: techName },
+              { type: 'text', text: tktId },
+              { type: 'text', text: custName },
+              { type: 'text', text: custPhone },
+              { type: 'text', text: custAddr },
+              { type: 'text', text: issueDetails }
+            ]
+          }
+        ]
+      };
     } else if (mediaUrl) {
       if (mediaType === 'image') {
         payload.type = 'image';
