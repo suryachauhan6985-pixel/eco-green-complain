@@ -876,6 +876,12 @@ export const api = {
     }
     return res;
   },
+  uploadComplaintAttachments: async (id, formData) => {
+    return request(`/complaints/${id}/attachments`, {
+      method: 'POST',
+      body: formData
+    });
+  },
   updateComplaint: async (id, data) => {
     const res = await request(`/complaints/${id}`, {
       method: 'PUT',

@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const db = require('../config/database');
 const notificationService = require('../services/notificationService');
 
@@ -170,7 +172,14 @@ function getComplaintById(req, res) {
       }
     }
 
-    const attachments = db.prepare('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY id DESC').all(complaint.id);
+    const rawAttachments = db.prepare('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY id DESC').all(complaint.id);
+    const attachments = rawAttachments.map(att => {
+      const isBase64 = att.file_data && att.file_data.startsWith('data:');
+      return {
+        ...att,
+        file_url: isBase64 ? att.file_data : (att.file_url && att.file_url.startsWith('/api/') ? att.file_url : `/api/attachments/${att.id}`)
+      };
+    });
     const timeline = db.prepare('SELECT * FROM complaint_timelines WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
     const notifications = db.prepare('SELECT * FROM notification_logs WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
 
@@ -329,11 +338,22 @@ async function createComplaint(req, res) {
     // Save attachments if uploaded
     if (req.files && req.files.length > 0) {
       const attachStmt = db.prepare(`
-        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, uploaded_by)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?)
       `);
       for (const f of req.files) {
-        attachStmt.run(complaintId, f.originalname, `/uploads/${f.filename}`, f.mimetype, actorName);
+        let base64Data = null;
+        try {
+          if (fs.existsSync(f.path)) {
+            const fileBuf = fs.readFileSync(f.path);
+            base64Data = `data:${f.mimetype || 'image/jpeg'};base64,${fileBuf.toString('base64')}`;
+          }
+        } catch (err) {
+          console.warn('Could not encode file to base64:', err.message);
+        }
+        const insertRes = attachStmt.run(complaintId, f.originalname, `/uploads/${f.filename}`, f.mimetype, base64Data, actorName);
+        const attId = insertRes.lastInsertRowid;
+        db.prepare('UPDATE complaint_attachments SET file_url = ? WHERE id = ?').run(`/api/attachments/${attId}`, attId);
       }
     }
 
@@ -912,7 +932,22 @@ async function resolveComplaint(req, res) {
 
     let photoUrl = closing_photo_url || null;
     if (req.file) {
-      photoUrl = `/uploads/${req.file.filename}`;
+      let base64Data = null;
+      try {
+        if (fs.existsSync(req.file.path)) {
+          const fileBuf = fs.readFileSync(req.file.path);
+          base64Data = `data:${req.file.mimetype || 'image/jpeg'};base64,${fileBuf.toString('base64')}`;
+        }
+      } catch (err) {
+        console.warn('Could not encode closing photo to base64:', err.message);
+      }
+      const attachRes = db.prepare(`
+        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(id, req.file.originalname || 'Closing_Photo.jpg', `/uploads/${req.file.filename}`, req.file.mimetype, base64Data, performer);
+      const attId = attachRes.lastInsertRowid;
+      photoUrl = base64Data || `/api/attachments/${attId}`;
+      db.prepare('UPDATE complaint_attachments SET file_url = ? WHERE id = ?').run(`/api/attachments/${attId}`, attId);
     }
 
     db.prepare(`
@@ -1185,12 +1220,68 @@ function syncBackupComplaints(req, res) {
   }
 }
 
+async function addAttachments(req, res) {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const actorName = req.user ? req.user.name : 'Staff';
+    const attachStmt = db.prepare(`
+      INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const added = [];
+    for (const f of req.files) {
+      let base64Data = null;
+      try {
+        if (fs.existsSync(f.path)) {
+          const fileBuf = fs.readFileSync(f.path);
+          base64Data = `data:${f.mimetype || 'image/jpeg'};base64,${fileBuf.toString('base64')}`;
+        }
+      } catch (err) {
+        console.warn('Could not encode file buffer:', err.message);
+      }
+      const insertRes = attachStmt.run(id, f.originalname, `/uploads/${f.filename}`, f.mimetype, base64Data, actorName);
+      const attId = insertRes.lastInsertRowid;
+      const permUrl = `/api/attachments/${attId}`;
+      db.prepare('UPDATE complaint_attachments SET file_url = ? WHERE id = ?').run(permUrl, attId);
+      added.push({
+        id: attId,
+        complaint_id: id,
+        file_name: f.originalname,
+        file_url: base64Data || permUrl,
+        file_type: f.mimetype,
+        uploaded_by: actorName
+      });
+    }
+
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES (?, 'Attachment Added', ?, ?, ?, 0)
+    `).run(id, `Added ${req.files.length} document/photo proof: ${req.files.map(f => f.originalname).join(', ')}`, actorName, req.user?.role || 'staff');
+
+    res.json({ message: 'Attachments uploaded successfully', attachments: added });
+  } catch (err) {
+    console.error('Add attachments error:', err);
+    res.status(500).json({ error: 'Failed to upload attachments: ' + err.message });
+  }
+}
+
 module.exports = {
   listComplaints,
   getComplaintById,
   getCustomerHistory,
   trackTicket,
   createComplaint,
+  addAttachments,
   updateComplaint,
   recordPayment,
   settleCompanyPayment,

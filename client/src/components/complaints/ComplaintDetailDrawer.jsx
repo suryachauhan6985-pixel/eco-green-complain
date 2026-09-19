@@ -7,7 +7,7 @@ import {
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
-  MessageCircle, Copy, Eye, FileText, UserCheck, Trash2
+  MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -79,6 +79,28 @@ export const ComplaintDetailDrawer = ({
   const [showUnderpaidWarning, setShowUnderpaidWarning] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
+  const [uploadingAtt, setUploadingAtt] = useState(false);
+
+  const handleUploadMoreAttachments = async (e) => {
+    if (!e.target.files || e.target.files.length === 0 || !ticket) return;
+    try {
+      setUploadingAtt(true);
+      const files = Array.from(e.target.files);
+      const fd = new FormData();
+      files.forEach(f => fd.append('attachments', f));
+      const res = await api.uploadComplaintAttachments(ticket.id, fd);
+      if (res && res.attachments) {
+        setAttachments(prev => [...res.attachments, ...prev]);
+        showToast(`${files.length} document/photo(s) attached successfully!`, 'success');
+        if (onComplaintUpdated) onComplaintUpdated();
+      }
+    } catch (err) {
+      showToast('Failed to upload attachment: ' + err.message, 'error');
+    } finally {
+      setUploadingAtt(false);
+      e.target.value = '';
+    }
+  };
 
   // WhatsApp Live Chat State
   const [waChatMessages, setWaChatMessages] = useState([]);
@@ -936,27 +958,56 @@ export const ComplaintDetailDrawer = ({
                         {ticket.issue_description}
                       </p>
 
-                      {attachments.length > 0 && (
-                        <div className="mt-4 pt-3 border-t border-slate-100">
-                          <span className="text-[11px] font-bold text-slate-700 block mb-2 flex items-center gap-1.5">
+                      <div className="mt-4 pt-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
                             <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Proof Documents / Photos ({attachments.length}):
                           </span>
+                          <label className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                            {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                            <span>{uploadingAtt ? 'Uploading...' : 'Add Photo / Doc'}</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*,application/pdf"
+                              className="hidden"
+                              disabled={uploadingAtt}
+                              onChange={handleUploadMoreAttachments}
+                            />
+                          </label>
+                        </div>
+                        {attachments.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {attachments.map((att) => {
-                              const isImg = att.file_url && (att.file_url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || att.file_name?.match(/\.(jpeg|jpg|gif|png|webp)$/i));
+                              const fileUrl = att.file_data || att.file_url || `/api/attachments/${att.id}`;
+                              const isImg = att.file_type?.startsWith('image/') || 
+                                            (fileUrl && fileUrl.startsWith('data:image/')) || 
+                                            (fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) || 
+                                            (att.file_name?.match(/\.(jpeg|jpg|gif|png|webp)$/i));
                               return (
                                 <div
                                   key={att.id}
                                   className="group bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl p-2 transition-all flex items-center gap-2 relative overflow-hidden"
                                 >
                                   {isImg ? (
-                                    <img
-                                      src={att.file_url}
-                                      alt={att.file_name}
-                                      onClick={() => setPreviewDocModal({ url: att.file_url, name: att.file_name, isImage: true })}
-                                      className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
-                                      title="Click to view full photo"
-                                    />
+                                    <div className="relative w-12 h-12 shrink-0">
+                                      <img
+                                        src={fileUrl}
+                                        alt={att.file_name}
+                                        onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: true })}
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none';
+                                          if (e.currentTarget.nextElementSibling) {
+                                            e.currentTarget.nextElementSibling.style.display = 'flex';
+                                          }
+                                        }}
+                                        className="w-12 h-12 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-85 transition-opacity"
+                                        title="Click to view full photo"
+                                      />
+                                      <div className="hidden w-12 h-12 bg-slate-100 rounded-lg items-center justify-center text-slate-500 border border-slate-200">
+                                        <FileText className="w-5 h-5 text-emerald-600" />
+                                      </div>
+                                    </div>
                                   ) : (
                                     <div className="w-12 h-12 bg-slate-200/70 rounded-lg flex items-center justify-center text-slate-500 shrink-0">
                                       <Paperclip className="w-5 h-5" />
@@ -969,17 +1020,18 @@ export const ComplaintDetailDrawer = ({
                                     <div className="flex items-center gap-1.5 mt-1">
                                       <button
                                         type="button"
-                                        onClick={() => isImg ? setPreviewDocModal({ url: att.file_url, name: att.file_name, isImage: true }) : window.open(att.file_url, '_blank')}
+                                        onClick={() => isImg ? setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: true }) : window.open(fileUrl, '_blank')}
                                         className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 cursor-pointer bg-emerald-100/70 px-1.5 py-0.5 rounded"
                                       >
                                         <Eye className="w-3 h-3" /> Preview
                                       </button>
                                       <a
-                                        href={att.file_url}
+                                        href={fileUrl}
                                         target="_blank"
                                         rel="noreferrer"
+                                        download={att.file_name}
                                         className="text-[10px] text-slate-500 hover:text-slate-700 flex items-center gap-0.5"
-                                        title="Open file in new tab"
+                                        title="Open or download file"
                                       >
                                         <ExternalLink className="w-3 h-3" />
                                       </a>
@@ -989,8 +1041,10 @@ export const ComplaintDetailDrawer = ({
                               );
                             })}
                           </div>
-                        </div>
-                      )}
+                        ) : (
+                          <p className="text-xs text-slate-400 italic">No proof photos or documents attached yet.</p>
+                        )}
+                      </div>
                     </div>
 
                     {/* Rating & Feedback Banner if available */}
@@ -2239,9 +2293,10 @@ export const ComplaintDetailDrawer = ({
                   href={previewDocModal.url}
                   target="_blank"
                   rel="noreferrer"
+                  download={previewDocModal.name}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" /> Full Tab
+                  <ExternalLink className="w-3.5 h-3.5" /> Full Tab / Download
                 </a>
                 <button 
                   type="button"
@@ -2254,11 +2309,34 @@ export const ComplaintDetailDrawer = ({
             </div>
             <div className="p-2 flex items-center justify-center max-h-[75vh] overflow-auto bg-slate-50/70 rounded-xl mt-2">
               {previewDocModal.isImage ? (
-                <img 
-                  src={previewDocModal.url} 
-                  alt={previewDocModal.name} 
-                  className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm" 
-                />
+                <div className="relative flex flex-col items-center justify-center w-full">
+                  <img 
+                    src={previewDocModal.url} 
+                    alt={previewDocModal.name} 
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const fb = document.getElementById('preview-doc-fallback-view');
+                      if (fb) fb.style.display = 'flex';
+                    }}
+                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm" 
+                  />
+                  <div id="preview-doc-fallback-view" className="hidden flex-col items-center justify-center p-8 text-center bg-white rounded-xl border border-slate-200 my-4">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 mx-auto mb-3">
+                      <FileText className="w-7 h-7" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-800">{previewDocModal.name}</p>
+                    <p className="text-xs text-slate-500 mt-1">Uploaded document proof</p>
+                    <a
+                      href={previewDocModal.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={previewDocModal.name}
+                      className="mt-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Open / Download File
+                    </a>
+                  </div>
+                </div>
               ) : (
                 <iframe src={previewDocModal.url} className="w-full h-[65vh] rounded-lg" title={previewDocModal.name} />
               )}

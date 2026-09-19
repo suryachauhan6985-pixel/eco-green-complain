@@ -296,17 +296,68 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     });
   };
 
-  const handleFileChange = (e) => {
+  const compressImageFile = (file) => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+        return resolve(file);
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const maxDim = 1400;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return resolve(file);
+              const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressed);
+            },
+            'image/jpeg',
+            0.82
+          );
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e) => {
     if (e.target.files) {
       const selected = Array.from(e.target.files);
-      const newItems = selected.map(file => ({
-        id: Math.random().toString(36).substring(2, 9),
-        file,
-        name: file.name,
-        size: (file.size / 1024).toFixed(1) + ' KB',
-        isImage: file.type.startsWith('image/'),
-        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
-      }));
+      const newItems = await Promise.all(
+        selected.map(async (file) => {
+          const optimized = file.type.startsWith('image/') ? await compressImageFile(file) : file;
+          return {
+            id: Math.random().toString(36).substring(2, 9),
+            file: optimized,
+            name: optimized.name,
+            size: (optimized.size / 1024).toFixed(1) + ' KB',
+            isImage: optimized.type.startsWith('image/'),
+            preview: optimized.type.startsWith('image/') ? URL.createObjectURL(optimized) : null
+          };
+        })
+      );
       setFileList(prev => [...prev, ...newItems].slice(0, 5));
     }
   };

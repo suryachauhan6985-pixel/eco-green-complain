@@ -108,6 +108,7 @@ function initializeSchema() {
       file_name TEXT NOT NULL,
       file_url TEXT NOT NULL,
       file_type TEXT,
+      file_data TEXT,
       uploaded_by TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE
@@ -437,7 +438,7 @@ function migrateComplaintsTable() {
         const fixTables = [
           {
             name: 'complaint_attachments',
-            createSql: 'CREATE TABLE complaint_attachments_new (id INTEGER PRIMARY KEY AUTOINCREMENT, complaint_id INTEGER NOT NULL, file_name TEXT NOT NULL, file_url TEXT NOT NULL, file_type TEXT, uploaded_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE)',
+            createSql: 'CREATE TABLE complaint_attachments_new (id INTEGER PRIMARY KEY AUTOINCREMENT, complaint_id INTEGER NOT NULL, file_name TEXT NOT NULL, file_url TEXT NOT NULL, file_type TEXT, file_data TEXT, uploaded_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE)',
             copySql: 'INSERT INTO complaint_attachments_new SELECT * FROM complaint_attachments'
           },
           {
@@ -637,12 +638,26 @@ function migrateTechniciansAndComplaints() {
   }
 }
 
+function migrateAttachmentsTable() {
+  try {
+    const columns = db.pragma('table_info(complaint_attachments)');
+    const columnNames = columns.map(c => c.name);
+    if (!columnNames.includes('file_data')) {
+      db.exec('ALTER TABLE complaint_attachments ADD COLUMN file_data TEXT');
+      console.log('✅ Added file_data column to local complaint_attachments');
+    }
+  } catch (err) {
+    console.warn('[Database] Attachments migration note:', err.message);
+  }
+}
+
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
 } catch (e) {}
 
 initializeSchema();
 migrateComplaintsTable();
+migrateAttachmentsTable();
 migrateWhatsAppMessagesTable();
 migrateUsersTable();
 migrateTechniciansAndComplaints();
@@ -656,14 +671,17 @@ if (tursoSync.isEnabled) {
   tursoSync.pullFromCloud(db).then(() => {
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();
+    migrateAttachmentsTable();
   }).catch(err => {
     console.error('[Database] Initial Turso pull failed:', err.message);
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();
+    migrateAttachmentsTable();
   });
 } else {
   migrateNotificationTemplates();
   migrateTechniciansAndComplaints();
+  migrateAttachmentsTable();
 }
 
 module.exports = db;

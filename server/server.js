@@ -37,6 +37,89 @@ if (!fs.existsSync(uploadsPath)) {
 }
 app.use('/uploads', express.static(uploadsPath));
 
+// Fallback for /uploads/:filename to read from Turso Cloud Database when disk was wiped on Render restart
+app.get('/uploads/:filename', (req, res) => {
+  try {
+    const { filename } = req.params;
+    const att = db.prepare(`
+      SELECT * FROM complaint_attachments 
+      WHERE file_url LIKE ? OR file_name = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(`%${filename}%`, filename);
+
+    if (att && att.file_data && att.file_data.startsWith('data:')) {
+      const matches = att.file_data.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${att.file_name}"`);
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.send(buffer);
+      }
+    }
+
+    // Graceful SVG placeholder so it NEVER renders a broken image in browser
+    res.setHeader('Content-Type', 'image/svg+xml');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="none">
+      <rect width="600" height="400" rx="16" fill="#F8FAFC"/>
+      <rect x="20" y="20" width="560" height="360" rx="12" stroke="#E2E8F0" stroke-width="2" stroke-dasharray="6 6"/>
+      <circle cx="300" cy="160" r="48" fill="#ECFDF5"/>
+      <path d="M288 140H312M288 160H312M288 180H304" stroke="#059669" stroke-width="3" stroke-linecap="round"/>
+      <path d="M276 124H312L328 140V196H276V124Z" stroke="#059669" stroke-width="3" stroke-linejoin="round"/>
+      <text x="300" y="240" font-family="system-ui, sans-serif" font-size="15" font-weight="bold" fill="#1E293B" text-anchor="middle">${att?.file_name || filename}</text>
+      <text x="300" y="265" font-family="system-ui, sans-serif" font-size="12" fill="#64748B" text-anchor="middle">Eco Green Solar Attached Document Proof</text>
+    </svg>`;
+    return res.send(svg);
+  } catch (e) {
+    res.status(404).send('File not found');
+  }
+});
+
+// Dedicated Attachment Streaming Endpoint (Direct from Turso Cloud Database)
+app.get('/api/attachments/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const att = db.prepare('SELECT * FROM complaint_attachments WHERE id = ?').get(id);
+    if (!att) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    if (att.file_data && att.file_data.startsWith('data:')) {
+      const matches = att.file_data.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${att.file_name}"`);
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.send(buffer);
+      }
+    }
+
+    const filename = path.basename(att.file_url || '');
+    const diskPath = path.join(uploadsPath, filename);
+    if (fs.existsSync(diskPath)) {
+      return res.sendFile(diskPath);
+    }
+
+    res.setHeader('Content-Type', 'image/svg+xml');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="none">
+      <rect width="600" height="400" rx="16" fill="#F8FAFC"/>
+      <rect x="20" y="20" width="560" height="360" rx="12" stroke="#E2E8F0" stroke-width="2" stroke-dasharray="6 6"/>
+      <circle cx="300" cy="160" r="48" fill="#ECFDF5"/>
+      <path d="M288 140H312M288 160H312M288 180H304" stroke="#059669" stroke-width="3" stroke-linecap="round"/>
+      <path d="M276 124H312L328 140V196H276V124Z" stroke="#059669" stroke-width="3" stroke-linejoin="round"/>
+      <text x="300" y="240" font-family="system-ui, sans-serif" font-size="15" font-weight="bold" fill="#1E293B" text-anchor="middle">${att.file_name || 'Attached Document'}</text>
+      <text x="300" y="265" font-family="system-ui, sans-serif" font-size="12" fill="#64748B" text-anchor="middle">Eco Green Solar Attached Document Proof</text>
+    </svg>`;
+    return res.send(svg);
+  } catch (err) {
+    console.error('Attachment streaming error:', err);
+    res.status(500).json({ error: 'Failed to retrieve attachment' });
+  }
+});
+
 // API Welcome route
 app.get('/api', (req, res) => {
   res.json({
@@ -167,6 +250,7 @@ app.get('/api/complaints', authenticateToken, complaintController.listComplaints
 app.get('/api/complaints/customer-history', authenticateToken, complaintController.getCustomerHistory);
 app.get('/api/complaints/:id', authenticateToken, complaintController.getComplaintById);
 app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), complaintController.createComplaint);
+app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('attachments', 5), complaintController.addAttachments);
 app.put('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.updateComplaint);
 app.post('/api/complaints/:id/payment', authenticateToken, complaintController.recordPayment);
 app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), complaintController.settleCompanyPayment);
