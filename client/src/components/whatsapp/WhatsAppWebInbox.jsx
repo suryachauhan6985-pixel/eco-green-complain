@@ -435,12 +435,17 @@ export const WhatsAppWebInbox = ({
     if (!targetPhone) return;
     try {
       showToast('Retrying WhatsApp delivery...', 'info');
-      const res = await api.sendWhatsAppDirectReply(targetPhone, msg.message_body);
-      if (res && res.success) {
-        showToast('Message sent successfully!', 'success');
+      let res;
+      if (msg.id && !String(msg.id).startsWith('temp_')) {
+        res = await api.retryWhatsAppMessage(msg.id);
+      } else {
+        res = await api.sendWhatsAppDirectReply(targetPhone, msg.message_body);
+      }
+      if (res && (res.success || res.status === 'sent')) {
+        showToast('Message retried & delivered to Meta Cloud API!', 'success');
         fetchChatHistory(targetPhone);
       } else {
-        showToast('Retry failed: ' + (res?.error || 'Meta API rejected message'), 'error');
+        showToast('Retry failed: ' + (res?.error || res?.failure_reason || 'Rejected by Meta'), 'error');
       }
     } catch (err) {
       showToast('Retry error: ' + err.message, 'error');

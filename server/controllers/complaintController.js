@@ -731,17 +731,37 @@ async function assignTechnician(req, res) {
       VALUES (?, 'Assigned', ?, ?, ?, 1)
     `).run(id, `Assigned to ${technician.name} (${technician.area_zone}). Expected visit: ${expected_visit_date || 'Within 24-48 hrs'}`, performer, role);
 
-    // 1. Notify Customer via WhatsApp & Email
-    notificationService.dispatchAsync({
-      complaintId: id,
-      templateKey: 'technician_assigned',
-      data: {
-        customer_name: complaint.customer_name,
-        ticket_id: complaint.ticket_id,
-        technician_name: technician.name,
-        expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
-      }
-    });
+    // Check if technician is already the same technician (e.g. re-dispatching, retrying or re-saving)
+    const isSameTechnician = complaint.assigned_technician_id && String(complaint.assigned_technician_id) === String(technician_id);
+    const explicitNotifyCustomer = req.body.notify_customer !== undefined ? Boolean(req.body.notify_customer) : null;
+
+    // Check if customer was already notified for technician assignment
+    const alreadyNotifiedCustomer = db.prepare(`
+      SELECT id FROM notification_logs 
+      WHERE complaint_id = ? AND template_key = 'technician_assigned' AND status = 'sent'
+      LIMIT 1
+    `).get(id);
+
+    // Only notify customer if:
+    // 1. Explicitly requested: notify_customer === true
+    // OR 2. Not the same technician OR customer was never notified before
+    const shouldNotifyCustomer = explicitNotifyCustomer !== null
+      ? explicitNotifyCustomer
+      : (!isSameTechnician || !alreadyNotifiedCustomer);
+
+    if (shouldNotifyCustomer) {
+      // 1. Notify Customer via WhatsApp & Email
+      notificationService.dispatchAsync({
+        complaintId: id,
+        templateKey: 'technician_assigned',
+        data: {
+          customer_name: complaint.customer_name,
+          ticket_id: complaint.ticket_id,
+          technician_name: technician.name,
+          expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
+        }
+      });
+    }
 
     // 2. Notify Technician via WhatsApp (Direct dispatch using configured notification template)
     if (technician.phone) {
@@ -1275,6 +1295,53 @@ async function addAttachments(req, res) {
   }
 }
 
+/**
+ * Re-send work order directly to technician via WhatsApp Cloud API
+ * Does NOT notify or bother the customer
+ */
+function resendTechnicianWorkOrder(req, res) {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
+    if (!complaint.assigned_technician_id) {
+      return res.status(400).json({ error: 'No technician assigned to this complaint' });
+    }
+    const technician = db.prepare('SELECT * FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
+    if (!technician || !technician.phone) {
+      return res.status(400).json({ error: 'Technician phone number not found' });
+    }
+
+    notificationService.dispatchAsync({
+      complaintId: id,
+      templateKey: 'technician_work_order',
+      channels: ['whatsapp'],
+      forceWhatsAppTo: technician.phone,
+      data: {
+        technician_name: technician.name,
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: complaint.customer_address + (complaint.city ? ` (${complaint.city})` : ''),
+        product_type: complaint.product_type,
+        issue_category: complaint.issue_category,
+        issue_description: complaint.issue_description,
+        priority: complaint.priority,
+        expected_visit_date: complaint.expected_visit_date || 'Immediate / Today',
+        notes: complaint.issue_description
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      message: `Work order sent to technician ${technician.name} (${technician.phone}) via WhatsApp Cloud API` 
+    });
+  } catch (err) {
+    console.error('Error resending technician work order:', err);
+    res.status(500).json({ error: 'Failed to resend: ' + err.message });
+  }
+}
+
 module.exports = {
   listComplaints,
   getComplaintById,
@@ -1287,6 +1354,7 @@ module.exports = {
   settleCompanyPayment,
   assignTechnician,
   remindTechnician,
+  resendTechnicianWorkOrder,
   addTimelineNote,
   resolveComplaint,
   closeComplaint,

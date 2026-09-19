@@ -105,14 +105,13 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const custPhone = cleanParam(variables.customer_phone, '-');
       const custAddr = cleanParam(variables.customer_address, '-');
-      const issueDetails = cleanParam(
-        variables.issue_category 
-          ? `${variables.issue_category}${variables.issue_description || variables.notes ? ' - ' + (variables.issue_description || variables.notes) : ''}`
-          : (variables.issue_description || variables.notes || 'Service inspection required'),
-        'Service inspection required'
-      );
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const notes = cleanParam(variables.notes || variables.issue_description, 'Inspection required');
+      const priority = cleanParam(variables.priority, 'Normal');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Immediate / Today');
 
-      deliveredText = `🛠️ *Eco Green Solar - New Job Assignment*\n\nNamaste *${techName}*,\n\nYou have been assigned complaint ticket *${tktId}*.\n\nCustomer: *${custName}*\nPhone: ${custPhone}\nAddress: ${custAddr}\nIssue: ${issueDetails}\n\nPlease visit the customer on schedule and update status in your portal.`;
+      deliveredText = `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello ${techName}, you have been assigned ticket *${tktId}*.\n\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddr}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`;
 
       payload.type = 'template';
       payload.template = {
@@ -122,12 +121,135 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: techName },
-              { type: 'text', text: tktId },
-              { type: 'text', text: custName },
-              { type: 'text', text: custPhone },
-              { type: 'text', text: custAddr },
-              { type: 'text', text: issueDetails }
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+              { type: 'text', parameter_name: 'customer_address', text: custAddr },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'issue_category', text: issueCat },
+              { type: 'text', parameter_name: 'notes', text: notes },
+              { type: 'text', parameter_name: 'priority', text: priority },
+              { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reminder' || templateName === 'technician_pending_visit_reminder') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const custPhone = cleanParam(variables.customer_phone, '-');
+      const custAddr = cleanParam(variables.customer_address, '-');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Today');
+
+      deliveredText = `*Eco Green Solar - Job Reminder*\n\nHello ${techName}, this is a friendly reminder for scheduled ticket *${tktId}*.\n\n*Customer:* ${custName}\n*Phone:* ${custPhone}\n*Address:* ${custAddr}\n*Visit Date:* ${visitDate}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_pending_visit_reminder',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+              { type: 'text', parameter_name: 'customer_address', text: custAddr },
+              { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reassigned' || templateName === 'technician_job_reassigned_notice') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const notes = cleanParam(variables.notes, 'Ticket reassigned.');
+
+      deliveredText = `*Eco Green Solar - Job Update*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) has been reassigned or updated.\n\n*Notes:* ${notes}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_job_reassigned_notice',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'notes', text: notes }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'complaint_closed' || templateName === 'complaint_closed_feedback_request') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+
+      deliveredText = `*Eco Green Solar Closure*\n\nNamaste, ${custName}, your complaint *${tktId}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience:*\n${cleanTrackingUrl}\n\n- Eco Green Solar Care`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_closed_feedback_request',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'feedback_url', text: cleanTrackingUrl }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'complaint_reopened' || templateName === 'complaint_reopened_notification') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+
+      deliveredText = `*Eco Green Solar Priority Alert*\n\nNamaste, ${custName}, your complaint *${tktId}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n*Track:* ${cleanTrackingUrl}\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_reopened_notification',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'feedback_url', text: cleanTrackingUrl }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'status_update' || templateName === 'status_followup_note_update') {
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const status = cleanParam(variables.status, 'In Progress');
+      const notes = cleanParam(variables.notes, 'Update added');
+
+      deliveredText = `*Eco Green Solar Alert*\n\nUpdate on Complaint *${tktId}* (${prodType}):\nStatus: *${status}*\n\n*Notes:* ${notes}\n\n*Track Live:* ${cleanTrackingUrl}\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'status_followup_note_update',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'status', text: status },
+              { type: 'text', parameter_name: 'notes', text: notes },
+              { type: 'text', parameter_name: 'feedback_url', text: cleanTrackingUrl }
             ]
           }
         ]

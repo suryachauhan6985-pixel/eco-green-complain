@@ -256,6 +256,7 @@ app.post('/api/complaints/:id/payment', authenticateToken, complaintController.r
 app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), complaintController.settleCompanyPayment);
 app.post('/api/complaints/:id/assign', authenticateToken, requireRole('admin', 'staff'), complaintController.assignTechnician);
 app.post('/api/complaints/:id/remind-tech', authenticateToken, requireRole('admin', 'staff'), complaintController.remindTechnician);
+app.post('/api/complaints/:id/resend-technician', authenticateToken, requireRole('admin', 'staff'), complaintController.resendTechnicianWorkOrder);
 app.post('/api/complaints/:id/note', authenticateToken, complaintController.addTimelineNote);
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), complaintController.resolveComplaint);
 app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 'staff'), complaintController.closeComplaint);
@@ -1021,6 +1022,81 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
   } catch (err) {
     console.error('Error sending direct WhatsApp reply:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. Smart Retry failed WhatsApp message (re-dispatches using approved Meta template if template was used)
+app.post('/api/whatsapp/retry-message/:id', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const msg = db.prepare('SELECT * FROM whatsapp_messages WHERE id = ?').get(id);
+    if (!msg) {
+      return res.status(404).json({ error: 'Message record not found' });
+    }
+
+    const { sendWhatsAppMessage } = require('./services/whatsappProvider');
+    let sendRes;
+
+    if (msg.template_name) {
+      let complaint = msg.complaint_id ? db.prepare('SELECT * FROM complaints WHERE id = ?').get(msg.complaint_id) : null;
+      const cleanPhone = (msg.phone || '').replace(/\D/g, '');
+      const last10 = cleanPhone.slice(-10);
+
+      if (!complaint && cleanPhone) {
+        complaint = db.prepare(`SELECT * FROM complaints WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? ORDER BY id DESC LIMIT 1`).get(`%${last10}%`);
+      }
+
+      let tech = null;
+      if (complaint?.assigned_technician_id) {
+        tech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
+      } else {
+        tech = db.prepare(`SELECT * FROM technicians WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ? LIMIT 1`).get(`%${last10}%`);
+      }
+
+      const variables = {
+        customer_name: complaint?.customer_name || 'Valued Customer',
+        complaint_id: complaint?.ticket_id || 'Ticket',
+        ticket_id: complaint?.ticket_id || 'Ticket',
+        customer_phone: complaint?.customer_phone || '-',
+        customer_address: complaint?.customer_address || '-',
+        product_type: complaint?.product_type || 'Solar Rooftop Systems',
+        issue_category: complaint?.issue_category || 'Service Request',
+        notes: complaint?.issue_description || 'Inspection required',
+        priority: complaint?.priority || 'Normal',
+        expected_visit_date: complaint?.expected_visit_date || 'Immediate / Today',
+        technician_name: tech?.name || 'Technician',
+        technician_phone: tech?.phone || msg.phone,
+        feedback_url: `https://eco-green-complain.vprotech.online/track/${complaint?.ticket_id || ''}`
+      };
+
+      sendRes = await sendWhatsAppMessage({
+        to: msg.phone,
+        message: msg.message_body,
+        templateName: msg.template_name,
+        variables
+      });
+    } else {
+      sendRes = await sendWhatsAppMessage({
+        to: msg.phone,
+        message: msg.message_body
+      });
+    }
+
+    // Update message status in DB
+    db.prepare(`
+      UPDATE whatsapp_messages 
+      SET status = 'sent', failure_reason = NULL, wam_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(sendRes?.messageId || null, id);
+
+    res.json({ 
+      success: true, 
+      message: 'Message retried and delivered to Meta Cloud API', 
+      wam_id: sendRes?.messageId 
+    });
+  } catch (err) {
+    console.error('Error retrying message:', err);
+    res.status(500).json({ error: 'Retry failed: ' + err.message });
   }
 });
 

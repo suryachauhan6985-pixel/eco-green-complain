@@ -37,6 +37,7 @@ export const ComplaintDetailDrawer = ({
   const [assigning, setAssigning] = useState(false);
   const [assignSuccessModal, setAssignSuccessModal] = useState(null);
   const [sendingReminder, setSendingReminder] = useState(false);
+  const [resendingWorkOrder, setResendingWorkOrder] = useState(false);
   const [isReassignOpen, setIsReassignOpen] = useState(false);
   const [copiedCustWa, setCopiedCustWa] = useState(false);
   const [copiedTechWa, setCopiedTechWa] = useState(false);
@@ -229,6 +230,21 @@ export const ComplaintDetailDrawer = ({
       showToast('Failed to send reminder: ' + err.message, 'error');
     } finally {
       setSendingReminder(false);
+    }
+  };
+
+  const handleResendTechWorkOrder = async () => {
+    if (!ticket?.id) return;
+    try {
+      setResendingWorkOrder(true);
+      const res = await api.resendTechnicianWorkOrder(ticket.id);
+      showToast(res.message || `Work order sent to ${ticket.technician_name || 'technician'} via WhatsApp!`, 'success');
+      await fetchTicketDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err) {
+      showToast('Failed to resend work order: ' + err.message, 'error');
+    } finally {
+      setResendingWorkOrder(false);
     }
   };
 
@@ -1178,6 +1194,18 @@ export const ComplaintDetailDrawer = ({
                                         </a>
                                       );
                                     })()}
+
+                                    {/* Resend via WhatsApp Cloud API Button */}
+                                    <button
+                                      type="button"
+                                      onClick={handleResendTechWorkOrder}
+                                      disabled={resendingWorkOrder}
+                                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold border border-emerald-300 flex items-center gap-1 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                                      title="Resend official WhatsApp Template work order to technician without notifying customer"
+                                    >
+                                      <Send className={`w-3.5 h-3.5 text-emerald-700 ${resendingWorkOrder ? 'animate-spin' : ''}`} />
+                                      <span>{resendingWorkOrder ? 'Sending...' : 'Resend API'}</span>
+                                    </button>
 
                                     {/* Send Visit Reminder Button */}
                                     <button

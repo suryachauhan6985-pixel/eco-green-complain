@@ -1146,6 +1146,12 @@ export const api = {
   }),
   deleteWhatsAppMessage: (id) => request(`/whatsapp/messages/${encodeURIComponent(id)}`, {
     method: 'DELETE'
+  }),
+  retryWhatsAppMessage: (id) => request(`/whatsapp/retry-message/${encodeURIComponent(id)}`, {
+    method: 'POST'
+  }),
+  resendTechnicianWorkOrder: (id) => request(`/complaints/${encodeURIComponent(id)}/resend-technician`, {
+    method: 'POST'
   })
 };
 
