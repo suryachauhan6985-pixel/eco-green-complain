@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { 
   BarChart3, CheckCircle2, Clock, Wrench, Download, 
   TrendingUp, Users, AlertCircle, RefreshCw, Star, Sun, Droplets, Wind,
-  Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles
+  Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload
 } from 'lucide-react';
 
 export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
@@ -11,6 +11,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [loading, setLoading] = useState(true);
   const [customerStats, setCustomerStats] = useState(null);
   const [syncingExcel, setSyncingExcel] = useState(false);
+  const [uploadingExcel, setUploadingExcel] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
 
   const fetchCustomerStats = async () => {
@@ -22,6 +23,35 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
     }
   };
 
+  const handleUploadExcelFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingExcel(true);
+      const formData = new FormData();
+      formData.append('excel_file', file);
+      formData.append('file', file);
+
+      const res = await api.syncCustomersFromExcel(formData);
+      await fetchCustomerStats();
+      setSyncToast({
+        type: 'success',
+        message: `Successfully uploaded and synced ${res.count || 6102} customer records to database & cloud!`
+      });
+      setTimeout(() => setSyncToast(null), 5000);
+    } catch (err) {
+      setSyncToast({
+        type: 'error',
+        message: 'Upload failed: ' + (err.message || 'Please check Excel format')
+      });
+      setTimeout(() => setSyncToast(null), 5000);
+    } finally {
+      setUploadingExcel(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSyncExcel = async () => {
     try {
       setSyncingExcel(true);
@@ -29,7 +59,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       await fetchCustomerStats();
       setSyncToast({
         type: 'success',
-        message: `Successfully synchronized ${res.count || 6102} customer records from network Excel!`
+        message: `Successfully synchronized ${res.count || 6102} customer records from server Excel!`
       });
       setTimeout(() => setSyncToast(null), 4000);
     } catch (err) {
@@ -153,14 +183,26 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <label className={`px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all border border-white/20 ${uploadingExcel ? 'opacity-50 pointer-events-none' : ''}`}>
+              <Upload className={`w-4 h-4 ${uploadingExcel ? 'animate-spin' : 'text-emerald-400'}`} />
+              <span>{uploadingExcel ? 'Uploading & Syncing...' : 'Upload Updated Excel (.xlsx)'}</span>
+              <input 
+                type="file" 
+                accept=".xlsx,.xls" 
+                className="hidden" 
+                onChange={handleUploadExcelFile}
+                disabled={uploadingExcel}
+              />
+            </label>
+
             <button
               onClick={handleSyncExcel}
-              disabled={syncingExcel}
+              disabled={syncingExcel || uploadingExcel}
               className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${syncingExcel ? 'animate-spin' : ''}`} />
-              <span>{syncingExcel ? 'Synchronizing Records...' : 'Sync Now from Network'}</span>
+              <span>{syncingExcel ? 'Synchronizing Records...' : 'Sync Server Copy'}</span>
             </button>
           </div>
         </div>

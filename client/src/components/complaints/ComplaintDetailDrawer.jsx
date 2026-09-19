@@ -1145,21 +1145,36 @@ export const ComplaintDetailDrawer = ({
                                   <>
                                     {(() => {
                                       const tPhone = ticket.technician_phone || (technicians.find(t => String(t.id) === String(ticket.assigned_technician_id))?.phone);
-                                      const cleanTPhone = (tPhone || '').replace(/[^0-9]/g, '');
-                                      if (!cleanTPhone) return null;
-                                      const waText = encodeURIComponent(
-                                        `Namaste ${ticket.technician_name},\nRegarding scheduled complaint ${ticket.ticket_id} for ${ticket.customer_name}.\nAddress: ${ticket.customer_address}\nVisit: ${ticket.expected_visit_date || 'ASAP'}\n- Eco Green Dispatch`
-                                      );
+                                      const raw = (tPhone || '').replace(/[^0-9]/g, '');
+                                      if (!raw) return null;
+                                      const cleanTPhone = raw.startsWith('91') ? raw : `91${raw}`;
+                                      const workOrderText = 
+                                        `⚡ *ECO GREEN SOLAR - SERVICE WORK ORDER* ⚡\n\n` +
+                                        `👨‍🔧 *Technician:* ${ticket.technician_name || 'Assigned Technician'}\n` +
+                                        `🎫 *Ticket ID:* ${ticket.ticket_id}\n` +
+                                        `🚨 *Priority:* ${ticket.priority || 'Normal'}\n` +
+                                        `📅 *Scheduled Visit:* ${ticket.expected_visit_date || 'Immediate / Today'}\n\n` +
+                                        `👤 *CUSTOMER DETAILS*\n` +
+                                        `• Name: ${ticket.customer_name}\n` +
+                                        `• Mobile: ${ticket.customer_phone}\n` +
+                                        `• Address: ${ticket.customer_address || 'Not Provided'}\n\n` +
+                                        `☀️ *SYSTEM & ISSUE DETAILS*\n` +
+                                        `• System: ${ticket.product_type || 'Solar System'}\n` +
+                                        `• Issue: ${ticket.issue_category || 'Service Request'}\n` +
+                                        `• Problem: ${ticket.description || 'On-site inspection & service'}\n\n` +
+                                        `👉 *Open Ticket in App:* ${window.location.origin}/?ticket=${ticket.ticket_id}\n\n` +
+                                        `- Central Dispatch Desk (Eco Green Solar)`;
+
                                       return (
                                         <a
-                                          href={`https://wa.me/${cleanTPhone}?text=${waText}`}
+                                          href={`https://wa.me/${cleanTPhone}?text=${encodeURIComponent(workOrderText)}`}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
-                                          title="Open WhatsApp Chat with Technician"
+                                          className="px-2.5 py-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                                          title="Send complete work order directly to technician via WhatsApp Web / App"
                                         >
                                           <MessageCircle className="w-3.5 h-3.5" />
-                                          <span>WhatsApp</span>
+                                          <span>WhatsApp Work Order</span>
                                         </a>
                                       );
                                     })()}

@@ -84,7 +84,27 @@ function calculateWarranty(dateStr) {
  * Sync customers from Excel file into SQLite installed_customers table
  */
 async function syncCustomersFromExcel(sourcePathOrBuffer = null) {
-  const targetSource = sourcePathOrBuffer || DEFAULT_NETWORK_PATH;
+  let targetSource = sourcePathOrBuffer;
+  if (!targetSource) {
+    const candidates = [
+      path.join(__dirname, '..', 'data', 'customers.xlsx'),
+      path.join(__dirname, '..', 'data', 'customers.xls'),
+      path.join(__dirname, '..', 'data', 'All Customer - FINAL.xls'),
+      path.join(__dirname, '..', 'data', 'All Customer - FINAL.xlsx'),
+      DEFAULT_NETWORK_PATH
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        targetSource = c;
+        break;
+      }
+    }
+  }
+
+  if (!targetSource) {
+    throw new Error('No Excel file found. Please upload your updated Excel file (.xlsx or .xls) using the dashboard.');
+  }
+
   console.log(`[ExcelSync] Starting sync from: ${typeof targetSource === 'string' ? targetSource : 'Uploaded Buffer'}`);
 
   let wb;

@@ -95,11 +95,25 @@ function searchCustomers(req, res) {
 async function syncFromExcel(req, res) {
   try {
     let result;
-    if (req.file && req.file.buffer) {
-      result = await syncCustomersFromExcel(req.file.buffer);
+    const fs = require('fs');
+    if (req.file) {
+      const source = req.file.path || req.file.buffer;
+      result = await syncCustomersFromExcel(source);
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+      }
     } else {
       result = await syncCustomersFromExcel();
     }
+
+    // Mirror synced customer directory to Turso Cloud in optimized batches
+    const tursoSync = require('../services/tursoSyncService');
+    if (tursoSync.isEnabled && tursoSync.client) {
+      tursoSync.pushTableToCloud('installed_customers', db).catch(err => {
+        console.warn('[TursoSync] Background customer sync notice:', err.message);
+      });
+    }
+
     res.json({
       message: 'Customer database synced successfully from Excel',
       ...result

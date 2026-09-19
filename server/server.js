@@ -1239,7 +1239,15 @@ app.get('/api/reports/export-csv', authenticateToken, requireRole('admin', 'staf
 // ================= CUSTOMER DIRECTORY (EXCEL SYNC & SEARCH) =================
 app.get('/api/customers/search', customerDirectoryController.searchCustomers);
 app.get('/api/customers/stats', customerDirectoryController.getCustomerStats);
-app.post('/api/customers/sync', authenticateToken, upload.single('excel_file'), customerDirectoryController.syncFromExcel);
+app.post('/api/customers/sync', authenticateToken, (req, res, next) => {
+  upload.any()(req, res, (err) => {
+    if (err) return next(err);
+    if (req.files && req.files.length > 0) {
+      req.file = req.files[0];
+    }
+    next();
+  });
+}, customerDirectoryController.syncFromExcel);
 
 // Serve Vite frontend build in production (Unified Single-Port Render Deployment)
 const clientDistPath = path.join(__dirname, '..', 'client', 'dist');

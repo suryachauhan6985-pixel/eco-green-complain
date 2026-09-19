@@ -137,6 +137,36 @@ class TursoSyncService {
   }
 
   /**
+   * Push an entire table in optimized batches to Turso Cloud (used for bulk Excel imports).
+   */
+  async pushTableToCloud(tableName, localDb) {
+    if (!this.isEnabled || !this.client) return;
+    try {
+      console.log(`[TursoSync] Starting batch push for table ${tableName}...`);
+      const rows = localDb.prepare(`SELECT * FROM "${tableName}"`).all();
+      if (rows.length === 0) return;
+
+      const columns = Object.keys(rows[0]);
+      const colNames = columns.map(c => `"${c}"`).join(', ');
+      const placeholders = columns.map(() => '?').join(', ');
+      const insertSql = `INSERT OR REPLACE INTO "${tableName}" (${colNames}) VALUES (${placeholders})`;
+
+      const batchSize = 100;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const chunk = rows.slice(i, i + batchSize);
+        const statements = chunk.map(row => ({
+          sql: insertSql,
+          args: columns.map(col => row[col] !== undefined ? row[col] : null)
+        }));
+        await this.client.batch(statements, 'write');
+      }
+      console.log(`[TursoSync] Completed batch push for table ${tableName} (${rows.length} rows)`);
+    } catch (err) {
+      console.error(`[TursoSync] Batch push failed for ${tableName}:`, err.message);
+    }
+  }
+
+  /**
    * Process the background queue of statements to send to Turso Cloud.
    */
   async processQueue() {

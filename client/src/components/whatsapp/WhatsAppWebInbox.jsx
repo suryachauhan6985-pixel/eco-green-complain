@@ -10,7 +10,7 @@ import {
   FileCheck, Shield, ChevronRight, Video, Mic, Pin, Compass,
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
-  Edit2, Trash2, ChevronDown
+  Edit2, Trash2, ChevronDown, RotateCcw
 } from 'lucide-react';
 
 const EMOJI_CATEGORIES = {
@@ -418,6 +418,32 @@ export const WhatsAppWebInbox = ({
       loadConversations(true);
     } catch (err) {
       showToast('Failed to clear chat: ' + err.message, 'error');
+    }
+  };
+
+  // 1-Click WhatsApp Web direct send & Meta API retry for failed messages
+  const handleOpenInWhatsAppWeb = (msg) => {
+    const raw = (selectedPhone || msg.phone || '').replace(/\D/g, '');
+    const cleanPhone = raw.startsWith('91') ? raw : `91${raw}`;
+    const text = encodeURIComponent(msg.message_body || '');
+    const url = `https://wa.me/${cleanPhone}?text=${text}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleRetryMessage = async (msg) => {
+    const targetPhone = selectedPhone || msg.phone;
+    if (!targetPhone) return;
+    try {
+      showToast('Retrying WhatsApp delivery...', 'info');
+      const res = await api.sendWhatsAppDirectReply(targetPhone, msg.message_body);
+      if (res && res.success) {
+        showToast('Message sent successfully!', 'success');
+        fetchChatHistory(targetPhone);
+      } else {
+        showToast('Retry failed: ' + (res?.error || 'Meta API rejected message'), 'error');
+      }
+    } catch (err) {
+      showToast('Retry error: ' + err.message, 'error');
     }
   };
 
@@ -854,24 +880,10 @@ export const WhatsAppWebInbox = ({
                       ) : msg.status === 'delivered' ? (
                         <CheckCheck className="w-3.5 h-3.5 text-[#8696a0]" />
                       ) : msg.status === 'failed' ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const reason = msg.failure_reason || 'Unknown error';
-                            const isReengage = reason.toLowerCase().includes('re-engagement') || reason.toLowerCase().includes('131047');
-                            const helpMsg = isReengage 
-                              ? 'WhatsApp Delivery Failed:\n\nMeta 24-Hour Service Window Expired.\n\nMeta rules state that outside 24 hours of the recipient messaging your business number (+91 78784 44414), free-text messages are blocked.\n\nSolution:\n1. Ask the technician/customer to send any message (like "Hi") to +91 78784 44414 to reopen the 24h window.\n2. Or use approved WhatsApp Templates.' 
-                              : `WhatsApp Delivery Failed:\n\n${reason}`;
-                            showToast(helpMsg, 'error');
-                            alert(helpMsg);
-                          }}
-                          className="inline-flex items-center gap-0.5 text-rose-600 font-bold text-[9px] bg-rose-50 hover:bg-rose-100 px-1 py-0.5 rounded border border-rose-200 cursor-pointer transition-colors"
-                          title={`Click for reason: ${msg.failure_reason || 'Failed to deliver'}`}
-                        >
+                        <span className="inline-flex items-center gap-0.5 text-rose-600 font-bold text-[9px] bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
                           <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
                           <span>Failed</span>
-                        </button>
+                        </span>
                       ) : msg.status === 'pending' ? (
                         <Clock className="w-3 h-3 text-[#8696a0]" />
                       ) : (
@@ -880,6 +892,44 @@ export const WhatsAppWebInbox = ({
                     </span>
                   )}
                 </div>
+
+                {/* 1-Click WhatsApp Web / App Dispatch & Retry Action Bar for Failed Messages */}
+                {msg.status === 'failed' && !isCustomer && (
+                  <div className="mt-2.5 pt-2 border-t border-rose-200/90 clear-both flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-1 text-[10px] text-rose-700 font-semibold">
+                      <span className="flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                        Meta 24h Window Expired / Template Restriction
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenInWhatsAppWeb(msg);
+                        }}
+                        className="px-2.5 py-1 bg-[#25D366] hover:bg-[#20bd5a] text-white text-[10px] font-bold rounded-md flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+                        title="Open WhatsApp Web or App with this text prefilled and send in 1 click without Meta API restrictions"
+                      >
+                        <ExternalLink className="w-3 h-3 text-white" />
+                        <span>Send via WhatsApp Web (1-Click)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRetryMessage(msg);
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-md border border-slate-300 flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Retry sending via Meta Cloud API"
+                      >
+                        <RotateCcw className="w-3 h-3 text-slate-600" />
+                        <span>Retry API</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           );
