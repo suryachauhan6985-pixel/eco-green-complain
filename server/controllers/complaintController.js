@@ -709,11 +709,95 @@ async function assignTechnician(req, res) {
       });
     }
 
-    const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    // If reassigned from an existing technician, notify previous technician
+    if (complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(technician_id)) {
+      try {
+        const prevTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
+        if (prevTech && prevTech.phone) {
+          notificationService.dispatchAsync({
+            complaintId: id,
+            templateKey: 'technician_reassigned',
+            channels: ['whatsapp'],
+            forceWhatsAppTo: prevTech.phone,
+            data: {
+              technician_name: prevTech.name,
+              ticket_id: complaint.ticket_id,
+              customer_name: complaint.customer_name,
+              notes: `Ticket #${complaint.ticket_id} has been reassigned to technician ${technician.name}.`
+            }
+          });
+        }
+      } catch (reassignErr) {
+        console.warn('Technician reassign notify note:', reassignErr.message);
+      }
+    }
+
+    const updated = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ?
+    `).get(id);
+
     res.json({ message: 'Technician assigned successfully', complaint: updated });
   } catch (err) {
     console.error('Assign technician error:', err);
     res.status(500).json({ error: 'Failed to assign technician' });
+  }
+}
+
+async function remindTechnician(req, res) {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ? OR c.ticket_id = ?
+    `).get(id, id);
+
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    if (!complaint.assigned_technician_id || !complaint.technician_phone) {
+      return res.status(400).json({ error: 'No technician assigned or technician contact phone missing' });
+    }
+
+    const performer = req.user ? req.user.name : 'Dispatcher';
+    const role = req.user ? req.user.role : 'staff';
+
+    // Log timeline note
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES (?, 'Visit Reminder Sent', ?, ?, ?, 0)
+    `).run(
+      complaint.id,
+      `Sent pending visit reminder to technician ${complaint.technician_name} (${complaint.technician_phone}) via WhatsApp`,
+      performer,
+      role
+    );
+
+    // Dispatch WhatsApp reminder
+    notificationService.dispatchAsync({
+      complaintId: complaint.id,
+      templateKey: 'technician_reminder',
+      channels: ['whatsapp'],
+      forceWhatsAppTo: complaint.technician_phone,
+      data: {
+        technician_name: complaint.technician_name,
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: complaint.customer_address + (complaint.city ? ` (${complaint.city})` : ''),
+        expected_visit_date: complaint.expected_visit_date || 'Today / Scheduled Time'
+      }
+    });
+
+    res.json({ success: true, message: `Reminder WhatsApp sent to ${complaint.technician_name}` });
+  } catch (err) {
+    console.error('Remind technician error:', err);
+    res.status(500).json({ error: 'Failed to send technician reminder: ' + err.message });
   }
 }
 
@@ -1074,6 +1158,7 @@ module.exports = {
   recordPayment,
   settleCompanyPayment,
   assignTechnician,
+  remindTechnician,
   addTimelineNote,
   resolveComplaint,
   closeComplaint,

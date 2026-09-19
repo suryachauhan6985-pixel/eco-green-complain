@@ -512,12 +512,26 @@ export const ComplaintList = ({
 
                       {/* Assigned Tech */}
                       <td className="py-3 px-4 hidden sm:table-cell">
-                        <div className="flex items-center gap-1 text-slate-700">
-                          <Wrench className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span className="truncate max-w-[140px] font-medium">
-                            {c.technician_name || <em className="text-amber-600 font-normal">Unassigned</em>}
-                          </span>
-                        </div>
+                        {c.technician_name ? (
+                          <div>
+                            <div className="flex items-center gap-1.5 text-slate-900 font-semibold">
+                              <Wrench className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="truncate max-w-[140px]">
+                                {c.technician_name}
+                              </span>
+                            </div>
+                            {c.expected_visit_date && (
+                              <span className="text-[10px] text-emerald-700 block truncate pl-5 font-medium">
+                                📅 {c.expected_visit_date}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-amber-700">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <em className="text-[11px] font-medium">Unassigned</em>
+                          </div>
+                        )}
                       </td>
 
                       {/* Charges & Payment */}
@@ -692,6 +706,40 @@ export const ComplaintList = ({
                       </p>
                     </div>
 
+                    {/* Dedicated Field Technician & Visit Schedule Block (Visible from outside) */}
+                    {c.technician_name ? (
+                      <div className="mt-2 p-2 bg-emerald-50/90 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                            👨‍🔧
+                          </div>
+                          <div className="truncate">
+                            <span className="font-bold text-slate-900 block truncate text-xs">
+                              {c.technician_name}
+                            </span>
+                            <span className="text-[10px] text-emerald-700 block truncate font-medium">
+                              {c.expected_visit_date ? `📅 Visit: ${c.expected_visit_date}` : '📅 Visit scheduled'}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0">
+                          Assigned
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="mt-2 p-2 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-950 shadow-2xs">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span className="font-bold text-amber-900 truncate text-[11px]">
+                            Needs Technician Allocation
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded shrink-0">
+                          Unassigned
+                        </span>
+                      </div>
+                    )}
+
                     {/* Cash in Hand & Company Settlement in Card */}
                     {c.payment_collected > 0 && (
                       <div className="mt-2 flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-200/80">
@@ -724,10 +772,10 @@ export const ComplaintList = ({
 
                   {/* Footer Row */}
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-                    <div className="flex items-center gap-1 truncate max-w-[60%]">
-                      <Wrench className="w-3 h-3 text-emerald-600 shrink-0" />
-                      <span className="truncate font-semibold text-slate-700">
-                        {c.technician_name || <em className="text-amber-600 font-normal">Unassigned</em>}
+                    <div className="flex items-center gap-1 truncate max-w-[55%] text-slate-600 text-[11px]">
+                      <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate font-medium">
+                        {c.expected_visit_date ? `Visit: ${c.expected_visit_date}` : (c.technician_name ? 'Date Scheduled' : 'No Date Set')}
                       </span>
                     </div>
 

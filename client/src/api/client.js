@@ -657,6 +657,10 @@ function fallbackHandler(endpoint, options) {
         return { message: 'Assigned successfully', complaint: comp };
       }
 
+      if (endpoint.includes('/remind-tech')) {
+        return { success: true, message: 'Reminder sent to technician via WhatsApp' };
+      }
+
       if (endpoint.includes('/note')) {
         const id = endpoint.split('/')[2];
         const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
@@ -903,6 +907,9 @@ export const api = {
     }
     return res;
   },
+  remindTechnician: (id) => request(`/complaints/${id}/remind-tech`, {
+    method: 'POST'
+  }),
   addTimelineNote: (id, { notes, status, notify_customer }) => request(`/complaints/${id}/note`, {
     method: 'POST',
     body: JSON.stringify({ notes, status, notify_customer })

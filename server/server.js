@@ -171,6 +171,7 @@ app.put('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'),
 app.post('/api/complaints/:id/payment', authenticateToken, complaintController.recordPayment);
 app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), complaintController.settleCompanyPayment);
 app.post('/api/complaints/:id/assign', authenticateToken, requireRole('admin', 'staff'), complaintController.assignTechnician);
+app.post('/api/complaints/:id/remind-tech', authenticateToken, requireRole('admin', 'staff'), complaintController.remindTechnician);
 app.post('/api/complaints/:id/note', authenticateToken, complaintController.addTimelineNote);
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), complaintController.resolveComplaint);
 app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 'staff'), complaintController.closeComplaint);

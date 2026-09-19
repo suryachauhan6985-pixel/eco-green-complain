@@ -130,8 +130,8 @@ const TEMPLATE_METADATA = {
     triggerTitle: 'Triggered when staff assigns ticket — dispatches full customer address & issue',
     triggerHindi: 'तकनीशियन को ग्राहक का नाम, मोबाइल नंबर, पूरा पता, समस्या व समय का जॉब ऑर्डर जाता है।',
     metaTemplateName: 'technician_work_order',
-    metaStatus: 'SUBMITTED',
-    metaNote: 'Meta UTILITY Template Submitted — Direct field dispatch with customer coordinates.',
+    metaStatus: 'APPROVED',
+    metaNote: 'Meta Cloud Approved (UTILITY, ID: 1835970930769541) — 24/7 Field dispatch with customer coordinates & address.',
     recommendedPlaceholders: [
       '{{technician_name}}', '{{complaint_id}}', '{{customer_name}}', 
       '{{customer_phone}}', '{{customer_address}}', '{{product_type}}', 
