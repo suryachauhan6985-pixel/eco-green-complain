@@ -7,7 +7,8 @@ import {
   Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
-  MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2
+  MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
+  Play, Pause
 } from 'lucide-react';
 import { TicketAgeBadge } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -38,6 +39,7 @@ export const ComplaintDetailDrawer = ({
   const [assignSuccessModal, setAssignSuccessModal] = useState(null);
   const [sendingReminder, setSendingReminder] = useState(false);
   const [resendingWorkOrder, setResendingWorkOrder] = useState(false);
+  const [quickUpdatingStatus, setQuickUpdatingStatus] = useState(false);
   const [isReassignOpen, setIsReassignOpen] = useState(false);
   const [copiedCustWa, setCopiedCustWa] = useState(false);
   const [copiedTechWa, setCopiedTechWa] = useState(false);
@@ -248,6 +250,25 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
+  const handleQuickStatusChange = async (newStatus, defaultNote) => {
+    if (!ticket?.id) return;
+    try {
+      setQuickUpdatingStatus(true);
+      await api.addTimelineNote(ticket.id, {
+        notes: defaultNote || `Status updated to ${newStatus}`,
+        status: newStatus,
+        notify_customer: true
+      });
+      await fetchTicketDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+      showToast(`Status updated to "${newStatus}" & customer notified via WhatsApp!`, 'success');
+    } catch (err) {
+      showToast('Failed to update status: ' + err.message, 'error');
+    } finally {
+      setQuickUpdatingStatus(false);
+    }
+  };
+
   const handleDirectSendCustomer = async () => {
     if (!assignSuccessModal?.ticket?.customer_phone || !assignSuccessModal?.customerWa?.rawText) return;
     try {
@@ -320,6 +341,22 @@ export const ComplaintDetailDrawer = ({
   const handleResolve = async (e) => {
     e.preventDefault();
     if (!resolutionNotes.trim()) return showToast('Please enter resolution notes', 'error');
+
+    // Warning if ticket has service charges and payment has not been recorded as collected
+    const estimatedAmt = Number(ticket?.estimated_charges || ticket?.payment_amount || 0);
+    const isPaid = ticket?.payment_collected === 1 || ticket?.payment_status === 'Paid';
+
+    if (estimatedAmt > 0 && !isPaid) {
+      const proceed = await confirm({
+        title: '⚠️ Uncollected Service Charges Alert',
+        message: `This ticket has a service charge of ₹${estimatedAmt.toLocaleString()}, which has NOT been recorded as collected.\n\nAre you sure you want to mark this complaint as Resolved without collecting payment?`,
+        confirmText: 'Resolve Without Payment',
+        cancelText: 'Cancel & Collect Payment',
+        type: 'warning'
+      });
+      if (!proceed) return;
+    }
+
     try {
       setResolving(true);
       const data = new FormData();
@@ -1145,16 +1182,33 @@ export const ComplaintDetailDrawer = ({
                                       <Phone className="w-3.5 h-3.5" />
                                       <span>Call Customer</span>
                                     </a>
-                                    <a
-                                      href={`https://wa.me/${(ticket.customer_phone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Namaste ${ticket.customer_name}, I am your Eco Green Solar service technician for ticket ${ticket.ticket_id}.`)}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
-                                      title="WhatsApp Customer"
-                                    >
-                                      <MessageCircle className="w-3.5 h-3.5" />
-                                      <span>WhatsApp</span>
-                                    </a>
+                                    {(() => {
+                                      const rawCust = (ticket.customer_phone || '').replace(/[^0-9]/g, '');
+                                      const cleanCust = rawCust.startsWith('91') ? rawCust : (rawCust.length === 10 ? `91${rawCust}` : rawCust);
+                                      const techGreeting = 
+                                        `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
+                                        `Namaste *${ticket.customer_name}* ji,\n\n` +
+                                        `Main *${currentUser?.name || ticket.technician_name || 'Eco Green Solar Technician'}*, aapki solar complaint (*Ticket: ${ticket.ticket_id}*) ke service inspection ke liye sampark kar raha hu.\n\n` +
+                                        `📋 *Complaint Summary:*\n` +
+                                        `• System: ${ticket.product_type || 'Solar System'}\n` +
+                                        `• Problem: ${ticket.issue_category || 'Service inspection required'}\n` +
+                                        `• Scheduled Visit: ${ticket.expected_visit_date || 'Today / Immediate'}\n\n` +
+                                        `Main aapke address par inspection ke liye aana chahta hu. Kripya confirm karein kya aap site par uplabdh hain aur rooftop/system access mil sakta hai?\n\n` +
+                                        `📞 Support Desk: +91 78784 44414\n` +
+                                        `- Eco Green Solar Services`;
+                                      return (
+                                        <a
+                                          href={`https://wa.me/${cleanCust}?text=${encodeURIComponent(techGreeting)}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                                          title="Open WhatsApp Chat with Customer with refined greeting"
+                                        >
+                                          <MessageCircle className="w-3.5 h-3.5" />
+                                          <span>WhatsApp Customer</span>
+                                        </a>
+                                      );
+                                    })()}
                                   </div>
                                 ) : (
                                   /* Staff/Admin Actions to Technician */
@@ -1342,6 +1396,80 @@ export const ComplaintDetailDrawer = ({
                       </div>
                     )}
 
+                    {/* TECHNICIAN QUICK STAGE ACTIONS BAR */}
+                    {currentUser?.role === 'technician' && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
+                      <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-900 text-white rounded-xl p-4 border border-emerald-700/50 shadow-sm space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            </span>
+                            <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                              Field Job Actions
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white border border-white/20">
+                            Current Stage: {ticket.status}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-300">
+                          1-Click update your work status. This logs your site timeline and alerts the customer.
+                        </p>
+
+                        <div className="flex items-center gap-2 flex-wrap pt-1">
+                          {ticket.status === 'Assigned' && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickStatusChange('In Progress', 'Technician reached site and commenced inspection & service')}
+                              disabled={quickUpdatingStatus}
+                              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer disabled:opacity-50"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>{quickUpdatingStatus ? 'Updating...' : '🚀 Start Work / Mark "In Progress"'}</span>
+                            </button>
+                          )}
+
+                          {ticket.status === 'In Progress' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickStatusChange('On Hold', 'Awaiting replacement parts or customer site access')}
+                                disabled={quickUpdatingStatus}
+                                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                              >
+                                <Pause className="w-3.5 h-3.5 fill-current" />
+                                <span>{quickUpdatingStatus ? 'Updating...' : '⏸️ Put "On Hold" (Parts / Access)'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  document.getElementById('technician-resolution-section')?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>✅ Ready to Resolve? (Fill Form Below) 👇</span>
+                              </button>
+                            </>
+                          )}
+
+                          {ticket.status === 'On Hold' && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickStatusChange('In Progress', 'Resumed on-site service work')}
+                              disabled={quickUpdatingStatus}
+                              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer disabled:opacity-50"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>{quickUpdatingStatus ? 'Updating...' : '▶️ Resume Work ("In Progress")'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* FOLLOW-UP NOTE / VISIT LOG SECTION */}
                     <div className="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
                       <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -1391,9 +1519,10 @@ export const ComplaintDetailDrawer = ({
                           <button
                             type="submit"
                             disabled={submittingNote || !followUpNote.trim()}
-                            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs flex items-center gap-1 transition-colors disabled:opacity-50"
+                            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs flex items-center gap-1 transition-colors disabled:opacity-50 cursor-pointer"
                           >
-                            Add Note
+                            <Send className="w-3.5 h-3.5" />
+                            <span>{submittingNote ? 'Saving...' : 'Update Status & Save Note'}</span>
                           </button>
                         </div>
                       </form>
@@ -1401,11 +1530,24 @@ export const ComplaintDetailDrawer = ({
 
                     {/* RESOLUTION SECTION (Technician / Staff) */}
                     {ticket.status !== 'Closed' && (
-                      <div className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-200 space-y-3">
+                      <div id="technician-resolution-section" className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-200 space-y-3 scroll-mt-20">
                         <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
                           <CheckCircle className="w-4 h-4 text-emerald-700" />
                           Mark as Resolved (Technician Resolution)
                         </h4>
+
+                        {/* Warning if ticket has service charges and payment is uncollected */}
+                        {Number(ticket.estimated_charges || ticket.payment_amount || 0) > 0 && !(ticket.payment_collected === 1 || ticket.payment_status === 'Paid') && (
+                          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-amber-900">⚠️ Uncollected Service Charge: ₹{Number(ticket.estimated_charges || ticket.payment_amount || 0).toLocaleString()}</p>
+                              <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
+                                This ticket has a service charge of ₹{Number(ticket.estimated_charges || ticket.payment_amount || 0).toLocaleString()} that is currently marked as uncollected. You can collect payment in the Payment tab, or proceed to resolve with supervisor confirmation.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         <form onSubmit={handleResolve} className="space-y-3">
                           <div>
