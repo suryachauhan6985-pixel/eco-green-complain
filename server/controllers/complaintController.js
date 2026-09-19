@@ -129,8 +129,15 @@ function getComplaintById(req, res) {
     }
 
     // Role check: Technician can only access their assigned ticket
-    if (req.user && req.user.role === 'technician' && complaint.assigned_technician_id !== req.user.technicianId) {
-      return res.status(403).json({ error: 'Access denied to this ticket' });
+    if (req.user && req.user.role === 'technician') {
+      let userTechId = req.user.technicianId;
+      if (!userTechId) {
+        const tRow = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(req.user.id);
+        if (tRow) userTechId = tRow.id;
+      }
+      if (userTechId && complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(userTechId)) {
+        return res.status(403).json({ error: 'Access denied to this ticket' });
+      }
     }
 
     const attachments = db.prepare('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY id DESC').all(complaint.id);

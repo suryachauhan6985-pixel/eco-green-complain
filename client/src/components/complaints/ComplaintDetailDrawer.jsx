@@ -102,23 +102,26 @@ export const ComplaintDetailDrawer = ({
     try {
       setLoading(true);
       const data = await api.getComplaint(complaintId);
-      setTicket(data.complaint);
-      setAttachments(data.attachments || []);
-      setTimeline(data.timeline || []);
-      setNotifications(data.notifications || []);
-      if (data.complaint.assigned_technician_id) {
-        setSelectedTechId(String(data.complaint.assigned_technician_id));
+      if (data && data.complaint) {
+        setTicket(data.complaint);
+        setAttachments(data.attachments || []);
+        setTimeline(data.timeline || []);
+        setNotifications(data.notifications || []);
+        if (data.complaint.assigned_technician_id) {
+          setSelectedTechId(String(data.complaint.assigned_technician_id));
+        }
+        if (data.complaint.expected_visit_date) {
+          setExpectedDate(data.complaint.expected_visit_date);
+        }
+        setFollowUpStatus(data.complaint.status);
       }
-      if (data.complaint.expected_visit_date) {
-        setExpectedDate(data.complaint.expected_visit_date);
-      }
-      setFollowUpStatus(data.complaint.status);
-      await fetchWhatsAppChat();
     } catch (err) {
       console.error('Failed to load complaint details:', err);
     } finally {
       setLoading(false);
     }
+    // Fetch WhatsApp chat asynchronously without blocking ticket display
+    fetchWhatsAppChat();
   };
 
   const fetchTechs = async () => {
@@ -132,9 +135,11 @@ export const ComplaintDetailDrawer = ({
 
   useEffect(() => {
     if (isOpen && complaintId) {
+      setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
       fetchTicketDetails();
-      fetchTechs();
-      fetchWhatsAppChat();
+      if (['admin', 'staff'].includes(currentUser?.role)) {
+        fetchTechs();
+      }
       const interval = setInterval(fetchWhatsAppChat, 5000);
       return () => clearInterval(interval);
     }
@@ -500,33 +505,45 @@ export const ComplaintDetailDrawer = ({
           {/* Header */}
           <div className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2 shrink-0">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded">
-                  {ticket?.ticket_id || 'Loading...'}
-                </span>
-                <span className={`px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold uppercase ${
-                  ticket?.status === 'Resolved' ? 'bg-emerald-600 text-white' :
-                  ticket?.status === 'Closed' ? 'bg-slate-700 text-slate-200' :
-                  ticket?.status === 'In Progress' ? 'bg-blue-600 text-white' :
-                  ticket?.status === 'On Hold' ? 'bg-purple-600 text-white' :
-                  ticket?.status === 'Assigned' ? 'bg-indigo-600 text-white' :
-                  ticket?.status === 'Reopened' ? 'bg-rose-600 text-white' :
-                  'bg-amber-500 text-slate-950'
-                }`}>
-                  {ticket?.status === 'Registered' ? 'Unassigned' : ticket?.status}
-                </span>
-                <TicketAgeBadge complaint={ticket} />
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                  ticket?.priority === 'High' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
-                  ticket?.priority === 'Medium' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
-                  'bg-slate-800 text-slate-300'
-                }`}>
-                  {ticket?.priority} Priority
-                </span>
-              </div>
-              <h3 className="text-xs sm:text-sm font-bold text-white truncate">
-                {ticket?.product_type} — {ticket?.issue_category}
-              </h3>
+              {!ticket ? (
+                <div className="flex items-center gap-2 py-0.5">
+                  <div className="flex items-center gap-2 font-mono text-xs font-bold text-emerald-400 bg-emerald-950/90 px-3 py-1.5 rounded-lg border border-emerald-800/80 shadow-xs">
+                    <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                    <span>Loading Ticket Details...</span>
+                  </div>
+                  <span className="text-xs text-slate-400 hidden sm:inline font-medium animate-pulse">Syncing live data...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                    <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded">
+                      {ticket.ticket_id}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold uppercase ${
+                      ticket.status === 'Resolved' ? 'bg-emerald-600 text-white' :
+                      ticket.status === 'Closed' ? 'bg-slate-700 text-slate-200' :
+                      ticket.status === 'In Progress' ? 'bg-blue-600 text-white' :
+                      ticket.status === 'On Hold' ? 'bg-purple-600 text-white' :
+                      ticket.status === 'Assigned' ? 'bg-indigo-600 text-white' :
+                      ticket.status === 'Reopened' ? 'bg-rose-600 text-white' :
+                      'bg-amber-500 text-slate-950'
+                    }`}>
+                      {ticket.status === 'Registered' ? 'Unassigned' : ticket.status}
+                    </span>
+                    <TicketAgeBadge complaint={ticket} />
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                      ticket.priority === 'High' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                      ticket.priority === 'Medium' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                      'bg-slate-800 text-slate-300'
+                    }`}>
+                      {ticket.priority} Priority
+                    </span>
+                  </div>
+                  <h3 className="text-xs sm:text-sm font-bold text-white truncate">
+                    {ticket.product_type} — {ticket.issue_category}
+                  </h3>
+                </>
+              )}
             </div>
 
             {/* Action & Close Buttons */}
@@ -626,13 +643,60 @@ export const ComplaintDetailDrawer = ({
           </div>
 
           {/* Drawer Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
             {loading && !ticket ? (
-              <div className="py-20 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-                Loading ticket details...
+              <div className="space-y-4 animate-in fade-in duration-200">
+                {/* Modern Pulse Status Bar */}
+                <div className="p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-emerald-950 block">
+                        Fetching live ticket details...
+                      </span>
+                      <span className="text-[10px] text-emerald-700 block font-medium">
+                        Loading customer contacts, service location, and field work order
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-emerald-800 bg-white border border-emerald-200 shadow-2xs">
+                    Syncing...
+                  </span>
+                </div>
+
+                {/* Skeleton Card 1: Customer Details */}
+                <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 space-y-3 animate-pulse">
+                  <div className="flex items-center justify-between">
+                    <div className="h-4 bg-slate-300/80 rounded w-36"></div>
+                    <div className="h-4 bg-slate-200 rounded w-20"></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="h-10 bg-slate-200/70 rounded-xl"></div>
+                    <div className="h-10 bg-slate-200/70 rounded-xl"></div>
+                  </div>
+                  <div className="h-14 bg-slate-200/70 rounded-xl"></div>
+                </div>
+
+                {/* Skeleton Card 2: Product & Issue */}
+                <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 space-y-3 animate-pulse">
+                  <div className="h-4 bg-slate-300/80 rounded w-44"></div>
+                  <div className="h-16 bg-slate-200/70 rounded-xl"></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="h-9 bg-slate-200/70 rounded-xl"></div>
+                    <div className="h-9 bg-slate-200/70 rounded-xl"></div>
+                  </div>
+                </div>
+
+                {/* Skeleton Card 3: Action & Field Notes */}
+                <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 space-y-3 animate-pulse">
+                  <div className="h-4 bg-slate-300/80 rounded w-32"></div>
+                  <div className="h-20 bg-slate-200/70 rounded-xl"></div>
+                  <div className="h-10 bg-emerald-100/70 rounded-xl"></div>
+                </div>
               </div>
-            ) : ticket && (
+            ) : ticket ? (
               <>
                 {/* 1. OVERVIEW TAB */}
                 {activeTab === 'overview' && (
@@ -1556,6 +1620,26 @@ export const ComplaintDetailDrawer = ({
                   </div>
                 )}
               </>
+            ) : (
+              <div className="py-20 text-center space-y-4 animate-in fade-in">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200 shadow-2xs">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-slate-900 text-sm">Could Not Load Complaint</h4>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                    Ticket details could not be retrieved from the server. Please verify your connection or try again.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchTicketDetails}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Loading</span>
+                </button>
+              </div>
             )}
           </div>
 
