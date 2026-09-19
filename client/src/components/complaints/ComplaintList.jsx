@@ -50,9 +50,9 @@ export const ComplaintList = ({
     }
   }, [initialFilters]);
 
-  const fetchComplaints = async () => {
+  const fetchComplaints = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const params = {};
       if (search) params.search = search;
       if (statusFilter !== 'all') params.status = statusFilter;
@@ -63,9 +63,9 @@ export const ComplaintList = ({
       const data = await api.getComplaints(params);
       setComplaints(data.complaints || []);
     } catch (err) {
-      console.error('Failed to load complaints:', err);
+      if (!silent) console.error('Failed to load complaints:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -81,6 +81,35 @@ export const ComplaintList = ({
   useEffect(() => {
     fetchComplaints();
     fetchTechnicians();
+
+    // 1. Real-time instant SSE connection for Staff & Admin
+    let eventSource = null;
+    try {
+      if (typeof window !== 'undefined' && window.EventSource) {
+        eventSource = new EventSource('/api/realtime/stream');
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'complaint_updated') {
+              fetchComplaints(true);
+              fetchTechnicians();
+            }
+          } catch (e) {}
+        };
+      }
+    } catch (e) {}
+
+    // 2. Resilient background heartbeat sync every 5 seconds
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchComplaints(true);
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
+    };
   }, [statusFilter, productFilter, priorityFilter, technicianFilter, refreshKey]);
 
   const getAssignedTechName = (c) => {

@@ -158,12 +158,30 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
+  const fetchTicketDetailsSilent = async () => {
+    if (!complaintId) return;
+    try {
+      const data = await api.getComplaint(complaintId);
+      if (data && data.complaint) {
+        setTicket(data.complaint);
+        setAttachments(data.attachments || []);
+        setTimeline(data.timeline || []);
+        setNotifications(data.notifications || []);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     if (isOpen && complaintId) {
       setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
       fetchTicketDetails();
       fetchTechs();
-      const interval = setInterval(fetchWhatsAppChat, 5000);
+      const interval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          fetchWhatsAppChat();
+          fetchTicketDetailsSilent();
+        }
+      }, 5000);
       return () => clearInterval(interval);
     }
   }, [isOpen, complaintId]);
@@ -257,11 +275,11 @@ export const ComplaintDetailDrawer = ({
       await api.addTimelineNote(ticket.id, {
         notes: defaultNote || `Status updated to ${newStatus}`,
         status: newStatus,
-        notify_customer: true
+        notify_customer: false
       });
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
-      showToast(`Status updated to "${newStatus}" & customer notified via WhatsApp!`, 'success');
+      showToast(`Stage updated to "${newStatus}"! Live customer tracking & staff updated.`, 'success');
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');
     } finally {
@@ -1415,7 +1433,7 @@ export const ComplaintDetailDrawer = ({
                         </div>
 
                         <p className="text-[11px] text-slate-300">
-                          1-Click update your work status. This logs your site timeline and alerts the customer.
+                          1-Click stage update. Live customer tracking pipeline & staff dashboard update instantly in real time (without sending extra WhatsApp messages).
                         </p>
 
                         <div className="flex items-center gap-2 flex-wrap pt-1">

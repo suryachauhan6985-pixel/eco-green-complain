@@ -36,12 +36,12 @@ export const CustomerPublicPortal = ({
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
 
-  const performSearch = async (queryToSearch) => {
+  const performSearch = async (queryToSearch, silent = false) => {
     const q = (queryToSearch || ticketQuery || '').trim();
     if (!q) return;
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setSearched(true);
       const data = await api.trackTicket(q);
       setTrackingData(data);
@@ -53,9 +53,9 @@ export const CustomerPublicPortal = ({
         setFeedbackSubmitted(false);
       }
     } catch (err) {
-      setTrackingData(null);
+      if (!silent) setTrackingData(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -65,6 +65,17 @@ export const CustomerPublicPortal = ({
       performSearch(initialTicketId);
     }
   }, [initialTicketId]);
+
+  // Real-time live tracking auto-refresh every 5 seconds
+  useEffect(() => {
+    if (!ticketQuery) return;
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && ticketQuery.trim()) {
+        performSearch(ticketQuery.trim(), true);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [ticketQuery]);
 
   const handleSearch = (e) => {
     e?.preventDefault();
@@ -179,15 +190,18 @@ export const CustomerPublicPortal = ({
             </div>
 
             <div className="text-left sm:text-right">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                trackingData.complaint.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' :
+              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase inline-flex items-center gap-1.5 ${
+                trackingData.complaint.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                 trackingData.complaint.status === 'Closed' ? 'bg-slate-200 text-slate-800' :
-                trackingData.complaint.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                trackingData.complaint.status === 'Assigned' ? 'bg-amber-100 text-amber-800' :
-                trackingData.complaint.status === 'Reopened' ? 'bg-rose-100 text-rose-800' :
+                trackingData.complaint.status === 'In Progress' ? 'bg-blue-100 text-blue-800 border border-blue-300 animate-pulse' :
+                trackingData.complaint.status === 'On Hold' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                trackingData.complaint.status === 'Assigned' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                trackingData.complaint.status === 'Reopened' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
                 'bg-yellow-100 text-yellow-900'
               }`}>
-                {trackingData.complaint.status}
+                {trackingData.complaint.status === 'In Progress' ? '⚡ In Progress / Field Visit' :
+                 trackingData.complaint.status === 'On Hold' ? '⏸️ On Hold (Parts / Access)' :
+                 trackingData.complaint.status}
               </span>
               <span className="text-[11px] text-slate-400 block mt-1">
                 Registered: {new Date(trackingData.complaint.created_at).toLocaleDateString()}
@@ -219,7 +233,7 @@ export const CustomerPublicPortal = ({
                       }`}>
                         {isDone ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                       </div>
-                      <span className={`text-[10px] mt-2 font-medium leading-tight hidden sm:block ${
+                      <span className={`text-[9px] sm:text-[10px] mt-1.5 sm:mt-2 font-medium leading-tight block ${
                         isCurrent ? 'text-emerald-900 font-bold' : isDone ? 'text-slate-700' : 'text-slate-400'
                       }`}>
                         {s.label}

@@ -25,15 +25,15 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
   const [expandedTechId, setExpandedTechId] = useState(null);
   const [settlingAction, setSettlingAction] = useState(false);
 
-  const fetchMyJobs = async () => {
+  const fetchMyJobs = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await api.getComplaints({});
       setComplaints(data.complaints || []);
     } catch (err) {
-      console.error('Failed to load technician jobs:', err);
+      if (!silent) console.error('Failed to load technician jobs:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -58,6 +58,34 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
   useEffect(() => {
     fetchMyJobs();
     fetchTechniciansList();
+
+    // Real-time SSE listener
+    let eventSource = null;
+    try {
+      if (typeof window !== 'undefined' && window.EventSource) {
+        eventSource = new EventSource('/api/realtime/stream');
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'complaint_updated') {
+              fetchMyJobs(true);
+            }
+          } catch (e) {}
+        };
+      }
+    } catch (e) {}
+
+    // Resilient background interval
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchMyJobs(true);
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
+    };
   }, [currentUser]);
 
   const handleToggleDuty = async () => {

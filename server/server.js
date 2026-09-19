@@ -19,6 +19,7 @@ const technicianController = require('./controllers/technicianController');
 const notificationController = require('./controllers/notificationController');
 const reportController = require('./controllers/reportController');
 const customerDirectoryController = require('./controllers/customerDirectoryController');
+const realtimeService = require('./services/realtimeService');
 const { verifyWebhook, handleIncomingWebhook } = require('./services/whatsappWebhookService');
 
 const app = express();
@@ -236,6 +237,31 @@ app.post('/api/categories', authenticateToken, requireRole('admin', 'staff'), co
 app.delete('/api/categories/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.deleteCategory);
 
 // ================= COMPLAINT ROUTES =================
+// Real-time Event Stream (Server-Sent Events) for instant Staff & Admin live sync
+app.get('/api/realtime/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+
+  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
+
+  realtimeService.addClient(res);
+
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(': keepalive\n\n');
+    } catch (e) {
+      clearInterval(keepAlive);
+    }
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+  });
+});
+
 // Public track endpoint (anyone with Ticket ID or Phone)
 app.get('/api/complaints/track/:query', complaintController.trackTicket);
 // Public / authenticated customer feedback

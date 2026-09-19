@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../config/database');
 const notificationService = require('../services/notificationService');
+const realtimeService = require('../services/realtimeService');
 
 // Helper to generate unique sequential Ticket ID (e.g., EGS-2026-000123)
 function generateTicketId() {
@@ -381,6 +382,7 @@ async function createComplaint(req, res) {
     });
 
     const newTicket = db.prepare('SELECT * FROM complaints WHERE id = ?').get(complaintId);
+    realtimeService.notifyComplaintUpdate({ id: complaintId, action: 'created', status: 'Unassigned' });
     res.status(201).json({
       message: 'Complaint registered successfully',
       complaint: newTicket
@@ -491,6 +493,7 @@ async function updateComplaint(req, res) {
       WHERE c.id = ?
     `).get(id);
 
+    realtimeService.notifyComplaintUpdate({ id, action: 'updated', status: updated?.status });
     res.json({ message: 'Complaint updated successfully', complaint: updated });
   } catch (err) {
     console.error('Update complaint error:', err);
@@ -571,6 +574,7 @@ async function recordPayment(req, res) {
       WHERE c.id = ?
     `).get(id);
 
+    realtimeService.notifyComplaintUpdate({ id, action: 'payment' });
     res.json({ message: 'Payment recorded successfully', complaint: updated });
   } catch (err) {
     console.error('Record payment error:', err);
@@ -627,6 +631,7 @@ async function settleCompanyPayment(req, res) {
       WHERE c.id = ?
     `).get(id);
 
+    realtimeService.notifyComplaintUpdate({ id, action: 'settle_payment' });
     res.json({ message: 'Payment settled with company successfully', complaint: updated });
   } catch (err) {
     console.error('Settle company payment error:', err);
@@ -816,6 +821,7 @@ async function assignTechnician(req, res) {
       WHERE c.id = ?
     `).get(id);
 
+    realtimeService.notifyComplaintUpdate({ id, action: 'assigned', status: 'Assigned' });
     res.json({ message: 'Technician assigned successfully', complaint: updated });
   } catch (err) {
     console.error('Assign technician error:', err);
@@ -913,7 +919,10 @@ async function addTimelineNote(req, res) {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, status ? `Status: ${status}` : 'Follow-up Note', notes, performer, role, notify_customer ? 1 : 0);
 
-    if (notify_customer) {
+    // User requirement: Do NOT send WhatsApp messages for technician work process updates (In Progress, On Hold, or field visit notes).
+    // The pipeline/tracking page reflects the progress, but no WhatsApp message should spam the customer.
+    const isWorkProcessStatus = ['In Progress', 'On Hold'].includes(status) || role === 'technician';
+    if (notify_customer && !isWorkProcessStatus) {
       notificationService.dispatchAsync({
         complaintId: id,
         templateKey: 'status_update',
@@ -927,7 +936,10 @@ async function addTimelineNote(req, res) {
       });
     }
 
-    res.json({ message: 'Timeline note recorded successfully' });
+    // Broadcast real-time update to all connected Staff and Admin screens
+    realtimeService.notifyComplaintUpdate({ id, action: 'status_or_note', status: newStatus });
+
+    res.json({ message: 'Timeline note recorded successfully', status: newStatus });
   } catch (err) {
     res.status(500).json({ error: 'Failed to add timeline note' });
   }
@@ -1005,6 +1017,7 @@ async function resolveComplaint(req, res) {
     });
 
     const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    realtimeService.notifyComplaintUpdate({ id, action: 'resolved', status: 'Resolved' });
     res.json({ message: 'Complaint marked as resolved', complaint: updated });
   } catch (err) {
     console.error('Resolve complaint error:', err);
@@ -1050,6 +1063,7 @@ async function closeComplaint(req, res) {
     });
 
     const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    realtimeService.notifyComplaintUpdate({ id, action: 'closed', status: 'Closed' });
     res.json({ message: 'Complaint closed successfully', complaint: updated });
   } catch (err) {
     res.status(500).json({ error: 'Failed to close complaint' });
@@ -1094,6 +1108,7 @@ async function reopenComplaint(req, res) {
     });
 
     const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    realtimeService.notifyComplaintUpdate({ id, action: 'reopened', status: 'Reopened' });
     res.json({ message: 'Complaint reopened successfully', complaint: updated });
   } catch (err) {
     res.status(500).json({ error: 'Failed to reopen complaint' });
@@ -1122,6 +1137,7 @@ async function deleteComplaint(req, res) {
     deleteTx();
 
     console.log(`[ComplaintController] Deleted ticket #${complaint.ticket_id} (ID: ${compId})`);
+    realtimeService.notifyComplaintUpdate({ id: compId, action: 'deleted' });
     res.json({
       success: true,
       message: `Complaint ticket #${complaint.ticket_id} has been permanently deleted`,
