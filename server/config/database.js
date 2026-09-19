@@ -568,6 +568,14 @@ function migrateNotificationTemplates() {
       `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
       `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
     );
+
+    insertTmpl.run(
+      'technician_reassigned',
+      'Technician Job Reassigned Notice',
+      `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
+      `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
+      `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
+    );
   } catch (e) {
     console.warn('[Database] Notification templates migration note:', e.message);
   }
