@@ -44,8 +44,10 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
       setTechnicians(techs);
 
       const match = techs.find(t => 
-        (currentUser?.email && t.email === currentUser.email) ||
-        (currentUser?.name && t.name.toLowerCase().includes('rohit'))
+        (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
+        (currentUser?.id && t.user_id && String(t.user_id) === String(currentUser.id)) ||
+        (currentUser?.email && t.email?.toLowerCase() === currentUser.email?.toLowerCase()) ||
+        (currentUser?.name && t.name?.toLowerCase() === currentUser.name?.toLowerCase())
       ) || techs[0];
       setTechProfile(match);
     } catch (e) {
@@ -151,7 +153,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
   const myTechData = techCashBreakdown.find(t => 
     (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
     (techProfile && String(t.id) === String(techProfile.id)) ||
-    (currentUser?.email && t.email === currentUser.email)
+    (currentUser?.id && t.user_id && String(t.user_id) === String(currentUser.id)) ||
+    (currentUser?.email && t.email?.toLowerCase() === currentUser.email?.toLowerCase()) ||
+    (currentUser?.name && t.name?.toLowerCase() === currentUser.name?.toLowerCase())
   ) || techCashBreakdown[0];
 
   const visibleTechs = currentUser?.role === 'technician'
@@ -165,7 +169,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
 
   // Scoped complaints: If logged in as technician, ONLY show jobs assigned to this technician!
   const scopedComplaints = currentUser?.role === 'technician' && myTechData
-    ? complaints.filter(c => String(c.assigned_technician_id) === String(myTechData.id) || String(c.technician_id) === String(myTechData.id))
+    ? complaints.filter(c => 
+        String(c.assigned_technician_id) === String(myTechData.id) || 
+        String(c.technician_id) === String(myTechData.id) ||
+        (c.technician_name && c.technician_name.toLowerCase() === myTechData.name.toLowerCase())
+      )
     : complaints;
 
   const activeComplaints = scopedComplaints.filter(c => ['Assigned', 'In Progress', 'On Hold', 'Reopened'].includes(c.status));
@@ -631,6 +639,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                         'bg-amber-500 text-slate-900'
                       }`}>
                         {job.status}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        👨‍🔧 {job.technician_name || myTechData?.name || currentUser?.name || 'Assigned to You'}
                       </span>
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                         job.priority === 'High' ? 'bg-amber-100 text-amber-800' :

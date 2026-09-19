@@ -83,6 +83,14 @@ export const ComplaintList = ({
     fetchTechnicians();
   }, [statusFilter, productFilter, priorityFilter, technicianFilter, refreshKey]);
 
+  const getAssignedTechName = (c) => {
+    if (c?.technician_name) return c.technician_name;
+    const id = c?.assigned_technician_id || c?.technician_id;
+    if (!id) return null;
+    const match = technicians.find(t => t.id === id || String(t.id) === String(id));
+    return match?.name || null;
+  };
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     fetchComplaints();
@@ -98,7 +106,7 @@ export const ComplaintList = ({
       });
       return;
     }
-    const techName = complaint.technician_name || 'the assigned technician';
+    const techName = getAssignedTechName(complaint) || 'the assigned technician';
     const amount = complaint.payment_collected || 0;
     const ok = await confirm({
       title: 'Confirm Cash Deposit',
@@ -512,26 +520,29 @@ export const ComplaintList = ({
 
                       {/* Assigned Tech */}
                       <td className="py-3 px-4 hidden sm:table-cell">
-                        {c.technician_name ? (
-                          <div>
-                            <div className="flex items-center gap-1.5 text-slate-900 font-semibold">
-                              <Wrench className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <span className="truncate max-w-[140px]">
-                                {c.technician_name}
-                              </span>
+                        {(() => {
+                          const techName = getAssignedTechName(c);
+                          return techName ? (
+                            <div>
+                              <div className="flex items-center gap-1.5 text-slate-900 font-semibold">
+                                <Wrench className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span className="truncate max-w-[140px]">
+                                  {techName}
+                                </span>
+                              </div>
+                              {c.expected_visit_date && (
+                                <span className="text-[10px] text-emerald-700 block truncate pl-5 font-medium">
+                                  📅 {c.expected_visit_date}
+                                </span>
+                              )}
                             </div>
-                            {c.expected_visit_date && (
-                              <span className="text-[10px] text-emerald-700 block truncate pl-5 font-medium">
-                                📅 {c.expected_visit_date}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-amber-700">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <em className="text-[11px] font-medium">Unassigned</em>
-                          </div>
-                        )}
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-amber-700">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <em className="text-[11px] font-medium">Unassigned</em>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Charges & Payment */}
@@ -707,38 +718,41 @@ export const ComplaintList = ({
                     </div>
 
                     {/* Dedicated Field Technician & Visit Schedule Block (Visible from outside) */}
-                    {c.technician_name ? (
-                      <div className="mt-2 p-2 bg-emerald-50/90 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                            👨‍🔧
+                    {(() => {
+                      const techName = getAssignedTechName(c);
+                      return techName ? (
+                        <div className="mt-2 p-2 bg-emerald-50/90 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                              👨‍🔧
+                            </div>
+                            <div className="truncate">
+                              <span className="font-bold text-slate-900 block truncate text-xs">
+                                {techName}
+                              </span>
+                              <span className="text-[10px] text-emerald-700 block truncate font-medium">
+                                {c.expected_visit_date ? `📅 Visit: ${c.expected_visit_date}` : '📅 Visit scheduled'}
+                              </span>
+                            </div>
                           </div>
-                          <div className="truncate">
-                            <span className="font-bold text-slate-900 block truncate text-xs">
-                              {c.technician_name}
-                            </span>
-                            <span className="text-[10px] text-emerald-700 block truncate font-medium">
-                              {c.expected_visit_date ? `📅 Visit: ${c.expected_visit_date}` : '📅 Visit scheduled'}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0">
-                          Assigned
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="mt-2 p-2 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-950 shadow-2xs">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span className="font-bold text-amber-900 truncate text-[11px]">
-                            Needs Technician Allocation
+                          <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0">
+                            Assigned
                           </span>
                         </div>
-                        <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded shrink-0">
-                          Unassigned
-                        </span>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="mt-2 p-2 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-950 shadow-2xs">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span className="font-bold text-amber-900 truncate text-[11px]">
+                              Needs Technician Allocation
+                            </span>
+                          </div>
+                          <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded shrink-0">
+                            Unassigned
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Cash in Hand & Company Settlement in Card */}
                     {c.payment_collected > 0 && (

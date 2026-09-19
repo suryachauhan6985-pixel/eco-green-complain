@@ -36,7 +36,21 @@ async function login(req, res) {
     // Find technician record if user is technician
     let technicianId = null;
     if (user.role === 'technician') {
-      const tech = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(user.id);
+      let tech = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(user.id);
+      if (!tech) {
+        tech = db.prepare(`
+          SELECT id FROM technicians 
+          WHERE LOWER(email) = LOWER(?) 
+             OR (? != '' AND REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ?)
+             OR LOWER(name) = LOWER(?)
+          LIMIT 1
+        `).get(user.email || '', last10, `%${last10}%`, user.name || '');
+        if (tech) {
+          try {
+            db.prepare('UPDATE technicians SET user_id = ? WHERE id = ?').run(user.id, tech.id);
+          } catch (_) {}
+        }
+      }
       if (tech) technicianId = tech.id;
     }
 
@@ -80,7 +94,20 @@ function getMe(req, res) {
 
     let technicianId = null;
     if (user.role === 'technician') {
-      const tech = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(user.id);
+      let tech = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(user.id);
+      if (!tech) {
+        tech = db.prepare(`
+          SELECT id FROM technicians 
+          WHERE LOWER(email) = LOWER(?) 
+             OR LOWER(name) = LOWER(?)
+          LIMIT 1
+        `).get(user.email || '', user.name || '');
+        if (tech) {
+          try {
+            db.prepare('UPDATE technicians SET user_id = ? WHERE id = ?').run(user.id, tech.id);
+          } catch (_) {}
+        }
+      }
       if (tech) technicianId = tech.id;
     }
 

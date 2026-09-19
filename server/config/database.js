@@ -600,6 +600,43 @@ function migrateUsersTable() {
   }
 }
 
+function migrateTechniciansAndComplaints() {
+  try {
+    // 1. Link technicians.user_id from users table if null
+    db.prepare(`
+      UPDATE technicians 
+      SET user_id = (
+        SELECT id FROM users 
+        WHERE users.role = 'technician' 
+          AND (LOWER(users.email) = LOWER(technicians.email) OR users.name = technicians.name) 
+        LIMIT 1
+      )
+      WHERE user_id IS NULL
+    `).run();
+
+    // 2. Auto-repair complaints where status is not Unassigned but assigned_technician_id is NULL
+    const unlinkedComplaints = db.prepare(`
+      SELECT c.id, c.ticket_id, ct.notes 
+      FROM complaints c
+      JOIN complaint_timelines ct ON c.id = ct.complaint_id
+      WHERE c.assigned_technician_id IS NULL 
+        AND ct.action = 'Assigned'
+    `).all();
+
+    const techs = db.prepare('SELECT id, name FROM technicians').all();
+    for (const c of unlinkedComplaints) {
+      for (const t of techs) {
+        if (c.notes && c.notes.includes(t.name)) {
+          db.prepare('UPDATE complaints SET assigned_technician_id = ? WHERE id = ?').run(t.id, c.id);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Database] Technicians and complaints auto-repair note:', err.message);
+  }
+}
+
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
 } catch (e) {}
@@ -608,6 +645,7 @@ initializeSchema();
 migrateComplaintsTable();
 migrateWhatsAppMessagesTable();
 migrateUsersTable();
+migrateTechniciansAndComplaints();
 
 // Attach Turso continuous cloud sync hook
 const tursoSync = require('../services/tursoSyncService');
@@ -617,12 +655,15 @@ tursoSync.hookDatabase(db);
 if (tursoSync.isEnabled) {
   tursoSync.pullFromCloud(db).then(() => {
     migrateNotificationTemplates();
+    migrateTechniciansAndComplaints();
   }).catch(err => {
     console.error('[Database] Initial Turso pull failed:', err.message);
     migrateNotificationTemplates();
+    migrateTechniciansAndComplaints();
   });
 } else {
   migrateNotificationTemplates();
+  migrateTechniciansAndComplaints();
 }
 
 module.exports = db;

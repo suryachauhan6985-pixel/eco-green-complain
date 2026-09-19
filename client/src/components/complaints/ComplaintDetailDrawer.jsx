@@ -137,16 +137,14 @@ export const ComplaintDetailDrawer = ({
     if (isOpen && complaintId) {
       setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
       fetchTicketDetails();
-      if (['admin', 'staff'].includes(currentUser?.role)) {
-        fetchTechs();
-      }
+      fetchTechs();
       const interval = setInterval(fetchWhatsAppChat, 5000);
       return () => clearInterval(interval);
     }
   }, [isOpen, complaintId]);
 
   const handleSendWhatsAppReply = async (e) => {
-    e?.preventDefault();
+    e.preventDefault();
     if (!waReplyText.trim()) return;
     try {
       setSendingWaReply(true);
@@ -168,6 +166,7 @@ export const ComplaintDetailDrawer = ({
     try {
       setAssigning(true);
       await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
+      setIsReassignOpen(false);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
 
@@ -836,11 +835,11 @@ export const ComplaintDetailDrawer = ({
                         </div>
 
                         <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex flex-col justify-center">
-                          {(ticket.assigned_technician_id || ticket.technician_name) ? (
+                          {(ticket.assigned_technician_id || ticket.technician_name || currentUser?.role === 'technician') ? (
                             <button
                               type="button"
                               onClick={openPaymentModal}
-                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                             >
                               <CreditCard className="w-3.5 h-3.5" />
                               Record Payment Collected
@@ -849,7 +848,7 @@ export const ComplaintDetailDrawer = ({
                             <button
                               type="button"
                               onClick={scrollToTechnicianAssignment}
-                              className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                              className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
                               title="Assign a technician to enable payment collection"
                             >
                               <UserCheck className="w-3.5 h-3.5" />
@@ -859,8 +858,8 @@ export const ComplaintDetailDrawer = ({
                         </div>
                       </div>
 
-                      {/* Prominent warning if no technician is assigned */}
-                      {!(ticket.assigned_technician_id || ticket.technician_name) && (
+                      {/* Prominent warning if no technician is assigned (only shown to admin/staff) */}
+                      {!(ticket.assigned_technician_id || ticket.technician_name) && currentUser?.role !== 'technician' && (
                         <div className="mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                           <div className="space-y-1 flex-1">
@@ -871,7 +870,7 @@ export const ComplaintDetailDrawer = ({
                             <button
                               type="button"
                               onClick={scrollToTechnicianAssignment}
-                              className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 underline transition-colors"
+                              className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 underline transition-colors cursor-pointer"
                             >
                               <span>Assign Technician Now</span>
                               <ChevronRight className="w-3 h-3" />
@@ -1017,7 +1016,7 @@ export const ComplaintDetailDrawer = ({
                     )}
 
                     {/* ASSIGNMENT SECTION */}
-                    {['admin', 'staff'].includes(currentUser?.role) && (
+                    {(ticket.assigned_technician_id || ticket.technician_name || ['admin', 'staff'].includes(currentUser?.role) || currentUser?.role === 'technician') && (
                       <div 
                         id="technician-assignment-section" 
                         className="bg-white rounded-xl p-4 border border-slate-200 space-y-3 scroll-mt-6 transition-all duration-300"
@@ -1027,7 +1026,7 @@ export const ComplaintDetailDrawer = ({
                             <Wrench className="w-3.5 h-3.5 text-emerald-700" />
                             Technician Allocation & Field Dispatch
                           </h4>
-                          {(ticket.assigned_technician_id || ticket.technician_name) && (
+                          {(ticket.assigned_technician_id || ticket.technician_name) && ['admin', 'staff'].includes(currentUser?.role) && (
                             <button
                               type="button"
                               onClick={() => setIsReassignOpen(!isReassignOpen)}
@@ -1040,7 +1039,7 @@ export const ComplaintDetailDrawer = ({
                         </div>
 
                         {/* Active Assigned Specialist Card */}
-                        {(ticket.assigned_technician_id || ticket.technician_name) ? (
+                        {(ticket.assigned_technician_id || ticket.technician_name || currentUser?.role === 'technician') ? (
                           <div className="bg-gradient-to-br from-emerald-50/80 to-slate-50 rounded-xl p-4 border border-emerald-200 space-y-3 shadow-2xs">
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div className="flex items-center gap-3">
@@ -1050,10 +1049,11 @@ export const ComplaintDetailDrawer = ({
                                 <div>
                                   <div className="flex items-center gap-2">
                                     <h5 className="font-bold text-slate-900 text-sm">
-                                      {ticket.technician_name || 'Field Technician'}
+                                      {ticket.technician_name || (currentUser?.role === 'technician' ? currentUser.name : 'Field Technician')}
+                                      {currentUser?.role === 'technician' ? ' (You)' : ''}
                                     </h5>
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                      ✓ Currently Assigned
+                                      {currentUser?.role === 'technician' ? '✓ Assigned to You' : '✓ Currently Assigned'}
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-slate-600 font-medium mt-0.5">
@@ -1064,39 +1064,65 @@ export const ComplaintDetailDrawer = ({
                               </div>
 
                               <div className="flex items-center gap-1.5 self-start">
-                                {/* Direct WhatsApp to Technician */}
-                                {(() => {
-                                  const tPhone = ticket.technician_phone || (technicians.find(t => String(t.id) === String(ticket.assigned_technician_id))?.phone);
-                                  const cleanTPhone = (tPhone || '').replace(/[^0-9]/g, '');
-                                  if (!cleanTPhone) return null;
-                                  const waText = encodeURIComponent(
-                                    `Namaste ${ticket.technician_name},\nRegarding scheduled complaint ${ticket.ticket_id} for ${ticket.customer_name}.\nAddress: ${ticket.customer_address}\nVisit: ${ticket.expected_visit_date || 'ASAP'}\n- Eco Green Dispatch`
-                                  );
-                                  return (
+                                {currentUser?.role === 'technician' ? (
+                                  /* Technician Quick Actions to Customer */
+                                  <div className="flex items-center gap-1.5">
                                     <a
-                                      href={`https://wa.me/${cleanTPhone}?text=${waText}`}
+                                      href={`tel:${ticket.customer_phone}`}
+                                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                                      title="Call Customer"
+                                    >
+                                      <Phone className="w-3.5 h-3.5" />
+                                      <span>Call Customer</span>
+                                    </a>
+                                    <a
+                                      href={`https://wa.me/${(ticket.customer_phone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Namaste ${ticket.customer_name}, I am your Eco Green Solar service technician for ticket ${ticket.ticket_id}.`)}`}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
-                                      title="Open WhatsApp Chat with Technician"
+                                      className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                                      title="WhatsApp Customer"
                                     >
                                       <MessageCircle className="w-3.5 h-3.5" />
                                       <span>WhatsApp</span>
                                     </a>
-                                  );
-                                })()}
+                                  </div>
+                                ) : (
+                                  /* Staff/Admin Actions to Technician */
+                                  <>
+                                    {(() => {
+                                      const tPhone = ticket.technician_phone || (technicians.find(t => String(t.id) === String(ticket.assigned_technician_id))?.phone);
+                                      const cleanTPhone = (tPhone || '').replace(/[^0-9]/g, '');
+                                      if (!cleanTPhone) return null;
+                                      const waText = encodeURIComponent(
+                                        `Namaste ${ticket.technician_name},\nRegarding scheduled complaint ${ticket.ticket_id} for ${ticket.customer_name}.\nAddress: ${ticket.customer_address}\nVisit: ${ticket.expected_visit_date || 'ASAP'}\n- Eco Green Dispatch`
+                                      );
+                                      return (
+                                        <a
+                                          href={`https://wa.me/${cleanTPhone}?text=${waText}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                                          title="Open WhatsApp Chat with Technician"
+                                        >
+                                          <MessageCircle className="w-3.5 h-3.5" />
+                                          <span>WhatsApp</span>
+                                        </a>
+                                      );
+                                    })()}
 
-                                {/* Send Visit Reminder Button */}
-                                <button
-                                  type="button"
-                                  onClick={handleSendReminder}
-                                  disabled={sendingReminder}
-                                  className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold border border-slate-300 flex items-center gap-1 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-                                  title="Send instant WhatsApp visit reminder to technician"
-                                >
-                                  <Clock className={`w-3.5 h-3.5 text-amber-600 ${sendingReminder ? 'animate-spin' : ''}`} />
-                                  <span>{sendingReminder ? 'Sending...' : 'Send Reminder'}</span>
-                                </button>
+                                    {/* Send Visit Reminder Button */}
+                                    <button
+                                      type="button"
+                                      onClick={handleSendReminder}
+                                      disabled={sendingReminder}
+                                      className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold border border-slate-300 flex items-center gap-1 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                                      title="Send instant WhatsApp visit reminder to technician"
+                                    >
+                                      <Clock className={`w-3.5 h-3.5 text-amber-600 ${sendingReminder ? 'animate-spin' : ''}`} />
+                                      <span>{sendingReminder ? 'Sending...' : 'Send Reminder'}</span>
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -1128,8 +1154,8 @@ export const ComplaintDetailDrawer = ({
                           </div>
                         )}
 
-                        {/* Reassignment or Initial Assignment Form */}
-                        {(!(ticket.assigned_technician_id || ticket.technician_name) || isReassignOpen) && (
+                        {/* Reassignment or Initial Assignment Form (Only for Admin & Staff) */}
+                        {['admin', 'staff'].includes(currentUser?.role) && (!(ticket.assigned_technician_id || ticket.technician_name) || isReassignOpen) && (
                           <form onSubmit={handleAssign} className="space-y-3 pt-2 border-t border-slate-100">
                             {isReassignOpen && (
                               <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">

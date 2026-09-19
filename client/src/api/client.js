@@ -829,7 +829,16 @@ export const api = {
 
       // Check if any user-created complaints in local permanent storage are missing on server (e.g. after container restart or redeploy)
       const hasSpecificFilter = Object.entries(params).some(([k, v]) => v && v !== 'all' && k !== 'limit' && k !== 'offset');
-      if (!hasSpecificFilter) {
+      let isTechToken = false;
+      try {
+        const token = getAuthToken();
+        if (token) {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.role === 'technician') isTechToken = true;
+        }
+      } catch (_) {}
+
+      if (!hasSpecificFilter && !isTechToken) {
         const permList = getPermanentComplaints();
         const serverTicketIds = new Set(res.complaints.map(c => c.ticket_id));
         const missingFromServer = permList.filter(c => {

@@ -57,8 +57,17 @@ function listComplaints(req, res) {
 
     // Role-based scoping: Technicians can only see their assigned complaints
     if (req.user && req.user.role === 'technician') {
+      let userTechId = req.user.technicianId;
+      if (!userTechId) {
+        const tRow = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(req.user.id);
+        if (tRow) userTechId = tRow.id;
+      }
+      if (!userTechId) {
+        const tRow = db.prepare('SELECT id FROM technicians WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)').get(req.user.email || '', req.user.name || '');
+        if (tRow) userTechId = tRow.id;
+      }
       query += ` AND c.assigned_technician_id = ? `;
-      params.push(req.user.technicianId || -1);
+      params.push(userTechId || -1);
     } else if (technician_id) {
       query += ` AND c.assigned_technician_id = ? `;
       params.push(technician_id);
@@ -126,6 +135,27 @@ function getComplaintById(req, res) {
 
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint ticket not found' });
+    }
+
+    // Auto-repair if ticket has Assigned status or notes but assigned_technician_id was unlinked
+    if (!complaint.assigned_technician_id && complaint.status !== 'Unassigned') {
+      const assignedTimeline = db.prepare("SELECT notes FROM complaint_timelines WHERE complaint_id = ? AND action = 'Assigned' ORDER BY id DESC LIMIT 1").get(complaint.id);
+      if (assignedTimeline && assignedTimeline.notes) {
+        const techs = db.prepare('SELECT id, name, phone, area_zone, specialization FROM technicians').all();
+        for (const t of techs) {
+          if (assignedTimeline.notes.includes(t.name)) {
+            complaint.assigned_technician_id = t.id;
+            complaint.technician_name = t.name;
+            complaint.technician_phone = t.phone;
+            complaint.technician_zone = t.area_zone;
+            complaint.technician_specialization = t.specialization;
+            try {
+              db.prepare('UPDATE complaints SET assigned_technician_id = ? WHERE id = ?').run(t.id, complaint.id);
+            } catch (_) {}
+            break;
+          }
+        }
+      }
     }
 
     // Role check: Technician can only access their assigned ticket
