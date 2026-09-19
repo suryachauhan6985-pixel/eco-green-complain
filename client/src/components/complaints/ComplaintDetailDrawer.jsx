@@ -1187,15 +1187,15 @@ export const ComplaintDetailDrawer = ({
                                       const cleanCust = rawCust.startsWith('91') ? rawCust : (rawCust.length === 10 ? `91${rawCust}` : rawCust);
                                       const techGreeting = 
                                         `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
-                                        `Namaste *${ticket.customer_name}* ji,\n\n` +
-                                        `Main *${currentUser?.name || ticket.technician_name || 'Eco Green Solar Technician'}*, aapki solar complaint (*Ticket: ${ticket.ticket_id}*) ke service inspection ke liye sampark kar raha hu.\n\n` +
-                                        `📋 *Complaint Summary:*\n` +
+                                        `Namaste *${ticket.customer_name}*,\n\n` +
+                                        `This is *${currentUser?.name || ticket.technician_name || 'Eco Green Service Technician'}*, your assigned service engineer for complaint ticket *#${ticket.ticket_id}*.\n\n` +
+                                        `📋 *Service Request Summary:*\n` +
                                         `• System: ${ticket.product_type || 'Solar System'}\n` +
-                                        `• Problem: ${ticket.issue_category || 'Service inspection required'}\n` +
-                                        `• Scheduled Visit: ${ticket.expected_visit_date || 'Today / Immediate'}\n\n` +
-                                        `Main aapke address par inspection ke liye aana chahta hu. Kripya confirm karein kya aap site par uplabdh hain aur rooftop/system access mil sakta hai?\n\n` +
-                                        `📞 Support Desk: +91 78784 44414\n` +
-                                        `- Eco Green Solar Services`;
+                                        `• Issue: ${ticket.issue_category || 'Service inspection required'}\n` +
+                                        `• Scheduled Visit: ${ticket.expected_visit_date || 'Today / As Scheduled'}\n\n` +
+                                        `I am preparing to visit your premises for the on-site inspection and service. Please confirm if someone is available and if rooftop/system access can be provided.\n\n` +
+                                        `📞 Helpdesk: +91 78784 44414\n` +
+                                        `- Eco Green Technical Services`;
                                       return (
                                         <a
                                           href={`https://wa.me/${cleanCust}?text=${encodeURIComponent(techGreeting)}`}
