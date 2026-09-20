@@ -6,20 +6,29 @@ import { NotificationDrawer } from './components/layout/NotificationDrawer';
 import { ComplaintList } from './components/complaints/ComplaintList';
 import { NewComplaintModal } from './components/complaints/NewComplaintModal';
 import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDrawer';
-import { CustomerHistoryModal } from './components/complaints/CustomerHistoryModal';
-import { TechnicianFieldPortal } from './components/technician/TechnicianFieldPortal';
-import { CustomerPublicPortal } from './components/customer/CustomerPublicPortal';
-import { AnalyticsDashboard } from './components/admin/AnalyticsDashboard';
-import { TemplateManager } from './components/admin/TemplateManager';
-import { StaffTechnicianManager } from './components/admin/StaffTechnicianManager';
-import { OnboardingTour } from './components/common/OnboardingTour';
-import { WhatsAppWebInbox } from './components/whatsapp/WhatsAppWebInbox';
 import { LoginPage } from './components/auth/LoginPage';
 import { api } from './api/client';
 import { 
   Sparkles, Compass, RotateCcw, CheckCircle2, 
   Users, Wrench, Shield, BarChart3, Search, Plus, MessageCircle 
 } from 'lucide-react';
+
+// Code-split heavy secondary tabs and dialogs for lightning-fast initial load
+const CustomerHistoryModal = React.lazy(() => import('./components/complaints/CustomerHistoryModal').then(m => ({ default: m.CustomerHistoryModal })));
+const TechnicianFieldPortal = React.lazy(() => import('./components/technician/TechnicianFieldPortal').then(m => ({ default: m.TechnicianFieldPortal })));
+const CustomerPublicPortal = React.lazy(() => import('./components/customer/CustomerPublicPortal').then(m => ({ default: m.CustomerPublicPortal })));
+const AnalyticsDashboard = React.lazy(() => import('./components/admin/AnalyticsDashboard').then(m => ({ default: m.AnalyticsDashboard })));
+const TemplateManager = React.lazy(() => import('./components/admin/TemplateManager').then(m => ({ default: m.TemplateManager })));
+const StaffTechnicianManager = React.lazy(() => import('./components/admin/StaffTechnicianManager').then(m => ({ default: m.StaffTechnicianManager })));
+const OnboardingTour = React.lazy(() => import('./components/common/OnboardingTour').then(m => ({ default: m.OnboardingTour })));
+const WhatsAppWebInbox = React.lazy(() => import('./components/whatsapp/WhatsAppWebInbox').then(m => ({ default: m.WhatsAppWebInbox })));
+
+const LoadingFallback = () => (
+  <div className="flex flex-col items-center justify-center p-12 min-h-[260px] w-full text-slate-400">
+    <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+    <span className="text-xs font-medium text-slate-500">Loading view...</span>
+  </div>
+);
 
 function getTrackingInfoFromUrl() {
   const path = window.location.pathname;
@@ -163,15 +172,17 @@ function AppContent() {
   // Standalone tracking portal route: accessed via /track/:ticketId (Zero staff chrome)
   if (trackingInfo.isTracking) {
     return (
-      <CustomerPublicPortal
-        initialTicketId={trackingInfo.ticketId}
-        isStandalone={true}
-        onExitStandalone={() => {
-          window.history.pushState(null, '', '/');
-          setTrackingInfo({ isTracking: false, ticketId: '' });
-        }}
-        onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
-      />
+      <React.Suspense fallback={<LoadingFallback />}>
+        <CustomerPublicPortal
+          initialTicketId={trackingInfo.ticketId}
+          isStandalone={true}
+          onExitStandalone={() => {
+            window.history.pushState(null, '', '/');
+            setTrackingInfo({ isTracking: false, ticketId: '' });
+          }}
+          onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+        />
+      </React.Suspense>
     );
   }
 
@@ -245,63 +256,65 @@ function AppContent() {
           ? 'overflow-hidden p-0 max-w-full flex flex-col' 
           : 'overflow-y-auto max-w-[1780px] p-3 sm:p-5 lg:p-6'
       }`}>
-        {currentTab === 'complaints' && (
-          <ComplaintList
-            key={`comp-${refreshKey}`}
-            refreshKey={refreshKey}
-            initialFilters={complaintFilters}
-            onSelectComplaint={handleSelectComplaint}
-            onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
-            onOpenWhatsAppChat={handleOpenWhatsAppChat}
-          />
-        )}
+        <React.Suspense fallback={<LoadingFallback />}>
+          {currentTab === 'complaints' && (
+            <ComplaintList
+              key={`comp-${refreshKey}`}
+              refreshKey={refreshKey}
+              initialFilters={complaintFilters}
+              onSelectComplaint={handleSelectComplaint}
+              onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+              onOpenWhatsAppChat={handleOpenWhatsAppChat}
+            />
+          )}
 
-        {currentTab === 'technician' && (
-          <TechnicianFieldPortal
-            key={`tech-${refreshKey}`}
-            onSelectComplaint={handleSelectComplaint}
-          />
-        )}
+          {currentTab === 'technician' && (
+            <TechnicianFieldPortal
+              key={`tech-${refreshKey}`}
+              onSelectComplaint={handleSelectComplaint}
+            />
+          )}
 
-        {currentTab === 'team' && (
-          <StaffTechnicianManager
-            key={`team-${refreshKey}`}
-          />
-        )}
+          {currentTab === 'team' && (
+            <StaffTechnicianManager
+              key={`team-${refreshKey}`}
+            />
+          )}
 
-        {currentTab === 'analytics' && (
-          <AnalyticsDashboard
-            key={`ana-${refreshKey}`}
-            onNavigateToComplaints={(filters) => {
-              setComplaintFilters(filters);
-              handleTabChange('complaints');
-            }}
-          />
-        )}
+          {currentTab === 'analytics' && (
+            <AnalyticsDashboard
+              key={`ana-${refreshKey}`}
+              onNavigateToComplaints={(filters) => {
+                setComplaintFilters(filters);
+                handleTabChange('complaints');
+              }}
+            />
+          )}
 
-        {currentTab === 'templates' && (
-          <TemplateManager key={`tmpl-${refreshKey}`} />
-        )}
+          {currentTab === 'templates' && (
+            <TemplateManager key={`tmpl-${refreshKey}`} />
+          )}
 
-        {currentTab === 'whatsapp-inbox' && (
-          <WhatsAppWebInbox
-            key={`wa-inbox-${refreshKey}`}
-            initialTarget={activeWhatsAppPhone}
-            onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
-            onOpenComplaint={handleSelectComplaint}
-            onNewComplaintWithData={(data) => {
-              setNewComplaintInitialData(data);
-              setIsNewComplaintOpen(true);
-            }}
-          />
-        )}
+          {currentTab === 'whatsapp-inbox' && (
+            <WhatsAppWebInbox
+              key={`wa-inbox-${refreshKey}`}
+              initialTarget={activeWhatsAppPhone}
+              onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
+              onOpenComplaint={handleSelectComplaint}
+              onNewComplaintWithData={(data) => {
+                setNewComplaintInitialData(data);
+                setIsNewComplaintOpen(true);
+              }}
+            />
+          )}
 
-        {currentTab === 'customer' && (
-          <CustomerPublicPortal
-            key={`cust-${refreshKey}`}
-            onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
-          />
-        )}
+          {currentTab === 'customer' && (
+            <CustomerPublicPortal
+              key={`cust-${refreshKey}`}
+              onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+            />
+          )}
+        </React.Suspense>
       </main>
 
       {/* Mobile Bottom Navigation Bar (App-like navigation on Android / iOS) */}
@@ -426,24 +439,25 @@ function AppContent() {
         onViewCustomerHistory={(phone) => setHistoryPhone(phone)}
       />
 
-      <CustomerHistoryModal
-        phone={historyPhone}
-        isOpen={Boolean(historyPhone)}
-        onClose={() => setHistoryPhone(null)}
-        onSelectTicket={handleSelectComplaint}
-      />
+      <React.Suspense fallback={null}>
+        {Boolean(historyPhone) && (
+          <CustomerHistoryModal
+            phone={historyPhone}
+            isOpen={Boolean(historyPhone)}
+            onClose={() => setHistoryPhone(null)}
+            onSelectTicket={handleSelectComplaint}
+          />
+        )}
 
-      <NotificationDrawer
-        isOpen={isNotificationDrawerOpen}
-        onClose={() => setIsNotificationDrawerOpen(false)}
-      />
-
-      {/* Interactive Feature Walkthrough Tour */}
-      <OnboardingTour
-        isOpen={isTourOpen}
-        onClose={() => setIsTourOpen(false)}
-        onSwitchTab={(targetTab) => handleTabChange(targetTab)}
-      />
+        {/* Interactive Feature Walkthrough Tour */}
+        {isTourOpen && (
+          <OnboardingTour
+            isOpen={isTourOpen}
+            onClose={() => setIsTourOpen(false)}
+            onSwitchTab={(targetTab) => handleTabChange(targetTab)}
+          />
+        )}
+      </React.Suspense>
     </div>
   );
 }

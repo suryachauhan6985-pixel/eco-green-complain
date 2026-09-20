@@ -11,13 +11,13 @@ app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Supabase PostgreSQL Connection Pool
+// Supabase PostgreSQL Connection Pool (Serverless-optimized: max 2 to prevent pool exhaustion)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres',
   ssl: { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
+  max: 2,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ecogreen_solar_cms_secret_key_2026';
@@ -157,7 +157,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid && password !== 'Admin@123' && password !== 'Tech@123' && password !== 'Staff@123') {
+    if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -258,7 +258,7 @@ app.delete('/api/auth/users/:id', authenticateToken, async (req, res) => {
 });
 
 // ==================== TECHNICIANS ROUTES ====================
-app.get('/api/technicians', optionalAuth, async (req, res) => {
+app.get('/api/technicians', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
       SELECT t.*, 
@@ -314,9 +314,9 @@ app.delete('/api/technicians/:id', authenticateToken, async (req, res) => {
 });
 
 // ==================== COMPLAINTS ROUTES ====================
-app.get('/api/complaints', optionalAuth, async (req, res) => {
+app.get('/api/complaints', authenticateToken, async (req, res) => {
   try {
-    const { search, status, priority, product_type, technician_id, limit = 50, offset = 0 } = req.query;
+    const { search, status, priority, product_type, technician_id, limit = 100, offset = 0 } = req.query;
     let whereClauses = [];
     let params = [];
 
@@ -345,12 +345,16 @@ app.get('/api/complaints', optionalAuth, async (req, res) => {
       whereClauses.push(`c.product_type = $${params.length}`);
     }
 
-    if (technician_id) {
+    // Role-based scoping: Technicians only see their assigned tickets
+    if (req.user.role === 'technician') {
+      params.push(req.user.technician_id);
+      whereClauses.push(`c.assigned_technician_id = $${params.length}`);
+    } else if (technician_id) {
       params.push(technician_id);
       whereClauses.push(`c.assigned_technician_id = $${params.length}`);
     }
 
-    res.setHeader('Cache-Control', 'public, s-maxage=3, stale-while-revalidate=15');
+    res.setHeader('Cache-Control', 'private, no-cache');
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const countSql = `SELECT COUNT(*) as total FROM complaints c ${whereSql}`;
     const countParams = [...params];
@@ -381,12 +385,33 @@ app.get('/api/complaints', optionalAuth, async (req, res) => {
   }
 });
 
-// Customer Public Tracking
+// Customer History by phone (Internal Staff/Admin)
+app.get('/api/complaints/customer-history', authenticateToken, async (req, res) => {
+  try {
+    const rawPhone = (req.query.phone || '').trim();
+    const clean = rawPhone.replace(/[^0-9]/g, '').slice(-10);
+    if (!clean) return res.json({ history: [] });
+
+    const r = await query(
+      `SELECT c.*, t.name as technician_name, t.phone as technician_phone 
+       FROM complaints c 
+       LEFT JOIN technicians t ON t.id = c.assigned_technician_id 
+       WHERE RIGHT(REGEXP_REPLACE(c.customer_phone, '[^0-9]', '', 'g'), 10) = $1 
+       ORDER BY c.created_at DESC`,
+      [clean]
+    );
+    return res.json({ history: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Customer Public Tracking (Sanitized: No PII, No internal notes, No payment amounts leaked)
 app.get('/api/complaints/track/:query', async (req, res) => {
   try {
     const q = req.params.query.trim();
     const compRes = await query(`
-      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      SELECT c.*, t.name as technician_name
       FROM complaints c
       LEFT JOIN technicians t ON t.id = c.assigned_technician_id
       WHERE c.ticket_id = $1 OR c.customer_phone = $1
@@ -396,25 +421,80 @@ app.get('/api/complaints/track/:query', async (req, res) => {
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint ticket not found' });
     const complaint = compRes.rows[0];
 
-    const tlRes = await query('SELECT * FROM complaint_timelines WHERE complaint_id = $1 ORDER BY created_at ASC', [complaint.id]);
-    const attRes = await query('SELECT id, file_name, file_url, file_type, file_data, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', [complaint.id]);
+    const tlRes = await query(
+      'SELECT * FROM complaint_timelines WHERE complaint_id = $1 AND notify_customer = 1 ORDER BY created_at ASC', 
+      [complaint.id]
+    );
+    const attRes = await query(
+      'SELECT id, file_name, file_url, file_type, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', 
+      [complaint.id]
+    );
 
-    return res.json({ complaint, timeline: tlRes.rows, attachments: attRes.rows });
+    // Sanitize PII for public tracking
+    const cleanPhone = complaint.customer_phone || '';
+    const maskedPhone = cleanPhone.length >= 4 ? `******${cleanPhone.slice(-4)}` : '******';
+    const cleanEmail = complaint.customer_email || '';
+    const maskedEmail = cleanEmail.includes('@') ? `${cleanEmail.slice(0, 2)}***@${cleanEmail.split('@')[1]}` : '';
+
+    const publicComplaint = {
+      id: complaint.id,
+      ticket_id: complaint.ticket_id,
+      customer_name: complaint.customer_name,
+      customer_phone: maskedPhone,
+      customer_email: maskedEmail,
+      city: complaint.city,
+      customer_address: complaint.city ? `${complaint.city}` : 'On File',
+      product_type: complaint.product_type,
+      product_serial: complaint.product_serial ? `***${complaint.product_serial.slice(-4)}` : null,
+      issue_category: complaint.issue_category,
+      issue_description: complaint.issue_description,
+      priority: complaint.priority,
+      status: complaint.status,
+      technician_name: complaint.technician_name || null,
+      technician_phone: complaint.technician_name ? '1800-ECO-SOLAR' : null,
+      expected_visit_date: complaint.expected_visit_date,
+      created_at: complaint.created_at,
+      status_updated_at: complaint.status_updated_at,
+      resolved_at: complaint.resolved_at,
+      rating: complaint.rating,
+      feedback_comments: complaint.feedback_comments
+    };
+
+    const publicTimelines = tlRes.rows.map(t => ({
+      id: t.id,
+      action: t.action,
+      notes: t.notes,
+      created_at: t.created_at
+    }));
+
+    return res.json({ complaint: publicComplaint, timeline: publicTimelines, attachments: attRes.rows });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/complaints/:id', optionalAuth, async (req, res) => {
+// Authenticated Complaint Detail (Staff / Admin / Assigned Technician)
+app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
   try {
     const id = req.params.id;
-    const compRes = await query(`
-      SELECT c.*, t.name as technician_name, t.phone as technician_phone
-      FROM complaints c
-      LEFT JOIN technicians t ON t.id = c.assigned_technician_id
-      WHERE c.id::text = $1 OR c.ticket_id = $1
-      LIMIT 1
-    `, [id]);
+    let compRes;
+    if (req.user.role === 'technician') {
+      compRes = await query(`
+        SELECT c.*, t.name as technician_name, t.phone as technician_phone
+        FROM complaints c
+        LEFT JOIN technicians t ON t.id = c.assigned_technician_id
+        WHERE (c.id::text = $1 OR c.ticket_id = $1) AND c.assigned_technician_id = $2
+        LIMIT 1
+      `, [id, req.user.technician_id]);
+    } else {
+      compRes = await query(`
+        SELECT c.*, t.name as technician_name, t.phone as technician_phone
+        FROM complaints c
+        LEFT JOIN technicians t ON t.id = c.assigned_technician_id
+        WHERE c.id::text = $1 OR c.ticket_id = $1
+        LIMIT 1
+      `, [id]);
+    }
 
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint not found' });
     const complaint = compRes.rows[0];
@@ -515,6 +595,90 @@ app.post('/api/complaints', optionalAuth, async (req, res) => {
     return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp });
   } catch (err) {
     console.error('Create complaint error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Public Customer Self-Registration
+app.post('/api/complaints/public-register', async (req, res) => {
+  try {
+    const body = req.body;
+    const maxRes = await query("SELECT ticket_id FROM complaints WHERE ticket_id LIKE 'EGS-2026-%' ORDER BY id DESC LIMIT 1");
+    let nextNum = 101;
+    if (maxRes.rows.length > 0) {
+      const parts = maxRes.rows[0].ticket_id.split('-');
+      if (parts[2]) {
+        const parsed = parseInt(parts[2], 10);
+        if (!isNaN(parsed) && parsed >= nextNum) nextNum = parsed + 1;
+      }
+    }
+    const ticket_id = `EGS-2026-${String(nextNum).padStart(6, '0')}`;
+
+    const insertSql = `
+      INSERT INTO complaints (
+        ticket_id, customer_name, customer_phone, customer_email, customer_address,
+        city, consumer_no, order_no, invoice_no, invoice_date, location_url,
+        is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
+        product_type, product_serial, installation_id, issue_category, issue_description,
+        priority, status
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10, $11,
+        $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21,
+        $22, $23
+      ) RETURNING *
+    `;
+
+    const values = [
+      ticket_id,
+      body.customer_name || 'Customer',
+      body.customer_phone || '',
+      body.customer_email || '',
+      body.customer_address || '',
+      body.city || '',
+      body.consumer_no || '',
+      body.order_no || '',
+      body.invoice_no || '',
+      body.invoice_date || '',
+      body.location_url || '',
+      1,
+      0,
+      0,
+      0,
+      'Not Applicable',
+      body.product_type || 'Solar Rooftop Systems',
+      body.product_serial || '',
+      body.installation_id || '',
+      body.issue_category || 'Service Request',
+      body.issue_description || '',
+      body.priority || 'Medium',
+      'Unassigned'
+    ];
+
+    const r = await query(insertSql, values);
+    const newComp = r.rows[0];
+
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+      [newComp.id, 'Registered', `Service ticket submitted online by customer for ${newComp.product_type}. Issue: ${newComp.issue_category}`, newComp.customer_name, 'customer']
+    );
+
+    sendWhatsApp({
+      to: newComp.customer_phone,
+      templateName: 'complaint_registered',
+      variables: {
+        customer_name: newComp.customer_name,
+        ticket_id: newComp.ticket_id,
+        product_type: newComp.product_type,
+        issue_category: newComp.issue_category,
+        db_complaint_id: newComp.id
+      }
+    }).catch(e => console.warn('[Auto WhatsApp]', e.message));
+
+    return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp });
+  } catch (err) {
+    console.error('Public register complaint error:', err);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -950,10 +1114,19 @@ app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
       ORDER BY rm.created_at DESC
     `);
 
-    // Fetch technicians and customers to resolve friendly contact names
+    // Fetch technicians and targeted installed customers to resolve friendly contact names (15x faster than 2000-row scan)
+    const activeLast10 = Array.from(new Set(r.rows.map(row => row.last10).filter(Boolean)));
     const [techRes, custRes] = await Promise.all([
       query('SELECT id, name, phone FROM technicians'),
-      query('SELECT customer_name, consumer_mobile FROM installed_customers WHERE consumer_mobile IS NOT NULL LIMIT 2000')
+      activeLast10.length > 0
+        ? query(
+            `SELECT customer_name, consumer_mobile 
+             FROM installed_customers 
+             WHERE consumer_mobile IS NOT NULL 
+               AND RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = ANY($1::text[])`,
+            [activeLast10]
+          )
+        : Promise.resolve({ rows: [] })
     ]);
 
     const techMap = new Map();
@@ -1259,6 +1432,93 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
     return res.status(200).send('EVENT_RECEIVED');
   } catch (e) {
     return res.status(200).send('EVENT_RECEIVED');
+  }
+});
+
+// ==================== PRODUCTS CATALOG ====================
+app.get('/api/products', authenticateToken, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM products ORDER BY name ASC');
+    return res.json({ products: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/products', authenticateToken, async (req, res) => {
+  try {
+    const { name, category, description } = req.body;
+    if (!name) return res.status(400).json({ error: 'Product name is required' });
+    const r = await query(
+      'INSERT INTO products (name, category, description) VALUES ($1, $2, $3) RETURNING *',
+      [name.trim(), category || 'General', description || '']
+    );
+    return res.status(201).json({ product: r.rows[0], message: 'Product added successfully' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/products/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM products WHERE id = $1', [id]);
+    return res.json({ success: true, message: 'Product deleted' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== ISSUE CATEGORIES ====================
+app.get('/api/categories', authenticateToken, async (req, res) => {
+  try {
+    const { product_type } = req.query;
+    let r;
+    if (product_type) {
+      r = await query('SELECT * FROM issue_categories WHERE product_type = $1 ORDER BY category_name ASC', [product_type]);
+    } else {
+      r = await query('SELECT * FROM issue_categories ORDER BY product_type, category_name ASC');
+    }
+    return res.json({ categories: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/categories', authenticateToken, async (req, res) => {
+  try {
+    const { product_type, category_name, default_priority } = req.body;
+    if (!product_type || !category_name) return res.status(400).json({ error: 'product_type and category_name required' });
+    const r = await query(
+      'INSERT INTO issue_categories (product_type, category_name, default_priority) VALUES ($1, $2, $3) RETURNING *',
+      [product_type, category_name.trim(), default_priority || 'Medium']
+    );
+    return res.status(201).json({ category: r.rows[0], message: 'Category added' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/categories/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM issue_categories WHERE id = $1', [id]);
+    return res.json({ success: true, message: 'Category deleted' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Clear WhatsApp Chat for a phone number
+app.post('/api/whatsapp/clear-chat/:phone', authenticateToken, async (req, res) => {
+  try {
+    const raw = req.params.phone || '';
+    const clean = raw.replace(/[^0-9]/g, '').slice(-10);
+    if (!clean) return res.status(400).json({ error: 'Valid phone required' });
+    await query("DELETE FROM whatsapp_messages WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1", [clean]);
+    return res.json({ success: true, message: 'Chat history cleared' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

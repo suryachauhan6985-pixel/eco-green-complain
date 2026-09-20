@@ -391,7 +391,7 @@ export const ComplaintList = ({
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              className={`px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center ${
                 statusFilter === st
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
@@ -614,7 +614,7 @@ export const ComplaintList = ({
                               </div>
                               {c.expected_visit_date && (
                                 <span className="text-[10px] text-emerald-700 block truncate pl-5 font-medium">
-                                  📅 {c.expected_visit_date}
+                                  📅 {formatIndianDateOnly(c.expected_visit_date)}
                                 </span>
                               )}
                             </div>
@@ -875,7 +875,7 @@ export const ComplaintList = ({
                     <div className="flex items-center gap-1 truncate max-w-[55%] text-slate-600 text-[11px]">
                       <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
                       <span className="truncate font-medium">
-                        {c.expected_visit_date ? `Visit: ${c.expected_visit_date}` : (c.technician_name ? 'Date Scheduled' : 'No Date Set')}
+                        {c.expected_visit_date ? `Visit: ${formatIndianDateOnly(c.expected_visit_date)}` : (c.technician_name ? 'Date Scheduled' : 'No Date Set')}
                       </span>
                     </div>
 

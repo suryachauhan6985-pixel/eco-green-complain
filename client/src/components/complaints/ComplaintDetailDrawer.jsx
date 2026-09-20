@@ -1313,7 +1313,7 @@ export const ComplaintDetailDrawer = ({
                               <div className="flex items-center gap-2 text-slate-700">
                                 <Calendar className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                                 <span>
-                                  Scheduled Visit: <strong className="text-slate-900 font-bold">{ticket.expected_visit_date || 'Within 24-48 Hours'}</strong>
+                                  Scheduled Visit: <strong className="text-slate-900 font-bold">{ticket.expected_visit_date ? formatIndianDateOnly(ticket.expected_visit_date) : 'Within 24-48 Hours'}</strong>
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 text-slate-700">

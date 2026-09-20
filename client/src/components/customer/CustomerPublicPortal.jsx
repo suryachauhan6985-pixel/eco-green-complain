@@ -5,6 +5,7 @@ import {
   Search, Sun, Droplets, Wind, CheckCircle2, Clock, 
   Wrench, Phone, Star, RotateCcw, AlertTriangle, Send, ArrowRight
 } from 'lucide-react';
+import { formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 
 const STEPS = [
   { key: 'Registered', label: 'Registered' },
@@ -204,7 +205,7 @@ export const CustomerPublicPortal = ({
                  trackingData.complaint.status}
               </span>
               <span className="text-[11px] text-slate-400 block mt-1">
-                Registered: {new Date(trackingData.complaint.created_at).toLocaleDateString()}
+                Registered: {formatIndianDateTime(trackingData.complaint.created_at)}
               </span>
             </div>
           </div>
@@ -256,7 +257,7 @@ export const CustomerPublicPortal = ({
                   <span className="text-[10px] uppercase font-bold text-emerald-800">Assigned Technician</span>
                   <h4 className="font-bold text-sm text-slate-900">{trackingData.complaint.technician_name}</h4>
                   <p className="text-[11px] text-slate-600">
-                    Expected Visit: <strong>{trackingData.complaint.expected_visit_date || 'Within 24-48 Hours'}</strong>
+                    Expected Visit: <strong>{trackingData.complaint.expected_visit_date ? formatIndianDateOnly(trackingData.complaint.expected_visit_date) : 'Within 24-48 Hours'}</strong>
                   </p>
                 </div>
               </div>

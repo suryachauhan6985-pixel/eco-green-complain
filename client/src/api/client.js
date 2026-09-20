@@ -583,7 +583,7 @@ async function request(endpoint, options = {}) {
 
   try {
     const controller = new AbortController();
-    const timeoutMs = options.timeout || (endpoint.includes('/customers/sync') ? 60000 : 45000);
+    const timeoutMs = options.timeout || (endpoint.includes('/customers/sync') ? 60000 : 30000);
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -594,23 +594,37 @@ async function request(endpoint, options = {}) {
     clearTimeout(timeoutId);
 
     const contentType = response.headers.get('content-type');
+    let data = null;
     if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Request failed with status ' + response.status);
-      }
-      return data;
+      data = await response.json();
     }
 
     if (!response.ok) {
-      throw new Error('Request failed with status ' + response.status);
+      const errorMsg = data?.error || `Request failed with status ${response.status}`;
+      const err = new Error(errorMsg);
+      err.status = response.status;
+      throw err;
     }
 
-    return response;
+    return data !== null ? data : response;
   } catch (err) {
-    // Graceful fallback to mock store if backend is offline
-    console.warn(`Backend API unavailable at ${endpoint}, using built-in demo mock store:`, err.message);
-    return fallbackHandler(endpoint, options);
+    const method = (options.method || 'GET').toUpperCase();
+    const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+
+    // Always propagate server HTTP errors and mutation failures directly to caller
+    if (err.status || isMutation) {
+      throw err;
+    }
+
+    // Read-only offline fallback strictly when network disconnects
+    if (endpoint.startsWith('/complaints') && method === 'GET') {
+      const cached = getPermanentComplaints();
+      if (cached && cached.length > 0) {
+        return { complaints: cached, total: cached.length, isOfflineCache: true };
+      }
+    }
+
+    throw err;
   }
 }
 
@@ -818,48 +832,18 @@ export const api = {
     method: 'DELETE'
   }),
 
-  // Complaints
+  // Complaints (Server is Authoritative Source of Truth)
   getComplaints: async (params = {}) => {
     const query = new URLSearchParams(params).toString();
     const res = await request(`/complaints?${query}`);
 
     if (res && Array.isArray(res.complaints)) {
-      // Save all fetched complaints into local permanent storage
-      saveComplaintsPermanently(res.complaints);
-
-      // Check if any user-created complaints in local permanent storage are missing on server (e.g. after container restart or redeploy)
+      // Refresh local read cache strictly matching server truth
       const hasSpecificFilter = Object.entries(params).some(([k, v]) => v && v !== 'all' && k !== 'limit' && k !== 'offset');
-      let isTechToken = false;
-      try {
-        const token = getAuthToken();
-        if (token) {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          if (payload.role === 'technician') isTechToken = true;
-        }
-      } catch (_) {}
-
-      if (!hasSpecificFilter && !isTechToken) {
-        const permList = getPermanentComplaints();
-        const serverTicketIds = new Set(res.complaints.map(c => c.ticket_id));
-        const missingFromServer = permList.filter(c => {
-          if (!c.ticket_id) return false;
-          const isDummy = INITIAL_COMPLAINTS.some(init => init.ticket_id === c.ticket_id);
-          return !isDummy && !serverTicketIds.has(c.ticket_id);
-        });
-
-        if (missingFromServer.length > 0) {
-          console.log(`[PermanentSync] Restoring ${missingFromServer.length} user complaint(s) to server...`);
-          request('/complaints/sync-backup', {
-            method: 'POST',
-            body: JSON.stringify({ complaints: missingFromServer })
-          }).catch(err => console.warn('[PermanentSync] Background sync notice:', err.message));
-
-          // Merge missing complaints to the top of list so user immediately sees them!
-          res.complaints = [...missingFromServer, ...res.complaints];
-          if (typeof res.total === 'number') {
-            res.total += missingFromServer.length;
-          }
-        }
+      if (!hasSpecificFilter) {
+        try {
+          localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(res.complaints));
+        } catch (_) {}
       }
     }
     return res;
@@ -969,10 +953,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ rating, feedback_comments })
   }),
-  syncBackupComplaints: (complaints) => request('/complaints/sync-backup', {
-    method: 'POST',
-    body: JSON.stringify({ complaints })
-  }),
+  syncBackupComplaints: () => Promise.resolve({ success: true }),
   trackTicket: (query) => request(`/complaints/track/${encodeURIComponent(query)}`),
 
   // Technicians
@@ -1090,10 +1071,7 @@ export const api = {
     }
   },
   getWhatsAppRawEvents: (phone) => request(`/whatsapp/raw-events/${encodeURIComponent(phone)}`),
-  syncBackupWhatsApp: (messages) => request('/whatsapp/sync-backup', {
-    method: 'POST',
-    body: JSON.stringify({ messages })
-  }),
+  syncBackupWhatsApp: () => Promise.resolve({ success: true }),
   sendWhatsAppDirectReply: async (phone, message, attachment = null) => {
     let res;
     if (attachment) {

@@ -59,23 +59,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
     fetchMyJobs();
     fetchTechniciansList();
 
-    // Real-time SSE listener
-    let eventSource = null;
-    try {
-      if (typeof window !== 'undefined' && window.EventSource) {
-        eventSource = new EventSource('/api/realtime/stream');
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'complaint_updated') {
-              fetchMyJobs(true);
-            }
-          } catch (e) {}
-        };
-      }
-    } catch (e) {}
-
-    // Resilient background interval
+    // Resilient background interval (polls every 5s when tab is active)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchMyJobs(true);
@@ -84,7 +68,6 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
 
     return () => {
       clearInterval(interval);
-      if (eventSource) eventSource.close();
     };
   }, [currentUser]);
 
