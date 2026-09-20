@@ -10,7 +10,7 @@ import {
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
   Play, Pause
 } from 'lucide-react';
-import { TicketAgeBadge } from '../common/TicketAgeBadge';
+import { TicketAgeBadge, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
@@ -623,6 +623,10 @@ export const ComplaintDetailDrawer = ({
                       {ticket.status === 'Registered' ? 'Unassigned' : ticket.status}
                     </span>
                     <TicketAgeBadge complaint={ticket} />
+                    <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300 bg-slate-800/90 border border-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-emerald-400" />
+                      <span>Reg: {formatIndianDateTime(ticket.created_at)}</span>
+                    </span>
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                       ticket.priority === 'High' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
                       ticket.priority === 'Medium' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :

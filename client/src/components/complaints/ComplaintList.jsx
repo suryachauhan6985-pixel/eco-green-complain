@@ -8,7 +8,7 @@ import {
   MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
   AlertTriangle, Gauge, Layers, Trash2
 } from 'lucide-react';
-import { TicketAgeBadge, getTicketAgeInfo } from '../common/TicketAgeBadge';
+import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -541,6 +541,10 @@ export const ComplaintList = ({
                       {/* Days Open / Age with Red Alert (>2 Days) */}
                       <td className="py-3 px-4">
                         <TicketAgeBadge complaint={c} />
+                        <div className="text-[10px] text-slate-500 mt-1 font-medium whitespace-nowrap flex items-center gap-1" title="Registered Date & Time (IST)">
+                          <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          <span>{formatIndianDateTime(c.created_at)}</span>
+                        </div>
                       </td>
 
                       {/* Priority & Warranty */}
@@ -732,9 +736,13 @@ export const ComplaintList = ({
                       </div>
                     </div>
 
-                    {/* Prominent Age & SLA Alert Bar */}
-                    <div className="mb-2">
+                    {/* Prominent Age & SLA Alert Bar + Exact Registration Date/Time */}
+                    <div className="flex items-center justify-between gap-1.5 mb-2 flex-wrap">
                       <TicketAgeBadge complaint={c} compact={true} />
+                      <span className="text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200/80 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" title="Registered Time (IST)">
+                        <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                        <span>{formatIndianDateTime(c.created_at)}</span>
+                      </span>
                     </div>
 
                     {/* Customer Info */}

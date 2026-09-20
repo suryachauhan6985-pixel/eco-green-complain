@@ -52,6 +52,16 @@ function getTrackingInfoFromUrl() {
   return { isTracking: false, ticketId: '' };
 }
 
+function normalizeTab(tab) {
+  if (!tab) return null;
+  const t = String(tab).toLowerCase().replace(/^#\/?/, '').replace(/^\/+/, '');
+  if (t === 'staff') return 'team';
+  if (['complaints', 'technician', 'whatsapp-inbox', 'team', 'analytics', 'templates', 'customer'].includes(t)) {
+    return t;
+  }
+  return null;
+}
+
 function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
@@ -432,7 +442,7 @@ function AppContent() {
       <OnboardingTour
         isOpen={isTourOpen}
         onClose={() => setIsTourOpen(false)}
-        onSwitchTab={(targetTab) => setCurrentTab(targetTab)}
+        onSwitchTab={(targetTab) => handleTabChange(targetTab)}
       />
     </div>
   );
