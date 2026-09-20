@@ -344,11 +344,10 @@ app.get('/api/complaints', optionalAuth, async (req, res) => {
       whereClauses.push(`c.assigned_technician_id = $${params.length}`);
     }
 
+    res.setHeader('Cache-Control', 'public, s-maxage=3, stale-while-revalidate=15');
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-
     const countSql = `SELECT COUNT(*) as total FROM complaints c ${whereSql}`;
-    const countRes = await query(countSql, params);
-    const total = parseInt(countRes.rows[0]?.total || 0, 10);
+    const countParams = [...params];
 
     params.push(parseInt(limit, 10));
     const limitIdx = params.length;
@@ -364,7 +363,12 @@ app.get('/api/complaints', optionalAuth, async (req, res) => {
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
 
-    const dataRes = await query(dataSql, params);
+    const [countRes, dataRes] = await Promise.all([
+      query(countSql, countParams),
+      query(dataSql, params)
+    ]);
+
+    const total = parseInt(countRes.rows[0]?.total || 0, 10);
     return res.json({ complaints: dataRes.rows, total });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -756,40 +760,40 @@ app.get('/api/customers/search', async (req, res) => {
 // ==================== REPORTS ROUTES ====================
 app.get('/api/reports/metrics', optionalAuth, async (req, res) => {
   try {
-    const countRes = await query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'Registered') as registered_count,
-        COUNT(*) FILTER (WHERE status = 'Unassigned') as unassigned_count,
-        COUNT(*) FILTER (WHERE status = 'Assigned') as assigned_count,
-        COUNT(*) FILTER (WHERE status = 'In Progress') as in_progress_count,
-        COUNT(*) FILTER (WHERE status = 'On Hold') as on_hold_count,
-        COUNT(*) FILTER (WHERE status = 'Resolved') as resolved_count,
-        COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
-        COUNT(*) FILTER (WHERE status = 'Reopened') as reopened_count
-      FROM complaints
-    `);
-
-    const prodRes = await query(`
-      SELECT product_type, COUNT(*) as count
-      FROM complaints GROUP BY product_type ORDER BY count DESC
-    `);
-
-    const catRes = await query(`
-      SELECT issue_category, COUNT(*) as count
-      FROM complaints GROUP BY issue_category ORDER BY count DESC LIMIT 5
-    `);
-
-    const techRes = await query(`
-      SELECT t.id, t.name, t.phone, t.area_zone, t.specialization, t.is_available,
-        COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress')) as active_tickets_count,
-        COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
-        COALESCE(ROUND(AVG(c.rating)::numeric, 1), 5.0) as average_rating
-      FROM technicians t
-      LEFT JOIN complaints c ON c.assigned_technician_id = t.id
-      GROUP BY t.id
-      ORDER BY resolved_tickets_count DESC
-    `);
+    res.setHeader('Cache-Control', 'public, s-maxage=5, stale-while-revalidate=30');
+    const [countRes, prodRes, catRes, techRes] = await Promise.all([
+      query(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'Registered') as registered_count,
+          COUNT(*) FILTER (WHERE status = 'Unassigned') as unassigned_count,
+          COUNT(*) FILTER (WHERE status = 'Assigned') as assigned_count,
+          COUNT(*) FILTER (WHERE status = 'In Progress') as in_progress_count,
+          COUNT(*) FILTER (WHERE status = 'On Hold') as on_hold_count,
+          COUNT(*) FILTER (WHERE status = 'Resolved') as resolved_count,
+          COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
+          COUNT(*) FILTER (WHERE status = 'Reopened') as reopened_count
+        FROM complaints
+      `),
+      query(`
+        SELECT product_type, COUNT(*) as count
+        FROM complaints GROUP BY product_type ORDER BY count DESC
+      `),
+      query(`
+        SELECT issue_category, COUNT(*) as count
+        FROM complaints GROUP BY issue_category ORDER BY count DESC LIMIT 5
+      `),
+      query(`
+        SELECT t.id, t.name, t.phone, t.area_zone, t.specialization, t.is_available,
+          COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress')) as active_tickets_count,
+          COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
+          COALESCE(ROUND(AVG(c.rating)::numeric, 1), 5.0) as average_rating
+        FROM technicians t
+        LEFT JOIN complaints c ON c.assigned_technician_id = t.id
+        GROUP BY t.id
+        ORDER BY resolved_tickets_count DESC
+      `)
+    ]);
 
     return res.json({
       counts: countRes.rows[0],
@@ -801,6 +805,19 @@ app.get('/api/reports/metrics', optionalAuth, async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
+});
+
+// Real-time Event Stream (Keepalive for client SSE listeners)
+app.get(['/api/realtime/stream', '/api/notifications/events'], (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  res.write('data: {"type":"connected"}\n\n');
+  const interval = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 15000);
+  req.on('close', () => clearInterval(interval));
 });
 
 // ==================== NOTIFICATIONS & WHATSAPP ====================

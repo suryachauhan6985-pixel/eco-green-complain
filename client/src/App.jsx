@@ -56,66 +56,84 @@ function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
 
-  const normalizeTab = (tab) => {
-    if (!tab) return null;
-    if (tab === 'staff') return 'team';
-    if (['complaints', 'technician', 'whatsapp-inbox', 'team', 'analytics', 'templates', 'customer'].includes(tab)) {
-      return tab;
-    }
-    return null;
-  };
+  const getTabFromLocation = () => {
+    // 1. Check path (e.g. /complaints, /technician, /analytics, /team, /templates, /whatsapp-inbox)
+    const rawPath = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
+    const validFromPath = normalizeTab(rawPath);
+    if (validFromPath) return validFromPath;
 
-  const [currentTab, setCurrentTab] = useState(() => {
-    // 1. Check URL hash (e.g. #whatsapp-inbox or #technician or #team)
-    const hash = window.location.hash.replace('#', '');
+    // 2. Check hash (e.g. #/complaints or #complaints)
+    const hash = window.location.hash.replace(/^#\/?/, '').split('/')[0].toLowerCase();
     const validFromHash = normalizeTab(hash);
     if (validFromHash) return validFromHash;
 
-    // 2. Check saved tab in localStorage
-    try {
-      const saved = localStorage.getItem('egs_active_tab');
-      const validFromSaved = normalizeTab(saved);
-      if (validFromSaved) return validFromSaved;
-    } catch (e) {}
+    return 'complaints';
+  };
 
-    if (currentUser?.role === 'technician') return 'technician';
-    if (currentUser?.role === 'customer') return 'customer';
+  const [currentTab, setCurrentTab] = useState(() => {
+    const fromUrl = getTabFromLocation();
+    if (fromUrl && fromUrl !== 'complaints') return fromUrl;
     return 'complaints';
   });
 
-  // Keep localStorage and URL hash in sync with currentTab
+  // Keep URL in sync with currentTab
   const handleTabChange = (tab) => {
     const normalized = normalizeTab(tab) || tab;
     setCurrentTab(normalized);
     try {
       localStorage.setItem('egs_active_tab', normalized);
-      window.location.hash = normalized;
+      window.history.pushState(null, '', `/${normalized}`);
     } catch (e) {}
   };
 
-  // Listen to browser forward/back buttons and hash changes
+  // Modals & Drawers state (with URL deep-linking support)
+  const [selectedComplaintId, setSelectedComplaintId] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('ticket') || null;
+    } catch (_) {
+      return null;
+    }
+  });
+
+  const handleSelectComplaint = (id) => {
+    setSelectedComplaintId(id);
+    try {
+      if (id) {
+        window.history.pushState(null, '', `/${currentTab}?ticket=${encodeURIComponent(id)}`);
+      } else {
+        window.history.pushState(null, '', `/${currentTab}`);
+      }
+    } catch (_) {}
+  };
+
+  // Listen to browser forward/back buttons and URL changes
   useEffect(() => {
     const handleLocationChange = () => {
       setTrackingInfo(getTrackingInfoFromUrl());
-      const hash = window.location.hash.replace('#', '');
-      const valid = normalizeTab(hash);
-      if (valid) {
-        setCurrentTab(valid);
-      }
+      const active = getTabFromLocation();
+      if (active) setCurrentTab(active);
+      const params = new URLSearchParams(window.location.search);
+      setSelectedComplaintId(params.get('ticket') || null);
     };
     window.addEventListener('popstate', handleLocationChange);
-    window.addEventListener('hashchange', handleLocationChange);
-    return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-      window.removeEventListener('hashchange', handleLocationChange);
-    };
+    return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
-  // Modals & Drawers state (MUST be declared before early returns per React Rules of Hooks)
+  // When user logs in, always focus on the Complaints page and set URL
+  useEffect(() => {
+    if (currentUser) {
+      const fromUrl = getTabFromLocation();
+      const target = fromUrl || 'complaints';
+      setCurrentTab(target);
+      if (!window.location.pathname || window.location.pathname === '/') {
+        window.history.replaceState(null, '', `/${target}`);
+      }
+    }
+  }, [currentUser?.id]);
   const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
   const [newComplaintInitialData, setNewComplaintInitialData] = useState(null);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
-  const [selectedComplaintId, setSelectedComplaintId] = useState(null);
   const [historyPhone, setHistoryPhone] = useState(null);
   const [activeWhatsAppPhone, setActiveWhatsAppPhone] = useState(null);
 
@@ -222,7 +240,7 @@ function AppContent() {
             key={`comp-${refreshKey}`}
             refreshKey={refreshKey}
             initialFilters={complaintFilters}
-            onSelectComplaint={(id) => setSelectedComplaintId(id)}
+            onSelectComplaint={handleSelectComplaint}
             onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
             onOpenWhatsAppChat={handleOpenWhatsAppChat}
           />
@@ -231,7 +249,7 @@ function AppContent() {
         {currentTab === 'technician' && (
           <TechnicianFieldPortal
             key={`tech-${refreshKey}`}
-            onSelectComplaint={(id) => setSelectedComplaintId(id)}
+            onSelectComplaint={handleSelectComplaint}
           />
         )}
 
@@ -260,7 +278,7 @@ function AppContent() {
             key={`wa-inbox-${refreshKey}`}
             initialTarget={activeWhatsAppPhone}
             onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
-            onOpenComplaint={(complaintId) => setSelectedComplaintId(complaintId)}
+            onOpenComplaint={handleSelectComplaint}
             onNewComplaintWithData={(data) => {
               setNewComplaintInitialData(data);
               setIsNewComplaintOpen(true);
@@ -386,14 +404,14 @@ function AppContent() {
           setRefreshKey(k => k + 1);
         }}
         onViewComplaint={(ticketId) => {
-          setSelectedComplaintId(ticketId);
+          handleSelectComplaint(ticketId);
         }}
       />
 
       <ComplaintDetailDrawer
         complaintId={selectedComplaintId}
         isOpen={Boolean(selectedComplaintId)}
-        onClose={() => setSelectedComplaintId(null)}
+        onClose={() => handleSelectComplaint(null)}
         onComplaintUpdated={() => setRefreshKey(k => k + 1)}
         onViewCustomerHistory={(phone) => setHistoryPhone(phone)}
       />
@@ -402,7 +420,7 @@ function AppContent() {
         phone={historyPhone}
         isOpen={Boolean(historyPhone)}
         onClose={() => setHistoryPhone(null)}
-        onSelectTicket={(ticketId) => setSelectedComplaintId(ticketId)}
+        onSelectTicket={handleSelectComplaint}
       />
 
       <NotificationDrawer

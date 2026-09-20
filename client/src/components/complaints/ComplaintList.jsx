@@ -19,9 +19,30 @@ export const ComplaintList = ({
 }) => {
   const { currentUser } = useAuth();
   const { confirm, alert, showToast } = useDialog();
-  const [complaints, setComplaints] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [complaints, setComplaints] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [technicians, setTechnicians] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      return !cached || cached.length === 0;
+    } catch {
+      return true;
+    }
+  });
 
   // View Mode: 'list' (default) or 'card' - persisted in localStorage
   const [viewMode, setViewMode] = useState(() => {

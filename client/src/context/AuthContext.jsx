@@ -43,6 +43,10 @@ export const AuthProvider = ({ children }) => {
     setAuthToken(data.token);
     setCurrentUser(data.user);
     localStorage.removeItem('egs_logged_out');
+    localStorage.setItem('egs_active_tab', 'complaints');
+    try {
+      window.history.pushState(null, '', '/complaints');
+    } catch (_) {}
     return data.user;
   };
 
