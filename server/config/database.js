@@ -662,12 +662,27 @@ migrateWhatsAppMessagesTable();
 migrateUsersTable();
 migrateTechniciansAndComplaints();
 
-// Attach Turso continuous cloud sync hook
+// Attach Supabase continuous cloud sync hook
+const supabaseSync = require('../services/supabaseSyncService');
+supabaseSync.hookDatabase(db);
+
+// Attach Turso continuous cloud sync hook (fallback or parallel cloud replication)
 const tursoSync = require('../services/tursoSyncService');
 tursoSync.hookDatabase(db);
 
-// Trigger startup sync from Turso Cloud and ensure technician templates exist
-if (tursoSync.isEnabled) {
+// Trigger startup sync from Supabase Cloud (or Turso Cloud)
+if (supabaseSync.isEnabled) {
+  supabaseSync.pullFromCloud(db).then(() => {
+    migrateNotificationTemplates();
+    migrateTechniciansAndComplaints();
+    migrateAttachmentsTable();
+  }).catch(err => {
+    console.error('[Database] Initial Supabase pull failed:', err.message);
+    migrateNotificationTemplates();
+    migrateTechniciansAndComplaints();
+    migrateAttachmentsTable();
+  });
+} else if (tursoSync.isEnabled) {
   tursoSync.pullFromCloud(db).then(() => {
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();

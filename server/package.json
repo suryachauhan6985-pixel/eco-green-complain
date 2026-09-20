@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "seed": "node data/seed.js",
-    "test": "node test-api.js"
+    "test": "node test-api.js",
+    "test:supabase": "node scripts/testSupabaseConnection.js",
+    "migrate:supabase": "node scripts/migrateToSupabase.js"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +16,7 @@
   "type": "commonjs",
   "dependencies": {
     "@libsql/client": "^0.18.0",
+    "@supabase/supabase-js": "^2.116.0",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "12.11.1",
@@ -23,6 +26,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.3.0",
     "nodemailer": "^10.0.9",
+    "pg": "^8.23.0",
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",
     "xlsx": "^0.18.5"
