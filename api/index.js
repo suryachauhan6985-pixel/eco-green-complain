@@ -135,9 +135,14 @@ app.post('/api/auth/login', async (req, res) => {
     const loginId = (identifier || email || '').trim();
     if (!loginId || !password) return res.status(400).json({ error: 'Username/Email and password required' });
 
+    const cleanDigits = loginId.replace(/[^0-9]/g, '');
     const userRes = await query(
-      'SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1) LIMIT 1',
-      [loginId]
+      `SELECT * FROM users 
+       WHERE LOWER(email) = LOWER($1) 
+          OR LOWER(username) = LOWER($1) 
+          OR ($2 != '' AND phone LIKE '%' || $2)
+       LIMIT 1`,
+      [loginId, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '']
     );
 
     if (userRes.rows.length === 0) {
