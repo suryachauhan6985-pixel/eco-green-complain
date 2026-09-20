@@ -1365,6 +1365,10 @@ if (fs.existsSync(clientDistPath)) {
   }));
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      const host = req.get('host') || '';
+      if (host.includes('vprotech.online') || host.includes('onrender.com')) {
+        return res.redirect(301, `https://complain.ecogreensolar.co.in${req.originalUrl}`);
+      }
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
