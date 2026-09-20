@@ -8,7 +8,7 @@ import {
   MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
   AlertTriangle, Gauge, Layers, Trash2
 } from 'lucide-react';
-import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
+import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -20,6 +20,14 @@ export const ComplaintList = ({
   const { currentUser } = useAuth();
   const { confirm, alert, showToast } = useDialog();
   const [complaints, setComplaints] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [allComplaints, setAllComplaints] = useState(() => {
     try {
       const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
       return Array.isArray(cached) ? cached : [];
@@ -73,16 +81,12 @@ export const ComplaintList = ({
 
   const fetchComplaints = async (silent = false) => {
     try {
-      if (!silent) setLoading(true);
-      const params = {};
-      if (search) params.search = search;
-      if (statusFilter !== 'all') params.status = statusFilter;
-      if (productFilter !== 'all') params.product_type = productFilter;
-      if (priorityFilter !== 'all') params.priority = priorityFilter;
-      if (technicianFilter) params.technician_id = technicianFilter;
-
-      const data = await api.getComplaints(params);
-      setComplaints(data.complaints || []);
+      if (!silent && allComplaints.length === 0) setLoading(true);
+      const data = await api.getComplaints({});
+      if (data && Array.isArray(data.complaints)) {
+        setComplaints(data.complaints);
+        setAllComplaints(data.complaints);
+      }
     } catch (err) {
       if (!silent) console.error('Failed to load complaints:', err);
     } finally {
@@ -111,7 +115,7 @@ export const ComplaintList = ({
     }, 6000);
 
     return () => clearInterval(interval);
-  }, [statusFilter, productFilter, priorityFilter, technicianFilter, refreshKey]);
+  }, [refreshKey]);
 
   const getAssignedTechName = (c) => {
     if (c?.technician_name) return c.technician_name;
@@ -402,7 +406,11 @@ export const ComplaintList = ({
       {/* Complaints Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {(() => {
-          const displayedComplaints = complaints.filter(c => {
+          const listToFilter = allComplaints.length > 0 ? allComplaints : complaints;
+          const q = (search || '').trim().toLowerCase();
+
+          const displayedComplaints = listToFilter.filter(c => {
+            // 1. Status Filter
             if (statusFilter !== 'all') {
               const isUnassigned = c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id;
               if (statusFilter.toLowerCase() === 'unassigned') {
@@ -411,13 +419,46 @@ export const ComplaintList = ({
                 return false;
               }
             }
+
+            // 2. Product Filter
             if (productFilter !== 'all' && c.product_type !== productFilter) return false;
+
+            // 3. Priority Filter
             if (priorityFilter !== 'all' && c.priority !== priorityFilter) return false;
+
+            // 4. Technician Filter
             if (technicianFilter && String(c.assigned_technician_id) !== String(technicianFilter)) return false;
+
+            // 5. Instant Real-Time Search Match (0ms filter)
+            if (q) {
+              const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
+              const ticketId = (c.ticket_id || '').toLowerCase();
+              const custName = (c.customer_name || '').toLowerCase();
+              const city = (c.city || '').toLowerCase();
+              const addr = (c.customer_address || '').toLowerCase();
+              const consNo = (c.consumer_no || '').toLowerCase();
+              const ordNo = (c.order_no || '').toLowerCase();
+              const issueCat = (c.issue_category || '').toLowerCase();
+              const issueDesc = (c.issue_description || '').toLowerCase();
+              const techName = (c.technician_name || getAssignedTechName(c) || '').toLowerCase();
+
+              const matches = ticketId.includes(q) ||
+                              custName.includes(q) ||
+                              cleanPhone.includes(q) ||
+                              city.includes(q) ||
+                              addr.includes(q) ||
+                              consNo.includes(q) ||
+                              ordNo.includes(q) ||
+                              issueCat.includes(q) ||
+                              issueDesc.includes(q) ||
+                              techName.includes(q);
+              if (!matches) return false;
+            }
+
             return true;
           });
 
-          if (loading && complaints.length === 0) {
+          if (loading && listToFilter.length === 0) {
             return (
               <div className="py-16 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
@@ -464,7 +505,7 @@ export const ComplaintList = ({
                   return (
                     <tr
                       key={c.id}
-                      onClick={() => onSelectComplaint(c.id)}
+                      onClick={() => onSelectComplaint(c.ticket_id || c.id)}
                       className="hover:bg-emerald-50/40 cursor-pointer transition-colors group"
                     >
                       {/* Ticket & Product */}
@@ -683,7 +724,7 @@ export const ComplaintList = ({
               return (
                 <div
                   key={c.id}
-                  onClick={() => onSelectComplaint(c.id)}
+                  onClick={() => onSelectComplaint(c.ticket_id || c.id)}
                   className={`bg-white rounded-2xl border p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden ${
                     ageInfo.isOverdue 
                       ? 'border-rose-300 hover:border-rose-400 ring-1 ring-rose-200/70' 
@@ -776,7 +817,7 @@ export const ComplaintList = ({
                                 {techName}
                               </span>
                               <span className="text-[10px] text-emerald-700 block truncate font-medium">
-                                {c.expected_visit_date ? `📅 Visit: ${c.expected_visit_date}` : '📅 Visit scheduled'}
+                                {c.expected_visit_date ? `📅 Visit: ${formatIndianDateOnly(c.expected_visit_date)}` : '📅 Visit scheduled'}
                               </span>
                             </div>
                           </div>

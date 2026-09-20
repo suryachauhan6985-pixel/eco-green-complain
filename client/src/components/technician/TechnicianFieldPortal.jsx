@@ -497,7 +497,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                                     <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
                                       <button
                                         type="button"
-                                        onClick={() => onSelectComplaint && onSelectComplaint(comp.id)}
+                                        onClick={() => onSelectComplaint && onSelectComplaint(comp.ticket_id || comp.id)}
                                         className="text-emerald-700 hover:underline flex items-center gap-1 font-bold cursor-pointer"
                                       >
                                         <span>{comp.ticket_id}</span>
@@ -770,7 +770,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
 
                     {/* Open Full Action Drawer */}
                     <button
-                      onClick={() => onSelectComplaint(job.id)}
+                      onClick={() => onSelectComplaint && onSelectComplaint(job.ticket_id || job.id)}
                       className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
                     >
                       <span>Update Notes, Collect Payment & Mark Resolved</span>

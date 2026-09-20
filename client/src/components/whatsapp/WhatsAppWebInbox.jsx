@@ -70,8 +70,15 @@ export const WhatsAppWebInbox = ({
   const { currentUser } = useAuth();
   const { confirm, alert, showToast } = useDialog();
 
-  // Active chat state
-  const [conversations, setConversations] = useState([]);
+  // Active chat state (0ms instant render with cached threads)
+  const [conversations, setConversations] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_cached_wa_conversations') || '[]');
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [selectedPhone, setSelectedPhone] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -173,17 +180,17 @@ export const WhatsAppWebInbox = ({
 
   // Load conversation list from server
   const loadConversations = async (silent = false) => {
-    if (!silent) setLoadingConversations(true);
+    if (!silent && conversations.length === 0) setLoadingConversations(true);
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
         setConversations(res.conversations);
-      } else {
-        setConversations([]);
+        try {
+          localStorage.setItem('egs_cached_wa_conversations', JSON.stringify(res.conversations));
+        } catch (_) {}
       }
     } catch (err) {
       console.warn('Error loading conversations:', err);
-      setConversations([]);
     } finally {
       if (!silent) setLoadingConversations(false);
     }
@@ -258,22 +265,15 @@ export const WhatsAppWebInbox = ({
     }
   }, [initialTarget]);
 
-  // Initial load with automatic client-side backup restoration
+  // Initial load: 0ms instant cached load, then silent background sync
   useEffect(() => {
-    const initInbox = async () => {
-      // 1. Sync any cached messages from browser localStorage to server (in case container restarted)
-      const localBackup = getPermanentWhatsAppMessages();
-      if (Array.isArray(localBackup) && localBackup.length > 0) {
-        try {
-          await api.syncBackupWhatsApp(localBackup);
-        } catch (e) {
-          console.warn('Backup sync note:', e.message);
-        }
-      }
-      // 2. Load latest conversations
-      await loadConversations();
-    };
-    initInbox();
+    loadConversations(true);
+
+    // Sync client-side backup asynchronously in background without blocking UI
+    const localBackup = getPermanentWhatsAppMessages();
+    if (Array.isArray(localBackup) && localBackup.length > 0) {
+      api.syncBackupWhatsApp(localBackup).catch(() => {});
+    }
   }, []);
 
   // When selectedPhone changes, load thread

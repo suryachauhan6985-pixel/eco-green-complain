@@ -3,11 +3,13 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Supabase PostgreSQL Connection Pool
 const pool = new Pool({
@@ -395,7 +397,7 @@ app.get('/api/complaints/track/:query', async (req, res) => {
     const complaint = compRes.rows[0];
 
     const tlRes = await query('SELECT * FROM complaint_timelines WHERE complaint_id = $1 ORDER BY created_at ASC', [complaint.id]);
-    const attRes = await query('SELECT id, file_name, file_url, file_type, created_at FROM complaint_attachments WHERE complaint_id = $1', [complaint.id]);
+    const attRes = await query('SELECT id, file_name, file_url, file_type, file_data, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', [complaint.id]);
 
     return res.json({ complaint, timeline: tlRes.rows, attachments: attRes.rows });
   } catch (err) {
@@ -418,7 +420,7 @@ app.get('/api/complaints/:id', optionalAuth, async (req, res) => {
     const complaint = compRes.rows[0];
 
     const tlRes = await query('SELECT * FROM complaint_timelines WHERE complaint_id = $1 ORDER BY created_at ASC', [complaint.id]);
-    const attRes = await query('SELECT id, file_name, file_url, file_type, created_at FROM complaint_attachments WHERE complaint_id = $1', [complaint.id]);
+    const attRes = await query('SELECT id, file_name, file_url, file_type, file_data, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', [complaint.id]);
     const notifRes = await query('SELECT * FROM notification_logs WHERE complaint_id = $1 ORDER BY created_at DESC', [complaint.id]);
 
     return res.json({ complaint, timeline: tlRes.rows, attachments: attRes.rows, notifications: notifRes.rows });
@@ -514,6 +516,79 @@ app.post('/api/complaints', optionalAuth, async (req, res) => {
   } catch (err) {
     console.error('Create complaint error:', err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload Attachments for Complaint
+app.post('/api/complaints/:id/attachments', optionalAuth, upload.array('attachments', 10), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const compRes = await query('SELECT id, ticket_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint not found' });
+    const complaintId = compRes.rows[0].id;
+
+    const files = req.files || [];
+    const saved = [];
+
+    for (const f of files) {
+      const base64Data = `data:${f.mimetype || 'image/jpeg'};base64,${f.buffer.toString('base64')}`;
+      const insRes = await query(`
+        INSERT INTO complaint_attachments (
+          complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, file_name, file_url, file_type, file_data, created_at
+      `, [complaintId, f.originalname, '/api/attachments/temp', f.mimetype, base64Data, req.user?.name || 'Staff']);
+
+      const att = insRes.rows[0];
+      const realUrl = `/api/attachments/${att.id}`;
+      await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [realUrl, att.id]);
+      att.file_url = realUrl;
+      saved.push(att);
+    }
+
+    return res.json({ success: true, attachments: saved });
+  } catch (err) {
+    console.error('Upload attachments error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve / Preview Attachment File directly (Images, PDFs, Docs)
+app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
+  try {
+    const { id, filename } = req.params;
+    let r;
+    if (id) {
+      r = await query('SELECT file_name, file_type, file_data, file_url FROM complaint_attachments WHERE id = $1', [id]);
+    } else {
+      r = await query('SELECT file_name, file_type, file_data, file_url FROM complaint_attachments WHERE file_url LIKE $1 OR file_name = $2 LIMIT 1', [`%${filename}%`, filename]);
+    }
+
+    if (r.rows.length === 0) {
+      return res.status(404).send('Attachment document not found');
+    }
+    const att = r.rows[0];
+
+    if (att.file_data && att.file_data.startsWith('data:')) {
+      const parts = att.file_data.split(',');
+      const meta = parts[0];
+      const base64 = parts[1];
+      const mime = meta.match(/data:(.*?);/)?.[1] || att.file_type || 'application/octet-stream';
+      const buf = Buffer.from(base64, 'base64');
+
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.file_name)}"`);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(buf);
+    }
+
+    if (att.file_url && (att.file_url.startsWith('http://') || att.file_url.startsWith('https://'))) {
+      return res.redirect(att.file_url);
+    }
+
+    return res.status(404).send('Attachment file content unavailable');
+  } catch (err) {
+    return res.status(500).send(err.message);
   }
 });
 
@@ -1025,7 +1100,7 @@ app.post('/api/whatsapp/direct-reply', optionalAuth, async (req, res) => {
 app.get('/api/complaints/:id/whatsapp-messages', optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const compRes = await query('SELECT id, ticket_id, customer_phone FROM complaints WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1', [id]);
+    const compRes = await query('SELECT id, ticket_id, customer_phone FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (compRes.rows.length === 0) return res.json({ messages: [] });
 
     const comp = compRes.rows[0];
@@ -1049,7 +1124,7 @@ app.post('/api/complaints/:id/whatsapp-reply', optionalAuth, async (req, res) =>
   try {
     const { id } = req.params;
     const { message } = req.body;
-    const compRes = await query('SELECT id, ticket_id, customer_name, customer_phone FROM complaints WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1', [id]);
+    const compRes = await query('SELECT id, ticket_id, customer_name, customer_phone FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint not found' });
 
     const comp = compRes.rows[0];
@@ -1064,6 +1139,40 @@ app.post('/api/complaints/:id/whatsapp-reply', optionalAuth, async (req, res) =>
     });
 
     return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Notification logs / Simulated inbox for drawer
+app.get('/api/notifications/simulated', optionalAuth, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM notification_logs ORDER BY created_at DESC LIMIT 50');
+    return res.json({ messages: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, messages: [] });
+  }
+});
+
+app.get('/api/notifications/logs', optionalAuth, async (req, res) => {
+  try {
+    const { complaint_id } = req.query;
+    let r;
+    if (complaint_id) {
+      r = await query('SELECT * FROM notification_logs WHERE complaint_id = $1 ORDER BY created_at DESC', [complaint_id]);
+    } else {
+      r = await query('SELECT * FROM notification_logs ORDER BY created_at DESC LIMIT 100');
+    }
+    return res.json({ logs: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/notifications/simulated', optionalAuth, async (req, res) => {
+  try {
+    await query("DELETE FROM notification_logs WHERE channel = 'simulated'").catch(() => {});
+    return res.json({ success: true, message: 'Simulated notifications cleared' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -10,7 +10,7 @@ import {
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
   Play, Pause
 } from 'lucide-react';
-import { TicketAgeBadge, formatIndianDateTime } from '../common/TicketAgeBadge';
+import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
@@ -136,7 +136,7 @@ export const ComplaintDetailDrawer = ({
           setSelectedTechId(String(data.complaint.assigned_technician_id));
         }
         if (data.complaint.expected_visit_date) {
-          setExpectedDate(data.complaint.expected_visit_date);
+          setExpectedDate(String(data.complaint.expected_visit_date).split('T')[0]);
         }
         setFollowUpStatus(data.complaint.status);
       }
@@ -1055,10 +1055,15 @@ export const ComplaintDetailDrawer = ({
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {attachments.map((att) => {
                               const fileUrl = att.file_data || att.file_url || `/api/attachments/${att.id}`;
-                              const isImg = att.file_type?.startsWith('image/') || 
+                              const isPdf = att.file_type === 'application/pdf' || 
+                                            (att.file_name && att.file_name.toLowerCase().endsWith('.pdf')) || 
+                                            (fileUrl && fileUrl.startsWith('data:application/pdf'));
+                              const isImg = !isPdf && (
+                                            att.file_type?.startsWith('image/') || 
                                             (fileUrl && fileUrl.startsWith('data:image/')) || 
                                             (fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) || 
-                                            (att.file_name?.match(/\.(jpeg|jpg|gif|png|webp)$/i));
+                                            (att.file_name?.match(/\.(jpeg|jpg|gif|png|webp)$/i))
+                              );
                               return (
                                 <div
                                   key={att.id}
@@ -1084,8 +1089,12 @@ export const ComplaintDetailDrawer = ({
                                       </div>
                                     </div>
                                   ) : (
-                                    <div className="w-12 h-12 bg-slate-200/70 rounded-lg flex items-center justify-center text-slate-500 shrink-0">
-                                      <Paperclip className="w-5 h-5" />
+                                    <div 
+                                      onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: false, isPdf })}
+                                      className="w-12 h-12 bg-slate-200/70 hover:bg-emerald-100 rounded-lg flex items-center justify-center text-slate-500 hover:text-emerald-700 shrink-0 cursor-pointer transition-colors"
+                                      title="Click to preview document"
+                                    >
+                                      <FileText className="w-5 h-5" />
                                     </div>
                                   )}
                                   <div className="min-w-0 flex-1">
@@ -1095,7 +1104,7 @@ export const ComplaintDetailDrawer = ({
                                     <div className="flex items-center gap-1.5 mt-1">
                                       <button
                                         type="button"
-                                        onClick={() => isImg ? setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: true }) : window.open(fileUrl, '_blank')}
+                                        onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: isImg, isPdf })}
                                         className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 cursor-pointer bg-emerald-100/70 px-1.5 py-0.5 rounded"
                                       >
                                         <Eye className="w-3 h-3" /> Preview
@@ -1214,7 +1223,7 @@ export const ComplaintDetailDrawer = ({
                                         `📋 *Service Request Summary:*\n` +
                                         `• System: ${ticket.product_type || 'Solar System'}\n` +
                                         `• Issue: ${ticket.issue_category || 'Service inspection required'}\n` +
-                                        `• Scheduled Visit: ${ticket.expected_visit_date || 'Today / As Scheduled'}\n\n` +
+                                        `• Scheduled Visit: ${ticket.expected_visit_date ? formatIndianDateOnly(ticket.expected_visit_date) : 'Today / As Scheduled'}\n\n` +
                                         `I am preparing to visit your premises for the on-site inspection and service. Please confirm if someone is available and if rooftop/system access can be provided.\n\n` +
                                         `📞 Helpdesk: +91 78784 44414\n` +
                                         `- Eco Green Technical Services`;
@@ -1245,7 +1254,7 @@ export const ComplaintDetailDrawer = ({
                                         `👨‍🔧 *Technician:* ${ticket.technician_name || 'Assigned Technician'}\n` +
                                         `🎫 *Ticket ID:* ${ticket.ticket_id}\n` +
                                         `🚨 *Priority:* ${ticket.priority || 'Normal'}\n` +
-                                        `📅 *Scheduled Visit:* ${ticket.expected_visit_date || 'Immediate / Today'}\n\n` +
+                                        `📅 *Scheduled Visit:* ${ticket.expected_visit_date ? formatIndianDateOnly(ticket.expected_visit_date) : 'Immediate / Today'}\n\n` +
                                         `👤 *CUSTOMER DETAILS*\n` +
                                         `• Name: ${ticket.customer_name}\n` +
                                         `• Mobile: ${ticket.customer_phone}\n` +

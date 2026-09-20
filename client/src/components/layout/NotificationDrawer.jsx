@@ -30,27 +30,19 @@ export const NotificationDrawer = ({ isOpen, onClose }) => {
   useEffect(() => {
     fetchMessages();
 
-    // Listen to live Server-Sent Events (SSE)
-    let eventSource;
-    try {
-      eventSource = new EventSource('/api/notifications/events');
-      eventSource.onmessage = (event) => {
-        try {
-          const newMsg = JSON.parse(event.data);
-          setMessages((prev) => [newMsg, ...prev.filter(m => m.id !== newMsg.id)]);
-          setUnreadSimulatedCount((c) => c + 1);
-        } catch (e) {
-          console.error('SSE parse error:', e);
-        }
-      };
-    } catch (e) {
-      console.warn('SSE not supported or failed, falling back to polling');
-    }
+    // Poll for notifications periodically only when tab is active
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isOpen) {
+        api.getSimulatedNotifications().then(data => {
+          if (data && Array.isArray(data.messages)) {
+            setMessages(data.messages);
+          }
+        }).catch(() => {});
+      }
+    }, 15000);
 
-    return () => {
-      if (eventSource) eventSource.close();
-    };
-  }, []);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
