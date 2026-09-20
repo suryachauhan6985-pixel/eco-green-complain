@@ -6,7 +6,7 @@ import {
   INITIAL_TEMPLATES 
 } from '../data/demoData';
 
-const API_BASE = '/api';
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '') || '/api';
 
 export function getAuthToken() {
   return localStorage.getItem('egs_token');

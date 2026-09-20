@@ -4,7 +4,7 @@
   "private": true,
   "description": "Eco Green Solar Complaint Management System with 6,102 Customer Excel Database & 5-Year Warranty Engine",
   "scripts": {
-    "build": "cd client && npm install && npm run build && cd ../server && npm install",
+    "build": "cd client && npm install && npm run build",
     "start": "node server/server.js"
   }
 }
