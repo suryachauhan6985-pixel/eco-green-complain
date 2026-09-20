@@ -59,7 +59,7 @@ function generateBrandedEmailHtml({ title, preheader, bodyHtml, ticketId, detail
 
               ${ticketId ? `
               <div style="text-align: center; margin: 28px 0 16px 0;">
-                <a href="${(process.env.APP_URL && !process.env.APP_URL.includes('localhost')) ? process.env.APP_URL : 'https://eco-green-complain.vprotech.online'}/track/${ticketId}" 
+                <a href="${(process.env.APP_URL && !process.env.APP_URL.includes('localhost')) ? process.env.APP_URL : 'https://complain.ecogreensolar.co.in'}/track/${ticketId}" 
                    style="background-color: #16a34a; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);">
                   Track Ticket Status Online
                 </a>

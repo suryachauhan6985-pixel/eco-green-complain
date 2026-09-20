@@ -30,8 +30,9 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       to: formattedPhone
     };
 
-    const cleanTrackingUrl = (variables.feedback_url || `https://eco-green-complain.vprotech.online/track/${variables.complaint_id || ticket_id || ''}`)
-      .replace(/http:\/\/localhost:\d+/g, 'https://eco-green-complain.vprotech.online');
+    const defaultLiveUrl = (process.env.APP_URL && !process.env.APP_URL.includes('localhost')) ? process.env.APP_URL : 'https://complain.ecogreensolar.co.in';
+    const cleanTrackingUrl = (variables.feedback_url || `${defaultLiveUrl}/track/${variables.complaint_id || ticket_id || ''}`)
+      .replace(/http:\/\/localhost:\d+/g, defaultLiveUrl);
 
     // Clean helper to ensure Meta Cloud API parameters never contain newlines/tabs
     const cleanParam = (val, fallback = '') => {

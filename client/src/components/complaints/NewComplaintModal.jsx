@@ -574,7 +574,8 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
               {(() => {
                 const cleanPhone = (createdTicket.customer_phone || '').replace(/[^0-9]/g, '');
                 const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
-                const trackingUrl = `https://eco-green-complain.vprotech.online/track/${createdTicket.ticket_id}`;
+                const baseUrl = window.location.origin && !window.location.origin.includes('localhost') ? window.location.origin : 'https://complain.ecogreensolar.co.in';
+                const trackingUrl = `${baseUrl}/track/${createdTicket.ticket_id}`;
                 const chargesLine = (createdTicket.notify_charges && createdTicket.estimated_charges > 0)
                   ? `\n💰 *Estimated Service Charge:* ₹${createdTicket.estimated_charges}`
                   : '';

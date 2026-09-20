@@ -1092,7 +1092,7 @@ app.post('/api/whatsapp/retry-message/:id', authenticateToken, requireRole('admi
         expected_visit_date: complaint?.expected_visit_date || 'Immediate / Today',
         technician_name: tech?.name || 'Technician',
         technician_phone: tech?.phone || msg.phone,
-        feedback_url: `https://eco-green-complain.vprotech.online/track/${complaint?.ticket_id || ''}`
+        feedback_url: `${(process.env.APP_URL && !process.env.APP_URL.includes('localhost')) ? process.env.APP_URL : 'https://complain.ecogreensolar.co.in'}/track/${complaint?.ticket_id || ''}`
       };
 
       sendRes = await sendWhatsAppMessage({

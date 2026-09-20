@@ -53,7 +53,7 @@ class NotificationService extends EventEmitter {
 
       const liveAppUrl = (process.env.APP_URL && !process.env.APP_URL.includes('localhost'))
         ? process.env.APP_URL
-        : 'https://eco-green-complain.vprotech.online';
+        : 'https://complain.ecogreensolar.co.in';
 
       const mergedData = {
         customer_name: complaint?.customer_name || data?.customer_name || 'Valued Customer',
