@@ -103,34 +103,14 @@ export const ComplaintList = ({
     fetchComplaints();
     fetchTechnicians();
 
-    // 1. Real-time instant SSE connection for Staff & Admin
-    let eventSource = null;
-    try {
-      if (typeof window !== 'undefined' && window.EventSource) {
-        eventSource = new EventSource('/api/realtime/stream');
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'complaint_updated') {
-              fetchComplaints(true);
-              fetchTechnicians();
-            }
-          } catch (e) {}
-        };
-      }
-    } catch (e) {}
-
-    // 2. Resilient background heartbeat sync every 5 seconds
+    // Resilient background heartbeat sync every 6 seconds
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchComplaints(true);
       }
-    }, 5000);
+    }, 6000);
 
-    return () => {
-      clearInterval(interval);
-      if (eventSource) eventSource.close();
-    };
+    return () => clearInterval(interval);
   }, [statusFilter, productFilter, priorityFilter, technicianFilter, refreshKey]);
 
   const getAssignedTechName = (c) => {
@@ -423,14 +403,21 @@ export const ComplaintList = ({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {(() => {
           const displayedComplaints = complaints.filter(c => {
-            if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+            if (statusFilter !== 'all') {
+              const isUnassigned = c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id;
+              if (statusFilter.toLowerCase() === 'unassigned') {
+                if (!isUnassigned) return false;
+              } else if (c.status !== statusFilter) {
+                return false;
+              }
+            }
             if (productFilter !== 'all' && c.product_type !== productFilter) return false;
             if (priorityFilter !== 'all' && c.priority !== priorityFilter) return false;
             if (technicianFilter && String(c.assigned_technician_id) !== String(technicianFilter)) return false;
             return true;
           });
 
-          if (loading) {
+          if (loading && complaints.length === 0) {
             return (
               <div className="py-16 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />

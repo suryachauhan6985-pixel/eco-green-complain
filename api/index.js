@@ -325,8 +325,12 @@ app.get('/api/complaints', optionalAuth, async (req, res) => {
     }
 
     if (status && status !== 'all') {
-      params.push(status);
-      whereClauses.push(`c.status = $${params.length}`);
+      if (status.toLowerCase() === 'unassigned') {
+        whereClauses.push("(c.status = 'Unassigned' OR c.status = 'Registered' OR c.assigned_technician_id IS NULL)");
+      } else {
+        params.push(status);
+        whereClauses.push(`c.status = $${params.length}`);
+      }
     }
 
     if (priority && priority !== 'all') {
@@ -402,12 +406,11 @@ app.get('/api/complaints/track/:query', async (req, res) => {
 app.get('/api/complaints/:id', optionalAuth, async (req, res) => {
   try {
     const id = req.params.id;
-    const isNum = /^\d+$/.test(id);
     const compRes = await query(`
       SELECT c.*, t.name as technician_name, t.phone as technician_phone
       FROM complaints c
       LEFT JOIN technicians t ON t.id = c.assigned_technician_id
-      WHERE ${isNum ? 'c.id = $1 OR c.ticket_id = $1' : 'c.ticket_id = $1'}
+      WHERE c.id::text = $1 OR c.ticket_id = $1
       LIMIT 1
     `, [id]);
 
@@ -807,17 +810,13 @@ app.get('/api/reports/metrics', optionalAuth, async (req, res) => {
   }
 });
 
-// Real-time Event Stream (Keepalive for client SSE listeners)
+// Real-time Event Stream (Lightweight non-blocking heartbeat for serverless)
 app.get(['/api/realtime/stream', '/api/notifications/events'], (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'close');
   res.write('data: {"type":"connected"}\n\n');
-  const interval = setInterval(() => {
-    res.write(': heartbeat\n\n');
-  }, 15000);
-  req.on('close', () => clearInterval(interval));
+  res.end();
 });
 
 // ==================== NOTIFICATIONS & WHATSAPP ====================
@@ -839,6 +838,280 @@ app.get('/api/notifications/logs', authenticateToken, async (req, res) => {
   }
 });
 
+// Universal WhatsApp Web Inbox: Get all conversation threads
+app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
+  try {
+    const r = await query(`
+      WITH RankedMessages AS (
+        SELECT 
+          m.*,
+          RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10) as last10,
+          ROW_NUMBER() OVER(
+            PARTITION BY RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10) 
+            ORDER BY m.created_at DESC, m.id DESC
+          ) as rn
+        FROM whatsapp_messages m
+        WHERE LENGTH(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g')) >= 10
+      )
+      SELECT 
+        rm.id,
+        rm.phone,
+        rm.last10,
+        rm.complaint_id,
+        rm.sender_name,
+        rm.sender_type as last_sender_type,
+        rm.message_body as last_message,
+        rm.media_type as last_media_type,
+        rm.status as last_status,
+        rm.created_at as last_activity,
+        c.ticket_id,
+        c.customer_name as complaint_customer_name,
+        c.customer_phone as complaint_customer_phone,
+        c.product_type,
+        c.status as complaint_status
+      FROM RankedMessages rm
+      LEFT JOIN complaints c ON c.id = rm.complaint_id
+      WHERE rm.rn = 1
+      ORDER BY rm.created_at DESC
+    `);
+
+    // Fetch technicians and customers to resolve friendly contact names
+    const [techRes, custRes] = await Promise.all([
+      query('SELECT id, name, phone FROM technicians'),
+      query('SELECT customer_name, consumer_mobile FROM installed_customers WHERE consumer_mobile IS NOT NULL LIMIT 2000')
+    ]);
+
+    const techMap = new Map();
+    techRes.rows.forEach(t => {
+      const clean = (t.phone || '').replace(/[^0-9]/g, '').slice(-10);
+      if (clean) techMap.set(clean, t);
+    });
+
+    const custMap = new Map();
+    custRes.rows.forEach(c => {
+      const clean = (c.consumer_mobile || '').replace(/[^0-9]/g, '').slice(-10);
+      if (clean && !custMap.has(clean)) custMap.set(clean, c.customer_name);
+    });
+
+    const conversations = r.rows.map(row => {
+      const last10 = row.last10;
+      let contactName = null;
+      let isTechnician = false;
+
+      // 1. Technician check
+      if (techMap.has(last10)) {
+        contactName = `${techMap.get(last10).name} (Technician)`;
+        isTechnician = true;
+      }
+
+      // 2. Linked complaint check
+      if (!contactName && row.complaint_customer_name && row.complaint_customer_name !== 'Customer') {
+        contactName = row.complaint_customer_name;
+      }
+
+      // 3. Installed customer directory check
+      if (!contactName && custMap.has(last10)) {
+        contactName = custMap.get(last10);
+      }
+
+      // 4. Sender name in message
+      if (!contactName && row.sender_name && row.sender_name !== 'Customer' && row.sender_name !== 'Eco Green Support' && !/^[0-9+ ]+$/.test(row.sender_name)) {
+        contactName = row.sender_name;
+      }
+
+      const displayPhone = last10.length === 10 ? `+91 ${last10.slice(0, 5)} ${last10.slice(5)}` : row.phone;
+      const canonicalPhone = row.phone.startsWith('91') ? row.phone : (row.phone.length === 10 ? `91${row.phone}` : row.phone);
+
+      return {
+        ...row,
+        phone: canonicalPhone,
+        sender_name: contactName || displayPhone,
+        is_technician: isTechnician
+      };
+    });
+
+    return res.json({ success: true, conversations });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Get full chat history for a specific phone number
+app.get('/api/whatsapp/chats/:phone', optionalAuth, async (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const cleanPhone = (rawPhone || '').replace(/[^0-9]/g, '');
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+    const canonicalPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+
+    const msgRes = await query(`
+      SELECT * FROM whatsapp_messages
+      WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
+      ORDER BY created_at ASC, id ASC
+    `, [last10]);
+
+    // Lookup contact details
+    const [techRes, compRes, custRes] = await Promise.all([
+      query(`SELECT id, name, phone, area_zone FROM technicians WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10]),
+      query(`SELECT id, ticket_id, customer_name, customer_phone, product_type, status FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`, [last10]),
+      query(`SELECT customer_name FROM installed_customers WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10])
+    ]);
+
+    const tech = techRes.rows[0] || null;
+    const complaint = compRes.rows[0] || null;
+    let contactName = null;
+
+    if (tech) {
+      contactName = `${tech.name} (Technician)`;
+    } else if (complaint && complaint.customer_name && complaint.customer_name !== 'Customer') {
+      contactName = complaint.customer_name;
+    } else if (custRes.rows[0]?.customer_name) {
+      contactName = custRes.rows[0].customer_name;
+    }
+
+    const displayPhone = last10.length === 10 ? `+91 ${last10.slice(0, 5)} ${last10.slice(5)}` : canonicalPhone;
+
+    return res.json({
+      success: true,
+      messages: msgRes.rows,
+      contact: {
+        phone: canonicalPhone,
+        sender_name: contactName || displayPhone,
+        is_technician: !!tech,
+        ticket_id: complaint?.ticket_id || null,
+        complaint_id: complaint?.id || null,
+        complaint: complaint || null
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Send Direct Reply
+app.post('/api/whatsapp/direct-reply', optionalAuth, async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+    if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
+
+    const clean = phone.replace(/[^0-9]/g, '');
+    const last10 = clean.slice(-10);
+
+    const compRes = await query(`
+      SELECT id, ticket_id, customer_name FROM complaints
+      WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1
+      ORDER BY id DESC LIMIT 1
+    `, [last10]);
+
+    const comp = compRes.rows[0];
+
+    const result = await sendWhatsApp({
+      to: clean,
+      message,
+      variables: {
+        complaint_id: comp?.id,
+        ticket_id: comp?.ticket_id,
+        customer_name: comp?.customer_name
+      }
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Complaint Drawer: WhatsApp Messages
+app.get('/api/complaints/:id/whatsapp-messages', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const compRes = await query('SELECT id, ticket_id, customer_phone FROM complaints WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1', [id]);
+    if (compRes.rows.length === 0) return res.json({ messages: [] });
+
+    const comp = compRes.rows[0];
+    const cleanPhone = (comp.customer_phone || '').replace(/[^0-9]/g, '').slice(-10);
+
+    const msgRes = await query(`
+      SELECT * FROM whatsapp_messages
+      WHERE complaint_id = $1 
+         OR (phone IS NOT NULL AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $2)
+      ORDER BY created_at ASC
+    `, [comp.id, cleanPhone]);
+
+    return res.json({ messages: msgRes.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Complaint Drawer: WhatsApp Reply
+app.post('/api/complaints/:id/whatsapp-reply', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+    const compRes = await query('SELECT id, ticket_id, customer_name, customer_phone FROM complaints WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1', [id]);
+    if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint not found' });
+
+    const comp = compRes.rows[0];
+    const result = await sendWhatsApp({
+      to: comp.customer_phone,
+      message,
+      variables: {
+        complaint_id: comp.id,
+        ticket_id: comp.ticket_id,
+        customer_name: comp.customer_name
+      }
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Edit Message
+app.put('/api/whatsapp/messages/:id', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message_body } = req.body;
+    await query('UPDATE whatsapp_messages SET message_body = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [message_body, id]);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Delete Message
+app.delete('/api/whatsapp/messages/:id', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM whatsapp_messages WHERE id = $1', [id]);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Update Contact Name
+app.post('/api/whatsapp/update-contact-name', optionalAuth, async (req, res) => {
+  try {
+    const { phone, name } = req.body;
+    const clean = (phone || '').replace(/[^0-9]/g, '').slice(-10);
+    const cleanName = (name || '').trim();
+    if (clean && cleanName) {
+      await query(`
+        UPDATE whatsapp_messages 
+        SET sender_name = $1 
+        WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $2 AND sender_type = 'customer'
+      `, [cleanName, clean]);
+    }
+    return res.json({ success: true, message: 'Contact name updated' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// WhatsApp Messages List
 app.get('/api/whatsapp/messages', authenticateToken, async (req, res) => {
   try {
     const r = await query('SELECT * FROM whatsapp_messages ORDER BY created_at DESC LIMIT 100');
