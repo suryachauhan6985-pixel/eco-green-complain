@@ -11,18 +11,20 @@ app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Supabase PostgreSQL Connection Pool (Serverless-optimized: max 2 to prevent pool exhaustion)
+// Supabase PostgreSQL Connection Pool (Serverless-optimized with PgBouncer transaction pooling)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres',
   ssl: { rejectUnauthorized: false },
-  max: 2,
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 5000
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 6000
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ecogreen_solar_cms_secret_key_2026';
 const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '1387211441132836';
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
+const META_WABA_ID = process.env.META_WABA_ID || '1015283491554000';
+const DEFAULT_META_ACCESS_TOKEN = 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
+const getMetaAccessToken = () => process.env.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
 const APP_URL = process.env.APP_URL || 'https://complain.ecogreensolar.co.in';
 
 // Helper: Run query
@@ -1312,10 +1314,185 @@ app.get(['/api/realtime/stream', '/api/notifications/events'], (req, res) => {
 });
 
 // ==================== NOTIFICATIONS & WHATSAPP ====================
+// In-memory cache for Meta templates to avoid spamming rate limits
+let metaTemplatesCache = {
+  data: null,
+  timestamp: 0,
+  ttl: 5 * 60 * 1000 // 5 minutes cache
+};
+
+const META_TEMPLATE_MAPPING = {
+  complaint_registered: { metaName: 'complaint_registered', language: 'en_US' },
+  technician_assigned: { metaName: 'technician_assigned', language: 'en_US' },
+  status_update: { metaName: 'status__followup_note_update', language: 'en' },
+  complaint_resolved: { metaName: 'complaint_resolved', language: 'en_US' },
+  complaint_closed: { metaName: 'complaint_closed__feedback_request', language: 'en' },
+  complaint_reopened: { metaName: 'complaint_reopened_notification', language: 'en' },
+  technician_work_order: { metaName: 'technician_work_order', language: 'en_US' },
+  technician_reminder: { metaName: 'technician_pending_visit_reminder', language: 'en' },
+  technician_reassigned: { metaName: 'technician_job_reassigned_notice', language: 'en' }
+};
+
+async function fetchMetaTemplates(forceRefresh = false) {
+  const isCacheValid = !forceRefresh && metaTemplatesCache.data && (Date.now() - metaTemplatesCache.timestamp < metaTemplatesCache.ttl);
+  if (isCacheValid) {
+    return {
+      success: true,
+      source: 'meta_cache',
+      templates: metaTemplatesCache.data,
+      syncedAt: new Date(metaTemplatesCache.timestamp).toISOString()
+    };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // Strict 6s timeout
+
+    const url = `https://graph.facebook.com/v21.0/${META_WABA_ID}/message_templates?fields=name,status,category,language,id,quality_score,rejected_reason&limit=100`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${getMetaAccessToken()}` },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData?.error?.message || `Meta API responded with HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const metaTemplates = Array.isArray(data?.data) ? data.data : [];
+
+    metaTemplatesCache = {
+      data: metaTemplates,
+      timestamp: Date.now(),
+      ttl: 5 * 60 * 1000
+    };
+
+    return {
+      success: true,
+      source: 'meta_live',
+      templates: metaTemplates,
+      syncedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    console.error('Failed to fetch Meta WhatsApp templates:', err.message);
+    return {
+      success: false,
+      source: 'unverified',
+      error: err.name === 'AbortError' ? 'Meta API request timed out (6s)' : err.message,
+      templates: [],
+      syncedAt: metaTemplatesCache.timestamp ? new Date(metaTemplatesCache.timestamp).toISOString() : null
+    };
+  }
+}
+
+// Fast local templates endpoint (Immediate, non-blocking for initial page load)
 app.get('/api/notifications/templates', async (req, res) => {
   try {
     const r = await query('SELECT * FROM notification_templates ORDER BY id ASC');
     return res.json({ templates: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Real-Time Meta Template Verification Endpoint
+app.get('/api/notifications/templates/meta-status', async (req, res) => {
+  try {
+    const forceRefresh = req.query.refresh === 'true' || req.query.sync === 'true';
+    const metaResult = await fetchMetaTemplates(forceRefresh);
+
+    const dbRes = await query('SELECT id, template_key, name, whatsapp_body, email_subject, email_body, updated_at FROM notification_templates ORDER BY id ASC');
+    const localTemplates = dbRes.rows;
+
+    const mappedTemplates = localTemplates.map((local) => {
+      const mapping = META_TEMPLATE_MAPPING[local.template_key] || { metaName: local.template_key };
+      const matchedMeta = metaResult.templates.find(mt => 
+        mt.name.toLowerCase() === mapping.metaName.toLowerCase() &&
+        (!mapping.language || mt.language === mapping.language || mt.language.startsWith('en'))
+      );
+
+      if (matchedMeta) {
+        return {
+          id: local.id,
+          template_key: local.template_key,
+          name: local.name,
+          whatsapp_body: local.whatsapp_body,
+          email_subject: local.email_subject,
+          email_body: local.email_body,
+          updated_at: local.updated_at,
+          meta_verified: metaResult.success,
+          meta_status: matchedMeta.status, // 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED' | 'DISABLED'
+          meta_id: matchedMeta.id,
+          meta_name: matchedMeta.name,
+          meta_category: matchedMeta.category,
+          meta_language: matchedMeta.language,
+          quality_score: matchedMeta.quality_score?.score || 'UNKNOWN',
+          rejected_reason: matchedMeta.rejected_reason || null
+        };
+      }
+
+      return {
+        id: local.id,
+        template_key: local.template_key,
+        name: local.name,
+        whatsapp_body: local.whatsapp_body,
+        email_subject: local.email_subject,
+        email_body: local.email_body,
+        updated_at: local.updated_at,
+        meta_verified: false,
+        meta_status: metaResult.success ? 'NOT_FOUND_ON_META' : 'UNABLE_TO_VERIFY',
+        meta_id: null,
+        meta_name: mapping.metaName,
+        meta_category: 'UTILITY',
+        meta_language: mapping.language || 'en',
+        quality_score: 'UNKNOWN',
+        rejected_reason: null
+      };
+    });
+
+    const approvedCount = mappedTemplates.filter(t => t.meta_status === 'APPROVED').length;
+    const pendingCount = mappedTemplates.filter(t => t.meta_status === 'PENDING').length;
+    const rejectedCount = mappedTemplates.filter(t => t.meta_status === 'REJECTED').length;
+
+    return res.json({
+      success: metaResult.success,
+      source: metaResult.source,
+      error: metaResult.error || null,
+      waba_id: META_WABA_ID,
+      api_version: 'v21.0',
+      synced_at: metaResult.syncedAt,
+      summary: {
+        total: mappedTemplates.length,
+        approved: approvedCount,
+        pending: pendingCount,
+        rejected: rejectedCount,
+        unverified: mappedTemplates.length - (approvedCount + pendingCount + rejectedCount)
+      },
+      templates: mappedTemplates
+    });
+  } catch (err) {
+    console.error('Meta status route error:', err);
+    return res.json({
+      success: false,
+      source: 'unverified',
+      error: err.message,
+      templates: []
+    });
+  }
+});
+
+// Update notification template content
+app.put('/api/notifications/templates/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { whatsapp_body, email_subject, email_body } = req.body;
+    await query(
+      'UPDATE notification_templates SET whatsapp_body = COALESCE($1, whatsapp_body), email_subject = COALESCE($2, email_subject), email_body = COALESCE($3, email_body), updated_at = NOW() WHERE id = $4',
+      [whatsapp_body, email_subject, email_body, id]
+    );
+    return res.json({ success: true, message: 'Template updated successfully' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

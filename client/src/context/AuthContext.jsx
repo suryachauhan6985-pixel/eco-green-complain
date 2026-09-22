@@ -11,8 +11,29 @@ export const DEMO_PROFILES = {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const token = getAuthToken();
+      const hasLoggedOut = localStorage.getItem('egs_logged_out');
+      if (token && !hasLoggedOut) {
+        const cached = localStorage.getItem('egs_cached_user');
+        return cached ? JSON.parse(cached) : null;
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  const [loading, setLoading] = useState(() => {
+    try {
+      const token = getAuthToken();
+      const hasLoggedOut = localStorage.getItem('egs_logged_out');
+      if (!token || hasLoggedOut) return false;
+      const cached = localStorage.getItem('egs_cached_user');
+      return !cached; // 0ms load if cached user exists
+    } catch (_) {
+      return false;
+    }
+  });
   const [unreadSimulatedCount, setUnreadSimulatedCount] = useState(0);
 
   // Initialize from token or default to Admin profile on first load
@@ -23,14 +44,29 @@ export const AuthProvider = ({ children }) => {
 
       if (token && !hasLoggedOut) {
         try {
+          // Fast verification with fallback to preserve offline/intermittent session
           const data = await api.getMe();
-          setCurrentUser(data.user);
-        } catch {
-          setAuthToken(null);
-          setCurrentUser(null);
+          if (data?.user) {
+            setCurrentUser(data.user);
+            try {
+              localStorage.setItem('egs_cached_user', JSON.stringify(data.user));
+            } catch (_) {}
+          }
+        } catch (err) {
+          // Only invalidate token if server explicitly rejected auth (401/403)
+          if (err.status === 401 || err.status === 403) {
+            setAuthToken(null);
+            setCurrentUser(null);
+            try {
+              localStorage.removeItem('egs_cached_user');
+            } catch (_) {}
+          }
         }
       } else {
         setCurrentUser(null);
+        try {
+          localStorage.removeItem('egs_cached_user');
+        } catch (_) {}
       }
       setLoading(false);
     };
@@ -42,6 +78,9 @@ export const AuthProvider = ({ children }) => {
     const data = await api.login(identifier, password);
     setAuthToken(data.token);
     setCurrentUser(data.user);
+    try {
+      localStorage.setItem('egs_cached_user', JSON.stringify(data.user));
+    } catch (_) {}
     localStorage.removeItem('egs_logged_out');
     localStorage.setItem('egs_active_tab', 'complaints');
     try {
@@ -53,6 +92,9 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setAuthToken(null);
     setCurrentUser(null);
+    try {
+      localStorage.removeItem('egs_cached_user');
+    } catch (_) {}
     localStorage.setItem('egs_logged_out', 'true');
   };
 

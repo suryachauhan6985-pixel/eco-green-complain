@@ -22,8 +22,7 @@ const TEMPLATE_METADATA = {
     triggerTitle: 'Triggered when a new complaint ticket is lodged in the system',
     triggerHindi: 'नया टिकट रजिस्टर होते ही ग्राहक के WhatsApp व Email पर तत्काल रसीद जाती है।',
     metaTemplateName: 'complaint_registered',
-    metaStatus: 'APPROVED',
-    metaNote: 'Meta Cloud Approved (UTILITY) — 24/7 Delivery even without previous chat.',
+    metaLanguage: 'en_US',
     recommendedPlaceholders: [
       '{{customer_name}}', '{{complaint_id}}', '{{product_type}}', 
       '{{issue_category}}', '{{date}}', '{{charges_line}}', '{{feedback_url}}'
@@ -40,8 +39,7 @@ const TEMPLATE_METADATA = {
     triggerTitle: 'Triggered when staff allocates a technician to the customer ticket',
     triggerHindi: 'स्टाफ द्वारा टेक्नीशियन असाइन करते ही ग्राहक को टेक्नीशियन नाम व विजिट समय मिलता है।',
     metaTemplateName: 'technician_assigned',
-    metaStatus: 'APPROVED',
-    metaNote: 'Meta Cloud Approved (UTILITY) — 24/7 Delivery even without previous chat.',
+    metaLanguage: 'en_US',
     recommendedPlaceholders: [
       '{{customer_name}}', '{{complaint_id}}', '{{technician_name}}', 
       '{{expected_visit_date}}', '{{feedback_url}}'
@@ -57,9 +55,8 @@ const TEMPLATE_METADATA = {
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when staff or technician logs a visit note or progress update',
     triggerHindi: 'साइट विजिट, पार्ट्स रिक्वायरमेंट या जांच के दौरान नोट्स अपडेट होने पर ग्राहक को सूचना।',
-    metaTemplateName: null,
-    metaStatus: 'SESSION_MSG',
-    metaNote: 'Session / Dynamic Message — Delivered during active customer care sessions.',
+    metaTemplateName: 'status__followup_note_update',
+    metaLanguage: 'en',
     recommendedPlaceholders: [
       '{{customer_name}}', '{{complaint_id}}', '{{product_type}}', 
       '{{status}}', '{{notes}}', '{{feedback_url}}'
@@ -76,8 +73,7 @@ const TEMPLATE_METADATA = {
     triggerTitle: 'Triggered when technician marks the service work as completed on site',
     triggerHindi: 'तकनीशियन द्वारा कार्य पूरा मार्क करने पर ग्राहक को कार्य पूर्णता की सूचना।',
     metaTemplateName: 'complaint_resolved',
-    metaStatus: 'APPROVED',
-    metaNote: 'Meta Cloud Approved (UTILITY) — 24/7 Delivery with feedback rating link.',
+    metaLanguage: 'en_US',
     recommendedPlaceholders: [
       '{{customer_name}}', '{{complaint_id}}', '{{technician_name}}', 
       '{{notes}}', '{{feedback_url}}'
@@ -93,9 +89,8 @@ const TEMPLATE_METADATA = {
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when desk marks ticket officially closed & invites 1-5 star review',
     triggerHindi: 'अंतिम सत्यापन के बाद टिकट क्लोज होते ही ग्राहक से 1-5 स्टार रेटिंग फीडबैक मांगा जाता है।',
-    metaTemplateName: null,
-    metaStatus: 'SESSION_MSG',
-    metaNote: 'Feedback link with live interactive satisfaction rating.',
+    metaTemplateName: 'complaint_closed__feedback_request',
+    metaLanguage: 'en',
     recommendedPlaceholders: [
       '{{customer_name}}', '{{complaint_id}}', '{{feedback_url}}'
     ]
@@ -110,9 +105,8 @@ const TEMPLATE_METADATA = {
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered if customer reports recurring issue and ticket is reopened',
     triggerHindi: 'यदि सौर उपकरण में समस्या पुनः उत्पन्न होती है तो री-ओपनिंग अलर्ट जाता है।',
-    metaTemplateName: null,
-    metaStatus: 'SESSION_MSG',
-    metaNote: 'Priority alert for expedited supervisor review.',
+    metaTemplateName: 'complaint_reopened_notification',
+    metaLanguage: 'en',
     recommendedPlaceholders: [
       '{{customer_name}}', '{{complaint_id}}', '{{feedback_url}}'
     ]
@@ -130,8 +124,7 @@ const TEMPLATE_METADATA = {
     triggerTitle: 'Triggered when staff assigns ticket — dispatches full customer address & issue',
     triggerHindi: 'तकनीशियन को ग्राहक का नाम, मोबाइल नंबर, पूरा पता, समस्या व समय का जॉब ऑर्डर जाता है।',
     metaTemplateName: 'technician_work_order',
-    metaStatus: 'APPROVED',
-    metaNote: 'Meta Cloud Approved (UTILITY, ID: 1835970930769541) — 24/7 Field dispatch with customer coordinates & address.',
+    metaLanguage: 'en_US',
     recommendedPlaceholders: [
       '{{technician_name}}', '{{complaint_id}}', '{{customer_name}}', 
       '{{customer_phone}}', '{{customer_address}}', '{{product_type}}', 
@@ -148,9 +141,8 @@ const TEMPLATE_METADATA = {
     recipientBadgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
     triggerTitle: 'Triggered as scheduled reminder before the technician visit date',
     triggerHindi: 'विजिट से पहले तकनीशियन को ग्राहक से समन्वय करने हेतु स्वचालित रिमाइंडर।',
-    metaTemplateName: null,
-    metaStatus: 'SESSION_MSG',
-    metaNote: 'Field schedule adherence reminder.',
+    metaTemplateName: 'technician_pending_visit_reminder',
+    metaLanguage: 'en',
     recommendedPlaceholders: [
       '{{technician_name}}', '{{complaint_id}}', '{{customer_name}}', 
       '{{customer_phone}}', '{{customer_address}}', '{{expected_visit_date}}'
@@ -166,9 +158,8 @@ const TEMPLATE_METADATA = {
     recipientBadgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
     triggerTitle: 'Triggered if a ticket is transferred to another technician or cancelled',
     triggerHindi: 'यदि टिकट किसी अन्य तकनीशियन को सौंपा जाता है तो पुराने तकनीशियन को सूचना मिलती है।',
-    metaTemplateName: null,
-    metaStatus: 'SESSION_MSG',
-    metaNote: 'Prevents duplicate field visits.',
+    metaTemplateName: 'technician_job_reassigned_notice',
+    metaLanguage: 'en',
     recommendedPlaceholders: [
       '{{technician_name}}', '{{complaint_id}}', '{{customer_name}}', '{{notes}}'
     ]
@@ -204,10 +195,36 @@ export const TemplateManager = () => {
   const [filterAudience, setFilterAudience] = useState('all'); // 'all' | 'customer' | 'technician'
   const [showPreview, setShowPreview] = useState(true);
 
+  // Live Meta verification state
+  const [metaStatusData, setMetaStatusData] = useState(null);
+  const [syncingMeta, setSyncingMeta] = useState(false);
+  const [metaError, setMetaError] = useState(null);
+
   // Form state
   const [whatsappBody, setWhatsappBody] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+
+  const fetchMetaStatus = async (forceRefresh = false) => {
+    try {
+      setSyncingMeta(true);
+      setMetaError(null);
+      const res = await api.getMetaTemplateStatus(forceRefresh);
+      if (res && Array.isArray(res.templates)) {
+        setMetaStatusData(res);
+        if (!res.success && res.error) {
+          setMetaError(res.error);
+        }
+      } else {
+        setMetaError('Unable to connect to Meta API');
+      }
+    } catch (err) {
+      console.error('Meta verification failed:', err);
+      setMetaError(err.message || 'Unable to connect to Meta API');
+    } finally {
+      setSyncingMeta(false);
+    }
+  };
 
   const fetchTemplates = async () => {
     try {
@@ -236,7 +253,94 @@ export const TemplateManager = () => {
 
   useEffect(() => {
     fetchTemplates();
+    fetchMetaStatus(false);
   }, []);
+
+  const getLiveMetaInfo = (key) => {
+    if (!metaStatusData?.templates) return null;
+    return metaStatusData.templates.find(mt => mt.template_key === key) || null;
+  };
+
+  const renderMetaBadge = (key, isDetail = false) => {
+    if (syncingMeta && !metaStatusData) {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded animate-pulse">
+          <RefreshCw className="w-2.5 h-2.5 animate-spin text-slate-400" /> Checking Meta...
+        </span>
+      );
+    }
+
+    const live = getLiveMetaInfo(key);
+    const status = live?.meta_status;
+
+    if (!live || metaError || status === 'UNABLE_TO_VERIFY') {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200" title={metaError || 'Unable to reach Meta Graph API'}>
+          <AlertCircle className="w-2.5 h-2.5 text-amber-600" />
+          <span>Unable to verify</span>
+          {isDetail && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); fetchMetaStatus(true); }}
+              className="ml-1 underline text-[9px] font-bold text-amber-900 hover:text-amber-950 cursor-pointer"
+            >
+              Retry
+            </button>
+          )}
+        </span>
+      );
+    }
+
+    if (status === 'APPROVED') {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+          <span>Meta Approved</span>
+          {isDetail && live.meta_category && (
+            <span className="text-[8px] bg-emerald-100 text-emerald-800 px-1 rounded font-mono">({live.meta_category})</span>
+          )}
+        </span>
+      );
+    }
+
+    if (status === 'PENDING' || status === 'SUBMITTED') {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300">
+          <Clock className="w-2.5 h-2.5 text-amber-600" /> Meta Review Pending
+        </span>
+      );
+    }
+
+    if (status === 'REJECTED') {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+          <AlertCircle className="w-2.5 h-2.5 text-rose-600" /> Meta Rejected
+        </span>
+      );
+    }
+
+    if (status === 'PAUSED') {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+          <Clock className="w-2.5 h-2.5 text-amber-700" /> Meta Paused
+        </span>
+      );
+    }
+
+    if (status === 'DISABLED') {
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
+          <AlertCircle className="w-2.5 h-2.5 text-slate-500" /> Meta Disabled
+        </span>
+      );
+    }
+
+    return (
+      <span className="shrink-0 text-[9px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+        {status || 'Unknown'}
+      </span>
+    );
+  };
 
   const selectTemplate = (tmpl) => {
     setSelectedTemplate(tmpl);
@@ -347,18 +451,46 @@ export const TemplateManager = () => {
       {/* Header */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-black text-slate-900">Notification & Channel Templates</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-lg font-black text-slate-900">Notification &amp; Channel Templates</h2>
             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              WhatsApp & Email Sync
+              WhatsApp &amp; Email Sync
             </span>
+            {metaStatusData?.summary && (
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1 ${
+                metaStatusData.summary.rejected > 0 
+                  ? 'bg-rose-50 text-rose-800 border-rose-200'
+                  : metaStatusData.summary.unverified > 0
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+              }`}>
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>{metaStatusData.summary.approved}/{metaStatusData.summary.total} Meta Verified</span>
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Customer aur Technician ke har stage ke messages alag-alag manage karein. Placeholders live values se replace hote hain.
+            Customer aur Technician ke lifecycle triggers. Template approval status Meta Graph API v21.0 se live verify hota hai.
+            {metaStatusData?.synced_at && (
+              <span className="ml-1 text-slate-400 font-mono text-[10.5px]">
+                • Synced: {new Date(metaStatusData.synced_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} ({metaStatusData.source === 'meta_live' ? 'Live Meta' : 'Cached'})
+              </span>
+            )}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => fetchMetaStatus(true)}
+            disabled={syncingMeta}
+            title="Sync live template approval status directly with Meta Cloud API"
+            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncingMeta ? 'animate-spin text-emerald-600' : 'text-emerald-700'}`} />
+            <span>{syncingMeta ? 'Verifying with Meta...' : 'Sync with Meta'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setShowPreview(!showPreview)}
@@ -479,15 +611,7 @@ export const TemplateManager = () => {
                           <span className="font-mono text-[10px] text-slate-400 truncate">
                             {tmpl.template_key}
                           </span>
-                          {meta?.metaStatus === 'APPROVED' ? (
-                            <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                              <CheckCircle2 className="w-2.5 h-2.5" /> Meta Approved
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[9px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                              Dynamic Session
-                            </span>
-                          )}
+                          {renderMetaBadge(tmpl.template_key)}
                         </div>
                       </button>
                     );
@@ -535,19 +659,7 @@ export const TemplateManager = () => {
                           <span className="font-mono text-[10px] text-slate-400 truncate">
                             {tmpl.template_key}
                           </span>
-                          {meta?.metaStatus === 'SUBMITTED' ? (
-                            <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
-                              <Clock className="w-2.5 h-2.5" /> Meta Review
-                            </span>
-                          ) : meta?.metaStatus === 'APPROVED' ? (
-                            <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                              <CheckCircle2 className="w-2.5 h-2.5" /> Meta Approved
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[9px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                              Dynamic Session
-                            </span>
-                          )}
+                          {renderMetaBadge(tmpl.template_key)}
                         </div>
                       </button>
                     );
@@ -614,15 +726,17 @@ export const TemplateManager = () => {
                       {activeMetadata?.stageBadge}
                     </span>
 
-                    {activeMetadata?.metaStatus === 'APPROVED' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-700" /> Meta Approved (UTILITY)
+                    {renderMetaBadge(selectedTemplate.template_key, true)}
+
+                    {getLiveMetaInfo(selectedTemplate.template_key)?.meta_id && (
+                      <span className="font-mono text-[9.5px] px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200">
+                        Meta ID: {getLiveMetaInfo(selectedTemplate.template_key).meta_id}
                       </span>
                     )}
 
-                    {activeMetadata?.metaStatus === 'SUBMITTED' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-100 text-amber-900 border border-amber-300">
-                        <Clock className="w-3 h-3 text-amber-700" /> Meta Review Pending
+                    {getLiveMetaInfo(selectedTemplate.template_key)?.meta_language && (
+                      <span className="font-mono text-[9.5px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200">
+                        Lang: {getLiveMetaInfo(selectedTemplate.template_key).meta_language}
                       </span>
                     )}
                   </div>

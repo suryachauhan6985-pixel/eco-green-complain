@@ -20,7 +20,32 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
   <body class="bg-slate-50 text-slate-900 selection:bg-emerald-100 selection:text-emerald-900">
-    <div id="root"></div>
+    <div id="root">
+      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #0f172a; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #ffffff;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; padding: 24px;">
+          <div style="position: relative; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center;">
+            <div style="position: absolute; inset: 0; border: 4px solid rgba(16, 185, 129, 0.2); border-top-color: #10b981; border-radius: 50%; animation: egs-spin 0.9s linear infinite;"></div>
+            <img src="/support-icon-192.png" alt="Eco Green Solar" style="width: 36px; height: 36px; object-fit: contain;" />
+          </div>
+          <div>
+            <div style="font-weight: 800; font-size: 15px; color: #10b981; letter-spacing: 0.02em;">Eco Green Solar CMS</div>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Loading workspace &amp; secure session...</div>
+          </div>
+        </div>
+      </div>
+      <style>
+        @keyframes egs-spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
+    <script>
+      // Automatic recovery if code-split bundle chunk fails after new deployment
+      window.addEventListener('vite:preloadError', function () {
+        console.warn('Vite preload error detected, refreshing for latest release...');
+        window.location.reload();
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

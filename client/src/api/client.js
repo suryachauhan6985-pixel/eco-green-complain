@@ -583,7 +583,12 @@ async function request(endpoint, options = {}) {
 
   try {
     const controller = new AbortController();
-    const timeoutMs = options.timeout || (endpoint.includes('/customers/sync') ? 60000 : 30000);
+    const timeoutMs = options.timeout || (
+      endpoint.includes('/customers/sync') ? 60000 :
+      endpoint.startsWith('/auth/me') ? 6000 :
+      endpoint.includes('/meta-status') ? 8000 :
+      12000
+    );
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -969,6 +974,7 @@ export const api = {
 
   // Notifications
   getTemplates: () => request('/notifications/templates'),
+  getMetaTemplateStatus: (refresh = false) => request(`/notifications/templates/meta-status${refresh ? '?refresh=true' : ''}`, { timeout: 10000 }),
   updateTemplate: (id, templateData) => request(`/notifications/templates/${id}`, {
     method: 'PUT',
     body: JSON.stringify(templateData)
