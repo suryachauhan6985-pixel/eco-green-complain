@@ -57,18 +57,63 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+// Phone Normalization & Display Helpers
+function normalizePhone(phone) {
+  if (!phone) return '';
+  const clean = String(phone).replace(/\D/g, '');
+  if (clean.length === 10) return '91' + clean;
+  if (clean.length === 12 && clean.startsWith('91')) return clean;
+  if (clean.length > 10) return '91' + clean.slice(-10);
+  return clean;
+}
+
+function getLast10Digits(phone) {
+  if (!phone) return '';
+  const clean = String(phone).replace(/\D/g, '');
+  return clean.length >= 10 ? clean.slice(-10) : clean;
+}
+
+function formatDisplayPhone(phone) {
+  const last10 = getLast10Digits(phone);
+  if (last10.length === 10) {
+    return `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`;
+  }
+  return phone ? `+${String(phone).replace(/\D/g, '')}` : '';
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+    next();
+  };
+}
+
 // Meta Cloud API WhatsApp Sender
-async function sendWhatsApp({ to, message, templateName, variables = {} }) {
-  const cleanTo = (to || '').replace(/[^0-9]/g, '');
-  const formattedPhone = cleanTo.startsWith('91') ? cleanTo : (cleanTo.length === 10 ? `91${cleanTo}` : cleanTo);
-  if (!formattedPhone || formattedPhone.length < 10) return { success: false, error: 'Invalid phone number' };
+async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUrl, mediaType, mediaFileName, senderName }) {
+  const cleanDigits = (to || '').replace(/[^0-9]/g, '');
+  if (!cleanDigits || cleanDigits.length < 10) {
+    return { success: false, error: 'Invalid phone number' };
+  }
+  const last10 = cleanDigits.slice(-10);
+  const formattedPhone = `91${last10}`;
+  const maskedPhone = `******${last10.slice(-4)}`;
 
   try {
     let payload = { messaging_product: 'whatsapp', to: formattedPhone };
-    const trackingUrl = `${APP_URL}/track/${variables.complaint_id || variables.ticket_id || ''}`;
+    const trackingUrl = `${APP_URL}/track/${variables.ticket_id || variables.complaint_id || ''}`;
     const cleanParam = (val, fb = '') => String(val || fb).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim() || fb;
 
+    let renderedBody = message || '';
+
     if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar Equipment');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      
       payload.type = 'template';
       payload.template = {
         name: 'complaint_registered',
@@ -76,15 +121,20 @@ async function sendWhatsApp({ to, message, templateName, variables = {} }) {
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
-            { type: 'text', text: cleanParam(variables.complaint_id || variables.ticket_id, 'Ticket') },
-            { type: 'text', text: cleanParam(variables.product_type, 'Solar Equipment') },
-            { type: 'text', text: cleanParam(variables.issue_category, 'Service Request') },
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: prodType },
+            { type: 'text', text: issueCat },
             { type: 'text', text: trackingUrl }
           ]
         }]
       };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      renderedBody = `Namaste *${custName}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *${ticketId}*.\n\nTechnician Name: *${techName}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: ${trackingUrl}\n\nEco Green Solar Customer Care.`;
+
       payload.type = 'template';
       payload.template = {
         name: 'technician_assigned',
@@ -92,17 +142,89 @@ async function sendWhatsApp({ to, message, templateName, variables = {} }) {
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
-            { type: 'text', text: cleanParam(variables.complaint_id || variables.ticket_id, 'Ticket') },
-            { type: 'text', text: cleanParam(variables.technician_name, 'Technician') },
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: techName },
             { type: 'text', text: trackingUrl }
           ]
         }]
       };
+    } else if (templateName === 'technician_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Address on file');
+      const prodType = cleanParam(variables.product_type, 'Solar Equipment');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const notes = cleanParam(variables.notes || variables.issue_description, 'Inspect site');
+      const priority = cleanParam(variables.priority, 'Medium');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Today');
+      renderedBody = `Hello ${techName}, you have been assigned ticket *${ticketId}*.\n\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddress}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*Issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'notes', text: notes },
+            { type: 'text', parameter_name: 'priority', text: priority },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+          ]
+        }]
+      };
+    } else if (templateName === 'complaint_resolved') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const resNotes = cleanParam(variables.resolution_notes || variables.closure_remarks, 'Service completed');
+      renderedBody = `Namaste *${custName}*,\n\nYour solar equipment complaint for Ticket No.: *${ticketId}* has been marked *RESOLVED* by technician - *${techName}*.\n\nResolution Notes: *${resNotes}*\n\nPlease rate your service experience here: *${trackingUrl}*\n\nThank you for choosing *Eco Green Solar*.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_resolved',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: techName },
+            { type: 'text', text: resNotes },
+            { type: 'text', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (mediaUrl) {
+      renderedBody = message || (mediaType === 'image' ? '[Photo]' : '[Document]');
+      if (mediaType === 'image') {
+        payload.type = 'image';
+        payload.image = { link: mediaUrl };
+        if (message) payload.image.caption = message;
+      } else {
+        payload.type = 'document';
+        payload.document = { link: mediaUrl, filename: mediaFileName || 'Document.pdf' };
+        if (message) payload.document.caption = message;
+      }
     } else {
       payload.type = 'text';
-      payload.text = { body: message || `Eco Green Solar: Ticket ${variables.complaint_id || ''} update.` };
+      payload.text = { body: message || `Eco Green Solar: Ticket ${variables.ticket_id || ''} update.` };
+      renderedBody = payload.text.body;
     }
+
+    console.log(`[WHATSAPP] Recipient: ${maskedPhone} | Trigger: ${templateName || (mediaUrl ? mediaType : 'text')} | Meta Request: START`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 9000);
 
     const resp = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
@@ -110,22 +232,47 @@ async function sendWhatsApp({ to, message, templateName, variables = {} }) {
         'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     const data = await resp.json();
     const wamid = data?.messages?.[0]?.id || null;
+    const isSuccess = resp.ok && !!wamid;
+    const errorMsg = !isSuccess ? (data?.error?.message || data?.error?.error_user_msg || `Meta HTTP ${resp.status}`) : null;
 
-    // Log to whatsapp_messages
-    await query(
-      `INSERT INTO whatsapp_messages (complaint_id, phone, sender_type, sender_name, message_body, wam_id, status, template_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [variables.db_complaint_id || null, formattedPhone, 'company', 'Eco Green Solar Official', message || payload?.template?.name || 'Notification', wamid, resp.ok ? 'sent' : 'failed', templateName || null]
-    ).catch(e => console.warn('[WhatsApp Log Error]', e.message));
+    console.log(`[WHATSAPP] Recipient: ${maskedPhone} | Meta Response: ${resp.status} | WAMID: ${wamid || 'none'} | Error: ${errorMsg || 'none'}`);
 
-    return { success: resp.ok, data, wamid };
+    // Insert into whatsapp_messages database table
+    try {
+      await query(
+        `INSERT INTO whatsapp_messages (
+          complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, wam_id, status, failure_reason, template_name, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          variables.db_complaint_id || null,
+          formattedPhone,
+          'company',
+          senderName || 'Eco Green Solar',
+          renderedBody,
+          mediaUrl || null,
+          mediaType || null,
+          mediaFileName || null,
+          wamid,
+          isSuccess ? 'sent' : 'failed',
+          errorMsg,
+          templateName || null
+        ]
+      );
+      console.log(`[WHATSAPP] Recipient: ${maskedPhone} | DB: INSERTED | Status: ${isSuccess ? 'sent' : 'failed'}`);
+    } catch (dbErr) {
+      console.error('[WHATSAPP] Database insert error:', dbErr.message);
+    }
+
+    return { success: isSuccess, wamid, error: errorMsg, data };
   } catch (err) {
-    console.error('[WhatsApp Send Error]', err.message);
+    console.error(`[WHATSAPP] Error for ${maskedPhone}:`, err.message);
     return { success: false, error: err.message };
   }
 }
@@ -510,9 +657,20 @@ app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
 });
 
 // Create Complaint
-app.post('/api/complaints', optionalAuth, async (req, res) => {
+app.post('/api/complaints', optionalAuth, upload.array('attachments', 10), async (req, res) => {
   try {
     const body = req.body;
+    const customer_name = (body.customer_name || '').trim();
+    const raw_phone = (body.customer_phone || '').trim();
+    const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+
+    if (!customer_name || !last10) {
+      return res.status(400).json({ error: 'Customer name and a valid 10-digit mobile number are required' });
+    }
+
+    const canonicalPhone = `+91${last10}`;
+
     // Generate Ticket ID EGS-2026-XXXXXX
     const maxRes = await query("SELECT ticket_id FROM complaints WHERE ticket_id LIKE 'EGS-2026-%' ORDER BY id DESC LIMIT 1");
     let nextNum = 101;
@@ -543,8 +701,8 @@ app.post('/api/complaints', optionalAuth, async (req, res) => {
 
     const values = [
       ticket_id,
-      body.customer_name || 'Customer',
-      body.customer_phone || '',
+      customer_name,
+      canonicalPhone,
       body.customer_email || '',
       body.customer_address || '',
       body.city || '',
@@ -573,26 +731,52 @@ app.post('/api/complaints', optionalAuth, async (req, res) => {
     const r = await query(insertSql, values);
     const newComp = r.rows[0];
 
+    // Save any uploaded attachments
+    const files = req.files || [];
+    if (files.length > 0) {
+      for (const f of files) {
+        try {
+          const base64Data = `data:${f.mimetype || 'image/jpeg'};base64,${f.buffer.toString('base64')}`;
+          const insRes = await query(`
+            INSERT INTO complaint_attachments (
+              complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+          `, [newComp.id, f.originalname, '/api/attachments/temp', f.mimetype, base64Data, req.user?.name || 'Helpdesk']);
+          const attId = insRes.rows[0].id;
+          await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [`/api/attachments/${attId}`, attId]);
+        } catch (attErr) {
+          console.warn('[Complaint Attachment Upload Note]', attErr.message);
+        }
+      }
+    }
+
     // Initial timeline note
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
       [newComp.id, 'Registered', `Service ticket registered for ${newComp.product_type}. Issue: ${newComp.issue_category}`, req.user?.name || 'Helpdesk', req.user?.role || 'staff']
     );
 
-    // Send WhatsApp notification asynchronously
-    sendWhatsApp({
-      to: newComp.customer_phone,
-      templateName: 'complaint_registered',
-      variables: {
-        customer_name: newComp.customer_name,
-        ticket_id: newComp.ticket_id,
-        product_type: newComp.product_type,
-        issue_category: newComp.issue_category,
-        db_complaint_id: newComp.id
-      }
-    }).catch(e => console.warn('[Auto WhatsApp]', e.message));
+    // Send WhatsApp notification and await Meta response
+    let waResult = null;
+    try {
+      waResult = await sendWhatsApp({
+        to: newComp.customer_phone,
+        templateName: 'complaint_registered',
+        variables: {
+          customer_name: newComp.customer_name,
+          ticket_id: newComp.ticket_id,
+          product_type: newComp.product_type,
+          issue_category: newComp.issue_category,
+          db_complaint_id: newComp.id
+        }
+      });
+    } catch (waErr) {
+      console.warn('[Auto WhatsApp Error]', waErr.message);
+      waResult = { success: false, error: waErr.message };
+    }
 
-    return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp });
+    return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp, whatsapp: waResult });
   } catch (err) {
     console.error('Create complaint error:', err);
     return res.status(500).json({ error: err.message });
@@ -600,9 +784,20 @@ app.post('/api/complaints', optionalAuth, async (req, res) => {
 });
 
 // Public Customer Self-Registration
-app.post('/api/complaints/public-register', async (req, res) => {
+app.post('/api/complaints/public-register', upload.array('attachments', 5), async (req, res) => {
   try {
     const body = req.body;
+    const customer_name = (body.customer_name || '').trim();
+    const raw_phone = (body.customer_phone || '').trim();
+    const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+
+    if (!customer_name || !last10) {
+      return res.status(400).json({ error: 'Customer name and a valid 10-digit mobile number are required' });
+    }
+
+    const canonicalPhone = `+91${last10}`;
+
     const maxRes = await query("SELECT ticket_id FROM complaints WHERE ticket_id LIKE 'EGS-2026-%' ORDER BY id DESC LIMIT 1");
     let nextNum = 101;
     if (maxRes.rows.length > 0) {
@@ -632,8 +827,8 @@ app.post('/api/complaints/public-register', async (req, res) => {
 
     const values = [
       ticket_id,
-      body.customer_name || 'Customer',
-      body.customer_phone || '',
+      customer_name,
+      canonicalPhone,
       body.customer_email || '',
       body.customer_address || '',
       body.city || '',
@@ -659,24 +854,50 @@ app.post('/api/complaints/public-register', async (req, res) => {
     const r = await query(insertSql, values);
     const newComp = r.rows[0];
 
+    // Save attachments
+    const files = req.files || [];
+    if (files.length > 0) {
+      for (const f of files) {
+        try {
+          const base64Data = `data:${f.mimetype || 'image/jpeg'};base64,${f.buffer.toString('base64')}`;
+          const insRes = await query(`
+            INSERT INTO complaint_attachments (
+              complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+          `, [newComp.id, f.originalname, '/api/attachments/temp', f.mimetype, base64Data, customer_name]);
+          const attId = insRes.rows[0].id;
+          await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [`/api/attachments/${attId}`, attId]);
+        } catch (attErr) {
+          console.warn('[Public Complaint Attachment Upload Note]', attErr.message);
+        }
+      }
+    }
+
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
       [newComp.id, 'Registered', `Service ticket submitted online by customer for ${newComp.product_type}. Issue: ${newComp.issue_category}`, newComp.customer_name, 'customer']
     );
 
-    sendWhatsApp({
-      to: newComp.customer_phone,
-      templateName: 'complaint_registered',
-      variables: {
-        customer_name: newComp.customer_name,
-        ticket_id: newComp.ticket_id,
-        product_type: newComp.product_type,
-        issue_category: newComp.issue_category,
-        db_complaint_id: newComp.id
-      }
-    }).catch(e => console.warn('[Auto WhatsApp]', e.message));
+    let waResult = null;
+    try {
+      waResult = await sendWhatsApp({
+        to: newComp.customer_phone,
+        templateName: 'complaint_registered',
+        variables: {
+          customer_name: newComp.customer_name,
+          ticket_id: newComp.ticket_id,
+          product_type: newComp.product_type,
+          issue_category: newComp.issue_category,
+          db_complaint_id: newComp.id
+        }
+      });
+    } catch (waErr) {
+      console.warn('[Auto WhatsApp Error]', waErr.message);
+      waResult = { success: false, error: waErr.message };
+    }
 
-    return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp });
+    return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp, whatsapp: waResult });
   } catch (err) {
     console.error('Public register complaint error:', err);
     return res.status(500).json({ error: err.message });
@@ -817,23 +1038,44 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     );
 
     // Send WhatsApp to customer
-    sendWhatsApp({
-      to: comp.customer_phone,
-      templateName: 'technician_assigned',
-      variables: {
-        customer_name: comp.customer_name,
-        ticket_id: comp.ticket_id,
-        technician_name: tech?.name,
-        db_complaint_id: comp.id
-      }
-    }).catch(e => console.warn('[Assign WhatsApp]', e.message));
+    try {
+      await sendWhatsApp({
+        to: comp.customer_phone,
+        templateName: 'technician_assigned',
+        variables: {
+          customer_name: comp.customer_name,
+          ticket_id: comp.ticket_id,
+          technician_name: tech?.name,
+          db_complaint_id: comp.id
+        }
+      });
+    } catch (waErr) {
+      console.warn('[Assign WhatsApp Customer Note]', waErr.message);
+    }
 
     // Send WhatsApp to technician
     if (tech?.phone) {
-      sendWhatsApp({
-        to: tech.phone,
-        message: `☀️ *Eco Green Solar - New Task Assigned*\n\nTicket: ${comp.ticket_id}\nCustomer: ${comp.customer_name}\nPhone: ${comp.customer_phone}\nAddress: ${comp.customer_address}\nProduct: ${comp.product_type}\nIssue: ${comp.issue_category}\nVisit: ${expected_visit_date || 'Today'}\n\nPortal: ${APP_URL}/technician`
-      }).catch(e => console.warn('[Tech WhatsApp]', e.message));
+      try {
+        await sendWhatsApp({
+          to: tech.phone,
+          templateName: 'technician_work_order',
+          variables: {
+            technician_name: tech.name,
+            complaint_id: comp.ticket_id,
+            customer_name: comp.customer_name,
+            customer_phone: comp.customer_phone,
+            customer_address: comp.customer_address || comp.city || 'Gujarat',
+            product_type: comp.product_type,
+            issue_category: comp.issue_category,
+            notes: comp.issue_description || 'Site inspection',
+            priority: comp.priority || 'Medium',
+            expected_visit_date: expected_visit_date || 'Today',
+            db_complaint_id: comp.id
+          }
+        });
+      } catch (waErr) {
+        console.warn('[Assign WhatsApp Tech Note]', waErr.message);
+      }
     }
 
     return res.json({ message: 'Technician assigned successfully', complaint: comp });
@@ -885,10 +1127,21 @@ app.post('/api/complaints/:id/resolve', authenticateToken, async (req, res) => {
     );
 
     // Send Feedback Request WhatsApp
-    sendWhatsApp({
-      to: comp.customer_phone,
-      message: `☀️ *Eco Green Solar Service Completed*\n\nDear ${comp.customer_name}, your complaint *${comp.ticket_id}* has been resolved by our service team.\n\n⭐ *Please rate your service experience (1-5 Stars):*\n${APP_URL}/track/${comp.ticket_id}\n\nThank you for choosing Eco Green Solar!`
-    }).catch(e => console.warn('[Resolve WhatsApp]', e.message));
+    try {
+      await sendWhatsApp({
+        to: comp.customer_phone,
+        templateName: 'complaint_resolved',
+        variables: {
+          customer_name: comp.customer_name,
+          ticket_id: comp.ticket_id,
+          technician_name: comp.technician_name || 'Service Engineer',
+          resolution_notes: resolution_notes || 'All checks passed',
+          db_complaint_id: comp.id
+        }
+      });
+    } catch (waErr) {
+      console.warn('[Resolve WhatsApp Note]', waErr.message);
+    }
 
     return res.json({ message: 'Complaint resolved', complaint: comp });
   } catch (err) {
@@ -1114,9 +1367,9 @@ app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
       ORDER BY rm.created_at DESC
     `);
 
-    // Fetch technicians and targeted installed customers to resolve friendly contact names (15x faster than 2000-row scan)
+    // Fetch technicians, installed customers, registry, and complaints in parallel for lightning-fast resolution
     const activeLast10 = Array.from(new Set(r.rows.map(row => row.last10).filter(Boolean)));
-    const [techRes, custRes] = await Promise.all([
+    const [techRes, custRes, regRes, matchedCompsRes] = await Promise.all([
       query('SELECT id, name, phone FROM technicians'),
       activeLast10.length > 0
         ? query(
@@ -1124,6 +1377,23 @@ app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
              FROM installed_customers 
              WHERE consumer_mobile IS NOT NULL 
                AND RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = ANY($1::text[])`,
+            [activeLast10]
+          )
+        : Promise.resolve({ rows: [] }),
+      activeLast10.length > 0
+        ? query(
+            `SELECT phone, customer_name 
+             FROM whatsapp_number_registry 
+             WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = ANY($1::text[])`,
+            [activeLast10]
+          )
+        : Promise.resolve({ rows: [] }),
+      activeLast10.length > 0
+        ? query(
+            `SELECT id, ticket_id, customer_name, product_type, status, customer_phone
+             FROM complaints
+             WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = ANY($1::text[])
+             ORDER BY id DESC`,
             [activeLast10]
           )
         : Promise.resolve({ rows: [] })
@@ -1141,30 +1411,63 @@ app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
       if (clean && !custMap.has(clean)) custMap.set(clean, c.customer_name);
     });
 
+    const regMap = new Map();
+    regRes.rows.forEach(reg => {
+      const clean = (reg.phone || '').replace(/[^0-9]/g, '').slice(-10);
+      if (clean && reg.customer_name) regMap.set(clean, reg.customer_name);
+    });
+
+    const matchedCompMap = new Map();
+    matchedCompsRes.rows.forEach(c => {
+      const clean = (c.customer_phone || '').replace(/[^0-9]/g, '').slice(-10);
+      if (clean && !matchedCompMap.has(clean)) matchedCompMap.set(clean, c);
+    });
+
     const conversations = r.rows.map(row => {
       const last10 = row.last10;
-      let contactName = null;
+      let customerName = null;
       let isTechnician = false;
+      let complaintId = row.complaint_id || null;
+      let ticketId = row.ticket_id || null;
+      let productType = row.product_type || null;
+      let complaintStatus = row.complaint_status || null;
 
       // 1. Technician check
       if (techMap.has(last10)) {
-        contactName = `${techMap.get(last10).name} (Technician)`;
+        customerName = `${techMap.get(last10).name} (Technician)`;
         isTechnician = true;
       }
 
       // 2. Linked complaint check
-      if (!contactName && row.complaint_customer_name && row.complaint_customer_name !== 'Customer') {
-        contactName = row.complaint_customer_name;
+      if (!customerName && row.complaint_customer_name && row.complaint_customer_name !== 'Customer') {
+        customerName = row.complaint_customer_name;
       }
 
-      // 3. Installed customer directory check
-      if (!contactName && custMap.has(last10)) {
-        contactName = custMap.get(last10);
+      // 2b. If complaint was not directly linked via row.complaint_id, match from phone
+      if (matchedCompMap.has(last10)) {
+        const mc = matchedCompMap.get(last10);
+        if (!complaintId) complaintId = mc.id;
+        if (!ticketId) ticketId = mc.ticket_id;
+        if (!productType) productType = mc.product_type;
+        if (!complaintStatus) complaintStatus = mc.status;
+        if (!customerName && mc.customer_name && mc.customer_name !== 'Customer') {
+          customerName = mc.customer_name;
+        }
       }
 
-      // 4. Sender name in message
-      if (!contactName && row.sender_name && row.sender_name !== 'Customer' && row.sender_name !== 'Eco Green Support' && !/^[0-9+ ]+$/.test(row.sender_name)) {
-        contactName = row.sender_name;
+      // 3. Custom / Verified Name from whatsapp_number_registry
+      if (!customerName && regMap.has(last10)) {
+        customerName = regMap.get(last10);
+      }
+
+      // 4. Installed customer directory check
+      if (!customerName && custMap.has(last10)) {
+        customerName = custMap.get(last10);
+      }
+
+      // 5. Sender name in message
+      if (!customerName && row.sender_name && row.sender_name !== 'Customer' && row.sender_name !== 'Eco Green Support' && !/^[0-9+ ]+$/.test(row.sender_name)) {
+        customerName = row.sender_name;
       }
 
       const displayPhone = last10.length === 10 ? `+91 ${last10.slice(0, 5)} ${last10.slice(5)}` : row.phone;
@@ -1173,8 +1476,13 @@ app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
       return {
         ...row,
         phone: canonicalPhone,
-        sender_name: contactName || displayPhone,
-        is_technician: isTechnician
+        complaint_id: complaintId,
+        ticket_id: ticketId,
+        product_type: productType,
+        complaint_status: complaintStatus,
+        sender_name: customerName || displayPhone,
+        is_technician: isTechnician,
+        unread_count: 0
       };
     });
 
@@ -1199,10 +1507,11 @@ app.get('/api/whatsapp/chats/:phone', optionalAuth, async (req, res) => {
     `, [last10]);
 
     // Lookup contact details
-    const [techRes, compRes, custRes] = await Promise.all([
+    const [techRes, compRes, custRes, regRes] = await Promise.all([
       query(`SELECT id, name, phone, area_zone FROM technicians WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10]),
       query(`SELECT id, ticket_id, customer_name, customer_phone, product_type, status FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`, [last10]),
-      query(`SELECT customer_name FROM installed_customers WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10])
+      query(`SELECT customer_name FROM installed_customers WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10]),
+      query(`SELECT customer_name FROM whatsapp_number_registry WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10])
     ]);
 
     const tech = techRes.rows[0] || null;
@@ -1213,6 +1522,8 @@ app.get('/api/whatsapp/chats/:phone', optionalAuth, async (req, res) => {
       contactName = `${tech.name} (Technician)`;
     } else if (complaint && complaint.customer_name && complaint.customer_name !== 'Customer') {
       contactName = complaint.customer_name;
+    } else if (regRes.rows[0]?.customer_name) {
+      contactName = regRes.rows[0].customer_name;
     } else if (custRes.rows[0]?.customer_name) {
       contactName = custRes.rows[0].customer_name;
     }
@@ -1236,14 +1547,17 @@ app.get('/api/whatsapp/chats/:phone', optionalAuth, async (req, res) => {
   }
 });
 
-// Universal WhatsApp Web Inbox: Send Direct Reply
-app.post('/api/whatsapp/direct-reply', optionalAuth, async (req, res) => {
+// Universal WhatsApp Web Inbox: Send Direct Reply (supports text and file attachments)
+app.post('/api/whatsapp/direct-reply', optionalAuth, upload.single('attachment'), async (req, res) => {
   try {
     const { phone, message } = req.body;
-    if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
+    if (!phone || (!message && !req.file)) {
+      return res.status(400).json({ error: 'phone and message or attachment are required' });
+    }
 
     const clean = phone.replace(/[^0-9]/g, '');
     const last10 = clean.slice(-10);
+    const formattedPhone = `91${last10}`;
 
     const compRes = await query(`
       SELECT id, ticket_id, customer_name FROM complaints
@@ -1253,17 +1567,52 @@ app.post('/api/whatsapp/direct-reply', optionalAuth, async (req, res) => {
 
     const comp = compRes.rows[0];
 
+    let mediaUrl = null;
+    let mediaType = null;
+    let mediaFileName = null;
+
+    if (req.file) {
+      mediaType = req.file.mimetype?.startsWith('image/') ? 'image' : 'document';
+      mediaFileName = req.file.originalname;
+      const base64Data = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
+      const insRes = await query(`
+        INSERT INTO complaint_attachments (
+          complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `, [comp?.id || null, mediaFileName, '/api/attachments/temp', req.file.mimetype, base64Data, req.user?.name || 'Staff']);
+      const attId = insRes.rows[0].id;
+      mediaUrl = `/api/attachments/${attId}`;
+      await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [mediaUrl, attId]);
+    }
+
     const result = await sendWhatsApp({
-      to: clean,
-      message,
+      to: formattedPhone,
+      message: (message || '').trim(),
+      mediaUrl,
+      mediaType,
+      mediaFileName,
+      senderName: req.user?.name || 'Eco Green Support',
       variables: {
-        complaint_id: comp?.id,
+        db_complaint_id: comp?.id,
         ticket_id: comp?.ticket_id,
         customer_name: comp?.customer_name
       }
     });
 
-    return res.json({ success: true, ...result });
+    if (comp) {
+      try {
+        const actionNote = mediaUrl ? `Staff sent ${mediaType}: ${mediaFileName} ${message ? '(' + message + ')' : ''}` : (message || '').trim();
+        await query(
+          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+          [comp.id, 'Staff WhatsApp Reply', actionNote, req.user?.name || 'Staff Specialist', req.user?.role || 'staff']
+        );
+      } catch (tErr) {
+        console.warn('[Timeline Note]', tErr.message);
+      }
+    }
+
+    return res.json({ success: true, messageId: result.wamid, metaMessageId: result.wamid, mediaUrl, ...result });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1286,7 +1635,7 @@ app.get('/api/complaints/:id/whatsapp-messages', optionalAuth, async (req, res) 
       ORDER BY created_at ASC
     `, [comp.id, cleanPhone]);
 
-    return res.json({ messages: msgRes.rows });
+    return res.json({ success: true, messages: msgRes.rows });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1303,15 +1652,23 @@ app.post('/api/complaints/:id/whatsapp-reply', optionalAuth, async (req, res) =>
     const comp = compRes.rows[0];
     const result = await sendWhatsApp({
       to: comp.customer_phone,
-      message,
+      message: (message || '').trim(),
+      senderName: req.user?.name || 'Staff Specialist',
       variables: {
-        complaint_id: comp.id,
+        db_complaint_id: comp.id,
         ticket_id: comp.ticket_id,
         customer_name: comp.customer_name
       }
     });
 
-    return res.json({ success: true, ...result });
+    try {
+      await query(
+        'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+        [comp.id, 'Staff WhatsApp Reply', (message || '').trim(), req.user?.name || 'Staff Specialist', req.user?.role || 'staff']
+      );
+    } catch (_) {}
+
+    return res.json({ success: true, messageId: result.wamid, metaMessageId: result.wamid, ...result });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1382,12 +1739,266 @@ app.post('/api/whatsapp/update-contact-name', optionalAuth, async (req, res) => 
     const cleanName = (name || '').trim();
     if (clean && cleanName) {
       await query(`
+        INSERT INTO whatsapp_number_registry (phone, customer_name, is_whatsapp_active, status, source, updated_at)
+        VALUES ($1, $2, 1, 'verified', 'manual_rename', CURRENT_TIMESTAMP)
+        ON CONFLICT (phone) DO UPDATE SET customer_name = $2, is_whatsapp_active = 1, status = 'verified', updated_at = CURRENT_TIMESTAMP
+      `, [clean, cleanName]);
+
+      await query(`
         UPDATE whatsapp_messages 
         SET sender_name = $1 
         WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $2 AND sender_type = 'customer'
       `, [cleanName, clean]);
     }
     return res.json({ success: true, message: 'Contact name updated' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Verify phone number for WhatsApp compatibility
+app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
+  try {
+    const rawPhone = req.params.phone || '';
+    const cleanDigits = rawPhone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    if (/^(\d)\1{9}$/.test(last10)) {
+      return res.json({
+        valid: false,
+        isVerified: false,
+        isWhatsApp: false,
+        phone: rawPhone,
+        status: 'dummy_number',
+        message: 'Invalid number: Repeated digits detected. Please enter a genuine mobile number.'
+      });
+    }
+
+    if (last10 === '1234567890' || last10 === '9876543210' || last10 === '0123456789') {
+      return res.json({
+        valid: false,
+        isVerified: false,
+        isWhatsApp: false,
+        phone: rawPhone,
+        status: 'dummy_number',
+        message: 'Invalid number: Sequential test number detected. Please enter a genuine mobile number.'
+      });
+    }
+
+    const isIndianMobile = /^[6-9]\d{9}$/.test(last10);
+    if (!isIndianMobile) {
+      return res.json({
+        valid: false,
+        isVerified: false,
+        isWhatsApp: false,
+        phone: rawPhone,
+        status: 'invalid_format',
+        message: 'Mobile number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9.'
+      });
+    }
+
+    const formatted = `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`;
+
+    const [regRes, compRes, custRes, msgRes] = await Promise.all([
+      query("SELECT * FROM whatsapp_number_registry WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
+      query("SELECT id, ticket_id, customer_name, city, product_type, invoice_no, invoice_date FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
+      query("SELECT id, customer_name, city_village, consumer_no, order_no, invoice_no, invoice_date, inverter_serial, panel_make, inverter_make, is_in_warranty FROM installed_customers WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
+      query("SELECT sender_name FROM whatsapp_messages WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10])
+    ]);
+
+    const reg = regRes.rows[0] || null;
+    const existingComp = compRes.rows[0] || null;
+    const existingCust = custRes.rows[0] || null;
+    const existingChat = msgRes.rows[0] || null;
+
+    if (reg && reg.is_whatsapp_active === 0) {
+      return res.json({
+        valid: true,
+        isVerified: false,
+        isWhatsApp: false,
+        phone: last10,
+        formattedPhone: formatted,
+        formatted: formatted,
+        status: 'invite_required',
+        message: 'Not on WhatsApp (Invite to WhatsApp required)',
+        customerName: reg.customer_name || null
+      });
+    }
+
+    const customerName = existingCust?.customer_name || existingComp?.customer_name || existingChat?.sender_name || (reg?.customer_name || null);
+    const city = existingCust?.city_village || existingComp?.city || null;
+    const isExisting = Boolean(existingCust || existingComp);
+    const isExplicitlyVerified = Boolean((reg && reg.is_whatsapp_active === 1) || existingChat || isExisting);
+
+    return res.json({
+      valid: true,
+      isVerified: isExplicitlyVerified,
+      isWhatsApp: isExplicitlyVerified ? true : null,
+      phone: last10,
+      formattedPhone: formatted,
+      formatted: formatted,
+      isExistingCustomer: isExisting,
+      customerName: customerName,
+      city: city,
+      consumerNo: existingCust?.consumer_no || null,
+      orderNo: existingCust?.order_no || null,
+      invoiceNo: existingCust?.invoice_no || existingComp?.invoice_no || null,
+      invoiceDate: existingCust?.invoice_date || existingComp?.invoice_date || null,
+      inverterSerial: existingCust?.inverter_serial || null,
+      panelMake: existingCust?.panel_make || null,
+      inverterMake: existingCust?.inverter_make || null,
+      isInWarranty: existingCust ? Boolean(existingCust.is_in_warranty) : null,
+      ticketId: existingComp?.ticket_id || null,
+      hasChatHistory: Boolean(existingChat),
+      status: isExplicitlyVerified ? 'verified' : 'unconfirmed',
+      message: isExisting
+        ? `Verified Customer: ${customerName} (${city || 'Gujarat'})`
+        : (isExplicitlyVerified ? `WhatsApp Active & Verified (${formatted})` : `Mobile Validated (${formatted}) • WhatsApp presence not yet confirmed`)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Verification failed: ' + err.message });
+  }
+});
+
+// Set phone number WhatsApp status in registry
+app.post('/api/whatsapp/set-number-status', optionalAuth, async (req, res) => {
+  try {
+    const { phone, isActive, status, customerName, notes } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+    const cleanDigits = phone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    const activeVal = (isActive === false || status === 'invite_required') ? 0 : 1;
+    const statusVal = activeVal === 0 ? 'invite_required' : 'verified';
+
+    await query(`
+      INSERT INTO whatsapp_number_registry (phone, is_whatsapp_active, status, customer_name, source, notes, updated_at)
+      VALUES ($1, $2, $3, $4, 'manual_override', $5, CURRENT_TIMESTAMP)
+      ON CONFLICT (phone) DO UPDATE SET is_whatsapp_active = $2, status = $3, customer_name = COALESCE($4, whatsapp_number_registry.customer_name), notes = $5, updated_at = CURRENT_TIMESTAMP
+    `, [last10, activeVal, statusVal, customerName || null, notes || (activeVal === 0 ? 'Marked as Not on WhatsApp' : 'Confirmed on WhatsApp')]);
+
+    return res.json({
+      success: true,
+      phone: last10,
+      isWhatsApp: Boolean(activeVal),
+      status: statusVal,
+      message: activeVal === 0 ? 'Number marked as Not on WhatsApp (Invite Required)' : 'Number confirmed as WhatsApp Active'
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update status: ' + err.message });
+  }
+});
+
+// Retry failed WhatsApp message
+app.post('/api/whatsapp/retry-message/:id', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const msgRes = await query('SELECT * FROM whatsapp_messages WHERE id = $1', [id]);
+    if (msgRes.rows.length === 0) return res.status(404).json({ error: 'Message record not found' });
+    const msg = msgRes.rows[0];
+
+    let result;
+    if (msg.template_name) {
+      const cleanDigits = (msg.phone || '').replace(/[^0-9]/g, '');
+      const last10 = cleanDigits.slice(-10);
+      const compRes = await query(
+        'SELECT * FROM complaints WHERE id = $1 OR RIGHT(REGEXP_REPLACE(customer_phone, \'[^0-9]\', \'\', \'g\'), 10) = $2 ORDER BY id DESC LIMIT 1',
+        [msg.complaint_id || 0, last10]
+      );
+      const comp = compRes.rows[0] || null;
+
+      result = await sendWhatsApp({
+        to: msg.phone,
+        templateName: msg.template_name,
+        variables: {
+          customer_name: comp?.customer_name || 'Valued Customer',
+          ticket_id: comp?.ticket_id || 'Ticket',
+          product_type: comp?.product_type || 'Solar Equipment',
+          issue_category: comp?.issue_category || 'Service Request',
+          db_complaint_id: comp?.id || null
+        }
+      });
+    } else {
+      result = await sendWhatsApp({
+        to: msg.phone,
+        message: msg.message_body,
+        mediaUrl: msg.media_url,
+        mediaType: msg.media_type
+      });
+    }
+
+    if (result.success) {
+      await query(
+        'UPDATE whatsapp_messages SET status = $1, failure_reason = NULL, wam_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+        ['sent', result.wamid, id]
+      );
+    }
+
+    return res.json({ success: result.success, wam_id: result.wamid, error: result.error });
+  } catch (err) {
+    return res.status(500).json({ error: 'Retry failed: ' + err.message });
+  }
+});
+
+// Raw Webhook Audit Trail
+app.get('/api/whatsapp/raw-events/:phone', optionalAuth, async (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const last10 = getLast10Digits(rawPhone);
+
+    const events = await query(`
+      SELECT * FROM whatsapp_raw_events
+      WHERE sender_phone LIKE $1 OR recipient_phone LIKE $1
+      ORDER BY created_at DESC
+      LIMIT 100
+    `, [`%${last10}%`]);
+
+    return res.json({ success: true, events: events.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Sync & Restore Messages from client backup
+app.post('/api/whatsapp/sync-backup', optionalAuth, async (req, res) => {
+  try {
+    const { messages } = req.body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.json({ success: true, restored: 0 });
+    }
+
+    let restored = 0;
+    for (const m of messages) {
+      if (!m || !m.phone || !m.message_body) continue;
+      const clean = (m.phone || '').replace(/[^0-9]/g, '');
+      if (clean.length < 10) continue;
+
+      const dup = await query(
+        'SELECT id FROM whatsapp_messages WHERE (wam_id IS NOT NULL AND wam_id = $1) OR (phone = $2 AND message_body = $3) LIMIT 1',
+        [m.wam_id || null, m.phone, m.message_body]
+      );
+      if (dup.rows.length > 0) continue;
+
+      await query(`
+        INSERT INTO whatsapp_messages (
+          complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, status, wam_id, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+      `, [
+        m.complaint_id || null,
+        m.phone,
+        m.sender_type || 'company',
+        m.sender_name || 'Eco Green Support',
+        m.message_body,
+        m.media_url || null,
+        m.media_type || null,
+        m.status || 'delivered',
+        m.wam_id || null,
+        m.created_at || null
+      ]).catch(() => {});
+      restored++;
+    }
+
+    return res.json({ success: true, restored });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1418,19 +2029,119 @@ app.get(['/api/whatsapp/webhook', '/webhook'], (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === 'ecogreen_solar_webhook_verify_token_2026') {
+  if (mode === 'subscribe' && (token === 'ecogreen_solar_webhook_verify_token_2026' || token === 'ecogreen_solar_webhook_verify_2026' || token === process.env.META_WEBHOOK_VERIFY_TOKEN)) {
     return res.status(200).send(challenge);
   }
   return res.sendStatus(403);
 });
 
-// Meta Webhook Inbound Events
+// Meta Webhook Inbound Events (Delivery Statuses & Incoming Customer Messages)
 app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
   try {
     const body = req.body;
     await query('INSERT INTO whatsapp_raw_events (raw_payload) VALUES ($1)', [JSON.stringify(body)]).catch(() => {});
+
+    if (body?.entry && Array.isArray(body.entry)) {
+      for (const entry of body.entry) {
+        for (const change of entry.changes || []) {
+          const val = change.value;
+          if (!val) continue;
+
+          // 1. Process delivery statuses (delivered, read, failed, sent)
+          if (val.statuses && Array.isArray(val.statuses)) {
+            for (const st of val.statuses) {
+              const wamId = st.id;
+              const status = st.status;
+              const errMsg = st.errors?.[0]?.message || st.errors?.[0]?.title || null;
+              await query(
+                'UPDATE whatsapp_messages SET status = $1, failure_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE wam_id = $3',
+                [status, errMsg, wamId]
+              ).catch(() => {});
+
+              if (status === 'failed') {
+                const isNotOnWa = (st.errors || []).some(err => err.code === 131026 || String(err.message || '').toLowerCase().includes('not a valid whatsapp user'));
+                if (isNotOnWa && st.recipient_id) {
+                  const last10 = getLast10Digits(st.recipient_id);
+                  await query(
+                    `INSERT INTO whatsapp_number_registry (phone, is_whatsapp_active, status, source, notes, updated_at)
+                     VALUES ($1, 0, 'invite_required', 'meta_delivery_failed_131026', 'Recipient is not a valid WhatsApp user', CURRENT_TIMESTAMP)
+                     ON CONFLICT (phone) DO UPDATE SET is_whatsapp_active = 0, status = 'invite_required', updated_at = CURRENT_TIMESTAMP`,
+                    [last10]
+                  ).catch(() => {});
+                }
+              }
+            }
+          }
+
+          // 2. Process incoming customer messages
+          if (val.messages && Array.isArray(val.messages)) {
+            for (const msg of val.messages) {
+              const wamId = msg.id;
+              const rawFrom = msg.from || '';
+              const cleanDigits = rawFrom.replace(/[^0-9]/g, '');
+              const last10 = cleanDigits.slice(-10);
+              const canonicalPhone = `91${last10}`;
+
+              // Idempotency check
+              const dupRes = await query('SELECT id FROM whatsapp_messages WHERE wam_id = $1 LIMIT 1', [wamId]);
+              if (dupRes.rows.length > 0) continue;
+
+              // Contact name from Meta profile
+              const profileName = val.contacts?.find(c => (c.wa_id || '').includes(last10))?.profile?.name || null;
+              if (profileName) {
+                await query(
+                  `INSERT INTO whatsapp_number_registry (phone, customer_name, is_whatsapp_active, status, source, updated_at)
+                   VALUES ($1, $2, 1, 'verified', 'meta_webhook_profile', CURRENT_TIMESTAMP)
+                   ON CONFLICT (phone) DO UPDATE SET customer_name = $2, is_whatsapp_active = 1, status = 'verified', updated_at = CURRENT_TIMESTAMP`,
+                  [last10, profileName]
+                ).catch(() => {});
+              }
+
+              // Match complaint by phone
+              const compRes = await query(
+                `SELECT id, customer_name FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`,
+                [last10]
+              );
+              const comp = compRes.rows[0] || null;
+
+              const senderName = (comp && comp.customer_name && comp.customer_name !== 'Customer')
+                ? comp.customer_name
+                : (profileName || formatDisplayPhone(canonicalPhone));
+
+              let messageBody = '';
+              let mediaType = null;
+              let mediaUrl = null;
+
+              if (msg.type === 'text') {
+                messageBody = msg.text?.body || '';
+              } else if (msg.type === 'image') {
+                mediaType = 'image';
+                messageBody = msg.image?.caption || '[Image Received]';
+              } else if (msg.type === 'document') {
+                mediaType = 'document';
+                messageBody = msg.document?.caption || `[Document: ${msg.document?.filename || 'Document'}]`;
+              } else if (msg.type === 'audio') {
+                mediaType = 'audio';
+                messageBody = '[Voice Note / Audio]';
+              } else {
+                messageBody = `[${msg.type || 'Message'} Received]`;
+              }
+
+              await query(
+                `INSERT INTO whatsapp_messages (
+                  complaint_id, phone, sender_type, sender_name, message_body, media_type, media_url, wam_id, status, created_at, updated_at
+                ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [comp?.id || null, canonicalPhone, senderName, messageBody, mediaType, mediaUrl, wamId]
+              ).catch(() => {});
+            }
+          }
+        }
+      }
+    }
+
     return res.status(200).send('EVENT_RECEIVED');
   } catch (e) {
+    console.warn('[Webhook Error]', e.message);
     return res.status(200).send('EVENT_RECEIVED');
   }
 });
