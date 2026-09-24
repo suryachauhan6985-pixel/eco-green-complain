@@ -1339,6 +1339,29 @@ app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array
       waResult = { success: false, error: waErr.message };
     }
 
+    // Trigger In-App Notification for Staff & Admin
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_pub_reg`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role
+        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'staff', $7, 'customer')
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        newComp.ticket_id,
+        newComp.id,
+        `New Ticket Registered: ${newComp.ticket_id}`,
+        `New complaint registered online for ${newComp.customer_name} (${newComp.product_type} - ${newComp.issue_category}). Needs technician allocation.`,
+        newComp.customer_name,
+        newComp.customer_name
+      ]);
+    } catch (notifErr) {
+      console.warn('[Public Reg In-App Notif Note]', notifErr.message);
+    }
+
     return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp, whatsapp: waResult });
   } catch (err) {
     console.error('Public register complaint error:', err);
@@ -1749,6 +1772,64 @@ app.post('/api/complaints/:id/feedback', async (req, res) => {
     const cleanComments = (feedback_comments || '').trim().slice(0, 500);
     await query('UPDATE complaints SET rating = $1, feedback_comments = $2 WHERE id = $3 OR ticket_id = $3', [Math.round(numRating), cleanComments, id]);
     return res.json({ message: 'Thank you for your feedback!' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Reopen Complaint (Customer / Staff / Admin)
+app.post('/api/complaints/:id/reopen', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    const compRes = await query(`
+      UPDATE complaints SET
+        status = 'Reopened',
+        status_updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $1 OR ticket_id = $1
+      RETURNING *
+    `, [id]);
+
+    if (compRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const comp = compRes.rows[0];
+
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+      [comp.id, 'Reopened', `Ticket reopened by customer. Reason: ${reason || 'Issue recurring / not resolved'}`, comp.customer_name, 'customer']
+    );
+
+    // In-app notification for Staff, Admin, and assigned Technician
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_reopen`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, 'reopened', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'customer')
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        comp.ticket_id,
+        comp.id,
+        `Ticket Reopened: ${comp.ticket_id}`,
+        `Customer ${comp.customer_name} reopened ticket ${comp.ticket_id}. Reason: ${reason || 'Issue recurring'}`,
+        comp.customer_name,
+        'all',
+        comp.assigned_technician_id,
+        comp.technician_name,
+        comp.customer_name
+      ]);
+    } catch (nErr) {
+      console.warn('[Reopen In-App Notif Note]', nErr.message);
+    }
+
+    return res.json({ success: true, message: 'Ticket reopened successfully', complaint: comp });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2511,7 +2592,40 @@ async function ensureInAppTable() {
 app.get('/api/in-app-notifications', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
-    const r = await query('SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 100');
+    const userRole = req.user?.role;
+    const userId = req.user?.id;
+    const userName = req.user?.name || '';
+    const userPhone = (req.user?.phone || req.user?.username || '').replace(/[^0-9]/g, '').slice(-10);
+
+    let sql = 'SELECT * FROM in_app_notifications WHERE 1=1';
+    const params = [];
+
+    if (userRole === 'admin') {
+      // Admin supervisor sees everything
+      sql += ' ORDER BY created_at DESC LIMIT 150';
+    } else if (userRole === 'staff') {
+      // Staff sees technician updates, resolutions, customer registrations, reopens, and notes
+      sql += ` AND (
+        target_role IN ('staff', 'all', 'admin') 
+        OR type IN ('status_update', 'resolved', 'note', 'new_ticket', 'reopened', 'payment', 'feedback')
+      ) ORDER BY created_at DESC LIMIT 150`;
+    } else if (userRole === 'technician') {
+      // Technician only sees tickets and alerts explicitly assigned to them
+      params.push(userId || -1, `%${userName}%`, `%${userPhone}%`);
+      sql += ` AND (
+        (target_role = 'technician' OR type IN ('assignment', 'reassigned', 'reopened', 'status_update', 'note'))
+        AND (
+          target_technician_id = $1 
+          OR (target_technician_name IS NOT NULL AND target_technician_name ILIKE $2)
+          OR (target_technician_name IS NOT NULL AND target_technician_name ILIKE $3)
+          OR target_role = 'all'
+        )
+      ) ORDER BY created_at DESC LIMIT 100`;
+    } else {
+      sql += ' AND 1=0';
+    }
+
+    const r = await query(sql, params);
     const mapped = (r.rows || []).map(row => ({
       id: row.id,
       type: row.type,

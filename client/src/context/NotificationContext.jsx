@@ -5,60 +5,6 @@ import { api } from '../api/client';
 const NotificationContext = createContext();
 
 const STORAGE_KEY = 'egs_in_app_notifications';
-const ACKNOWLEDGED_POPUPS_KEY = 'egs_acknowledged_popups';
-
-// Realistic sample in-app notifications so both Tech and Staff have immediate working data
-const DEFAULT_NOTIFICATIONS = [
-  {
-    id: 'notif_init_1',
-    type: 'assignment',
-    ticketId: 'EGS-2026-000114',
-    complaintId: 114,
-    title: 'New Complaint Assigned: EGS-2026-000114',
-    message: 'You have been assigned to customer JAVIA BANSIKUMAR CHANDULAL (Solar Rooftop Systems - Inverter Fault). Expected visit: Today.',
-    customerName: 'JAVIA BANSIKUMAR CHANDULAL',
-    targetRole: 'technician',
-    targetTechnicianId: 1,
-    targetTechnicianName: 'Rohit Kumar',
-    performedByName: 'Admin Supervisor',
-    performedByRole: 'admin',
-    createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-    readBy: [],
-    acknowledgedBy: []
-  },
-  {
-    id: 'notif_init_2',
-    type: 'status_update',
-    ticketId: 'EGS-2026-000106',
-    complaintId: 106,
-    title: 'Technician Update: EGS-2026-000106',
-    message: 'Rohit Kumar updated status to "In Progress" for Harish Nambiar (Heat Pumps - Circulation Pump Failure).',
-    customerName: 'Harish Nambiar',
-    targetRole: 'staff',
-    targetTechnicianId: 1,
-    targetTechnicianName: 'Rohit Kumar',
-    performedByName: 'Rohit Kumar',
-    performedByRole: 'technician',
-    createdAt: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
-    readBy: [],
-    acknowledgedBy: []
-  },
-  {
-    id: 'notif_init_3',
-    type: 'new_ticket',
-    ticketId: 'EGS-2026-000116',
-    complaintId: 116,
-    title: 'New Ticket Registered: EGS-2026-000116',
-    message: 'New complaint registered for Jignesh Patel (Solar Rooftop Systems - Inverter Error). Needs technician allocation.',
-    customerName: 'Jignesh Patel',
-    targetRole: 'staff',
-    performedByName: 'Front Desk Helpdesk',
-    performedByRole: 'staff',
-    createdAt: new Date(Date.now() - 140 * 60 * 1000).toISOString(),
-    readBy: [],
-    acknowledgedBy: []
-  }
-];
 
 export const NotificationProvider = ({ children }) => {
   const { currentUser } = useAuth();
@@ -68,55 +14,77 @@ export const NotificationProvider = ({ children }) => {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Prune legacy dummy notifications immediately
+          const cleaned = parsed.filter(n => 
+            !n.id?.startsWith('notif_init_') && 
+            !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
+          );
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+          return cleaned;
+        }
       }
     } catch (_) {}
-    return DEFAULT_NOTIFICATIONS;
+    return [];
   });
 
   const [activePopup, setActivePopup] = useState(null);
+  const [dismissedPopupIds, setDismissedPopupIds] = useState(new Set());
 
   // Helper: Persist notifications
   const saveNotifications = useCallback((newNotifs) => {
-    setNotifications(newNotifs);
+    // Ensure no dummy notifications sneak in
+    const cleaned = (newNotifs || []).filter(n => 
+      !n.id?.startsWith('notif_init_') && 
+      !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
+    );
+    setNotifications(cleaned);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newNotifs));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
     } catch (e) {
       console.warn('Failed to save in-app notifications:', e);
     }
   }, []);
 
-  // Sync with backend if API is running
+  // Sync with backend
   const fetchFromBackend = useCallback(async () => {
     try {
       if (api.getInAppNotifications) {
         const data = await api.getInAppNotifications();
-        if (data && Array.isArray(data.notifications) && data.notifications.length > 0) {
-          // Merge with local state to preserve unread flags
-          const localMap = new Map();
-          notifications.forEach(n => localMap.set(String(n.id || n.ticketId), n));
+        if (data && Array.isArray(data.notifications)) {
+          const cleanRemote = data.notifications.filter(n => 
+            !n.id?.startsWith('notif_init_') && 
+            !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
+          );
           
-          const merged = data.notifications.map(remote => {
-            const key = String(remote.id || remote.ticketId || remote.ticket_id);
-            const local = localMap.get(key);
-            return local ? { ...remote, ...local } : remote;
-          });
+          setNotifications(prev => {
+            const localReadMap = new Map();
+            prev.forEach(p => {
+              if (Array.isArray(p.readBy)) localReadMap.set(p.id, p.readBy);
+            });
 
-          // Also include purely local notifications that haven't synced yet
-          notifications.forEach(n => {
-            const key = String(n.id || n.ticketId);
-            if (!merged.some(m => String(m.id || m.ticketId || m.ticket_id) === key)) {
-              merged.push(n);
-            }
-          });
+            const merged = cleanRemote.map(r => {
+              const localReads = localReadMap.get(r.id) || [];
+              const combinedReads = Array.from(new Set([...(r.readBy || []), ...localReads]));
+              return { ...r, readBy: combinedReads };
+            });
 
-          saveNotifications(merged);
+            // Keep any recent unsynced local creations
+            prev.forEach(p => {
+              if (!p.id?.startsWith('notif_init_') && !merged.some(m => m.id === p.id)) {
+                merged.push(p);
+              }
+            });
+
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+            } catch (_) {}
+            return merged;
+          });
         }
       }
-    } catch (_) {
-      // Backend offline or endpoint not yet configured, local store operates independently
-    }
-  }, [notifications, saveNotifications]);
+    } catch (_) {}
+  }, []);
 
   // Periodic poll and multi-tab sync
   useEffect(() => {
@@ -126,13 +94,16 @@ export const NotificationProvider = ({ children }) => {
       if (e.key === STORAGE_KEY && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setNotifications(parsed);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(n => !n.id?.startsWith('notif_init_'));
+            setNotifications(cleaned);
+          }
         } catch (_) {}
       }
     };
 
     const handleCustomNotify = (e) => {
-      if (e.detail) {
+      if (e.detail && !e.detail.id?.startsWith('notif_init_')) {
         setNotifications(prev => {
           const exists = prev.some(n => n.id === e.detail.id);
           return exists ? prev : [e.detail, ...prev];
@@ -147,7 +118,7 @@ export const NotificationProvider = ({ children }) => {
       if (document.visibilityState === 'visible') {
         fetchFromBackend();
       }
-    }, 10000);
+    }, 8000);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
@@ -156,44 +127,55 @@ export const NotificationProvider = ({ children }) => {
     };
   }, [fetchFromBackend]);
 
-  // Check if a notification targets the active user
+  // Check if a notification targets the active user (Role-Based Filtering)
   const isNotificationForUser = useCallback((notif, user) => {
     if (!user || user.role === 'customer') return false;
 
-    // Admin sees all system notifications
+    // 1. Admin sees everything across the entire organization
     if (user.role === 'admin') return true;
 
-    // Staff sees technician updates, resolutions, notes, and new registrations
+    // 2. Staff sees technician updates, resolutions, customer registrations, notes, reopens
     if (user.role === 'staff') {
+      const performedByMe = notif.performedByName && user.name && 
+        notif.performedByName.toLowerCase() === user.name.toLowerCase() &&
+        notif.performedByRole === 'staff';
+      
+      // Do not clutter staff inbox with actions they performed themselves
+      if (performedByMe && notif.type !== 'system') return false;
+
       return (
         notif.targetRole === 'staff' ||
         notif.targetRole === 'admin' ||
         notif.targetRole === 'all' ||
-        notif.type === 'status_update' ||
-        notif.type === 'resolved' ||
-        notif.type === 'note' ||
-        notif.type === 'new_ticket'
+        ['status_update', 'resolved', 'note', 'new_ticket', 'reopened', 'payment', 'feedback'].includes(notif.type)
       );
     }
 
-    // Technician sees jobs and updates assigned to them
+    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them
     if (user.role === 'technician') {
-      if (notif.targetRole === 'technician' || notif.type === 'assignment') {
-        if (!notif.targetTechnicianId && !notif.targetTechnicianName) return true;
+      const currentTechId = String(user.technicianId || user.id || '');
+      const currentTechName = (user.name || '').trim().toLowerCase();
 
-        const currentTechId = String(user.technicianId || user.id || '');
-        const targetTechId = String(notif.targetTechnicianId || '');
+      const targetTechId = String(notif.targetTechnicianId || '');
+      const targetTechName = (notif.targetTechnicianName || '').trim().toLowerCase();
 
-        const idMatches = targetTechId && currentTechId && targetTechId === currentTechId;
-        const nameMatches = notif.targetTechnicianName && user.name && (
-          user.name.toLowerCase().includes(notif.targetTechnicianName.toLowerCase()) ||
-          notif.targetTechnicianName.toLowerCase().includes(user.name.toLowerCase())
-        );
+      const idMatches = targetTechId && currentTechId && targetTechId === currentTechId;
+      const nameMatches = targetTechName && currentTechName && (
+        currentTechName.includes(targetTechName) || targetTechName.includes(currentTechName)
+      );
 
-        // Demo user fallback: Rohit Kumar
-        const isDemoRohit = (user.name?.toLowerCase().includes('rohit') || user.username === 'rohit');
-        return idMatches || nameMatches || isDemoRohit;
+      if (idMatches || nameMatches) return true;
+
+      // Assignment or job notices targeted specifically to technicians
+      if (['assignment', 'reassigned'].includes(notif.type) || notif.targetRole === 'technician') {
+        if (!targetTechId && !targetTechName) return true;
+        return idMatches || nameMatches;
       }
+
+      if (['reopened', 'note', 'status_update'].includes(notif.type) && notif.targetRole === 'all') {
+        return idMatches || nameMatches;
+      }
+
       return false;
     }
 
@@ -226,36 +208,17 @@ export const NotificationProvider = ({ children }) => {
 
   const unreadCount = unreadNotifications.length;
 
-  // POPUP LOGIC: Trigger popup banner when user opens session or when a new unread arrives
+  // POPUP LOGIC: Automatically surface unread notifications until read
   useEffect(() => {
     if (!currentUser || currentUser.role === 'customer') {
       setActivePopup(null);
       return;
     }
 
-    const userKey = getUserKey(currentUser);
-    let acknowledged = [];
-    try {
-      acknowledged = JSON.parse(sessionStorage.getItem(ACKNOWLEDGED_POPUPS_KEY) || '[]');
-    } catch (_) {}
-
-    // Find the latest unread notification that hasn't been acknowledged in this session
-    const unacknowledged = unreadNotifications.find(n => {
-      const ackKey = `${userKey}_${n.id || n.ticketId}`;
-      return !acknowledged.includes(ackKey);
-    });
-
-    if (unacknowledged) {
-      setActivePopup(unacknowledged);
-
-      // Record acknowledgement for this session so we don't repeat the toast on every re-render
-      const ackKey = `${userKey}_${unacknowledged.id || unacknowledged.ticketId}`;
-      acknowledged.push(ackKey);
-      try {
-        sessionStorage.setItem(ACKNOWLEDGED_POPUPS_KEY, JSON.stringify(acknowledged));
-      } catch (_) {}
-    }
-  }, [currentUser, unreadNotifications, getUserKey]);
+    // Find the latest unread notification that hasn't been temporarily dismissed
+    const nextUnread = unreadNotifications.find(n => !dismissedPopupIds.has(n.id));
+    setActivePopup(nextUnread || null);
+  }, [currentUser, unreadNotifications, dismissedPopupIds]);
 
   // Add a new in-app notification
   const addNotification = useCallback((data) => {
@@ -379,10 +342,14 @@ export const NotificationProvider = ({ children }) => {
     } catch (_) {}
   }, [saveNotifications]);
 
-  // Dismiss popup banner (keeps unread badge on bell icon!)
-  const dismissPopup = useCallback(() => {
+  // Dismiss popup banner (keeps unread badge on bell icon, temporarily suppresses this specific popup in session)
+  const dismissPopup = useCallback((notifId) => {
+    const idToDismiss = notifId || activePopup?.id;
+    if (idToDismiss) {
+      setDismissedPopupIds(prev => new Set([...prev, idToDismiss]));
+    }
     setActivePopup(null);
-  }, []);
+  }, [activePopup]);
 
   return (
     <NotificationContext.Provider value={{

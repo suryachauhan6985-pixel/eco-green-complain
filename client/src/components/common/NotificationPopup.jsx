@@ -1,9 +1,9 @@
 import React from 'react';
 import { useNotifications } from '../../context/NotificationContext';
-import { Bell, Wrench, CheckCircle2, ArrowRight, X, Clock, AlertCircle } from 'lucide-react';
+import { Bell, Wrench, CheckCircle2, ArrowRight, X, Clock, AlertCircle, Check, RotateCcw } from 'lucide-react';
 
 export const NotificationPopup = ({ onSelectComplaint }) => {
-  const { activePopup, dismissPopup, markAsRead } = useNotifications();
+  const { activePopup, dismissPopup, markAsRead, unreadCount } = useNotifications();
 
   if (!activePopup) return null;
 
@@ -14,6 +14,11 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
         onSelectComplaint(activePopup.ticketId || activePopup.complaintId);
       }
     }
+  };
+
+  const handleMarkRead = (e) => {
+    e.stopPropagation();
+    markAsRead(activePopup.id);
   };
 
   const getIconAndColors = () => {
@@ -38,6 +43,16 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
           accent: 'text-teal-400',
           buttonBg: 'bg-teal-500 hover:bg-teal-600 text-slate-950 font-bold'
         };
+      case 'reopened':
+        return {
+          icon: RotateCcw,
+          bg: 'bg-rose-950/95',
+          border: 'border-rose-500/50',
+          badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+          badgeText: 'Ticket Reopened',
+          accent: 'text-rose-400',
+          buttonBg: 'bg-rose-500 hover:bg-rose-600 text-white font-bold'
+        };
       case 'status_update':
         return {
           icon: AlertCircle,
@@ -47,6 +62,16 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
           badgeText: 'Status Update',
           accent: 'text-blue-400',
           buttonBg: 'bg-blue-500 hover:bg-blue-600 text-white font-bold'
+        };
+      case 'new_ticket':
+        return {
+          icon: Bell,
+          bg: 'bg-amber-950/95',
+          border: 'border-amber-500/50',
+          badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+          badgeText: 'New Ticket',
+          accent: 'text-amber-400',
+          buttonBg: 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold'
         };
       default:
         return {
@@ -76,13 +101,18 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${theme.badgeBg}`}>
                   {theme.badgeText}
                 </span>
                 {activePopup.ticketId && (
                   <span className="font-mono text-xs font-bold text-amber-300 bg-amber-400/10 px-2 py-0.5 rounded-md border border-amber-400/20">
                     {activePopup.ticketId}
+                  </span>
+                )}
+                {unreadCount > 1 && (
+                  <span className="text-[10px] font-bold text-slate-300 bg-white/10 px-2 py-0.5 rounded-full">
+                    {unreadCount} Unread
                   </span>
                 )}
               </div>
@@ -93,9 +123,9 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
           </div>
 
           <button
-            onClick={dismissPopup}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-            title="Dismiss popup (Keeps unread badge on bell icon)"
+            onClick={() => dismissPopup(activePopup.id)}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Dismiss popup for this session"
           >
             <X className="w-4 h-4" />
           </button>
@@ -110,21 +140,23 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
         <div className="flex items-center justify-between pl-10 pt-2 border-t border-white/10">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
             <Clock className="w-3.5 h-3.5" />
-            <span>Just now</span>
+            <span>Unread</span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={dismissPopup}
-              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-white/5 transition-colors"
+              onClick={handleMarkRead}
+              className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded-lg hover:bg-emerald-500/10 transition-colors font-medium cursor-pointer"
+              title="Mark as read and advance to next"
             >
-              Later
+              <Check className="w-3.5 h-3.5" />
+              <span>Mark Read</span>
             </button>
             <button
               onClick={handleOpenTicket}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs shadow-xs transition-all active:scale-95 ${theme.buttonBg}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs shadow-xs transition-all active:scale-95 cursor-pointer ${theme.buttonBg}`}
             >
-              <span>View Ticket</span>
+              <span>Open Ticket</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

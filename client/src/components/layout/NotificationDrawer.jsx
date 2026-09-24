@@ -6,7 +6,8 @@ import { useDialog } from '../../context/DialogContext';
 import { 
   X, Bell, MessageSquare, Mail, RefreshCw, Trash2, CheckCheck, 
   ExternalLink, Sparkles, Send, ShieldAlert, Wrench, CheckCircle2, 
-  AlertCircle, Clock, ArrowRight, UserCheck, Shield 
+  AlertCircle, Clock, ArrowRight, UserCheck, Shield,
+  ChevronDown, ChevronUp, Layers, RotateCcw, Check
 } from 'lucide-react';
 
 export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
@@ -104,6 +105,65 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
     return true;
   });
 
+  // Mobile-style Grouped Notification Accordion State
+  const [expandedGroups, setExpandedGroups] = useState({});
+
+  const toggleGroup = (key, e) => {
+    if (e) e.stopPropagation();
+    setExpandedGroups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Group notifications by complaint ticket (Mobile Stacking)
+  const groupedInbox = React.useMemo(() => {
+    const map = new Map();
+    const list = [];
+
+    filteredInbox.forEach(notif => {
+      const key = notif.ticketId || (notif.complaintId ? `C-${notif.complaintId}` : null);
+      if (key) {
+        if (!map.has(key)) {
+          const grp = {
+            key,
+            ticketId: notif.ticketId,
+            complaintId: notif.complaintId,
+            customerName: notif.customerName,
+            items: [notif],
+            latestNotif: notif,
+            unreadCount: isUnread(notif, currentUser) ? 1 : 0
+          };
+          map.set(key, grp);
+          list.push(grp);
+        } else {
+          const grp = map.get(key);
+          grp.items.push(notif);
+          if (isUnread(notif, currentUser)) {
+            grp.unreadCount += 1;
+          }
+          if (new Date(notif.createdAt) > new Date(grp.latestNotif.createdAt)) {
+            grp.latestNotif = notif;
+          }
+          if (!grp.customerName && notif.customerName) {
+            grp.customerName = notif.customerName;
+          }
+        }
+      } else {
+        // Standalone notification
+        list.push({
+          key: notif.id,
+          ticketId: null,
+          items: [notif],
+          latestNotif: notif,
+          unreadCount: isUnread(notif, currentUser) ? 1 : 0
+        });
+      }
+    });
+
+    return list;
+  }, [filteredInbox, currentUser, isUnread]);
+
   // Filter dispatches
   const filteredDispatches = messages.filter(m => {
     if (dispatchFilter === 'whatsapp') return m.channel === 'whatsapp';
@@ -139,6 +199,12 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
           icon: CheckCircle2,
           label: 'Resolved',
           bg: 'bg-teal-100 text-teal-800 border-teal-200'
+        };
+      case 'reopened':
+        return {
+          icon: RotateCcw,
+          label: 'Reopened',
+          bg: 'bg-rose-100 text-rose-800 border-rose-200'
         };
       case 'status_update':
         return {
@@ -297,7 +363,7 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
 
               {/* In-App Notifications Feed */}
               <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 bg-slate-50">
-                {filteredInbox.length === 0 ? (
+                {groupedInbox.length === 0 ? (
                   <div className="text-center py-16 px-4">
                     <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mx-auto mb-3">
                       <Bell className="w-6 h-6" />
@@ -312,75 +378,255 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                     </p>
                   </div>
                 ) : (
-                  filteredInbox.map((notif) => {
-                    const unread = isUnread(notif, currentUser);
-                    const badge = getNotificationBadge(notif.type);
-                    const BadgeIcon = badge.icon;
+                  groupedInbox.map((group) => {
+                    // CASE 1: Standalone or Single Notification
+                    if (group.items.length === 1) {
+                      const notif = group.latestNotif;
+                      const unread = isUnread(notif, currentUser);
+                      const badge = getNotificationBadge(notif.type);
+                      const BadgeIcon = badge.icon;
+
+                      return (
+                        <div
+                          key={notif.id}
+                          onClick={() => handleOpenTicket(notif)}
+                          className={`group relative p-3.5 rounded-2xl border transition-all cursor-pointer shadow-2xs ${
+                            unread 
+                              ? 'bg-emerald-50/70 border-emerald-300 hover:border-emerald-400 hover:shadow-xs' 
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {/* Unread indicator beacon */}
+                          {unread && (
+                            <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Unread</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-start gap-3">
+                            <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${badge.bg}`}>
+                              <BadgeIcon className="w-4 h-4" />
+                            </div>
+
+                            <div className="flex-1 min-w-0 pr-12">
+                              {/* Type tag & Ticket ID */}
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg}`}>
+                                  {badge.label}
+                                </span>
+                                {notif.ticketId && (
+                                  <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                    {notif.ticketId}
+                                  </span>
+                                )}
+                              </div>
+
+                              <h5 className="font-bold text-xs text-slate-900 leading-snug">
+                                {notif.title}
+                              </h5>
+
+                              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                {notif.message}
+                              </p>
+
+                              {/* Meta footer: Actor, Timestamp, View CTA */}
+                              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="w-3 h-3 text-slate-400" />
+                                  <span>{formatRelativeTime(notif.createdAt)}</span>
+                                  {notif.performedByName && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-slate-600 font-medium">By {notif.performedByName}</span>
+                                    </>
+                                  )}
+                                </div>
+
+                                <span className="text-emerald-700 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[11px]">
+                                  <span>Open Ticket</span>
+                                  <ArrowRight className="w-3 h-3" />
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // CASE 2: Group of Multiple Notifications for the Same Ticket (Mobile-Style Accordion Stack)
+                    const isExpanded = !!expandedGroups[group.key];
+                    const hasUnread = group.unreadCount > 0;
+                    const latestBadge = getNotificationBadge(group.latestNotif.type);
+                    const LatestIcon = latestBadge.icon;
 
                     return (
                       <div
-                        key={notif.id}
-                        onClick={() => handleOpenTicket(notif)}
-                        className={`group relative p-3.5 rounded-2xl border transition-all cursor-pointer shadow-2xs ${
-                          unread 
-                            ? 'bg-emerald-50/70 border-emerald-300 hover:border-emerald-400 hover:shadow-xs' 
+                        key={group.key}
+                        className={`group relative rounded-2xl border transition-all shadow-xs ${
+                          hasUnread 
+                            ? 'bg-gradient-to-br from-emerald-50/90 to-teal-50/60 border-emerald-300' 
                             : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                       >
-                        {/* Unread indicator beacon */}
-                        {unread && (
-                          <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Unread</span>
-                          </div>
+                        {/* Mobile stacked visual shadow layer beneath card when collapsed */}
+                        {!isExpanded && (
+                          <>
+                            <div className="absolute -bottom-1 left-2.5 right-2.5 h-2 bg-slate-200/60 border border-slate-300/60 rounded-b-xl -z-10" />
+                            <div className="absolute -bottom-2 left-5 right-5 h-2 bg-slate-100/40 border border-slate-200/40 rounded-b-xl -z-20" />
+                          </>
                         )}
 
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${badge.bg}`}>
-                            <BadgeIcon className="w-4 h-4" />
-                          </div>
-
-                          <div className="flex-1 min-w-0 pr-12">
-                            {/* Type tag & Ticket ID */}
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg}`}>
-                                {badge.label}
+                        {/* Stack Header / Clickable Summary */}
+                        <div
+                          onClick={(e) => toggleGroup(group.key, e)}
+                          className="p-3.5 cursor-pointer flex flex-col gap-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-800 text-white text-[11px] font-mono font-bold shadow-2xs">
+                                <Layers className="w-3.5 h-3.5 text-emerald-200" />
+                                <span>{group.ticketId || 'Complaint Updates'}</span>
+                              </div>
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                {group.items.length} Updates
                               </span>
-                              {notif.ticketId && (
-                                <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                                  {notif.ticketId}
+                              {hasUnread && (
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 animate-pulse shadow-2xs">
+                                  {group.unreadCount} Unread
                                 </span>
                               )}
                             </div>
 
-                            <h5 className="font-bold text-xs text-slate-900 leading-snug">
-                              {notif.title}
-                            </h5>
+                            {/* Expand / Collapse Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => toggleGroup(group.key, e)}
+                              className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors flex items-center gap-1 text-xs font-bold shrink-0 cursor-pointer"
+                            >
+                              <span className="text-[11px]">{isExpanded ? 'Collapse' : `View all (${group.items.length})`}</span>
+                              {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-700" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
+                            </button>
+                          </div>
 
-                            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                              {notif.message}
-                            </p>
-
-                            {/* Meta footer: Actor, Timestamp, View CTA */}
-                            <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                              <div className="flex items-center gap-1.5">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                <span>{formatRelativeTime(notif.createdAt)}</span>
-                                {notif.performedByName && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-slate-600 font-medium">By {notif.performedByName}</span>
-                                  </>
-                                )}
-                              </div>
-
-                              <span className="text-emerald-700 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[11px]">
-                                <span>Open Ticket</span>
-                                <ArrowRight className="w-3 h-3" />
-                              </span>
+                          {/* Customer Name */}
+                          {group.customerName && (
+                            <div className="text-xs font-bold text-slate-800">
+                              <span>Customer: {group.customerName}</span>
                             </div>
+                          )}
+
+                          {/* Preview of latest action */}
+                          <div className="text-xs text-slate-600 flex items-start gap-2 bg-white/80 p-2 rounded-xl border border-slate-100/80 shadow-2xs">
+                            <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${latestBadge.bg}`}>
+                              <LatestIcon className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-slate-900 truncate text-xs">{group.latestNotif.title}</p>
+                              <p className="text-[11px] text-slate-500 line-clamp-1">{group.latestNotif.message}</p>
+                            </div>
+                            <span className="text-[10px] text-slate-400 shrink-0">{formatRelativeTime(group.latestNotif.createdAt)}</span>
+                          </div>
+
+                          {/* Footer Action Bar */}
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-100/80 text-[11px]">
+                            <span className="text-slate-400 font-medium text-[10px]">
+                              {isExpanded ? 'Click box to collapse' : `Tap to expand all ${group.items.length} ticket updates`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenTicket(group.latestNotif);
+                              }}
+                              className="text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                            >
+                              <span>Open Ticket</span>
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
                           </div>
                         </div>
+
+                        {/* EXPANDED INNER LIST (Mobile Notification Drawer Accordion Style) */}
+                        {isExpanded && (
+                          <div className="p-3 pt-0 border-t border-slate-100 bg-slate-50/70 rounded-b-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="py-2 flex items-center justify-between text-[11px] text-slate-500 font-semibold border-b border-slate-200/60 mb-2.5">
+                              <span>Complaint Timeline Updates ({group.items.length}):</span>
+                              {hasUnread && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    group.items.forEach(item => markAsRead(item.id));
+                                  }}
+                                  className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <CheckCheck className="w-3 h-3" />
+                                  <span>Mark ticket updates read</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="space-y-2 relative before:absolute before:top-2 before:bottom-2 before:left-3 before:w-0.5 before:bg-emerald-300 pl-0.5">
+                              {group.items.map((notif, idx) => {
+                                const itemUnread = isUnread(notif, currentUser);
+                                const badge = getNotificationBadge(notif.type);
+                                const ItemIcon = badge.icon;
+
+                                return (
+                                  <div
+                                    key={notif.id || idx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenTicket(notif);
+                                    }}
+                                    className={`relative pl-7 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                      itemUnread
+                                        ? 'bg-emerald-50/90 border-emerald-300 hover:bg-emerald-100/70'
+                                        : 'bg-white border-slate-200 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    {/* Dot on vertical timeline line */}
+                                    <div className={`absolute left-2.5 top-3.5 w-3 h-3 rounded-full border-2 border-white -translate-x-1/2 flex items-center justify-center ${badge.bg}`}>
+                                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-700" />
+                                    </div>
+
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${badge.bg}`}>
+                                          {badge.label}
+                                        </span>
+                                        {itemUnread && (
+                                          <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.2 rounded">
+                                            NEW
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 shrink-0">
+                                        {formatRelativeTime(notif.createdAt)}
+                                      </span>
+                                    </div>
+
+                                    <h6 className="font-bold text-xs text-slate-900 mt-1 leading-snug">
+                                      {notif.title}
+                                    </h6>
+                                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                      {notif.message}
+                                    </p>
+
+                                    <div className="mt-1.5 pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                                      <span>By {notif.performedByName || 'System'}</span>
+                                      <span className="text-emerald-700 font-bold flex items-center gap-0.5 hover:underline">
+                                        <span>Open</span>
+                                        <ArrowRight className="w-2.5 h-2.5" />
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })
