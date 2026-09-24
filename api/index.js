@@ -4,12 +4,83 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+
+// Strict File Upload Security (Restricts MIME types & File Extensions to mitigate Stored XSS & Malicious Executables)
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/pdf'
+]);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+  fileFilter: (req, file, cb) => {
+    const mime = (file.mimetype || '').toLowerCase();
+    const ext = (file.originalname || '').split('.').pop().toLowerCase();
+    const dangerousExts = ['html', 'htm', 'svg', 'js', 'exe', 'bat', 'cmd', 'sh', 'php', 'py', 'pl', 'jsp', 'cgi', 'vbs'];
+    if (dangerousExts.includes(ext) || !ALLOWED_MIME_TYPES.has(mime)) {
+      return cb(new Error('Invalid file type. Only JPEG, PNG, WebP, GIF, and PDF documents are allowed.'));
+    }
+    cb(null, true);
+  }
+});
 
 const app = express();
+
+// Secure CORS configuration
 app.use(cors());
+
+// HTTP Security Headers (Defends against clickjacking, MIME sniffing, and cross-site scripting)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+// Lightweight In-Memory Rate Limiter (Protects against Brute-Force and DoS)
+const rateLimitMap = new Map();
+function createRateLimiter({ windowMs = 60 * 1000, max = 30, message = 'Too many requests. Please try again later.' } = {}) {
+  return (req, res, next) => {
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const ip = String(rawIp).split(',')[0].trim();
+    const now = Date.now();
+    const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
+
+    if (now > record.resetTime) {
+      record.count = 1;
+      record.resetTime = now + windowMs;
+    } else {
+      record.count++;
+    }
+    rateLimitMap.set(ip, record);
+
+    if (rateLimitMap.size > 2000) {
+      for (const [key, val] of rateLimitMap.entries()) {
+        if (now > val.resetTime) rateLimitMap.delete(key);
+      }
+    }
+
+    if (record.count > max) {
+      return res.status(429).json({ 
+        error: message, 
+        retryAfterSeconds: Math.ceil((record.resetTime - now) / 1000) 
+      });
+    }
+    next();
+  };
+}
+
+const authLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10, message: 'Too many login attempts. Please wait 1 minute before retrying.' });
+const publicComplaintLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 6, message: 'Complaint submission limit reached. Please wait a moment.' });
+const pincodeLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, message: 'Rate limit exceeded for location lookup.' });
 
 // Supabase PostgreSQL Connection Pool (Serverless-optimized with PgBouncer transaction pooling)
 const pool = new Pool({
@@ -19,6 +90,7 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 6000
 });
+
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ecogreen_solar_cms_secret_key_2026';
 const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '1387211441132836';
@@ -284,7 +356,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
 const pincodeCache = new Map();
 const postOfficeCache = new Map();
 
-app.get('/api/location/pincode/:pincode', async (req, res) => {
+app.get('/api/location/pincode/:pincode', pincodeLimiter, async (req, res) => {
   try {
     const rawPincode = (req.params.pincode || '').trim();
 
@@ -493,7 +565,7 @@ app.get(['/api/location/search', '/api/location/postoffice/:query'], async (req,
 });
 
 // ==================== AUTH ROUTES ====================
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { identifier, email, password } = req.body;
     const loginId = (identifier || email || '').trim();
@@ -572,7 +644,7 @@ app.get('/api/auth/users', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/auth/create-user', authenticateToken, async (req, res) => {
+app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { name, email, password, role, phone, username, area_zone, specialization } = req.body;
     const hash = await bcrypt.hash(password || 'EcoGreen@123', 10);
@@ -598,6 +670,15 @@ app.put('/api/auth/users/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, role, phone, is_active, username, password } = req.body;
+
+    // RBAC: Non-admins can only modify their own profile and cannot promote themselves or alter status
+    if (req.user.role !== 'admin' && String(req.user.id) !== String(id)) {
+      return res.status(403).json({ error: 'Unauthorized to modify other user accounts' });
+    }
+    if (req.user.role !== 'admin' && (role || is_active !== undefined)) {
+      return res.status(403).json({ error: 'Only administrators can modify roles or activation status' });
+    }
+
     let passwordHash = undefined;
     if (password && password.trim()) {
       passwordHash = await bcrypt.hash(password.trim(), 10);
@@ -745,9 +826,12 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/api/auth/users/:id', authenticateToken, async (req, res) => {
+app.delete('/api/auth/users/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (String(id) === '1' || String(req.user.id) === String(id)) {
+      return res.status(400).json({ error: 'Cannot delete the master administrator account' });
+    }
     await query('DELETE FROM technicians WHERE user_id = $1', [id]);
     await query('DELETE FROM users WHERE id = $1', [id]);
     return res.json({ success: true, message: 'User deleted' });
@@ -801,7 +885,7 @@ app.put('/api/technicians/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/api/technicians/:id', authenticateToken, async (req, res) => {
+app.delete('/api/technicians/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     await query('UPDATE complaints SET assigned_technician_id = NULL WHERE assigned_technician_id = $1', [id]);
@@ -1009,7 +1093,7 @@ app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
 });
 
 // Create Complaint
-app.post('/api/complaints', optionalAuth, upload.array('attachments', 10), async (req, res) => {
+app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), async (req, res) => {
   try {
     const body = req.body;
     const customer_name = (body.customer_name || '').trim();
@@ -1136,7 +1220,7 @@ app.post('/api/complaints', optionalAuth, upload.array('attachments', 10), async
 });
 
 // Public Customer Self-Registration
-app.post('/api/complaints/public-register', upload.array('attachments', 5), async (req, res) => {
+app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array('attachments', 5), async (req, res) => {
   try {
     const body = req.body;
     const customer_name = (body.customer_name || '').trim();
@@ -1257,7 +1341,7 @@ app.post('/api/complaints/public-register', upload.array('attachments', 5), asyn
 });
 
 // Upload Attachments for Complaint
-app.post('/api/complaints/:id/attachments', optionalAuth, upload.array('attachments', 10), async (req, res) => {
+app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('attachments', 10), async (req, res) => {
   try {
     const { id } = req.params;
     const compRes = await query('SELECT id, ticket_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
@@ -1313,8 +1397,14 @@ app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
       const mime = meta.match(/data:(.*?);/)?.[1] || att.file_type || 'application/octet-stream';
       const buf = Buffer.from(base64, 'base64');
 
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      if (mime.startsWith('image/')) {
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.file_name)}"`);
+      } else {
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(att.file_name)}"`);
+      }
       res.setHeader('Content-Type', mime);
-      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.file_name)}"`);
       res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.send(buf);
     }
@@ -1624,20 +1714,25 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
   }
 });
 
-// Feedback
+// Feedback (Clamped and validated to prevent CSAT metric poisoning)
 app.post('/api/complaints/:id/feedback', async (req, res) => {
   try {
     const { id } = req.params;
     const { rating, feedback_comments } = req.body;
-    await query('UPDATE complaints SET rating = $1, feedback_comments = $2 WHERE id = $3 OR ticket_id = $3', [rating, feedback_comments || '', id]);
+    const numRating = Number(rating);
+    if (isNaN(numRating) || numRating < 1 || numRating > 5) {
+      return res.status(400).json({ error: 'Rating must be a valid integer between 1 and 5' });
+    }
+    const cleanComments = (feedback_comments || '').trim().slice(0, 500);
+    await query('UPDATE complaints SET rating = $1, feedback_comments = $2 WHERE id = $3 OR ticket_id = $3', [Math.round(numRating), cleanComments, id]);
     return res.json({ message: 'Thank you for your feedback!' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
 
-// Delete Complaint
-app.delete('/api/complaints/:id', authenticateToken, async (req, res) => {
+// Delete Complaint (Restricted exclusively to Administrator)
+app.delete('/api/complaints/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     await query('DELETE FROM complaint_timelines WHERE complaint_id = $1', [id]);
@@ -1649,8 +1744,8 @@ app.delete('/api/complaints/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== CUSTOMERS ROUTES ====================
-app.get('/api/customers/stats', async (req, res) => {
+// ==================== CUSTOMERS ROUTES (Authenticated Staff/Admin only) ====================
+app.get('/api/customers/stats', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
       SELECT 
@@ -1670,7 +1765,7 @@ app.get('/api/customers/stats', async (req, res) => {
   }
 });
 
-app.get('/api/customers/search', async (req, res) => {
+app.get('/api/customers/search', authenticateToken, async (req, res) => {
   try {
     const q = (req.query.q || req.query.query || '').trim();
     if (!q || q.length < 2) return res.json({ customers: [] });
@@ -1692,7 +1787,7 @@ app.get('/api/customers/search', async (req, res) => {
 });
 
 // ==================== REPORTS ROUTES ====================
-app.get('/api/reports/metrics', optionalAuth, async (req, res) => {
+app.get('/api/reports/metrics', authenticateToken, async (req, res) => {
   try {
     res.setHeader('Cache-Control', 'public, s-maxage=5, stale-while-revalidate=30');
     const [countRes, prodRes, catRes, techRes, resTimeRes, ratingRes] = await Promise.all([
@@ -1982,7 +2077,7 @@ app.get('/api/notifications/logs', authenticateToken, async (req, res) => {
 });
 
 // Universal WhatsApp Web Inbox: Get all conversation threads
-app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
+app.get('/api/whatsapp/conversations', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
       WITH RankedMessages AS (
@@ -2144,7 +2239,7 @@ app.get('/api/whatsapp/conversations', optionalAuth, async (req, res) => {
 });
 
 // Universal WhatsApp Web Inbox: Get full chat history for a specific phone number
-app.get('/api/whatsapp/chats/:phone', optionalAuth, async (req, res) => {
+app.get('/api/whatsapp/chats/:phone', authenticateToken, async (req, res) => {
   try {
     const rawPhone = req.params.phone;
     const cleanPhone = (rawPhone || '').replace(/[^0-9]/g, '');
@@ -2199,7 +2294,7 @@ app.get('/api/whatsapp/chats/:phone', optionalAuth, async (req, res) => {
 });
 
 // Universal WhatsApp Web Inbox: Send Direct Reply (supports text and file attachments)
-app.post('/api/whatsapp/direct-reply', optionalAuth, upload.single('attachment'), async (req, res) => {
+app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachment'), async (req, res) => {
   try {
     const { phone, message } = req.body;
     if (!phone || (!message && !req.file)) {
@@ -2270,7 +2365,7 @@ app.post('/api/whatsapp/direct-reply', optionalAuth, upload.single('attachment')
 });
 
 // Complaint Drawer: WhatsApp Messages
-app.get('/api/complaints/:id/whatsapp-messages', optionalAuth, async (req, res) => {
+app.get('/api/complaints/:id/whatsapp-messages', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const compRes = await query('SELECT id, ticket_id, customer_phone FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
@@ -2293,7 +2388,7 @@ app.get('/api/complaints/:id/whatsapp-messages', optionalAuth, async (req, res) 
 });
 
 // Complaint Drawer: WhatsApp Reply
-app.post('/api/complaints/:id/whatsapp-reply', optionalAuth, async (req, res) => {
+app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { message } = req.body;
@@ -2326,7 +2421,7 @@ app.post('/api/complaints/:id/whatsapp-reply', optionalAuth, async (req, res) =>
 });
 
 // Notification logs / Simulated inbox for drawer
-app.get('/api/notifications/simulated', optionalAuth, async (req, res) => {
+app.get('/api/notifications/simulated', authenticateToken, async (req, res) => {
   try {
     const r = await query('SELECT * FROM notification_logs ORDER BY created_at DESC LIMIT 50');
     return res.json({ messages: r.rows });
@@ -2335,7 +2430,7 @@ app.get('/api/notifications/simulated', optionalAuth, async (req, res) => {
   }
 });
 
-app.get('/api/notifications/logs', optionalAuth, async (req, res) => {
+app.get('/api/notifications/logs', authenticateToken, async (req, res) => {
   try {
     const { complaint_id } = req.query;
     let r;
@@ -2350,7 +2445,7 @@ app.get('/api/notifications/logs', optionalAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/notifications/simulated', optionalAuth, async (req, res) => {
+app.delete('/api/notifications/simulated', authenticateToken, async (req, res) => {
   try {
     await query("DELETE FROM notification_logs WHERE channel = 'simulated'").catch(() => {});
     return res.json({ success: true, message: 'Simulated notifications cleared' });
@@ -2389,7 +2484,7 @@ async function ensureInAppTable() {
   }
 }
 
-app.get('/api/in-app-notifications', optionalAuth, async (req, res) => {
+app.get('/api/in-app-notifications', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
     const r = await query('SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 100');
@@ -2416,7 +2511,7 @@ app.get('/api/in-app-notifications', optionalAuth, async (req, res) => {
   }
 });
 
-app.post('/api/in-app-notifications', optionalAuth, async (req, res) => {
+app.post('/api/in-app-notifications', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
     const b = req.body || {};
@@ -2450,7 +2545,7 @@ app.post('/api/in-app-notifications', optionalAuth, async (req, res) => {
   }
 });
 
-app.put('/api/in-app-notifications/:id/read', optionalAuth, async (req, res) => {
+app.put('/api/in-app-notifications/:id/read', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
     const { id } = req.params;
@@ -2469,7 +2564,7 @@ app.put('/api/in-app-notifications/:id/read', optionalAuth, async (req, res) => 
   }
 });
 
-app.put('/api/in-app-notifications/read-all', optionalAuth, async (req, res) => {
+app.put('/api/in-app-notifications/read-all', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
     const userKey = req.user ? (req.user.username || req.user.email || req.user.name || req.user.role) : 'current_user';
@@ -2486,7 +2581,7 @@ app.put('/api/in-app-notifications/read-all', optionalAuth, async (req, res) => 
   }
 });
 
-app.delete('/api/in-app-notifications', optionalAuth, async (req, res) => {
+app.delete('/api/in-app-notifications', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
     await query('DELETE FROM in_app_notifications');
@@ -2497,7 +2592,7 @@ app.delete('/api/in-app-notifications', optionalAuth, async (req, res) => {
 });
 
 // Universal WhatsApp Web Inbox: Edit Message
-app.put('/api/whatsapp/messages/:id', optionalAuth, async (req, res) => {
+app.put('/api/whatsapp/messages/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { message_body } = req.body;
@@ -2509,7 +2604,7 @@ app.put('/api/whatsapp/messages/:id', optionalAuth, async (req, res) => {
 });
 
 // Universal WhatsApp Web Inbox: Delete Message
-app.delete('/api/whatsapp/messages/:id', optionalAuth, async (req, res) => {
+app.delete('/api/whatsapp/messages/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     await query('DELETE FROM whatsapp_messages WHERE id = $1', [id]);
@@ -2520,7 +2615,7 @@ app.delete('/api/whatsapp/messages/:id', optionalAuth, async (req, res) => {
 });
 
 // Universal WhatsApp Web Inbox: Update Contact Name
-app.post('/api/whatsapp/update-contact-name', optionalAuth, async (req, res) => {
+app.post('/api/whatsapp/update-contact-name', authenticateToken, async (req, res) => {
   try {
     const { phone, name } = req.body;
     const clean = (phone || '').replace(/[^0-9]/g, '').slice(-10);
@@ -2649,7 +2744,7 @@ app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
 });
 
 // Set phone number WhatsApp status in registry
-app.post('/api/whatsapp/set-number-status', optionalAuth, async (req, res) => {
+app.post('/api/whatsapp/set-number-status', authenticateToken, async (req, res) => {
   try {
     const { phone, isActive, status, customerName, notes } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
@@ -2678,7 +2773,7 @@ app.post('/api/whatsapp/set-number-status', optionalAuth, async (req, res) => {
 });
 
 // Retry failed WhatsApp message
-app.post('/api/whatsapp/retry-message/:id', optionalAuth, async (req, res) => {
+app.post('/api/whatsapp/retry-message/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const msgRes = await query('SELECT * FROM whatsapp_messages WHERE id = $1', [id]);
@@ -2729,7 +2824,7 @@ app.post('/api/whatsapp/retry-message/:id', optionalAuth, async (req, res) => {
 });
 
 // Raw Webhook Audit Trail
-app.get('/api/whatsapp/raw-events/:phone', optionalAuth, async (req, res) => {
+app.get('/api/whatsapp/raw-events/:phone', authenticateToken, async (req, res) => {
   try {
     const rawPhone = req.params.phone;
     const last10 = getLast10Digits(rawPhone);
@@ -2748,7 +2843,7 @@ app.get('/api/whatsapp/raw-events/:phone', optionalAuth, async (req, res) => {
 });
 
 // Sync & Restore Messages from client backup
-app.post('/api/whatsapp/sync-backup', optionalAuth, async (req, res) => {
+app.post('/api/whatsapp/sync-backup', authenticateToken, async (req, res) => {
   try {
     const { messages } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
