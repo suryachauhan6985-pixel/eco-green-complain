@@ -331,10 +331,44 @@ app.get('/api/location/pincode/:pincode', async (req, res) => {
       });
     }
 
+    function cleanLocalityName(name, district) {
+      if (!name) return '';
+      let clean = name.replace(/\s+(B\.O|S\.O|H\.O)$/i, '').trim();
+      const distRegex = new RegExp('^' + district + '\\s+', 'i');
+      if (distRegex.test(clean) && clean.length > district.length + 3) {
+        clean = clean.replace(distRegex, '');
+      }
+      clean = clean.replace(/\bGidc\b/i, 'GIDC');
+      return clean;
+    }
+
     const postOfficesRaw = data[0].PostOffice;
     const first = postOfficesRaw[0];
     const district = first.District || '';
     const state = first.State || '';
+
+    // Check if this is an urban city where all post offices just start with District name
+    const isMainCity = postOfficesRaw.every(p => p.Name.toLowerCase().startsWith(district.toLowerCase()));
+
+    // Find main Sub Post Office or Head Post Office for locality hub
+    const subOffice = postOfficesRaw.find(p => p.BranchType === 'Sub Post Office') || 
+                      postOfficesRaw.find(p => p.BranchType === 'Head Post Office') || 
+                      postOfficesRaw[0];
+
+    const cleanedMain = subOffice ? cleanLocalityName(subOffice.Name, district) : '';
+    const cityOrVillage = isMainCity ? district : (cleanedMain || district);
+
+    // Collect all unique villages/localities/taluks under this pincode
+    const localityList = [];
+    if (cityOrVillage) localityList.push(cityOrVillage);
+    for (const p of postOfficesRaw) {
+      const c = cleanLocalityName(p.Name, district);
+      if (c && !localityList.includes(c)) localityList.push(c);
+      if (p.Block && p.Block !== 'NA' && !localityList.includes(p.Block)) {
+        localityList.push(p.Block);
+      }
+    }
+
     const postOffices = [...new Set(postOfficesRaw.map(p => p.Name).filter(Boolean))];
 
     const result = {
@@ -342,6 +376,9 @@ app.get('/api/location/pincode/:pincode', async (req, res) => {
       pincode: rawPincode,
       district,
       state,
+      isMainCity,
+      cityOrVillage,
+      villages: localityList,
       postOffices
     };
 

@@ -193,15 +193,14 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       if (res && res.success) {
         setPincodeStatus('valid');
         setPincodeVerifiedData(res);
-        setPincodePostOffices(res.postOffices || []);
+        setPincodePostOffices(res.villages || res.postOffices || []);
 
         setFormData(prev => ({
           ...prev,
           pincode: clean,
           district: res.district || prev.district,
-          city: res.district || prev.city,
-          state: res.state || prev.state,
-          post_office: (res.postOffices && res.postOffices.length === 1 ? res.postOffices[0] : (prev.post_office || ''))
+          city: (prev.city && prev.city !== prev.district) ? prev.city : (res.cityOrVillage || res.district || prev.city),
+          state: res.state || prev.state
         }));
       } else {
         setPincodeStatus('invalid');
@@ -272,15 +271,13 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const handleSelectCitySuggestion = (suggestion) => {
     setFormData(prev => ({
       ...prev,
-      city: suggestion.district,
+      city: suggestion.postOffice || suggestion.district,
       district: suggestion.district,
       pincode: suggestion.pincode,
-      state: suggestion.state,
-      post_office: suggestion.postOffice
+      state: suggestion.state
     }));
     setPincodeStatus('valid');
     setPincodeVerifiedData(suggestion);
-    setPincodePostOffices([suggestion.postOffice]);
     setPincodeMessage('');
     setShowCitySuggestions(false);
   };
@@ -1223,34 +1220,35 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   </div>
                 </div>
 
-                {/* Bidirectional City/District and State Fields */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* City / Village, District & State Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Field 1: City / Village (शहर / गाँव) */}
                   <div className="relative">
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
                         <Building2 className="w-3 h-3 text-emerald-600" />
-                        City / District <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                        City / Village <span className="text-[10px] text-slate-400 font-normal">(शहर / गाँव)</span>
                       </label>
                       {searchingCity && (
                         <span className="text-[10px] text-emerald-600 flex items-center gap-1">
-                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Searching...
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                         </span>
                       )}
                     </div>
                     <input
                       type="text"
-                      placeholder="e.g., Agra, Jaipur, Ahmedabad, Surat..."
+                      placeholder="e.g., Metoda, Chhapra, Khirsara..."
                       value={formData.city || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value, district: e.target.value }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
                       onFocus={() => { if (citySuggestions.length > 0) setShowCitySuggestions(true); }}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     />
 
-                    {/* Autosuggest Dropdown for City/District Search */}
+                    {/* Autosuggest Dropdown for City/Village Search */}
                     {showCitySuggestions && citySuggestions.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                         <div className="p-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                          <span>Matching Pincodes & Locations ({citySuggestions.length})</span>
+                          <span>Matching Locations ({citySuggestions.length})</span>
                           <button
                             type="button"
                             onClick={() => setShowCitySuggestions(false)}
@@ -1283,58 +1281,81 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         ))}
                       </div>
                     )}
+
+                    {/* Quick Village/Locality Selection Chips under PIN */}
+                    {pincodeVerifiedData?.villages && pincodeVerifiedData.villages.length > 1 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1 animate-in fade-in">
+                        <span className="text-[9.5px] text-slate-500 font-semibold block w-full">Villages under {formData.pincode}:</span>
+                        {pincodeVerifiedData.villages.slice(0, 6).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, city: v }))}
+                            className={`text-[9.5px] px-1.5 py-0.5 rounded-md border transition-all cursor-pointer ${
+                              formData.city === v
+                                ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50'
+                            }`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
+                  {/* Field 2: District (जिला) */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
-                        <Map className="w-3 h-3 text-emerald-600" />
-                        State <span className="text-[10px] text-slate-400 font-normal">(Auto-filled)</span>
+                        <MapPin className="w-3 h-3 text-emerald-600" />
+                        District <span className="text-[10px] text-slate-400 font-normal">(जिला)</span>
                       </label>
-                      {formData.state && pincodeStatus === 'valid' && (
+                      {formData.district && pincodeStatus === 'valid' && (
                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                          <Check className="w-2.5 h-2.5" /> Verified
+                          <Check className="w-2.5 h-2.5" /> Auto-filled
                         </span>
                       )}
                     </div>
                     <input
                       type="text"
-                      placeholder="e.g., Uttar Pradesh, Rajasthan, Gujarat"
+                      placeholder="e.g., Rajkot, Surat, Ahmedabad..."
+                      value={formData.district || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, district: e.target.value }))}
+                      className={`w-full text-xs px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                        pincodeStatus === 'valid' && formData.district
+                          ? 'bg-slate-50 text-slate-800 border-slate-300 font-medium'
+                          : 'bg-white border-slate-300 focus:ring-emerald-500'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Field 3: State (राज्य) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                        <Map className="w-3 h-3 text-emerald-600" />
+                        State <span className="text-[10px] text-slate-400 font-normal">(राज्य)</span>
+                      </label>
+                      {formData.state && pincodeStatus === 'valid' && (
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                          <Check className="w-2.5 h-2.5" /> Auto-filled
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="e.g., Gujarat, Rajasthan, UP"
                       value={formData.state || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
                       className={`w-full text-xs px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
                         pincodeStatus === 'valid' && formData.state
-                          ? 'bg-slate-100/90 text-slate-700 border-slate-300 font-medium'
+                          ? 'bg-slate-50 text-slate-800 border-slate-300 font-medium'
                           : 'bg-white border-slate-300 focus:ring-emerald-500'
                       }`}
                     />
                   </div>
                 </div>
-
-                {/* Post Office / Area selection dropdown if multiple exist */}
-                {pincodePostOffices.length > 0 && (
-                  <div className="p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-200 animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-[11px] font-bold text-emerald-950 flex items-center gap-1">
-                        <span>📮 Post Office / Area Selection</span>
-                        <span className="text-[10px] text-emerald-700 font-normal">({pincodePostOffices.length} options for PIN {formData.pincode})</span>
-                      </label>
-                      {formData.post_office && (
-                        <span className="text-[10px] text-emerald-800 font-bold truncate max-w-[200px]">Selected: {formData.post_office}</span>
-                      )}
-                    </div>
-                    <select
-                      value={formData.post_office || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, post_office: e.target.value }))}
-                      className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-800"
-                    >
-                      <option value="">-- Choose local Area / Branch Post Office --</option>
-                      {pincodePostOffices.map((po, i) => (
-                        <option key={`${po}-${i}`} value={po}>{po}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
