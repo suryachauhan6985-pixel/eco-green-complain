@@ -51,6 +51,7 @@ export const ComplaintList = ({
       return true;
     }
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // View Mode: 'list' (default) or 'card' - persisted in localStorage
   const [viewMode, setViewMode] = useState(() => {
@@ -100,6 +101,29 @@ export const ComplaintList = ({
       setTechnicians(data.technicians || []);
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    const minRotatePromise = new Promise(resolve => setTimeout(resolve, 800));
+    try {
+      const [data] = await Promise.all([
+        api.getComplaints({}),
+        fetchTechnicians(),
+        minRotatePromise
+      ]);
+      if (data && Array.isArray(data.complaints)) {
+        setComplaints(data.complaints);
+        setAllComplaints(data.complaints);
+      }
+      showToast('Complaints list updated', 'success');
+    } catch (err) {
+      console.error('Failed to refresh complaints:', err);
+      showToast('Failed to refresh: ' + (err.message || 'Network error'), 'error');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -311,11 +335,21 @@ export const ComplaintList = ({
             </div>
 
             <button
-              onClick={fetchComplaints}
-              title="Refresh list"
-              className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 border border-slate-200"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              title={isRefreshing ? 'Refreshing list...' : 'Refresh list'}
+              aria-label="Refresh complaints list"
+              className={`p-2 rounded-xl border transition-all ${
+                isRefreshing
+                  ? 'bg-emerald-50 text-emerald-600 border-emerald-300 cursor-not-allowed shadow-inner'
+                  : 'hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200 active:scale-95'
+              }`}
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-4 h-4 transition-transform duration-700 ${
+                  isRefreshing ? 'animate-spin text-emerald-600' : ''
+                }`}
+              />
             </button>
 
             {['admin', 'staff'].includes(currentUser?.role) && (
