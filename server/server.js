@@ -185,6 +185,7 @@ app.get('/api/auth/users', authenticateToken, requireRole('admin'), authControll
 app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), authController.createUser);
 app.put('/api/auth/users/:id', authenticateToken, requireRole('admin'), authController.updateUser);
 app.delete('/api/auth/users/:id', authenticateToken, requireRole('admin'), authController.deleteUser);
+app.post('/api/auth/admin-reset-password', authenticateToken, requireRole('admin', 'staff'), authController.adminResetPassword);
 
 // ================= PRODUCT CATALOG ROUTES =================
 app.get('/api/products', (req, res) => {

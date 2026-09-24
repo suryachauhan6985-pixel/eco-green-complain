@@ -385,14 +385,91 @@ app.post('/api/auth/create-user', authenticateToken, async (req, res) => {
 app.put('/api/auth/users/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, role, phone, is_active, username } = req.body;
-    await query(
-      'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role), phone = COALESCE($4, phone), is_active = COALESCE($5, is_active), username = COALESCE($6, username) WHERE id = $7',
-      [name, email, role, phone, is_active, username, id]
-    );
+    const { name, email, role, phone, is_active, username, password } = req.body;
+    let passwordHash = undefined;
+    if (password && password.trim()) {
+      passwordHash = await bcrypt.hash(password.trim(), 10);
+    }
+
+    if (passwordHash) {
+      await query(
+        'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role), phone = COALESCE($4, phone), is_active = COALESCE($5, is_active), username = COALESCE($6, username), password_hash = $7 WHERE id = $8',
+        [name, email, role, phone, is_active, username, passwordHash, id]
+      );
+    } else {
+      await query(
+        'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role), phone = COALESCE($4, phone), is_active = COALESCE($5, is_active), username = COALESCE($6, username) WHERE id = $7',
+        [name, email, role, phone, is_active, username, id]
+      );
+    }
     return res.json({ message: 'User updated successfully' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) => {
+  try {
+    if (!['admin', 'staff'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only administrators or staff supervisors can reset passwords' });
+    }
+
+    const { userId, technicianId, newPassword } = req.body;
+    if (!newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters long' });
+    }
+
+    const hash = await bcrypt.hash(newPassword.trim(), 10);
+    let targetUserId = userId;
+
+    if (!targetUserId && technicianId) {
+      const techRes = await query('SELECT id, user_id, name, email, phone FROM technicians WHERE id = $1', [technicianId]);
+      if (techRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Technician not found' });
+      }
+      const tech = techRes.rows[0];
+      if (tech.user_id) {
+        targetUserId = tech.user_id;
+      } else {
+        const userRes = await query('SELECT id FROM users WHERE email = $1 OR phone = $2 LIMIT 1', [tech.email, tech.phone]);
+        if (userRes.rows.length > 0) {
+          targetUserId = userRes.rows[0].id;
+          await query('UPDATE technicians SET user_id = $1 WHERE id = $2', [targetUserId, technicianId]);
+        } else {
+          const username = (tech.name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + tech.id);
+          const email = tech.email || `${username}@ecogreensolar.internal`;
+          const created = await query(
+            'INSERT INTO users (name, username, email, password_hash, role, phone, is_active) VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id',
+            [tech.name, username, email, hash, 'technician', tech.phone || '']
+          );
+          targetUserId = created.rows[0].id;
+          await query('UPDATE technicians SET user_id = $1 WHERE id = $2', [targetUserId, technicianId]);
+          return res.json({
+            success: true,
+            message: `User account created and password securely set for ${tech.name}`
+          });
+        }
+      }
+    }
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'Target user ID or technician ID is required' });
+    }
+
+    const updateRes = await query('UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id, name, username, email, role', [hash, targetUserId]);
+    if (updateRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User account not found' });
+    }
+
+    const u = updateRes.rows[0];
+    return res.json({
+      success: true,
+      message: `Password securely updated for ${u.name} (@${u.username || u.email.split('@')[0]})`,
+      user: { id: u.id, name: u.name, username: u.username, role: u.role }
+    });
+  } catch (err) {
+    console.error('Password reset error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to reset password' });
   }
 });
 

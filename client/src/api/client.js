@@ -766,6 +766,11 @@ function fallbackHandler(endpoint, options) {
     return { user: mockStore.createUser(body), message: 'User created successfully' };
   }
 
+  if (endpoint === '/auth/admin-reset-password' && method === 'POST') {
+    const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+    return { success: true, message: 'Password securely updated' };
+  }
+
   if (endpoint.startsWith('/technicians')) {
     if (method === 'DELETE') {
       const id = endpoint.split('/').pop();
@@ -832,6 +837,10 @@ export const api = {
   }),
   deleteUser: (id) => request(`/auth/users/${id}`, {
     method: 'DELETE'
+  }),
+  adminResetPassword: (data) => request('/auth/admin-reset-password', {
+    method: 'POST',
+    body: JSON.stringify(data)
   }),
   deleteTechnician: (id) => request(`/technicians/${id}`, {
     method: 'DELETE'

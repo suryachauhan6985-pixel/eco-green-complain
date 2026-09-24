@@ -254,4 +254,71 @@ async function updateUser(req, res) {
   }
 }
 
-module.exports = { login, getMe, listUsers, createUser, updateUser, deleteUser };
+async function adminResetPassword(req, res) {
+  try {
+    const { userId, technicianId, newPassword } = req.body;
+    if (!newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters long' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword.trim(), 10);
+    let targetUserId = userId;
+
+    if (!targetUserId && technicianId) {
+      const tech = db.prepare('SELECT id, user_id, name, email, phone FROM technicians WHERE id = ?').get(technicianId);
+      if (!tech) {
+        return res.status(404).json({ error: 'Technician not found' });
+      }
+
+      if (tech.user_id) {
+        targetUserId = tech.user_id;
+      } else {
+        const matchingUser = db.prepare('SELECT id FROM users WHERE email = ? OR phone = ? LIMIT 1').get(tech.email || '', tech.phone || '');
+        if (matchingUser) {
+          targetUserId = matchingUser.id;
+          try {
+            db.prepare('UPDATE technicians SET user_id = ? WHERE id = ?').run(targetUserId, technicianId);
+          } catch (_) {}
+        } else {
+          const username = (tech.name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + tech.id);
+          const email = tech.email || `${username}@ecogreensolar.internal`;
+          const insertRes = db.prepare(`
+            INSERT INTO users (name, username, email, password_hash, role, phone, is_active)
+            VALUES (?, ?, ?, ?, 'technician', ?, 1)
+          `).run(tech.name, username, email, passwordHash, tech.phone || '');
+          targetUserId = insertRes.lastInsertRowid;
+          try {
+            db.prepare('UPDATE technicians SET user_id = ? WHERE id = ?').run(targetUserId, technicianId);
+          } catch (_) {}
+          return res.json({
+            success: true,
+            message: `User account created and password securely set for ${tech.name}`
+          });
+        }
+      }
+    }
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'Target user ID or technician ID is required' });
+    }
+
+    const updateStmt = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+    const result = updateStmt.run(passwordHash, targetUserId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'User account not found' });
+    }
+
+    const updatedUser = db.prepare('SELECT id, name, username, email, role FROM users WHERE id = ?').get(targetUserId);
+    res.json({
+      success: true,
+      message: `Password securely updated for ${updatedUser.name} (@${updatedUser.username || updatedUser.email?.split('@')[0]})`,
+      user: updatedUser
+    });
+  } catch (err) {
+    console.error('Admin reset password error:', err);
+    res.status(500).json({ error: 'Failed to reset password: ' + err.message });
+  }
+}
+
+module.exports = { login, getMe, listUsers, createUser, updateUser, deleteUser, adminResetPassword };

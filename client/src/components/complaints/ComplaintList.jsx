@@ -265,6 +265,41 @@ export const ComplaintList = ({
     return status;
   };
 
+  const getStageBorderClass = (status) => {
+    switch (status) {
+      case 'Resolved': return 'border-l-emerald-500';
+      case 'Closed': return 'border-l-slate-400';
+      case 'In Progress': return 'border-l-indigo-600';
+      case 'On Hold': return 'border-l-purple-500';
+      case 'Assigned': return 'border-l-blue-500';
+      case 'Reopened': return 'border-l-rose-500';
+      case 'Registered':
+      case 'Unassigned':
+      default: return 'border-l-amber-500';
+    }
+  };
+
+  const getStageBadgeConfig = (status) => {
+    switch (status) {
+      case 'Resolved':
+        return { dot: 'bg-emerald-500', text: 'text-emerald-800', bg: 'bg-emerald-50', border: 'border-emerald-200/80', label: 'Resolved' };
+      case 'Closed':
+        return { dot: 'bg-slate-400', text: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200', label: 'Closed' };
+      case 'In Progress':
+        return { dot: 'bg-indigo-500', text: 'text-indigo-800', bg: 'bg-indigo-50', border: 'border-indigo-200/80', label: 'In Progress' };
+      case 'On Hold':
+        return { dot: 'bg-purple-500', text: 'text-purple-800', bg: 'bg-purple-50', border: 'border-purple-200/80', label: 'On Hold' };
+      case 'Assigned':
+        return { dot: 'bg-blue-500', text: 'text-blue-800', bg: 'bg-blue-50', border: 'border-blue-200/80', label: 'Assigned' };
+      case 'Reopened':
+        return { dot: 'bg-rose-500', text: 'text-rose-800', bg: 'bg-rose-50', border: 'border-rose-200/80', label: 'Reopened' };
+      case 'Registered':
+      case 'Unassigned':
+      default:
+        return { dot: 'bg-amber-500', text: 'text-amber-800', bg: 'bg-amber-50', border: 'border-amber-200/80', label: 'Unassigned' };
+    }
+  };
+
   const getDisplayPriority = (priority) => {
     if (priority === 'Urgent') return 'High';
     return priority || 'Medium';
@@ -744,66 +779,69 @@ export const ComplaintList = ({
             </table>
           </div>
         ) : (
-          /* CARD GRID VIEW — Responsive: 1 col mobile, 2 cols tablet, 3-4 cols on wide screens */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 p-4 bg-slate-100/60">
+          /* CARD GRID VIEW — Senior UI Redesign: Cohesive, Professional, Clean Visual Hierarchy */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 p-4 bg-slate-100/50">
             {displayedComplaints.map((c) => {
               const displayStatus = getDisplayStatus(c.status);
+              const stageCfg = getStageBadgeConfig(displayStatus);
               const ageInfo = getTicketAgeInfo(c);
               const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
-              const waMessage = encodeURIComponent(
-                `Namaste ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${displayStatus}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
-              );
-              const waUrl = `https://wa.me/${cleanPhone}?text=${waMessage}`;
 
               return (
                 <div
                   key={c.id}
                   onClick={() => onSelectComplaint(c.ticket_id || c.id)}
-                  className={`bg-white rounded-2xl border p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden ${
-                    ageInfo.isOverdue 
-                      ? 'border-rose-300 hover:border-rose-400 ring-1 ring-rose-200/70' 
-                      : 'border-slate-200 hover:border-emerald-500'
-                  }`}
+                  className={`bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden border-l-[4px] ${getStageBorderClass(displayStatus)} p-4`}
                 >
-                  {/* Product color accent bar on top (Consistent on all cards) */}
-                  <div className={`absolute top-0 left-0 right-0 h-1.5 ${
-                    c.product_type === 'Solar Rooftop Systems' ? 'bg-amber-400' :
-                    c.product_type === 'Solar Water Heaters' ? 'bg-blue-400' : 'bg-teal-500'
-                  }`} />
-
-                  {/* Top: Ticket ID, Badges */}
+                  {/* Top: Ticket ID, Stage Badge, Priority */}
                   <div>
-                    <div className="flex items-center justify-between gap-1.5 mb-2">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="p-1 rounded-md bg-slate-50 border border-slate-200 shrink-0">
-                          {getProductIcon(c.product_type)}
-                        </div>
-                        <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 truncate">
+                        <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
                           {c.ticket_id}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-medium truncate hidden sm:inline">
+                          • {c.product_type}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getStatusBadgeStyle(displayStatus)}`}>
-                          {displayStatus}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Unified Stage Badge with soft dot */}
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${stageCfg.bg} ${stageCfg.text} ${stageCfg.border}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${stageCfg.dot}`} />
+                          <span>{stageCfg.label}</span>
                         </span>
 
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          getDisplayPriority(c.priority) === 'High' ? 'bg-amber-100 text-amber-700' :
-                          getDisplayPriority(c.priority) === 'Medium' ? 'bg-blue-100 text-blue-700' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
-                          {getDisplayPriority(c.priority)}
-                        </span>
+                        {/* Priority Indicator */}
+                        {getDisplayPriority(c.priority) === 'High' && (
+                          <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 px-1.5 py-0.5 rounded">
+                            High
+                          </span>
+                        )}
+                        {c.priority === 'Urgent' && (
+                          <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200/70 px-1.5 py-0.5 rounded">
+                            Urgent
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    {/* Prominent Age & SLA Alert Bar + Exact Registration Date/Time */}
-                    <div className="flex items-center justify-between gap-1.5 mb-2 flex-wrap">
-                      <TicketAgeBadge complaint={c} compact={true} />
-                      <span className="text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200/80 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" title="Registered Time (IST)">
-                        <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                        <span>{formatIndianDateTime(c.created_at)}</span>
+                    {/* Time & Overdue SLA Bar */}
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {ageInfo.isOverdue ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200/80 px-1.5 py-0.5 rounded">
+                            <AlertTriangle className="w-3 h-3 text-rose-600" />
+                            <span>Overdue ({ageInfo.days}d)</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-slate-500">
+                            {ageInfo.text}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono" title="Registered Time (IST)">
+                        {formatIndianDateTime(c.created_at)}
                       </span>
                     </div>
 
@@ -817,58 +855,56 @@ export const ComplaintList = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-emerald-800/80 font-medium truncate mt-0.5">
-                      <span className="truncate">{c.product_type} {c.city ? `• ${c.city}` : ''}</span>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 font-medium truncate mt-0.5">
+                      <span className="truncate">{c.city ? `${c.city} • ` : ''}{c.product_type}</span>
                       {c.estimated_charges > 0 && (
-                        <span className="text-[10px] font-bold text-slate-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 shrink-0">
+                        <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200 shrink-0">
                           ₹{c.estimated_charges}
                         </span>
                       )}
                     </div>
 
-                    {/* Issue Summary Box - Full visibility with balanced uniform min-height */}
+                    {/* Issue Summary Box */}
                     <div 
-                      className="text-xs text-slate-600 mt-1.5 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 min-h-[64px] flex flex-col justify-start"
+                      className="text-xs text-slate-600 mt-2 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100 min-h-[52px] flex flex-col justify-start"
                       title={`${c.issue_category}: ${c.issue_description}`}
                     >
-                      <p className="line-clamp-3 leading-relaxed">
+                      <p className="line-clamp-2 leading-relaxed">
                         <strong className="text-slate-800 font-semibold">{c.issue_category}:</strong>{' '}
                         <span>{c.issue_description}</span>
                       </p>
                     </div>
 
-                    {/* Dedicated Field Technician & Visit Schedule Block (Visible from outside) */}
+                    {/* Technician & Visit Schedule Pill */}
                     {(() => {
                       const techName = getAssignedTechName(c);
                       return techName ? (
-                        <div className="mt-2 p-2 bg-emerald-50/90 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                        <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200/80 rounded-lg flex items-center justify-between text-xs transition-colors">
                           <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                              👨‍🔧
+                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                              {techName.charAt(0)}
                             </div>
                             <div className="truncate">
-                              <span className="font-bold text-slate-900 block truncate text-xs">
-                                {techName}
-                              </span>
-                              <span className="text-[10px] text-emerald-700 block truncate font-medium">
-                                {c.expected_visit_date ? `📅 Visit: ${formatIndianDateOnly(c.expected_visit_date)}` : '📅 Visit scheduled'}
+                              <span className="font-semibold text-slate-800 text-xs block truncate">{techName}</span>
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {c.expected_visit_date ? `Visit: ${formatIndianDateOnly(c.expected_visit_date)}` : 'Visit scheduled'}
                               </span>
                             </div>
                           </div>
-                          <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0">
+                          <span className="text-[10px] font-medium text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded shrink-0">
                             Assigned
                           </span>
                         </div>
                       ) : (
-                        <div className="mt-2 p-2 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-950 shadow-2xs">
-                          <div className="flex items-center gap-1.5 truncate">
-                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span className="font-bold text-amber-900 truncate text-[11px]">
-                              Needs Technician Allocation
+                        <div className="mt-2.5 p-2 bg-amber-50/40 border border-amber-200/60 rounded-lg flex items-center justify-between text-xs group/alloc">
+                          <div className="flex items-center gap-1.5 truncate text-amber-900">
+                            <Wrench className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span className="font-medium text-[11px] truncate">
+                              Technician Not Assigned
                             </span>
                           </div>
-                          <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded shrink-0">
-                            Unassigned
+                          <span className="text-[10px] font-bold text-amber-800 group-hover/alloc:text-amber-950 underline underline-offset-2 shrink-0">
+                            Assign →
                           </span>
                         </div>
                       );
@@ -876,24 +912,24 @@ export const ComplaintList = ({
 
                     {/* Cash in Hand & Company Settlement in Card */}
                     {c.payment_collected > 0 && (
-                      <div className="mt-2 flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                      <div className="mt-2 flex items-center justify-between text-[11px] bg-slate-50/80 p-2 rounded-lg border border-slate-200/70">
                         <span className="text-slate-600 font-medium">
-                          Collected: <strong className="text-emerald-700">₹{c.payment_collected}</strong>
+                          Collected: <strong className="text-emerald-700 font-bold">₹{c.payment_collected}</strong>
                         </span>
                         {c.company_settlement_status === 'Settled with Company' ? (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/70">
                             ✓ Co. Settled
                           </span>
                         ) : (c.assigned_technician_id || c.technician_id) ? (
                           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-200">
+                            <span className="text-[10px] font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/70">
                               Cash with Tech
                             </span>
                             {['admin', 'staff'].includes(currentUser?.role) && (
                               <button
                                 type="button"
                                 onClick={(e) => handleQuickSettle(e, c)}
-                                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-bold transition-all shadow-xs"
+                                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition-all shadow-xs"
                               >
                                 Collect
                               </button>
@@ -905,10 +941,10 @@ export const ComplaintList = ({
                   </div>
 
                   {/* Footer Row */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-                    <div className="flex items-center gap-1 truncate max-w-[55%] text-slate-600 text-[11px]">
-                      <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span className="truncate font-medium">
+                  <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-xs text-slate-500 mt-1">
+                    <div className="flex items-center gap-1.5 truncate max-w-[55%] text-slate-500 text-[11px]">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">
                         {c.expected_visit_date ? `Visit: ${formatIndianDateOnly(c.expected_visit_date)}` : (c.technician_name ? 'Date Scheduled' : 'No Date Set')}
                       </span>
                     </div>
@@ -920,9 +956,9 @@ export const ComplaintList = ({
                           type="button"
                           onClick={(e) => handleWhatsAppChatClick(e, c)}
                           title={currentUser?.role === 'technician' ? 'Open WhatsApp App' : 'Open in CMS WhatsApp Hub'}
-                          className="text-emerald-600 hover:text-emerald-700 p-1 rounded-md hover:bg-emerald-50 transition-colors flex items-center gap-1 text-[11px] font-medium"
+                          className="text-emerald-700 hover:text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200/70 px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] font-semibold"
                         >
-                          <MessageCircle className="w-3.5 h-3.5" />
+                          <MessageCircle className="w-3 h-3 text-emerald-600" />
                           <span className="hidden sm:inline">WhatsApp</span>
                         </button>
                       )}
@@ -939,7 +975,7 @@ export const ComplaintList = ({
 
                       <button
                         type="button"
-                        onClick={() => onSelectComplaint(c.id)}
+                        onClick={() => onSelectComplaint(c.ticket_id || c.id)}
                         className="text-slate-300 hover:text-emerald-600 p-1 transition-colors"
                         title="Open Details"
                       >

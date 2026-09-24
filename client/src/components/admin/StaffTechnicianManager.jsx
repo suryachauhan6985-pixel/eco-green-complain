@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { 
   Users, Wrench, Plus, Trash2, CheckCircle2, XCircle, 
   Phone, Mail, MapPin, Award, Star, Shield, RefreshCw, X, Edit3, IndianRupee,
-  Layers, Tag, Key
+  Layers, Tag, Key, Lock, Eye, EyeOff, Copy, Check, Sparkles
 } from 'lucide-react';
 import { useDialog } from '../../context/DialogContext';
 
@@ -34,9 +34,16 @@ export const StaffTechnicianManager = () => {
     username: '',
     phone: '',
     email: '',
-    role: 'staff',
-    password: ''
+    role: 'staff'
   });
+
+  // Dedicated Professional Password Reset Modal State
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetMember, setResetMember] = useState(null);
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(true);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   // Add Form State
   const [formData, setFormData] = useState({
@@ -61,14 +68,69 @@ export const StaffTechnicianManager = () => {
       username: member.username || (member.email ? member.email.split('@')[0] : ''),
       phone: member.phone || '',
       email: cleanEmail,
-      role: member.role || 'staff',
-      password: ''
+      role: member.role || 'staff'
     });
     setIsEditModalOpen(true);
   };
 
   const handleOpenEdit = (member, role) => {
     openEditModal(member, role === 'technician');
+  };
+
+  const generateRandomPassword = () => {
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const prefixes = ['Eco', 'Solar', 'Green', 'Tech', 'Power', 'Sun'];
+    const symbols = ['@', '#', '$', '!'];
+    const randomPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+    setResetNewPassword(`${randomPrefix}${randomSymbol}${randomNum}`);
+  };
+
+  const handleOpenPasswordReset = (member, isTech = false) => {
+    setResetMember({ ...member, isTech });
+    generateRandomPassword();
+    setShowPassword(true);
+    setCopyFeedback(false);
+    setIsResetModalOpen(true);
+  };
+
+  const handleCopyCredentials = () => {
+    const username = resetMember?.username || (resetMember?.email ? resetMember.email.split('@')[0] : 'user');
+    const roleName = resetMember?.isTech ? 'Field Technician' : (resetMember?.role === 'admin' ? 'Admin Supervisor' : 'Support Staff');
+    const text = `🌿 *Eco Green Solar CMS Login Credentials*\n👤 *Member:* ${resetMember?.name}\n🏷️ *Role:* ${roleName}\n🔑 *User ID / Username:* ${username}\n🔒 *New Password:* ${resetNewPassword}\n🌐 *Login Portal:* https://complain.ecogreensolar.co.in/login\n\nPlease keep your credentials safe and do not share them.`;
+    navigator.clipboard.writeText(text);
+    setCopyFeedback(true);
+    setTimeout(() => setCopyFeedback(false), 2500);
+    showGlobalToast('Login credentials copied to clipboard for sharing!', 'success');
+  };
+
+  const handleConfirmPasswordReset = async (e) => {
+    e.preventDefault();
+    if (!resetNewPassword || resetNewPassword.trim().length < 4) {
+      showGlobalToast('Password must be at least 4 characters long', 'error');
+      return;
+    }
+    try {
+      setResetLoading(true);
+      const payload = {
+        newPassword: resetNewPassword.trim()
+      };
+      if (resetMember?.isTech) {
+        payload.technicianId = resetMember.id;
+        if (resetMember.user_id) payload.userId = resetMember.user_id;
+      } else {
+        payload.userId = resetMember.id;
+      }
+      const res = await api.adminResetPassword(payload);
+      showToast(res?.message || `Password securely reset for ${resetMember.name}!`);
+      setIsResetModalOpen(false);
+      setResetMember(null);
+      loadData();
+    } catch (err) {
+      showGlobalToast('Failed to reset password: ' + err.message, 'error');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   const handleEditSubmit = async (e) => {
@@ -84,9 +146,6 @@ export const StaffTechnicianManager = () => {
         phone: editFormData.phone,
         email: editFormData.email?.trim() || undefined
       };
-      if (editFormData.password && editFormData.password.trim()) {
-        payload.password = editFormData.password.trim();
-      }
 
       if (editingMember?.isTech) {
         await api.updateTechnician(editingMember.id, payload);
@@ -516,6 +575,16 @@ export const StaffTechnicianManager = () => {
 
                 <div className="flex items-center gap-1.5">
                   <button
+                    type="button"
+                    onClick={() => handleOpenPasswordReset(t, true)}
+                    className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold"
+                    title="Reset Login Password"
+                  >
+                    <Key className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Reset Key</span>
+                  </button>
+
+                  <button
                     onClick={() => handleOpenEdit(t, 'technician')}
                     className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold"
                     title="Edit Technician"
@@ -591,6 +660,16 @@ export const StaffTechnicianManager = () => {
 
               {/* Actions */}
               <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleOpenPasswordReset(u, false)}
+                  className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold"
+                  title="Reset Login Password"
+                >
+                  <Key className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Reset Key</span>
+                </button>
+
                 <button
                   onClick={() => handleOpenEdit(u, 'staff')}
                   className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold"
@@ -967,17 +1046,41 @@ export const StaffTechnicianManager = () => {
                 </div>
               )}
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Login Password <span className="text-slate-400 font-normal">(leave blank to keep existing)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="Enter new password to change (optional)"
-                  value={editFormData.password}
-                  onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                />
+              {/* Account Security & Password Reset Panel */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                      <Lock className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900">Account Access & Security</h5>
+                      <p className="text-[10px] text-slate-500">
+                        Login User ID: <span className="font-mono font-bold text-slate-800">@{editFormData.username}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                    Encrypted
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  Passwords are encrypted with bcrypt for high enterprise security. To change or reset credentials, use the dedicated professional reset tool.
+                </p>
+                <div className="pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditModalOpen(false);
+                      handleOpenPasswordReset(editingMember, editingMember?.isTech);
+                    }}
+                    className="w-full px-3 py-2 bg-white hover:bg-amber-50/70 border border-amber-300 text-amber-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-98"
+                  >
+                    <Key className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Reset Account Password</span>
+                  </button>
+                </div>
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -993,6 +1096,166 @@ export const StaffTechnicianManager = () => {
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
                 >
                   Update Member
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= DEDICATED PROFESSIONAL PASSWORD RESET MODAL ================= */}
+      {isResetModalOpen && resetMember && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm flex items-center gap-1.5">
+                    <span>Reset Login Password</span>
+                    <span className="text-[10px] bg-amber-500/30 text-amber-300 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border border-amber-400/30">
+                      Security
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-300">
+                    Eco Green Solar CMS Authentication Control
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsResetModalOpen(false);
+                  setResetMember(null);
+                }}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Target Account Summary Banner */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-sm flex items-center justify-center shrink-0">
+                  {resetMember.name?.charAt(0) || 'U'}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-bold text-xs text-slate-900 truncate">
+                    {resetMember.name}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    User ID: <span className="font-bold text-emerald-700">@{resetMember.username || resetMember.email?.split('@')[0]}</span>
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 border border-slate-300 shrink-0">
+                {resetMember.isTech ? 'Technician' : (resetMember.role || 'Staff')}
+              </span>
+            </div>
+
+            {/* Form Body */}
+            <form onSubmit={handleConfirmPasswordReset} className="p-4 space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-500" />
+                    <span>New Password *</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 hover:underline active:scale-95"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <span>Auto-Generate Strong</span>
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    placeholder="Enter new strong password"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-500 focus:bg-white rounded-xl py-2.5 pl-3 pr-10 text-xs font-mono font-semibold tracking-wider text-slate-900 transition-all outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Must be at least 4 characters. Recommended format: Word + Symbol + Numbers (e.g. Eco@7829)
+                </p>
+              </div>
+
+              {/* Quick Copy Credentials for WhatsApp */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-center justify-between gap-2">
+                <div className="text-[11px] text-emerald-950 min-w-0">
+                  <span className="font-bold block">Share with Member</span>
+                  <span className="text-[10px] text-emerald-700 block truncate">
+                    Copy pre-formatted WhatsApp login credentials
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyCredentials}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-2xs ${
+                    copyFeedback 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  }`}
+                >
+                  {copyFeedback ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Info</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Security Audit Warning */}
+              <div className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 flex items-start gap-2">
+                <Shield className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="leading-tight">
+                  Updating will immediately overwrite the current password in the secure database. The previous password will stop working instantly.
+                </span>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsResetModalOpen(false);
+                    setResetMember(null);
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                >
+                  {resetLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Save New Password</span>
                 </button>
               </div>
             </form>
