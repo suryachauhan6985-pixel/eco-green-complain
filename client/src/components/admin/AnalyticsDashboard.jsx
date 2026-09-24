@@ -98,7 +98,15 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   }
 
   const counts = metrics?.counts || {};
-  const activeCount = (counts.registered_count || 0) + (counts.assigned_count || 0) + (counts.in_progress_count || 0);
+  const totalCount = Number(counts.total || 0);
+  const registeredCount = Number(counts.registered_count || 0);
+  const assignedCount = Number(counts.assigned_count || 0);
+  const inProgressCount = Number(counts.in_progress_count || 0);
+  const activeCount = registeredCount + assignedCount + inProgressCount;
+  const avgResolutionHours = Number(metrics?.avg_resolution_hours || 0);
+  const resolvedTotal = Number(metrics?.resolved_total || counts.resolved_count || 0);
+  const csatRating = Number(metrics?.customerSatisfaction?.averageRating || 0);
+  const csatReviews = Number(metrics?.customerSatisfaction?.totalReviews || 0);
 
   return (
     <div className="space-y-6">
@@ -255,7 +263,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <span className="text-xs font-semibold group-hover:text-emerald-700 transition-colors">Total Complaints</span>
             <BarChart3 className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-emerald-800 transition-colors">{counts.total || 0}</div>
+          <div className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-emerald-800 transition-colors">{totalCount}</div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
             <span>All registered tickets</span>
             <span className="text-emerald-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
@@ -273,7 +281,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           </div>
           <div className="text-2xl sm:text-3xl font-black text-amber-600">{activeCount}</div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-            <span className="truncate">{counts.registered_count || 0} Open • {counts.assigned_count || 0} Assigned</span>
+            <span className="truncate">{registeredCount} Open • {assignedCount} Assigned</span>
             <span className="text-amber-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity shrink-0">View →</span>
           </div>
         </div>
@@ -284,21 +292,23 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <TrendingUp className="w-4 h-4 text-blue-500" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-blue-600">
-            {metrics?.avg_resolution_hours || 24} <span className="text-sm font-semibold text-slate-500">hrs</span>
+            {resolvedTotal > 0 && avgResolutionHours > 0 ? avgResolutionHours : 0} <span className="text-sm font-semibold text-slate-500">hrs</span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">Turnaround from registration to resolution</div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            {resolvedTotal > 0 ? `Turnaround for ${resolvedTotal} resolved tickets` : 'No resolved tickets yet'}
+          </div>
         </div>
 
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-semibold">Customer CSAT</span>
-            <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+            <Star className={`w-4 h-4 ${csatReviews > 0 && csatRating > 0 ? 'text-amber-400 fill-amber-400' : 'text-slate-300'}`} />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-emerald-600">
-            {metrics?.customerSatisfaction?.averageRating || 4.8} <span className="text-sm font-semibold text-slate-400">/ 5.0</span>
+            {csatReviews > 0 && csatRating > 0 ? csatRating.toFixed(1) : '0.0'} <span className="text-sm font-semibold text-slate-400">/ 5.0</span>
           </div>
           <div className="text-[11px] text-slate-500 mt-1">
-            Based on {metrics?.customerSatisfaction?.totalReviews || 0} verified ratings
+            {csatReviews > 0 ? `Based on ${csatReviews} verified ratings` : 'No ratings received yet'}
           </div>
         </div>
       </div>
@@ -312,37 +322,43 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <span className="text-xs font-normal text-slate-500">Share of complaints</span>
           </h3>
 
-          <div className="space-y-3">
-            {metrics?.productStats?.map((prod) => {
-              const total = counts.total || 1;
-              const pct = Math.round((prod.count / total) * 100);
-              return (
-                <div 
-                  key={prod.product_type} 
-                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
-                  className="space-y-1 text-xs p-2 rounded-xl hover:bg-emerald-50/70 cursor-pointer transition-all border border-transparent hover:border-emerald-200 group"
-                  title={`Click to filter complaints by ${prod.product_type}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-800 group-hover:text-emerald-900">{prod.product_type}</span>
-                    <span className="text-slate-500 group-hover:text-emerald-700">
-                      <strong>{prod.count}</strong> complaints ({pct}%) →
-                    </span>
+          {(!metrics?.productStats || metrics.productStats.length === 0 || totalCount === 0) ? (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              No complaint tickets registered yet
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {metrics.productStats.map((prod) => {
+                const total = totalCount || 1;
+                const pct = Math.round((Number(prod.count) / total) * 100);
+                return (
+                  <div 
+                    key={prod.product_type} 
+                    onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
+                    className="space-y-1 text-xs p-2 rounded-xl hover:bg-emerald-50/70 cursor-pointer transition-all border border-transparent hover:border-emerald-200 group"
+                    title={`Click to filter complaints by ${prod.product_type}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800 group-hover:text-emerald-900">{prod.product_type}</span>
+                      <span className="text-slate-500 group-hover:text-emerald-700">
+                        <strong>{prod.count}</strong> complaints ({pct}%) →
+                      </span>
+                    </div>
+                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="text-[10px] text-slate-400 flex justify-between">
+                      <span>{prod.active_count || 0} Active</span>
+                      <span>{prod.resolved_count || 0} Resolved</span>
+                    </div>
                   </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-600 rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="text-[10px] text-slate-400 flex justify-between">
-                    <span>{prod.active_count} Active</span>
-                    <span>{prod.resolved_count} Resolved</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Most Common Issues */}
@@ -352,31 +368,37 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <span className="text-xs font-normal text-slate-500">Frequency distribution</span>
           </h3>
 
-          <div className="space-y-3">
-            {metrics?.issueCategoryStats?.map((issue) => {
-              const maxCount = metrics.issueCategoryStats[0]?.count || 1;
-              const pct = Math.round((issue.count / maxCount) * 100);
-              return (
-                <div 
-                  key={issue.issue_category} 
-                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ search: issue.issue_category })}
-                  className="space-y-1 text-xs p-2 rounded-xl hover:bg-amber-50/70 cursor-pointer transition-all border border-transparent hover:border-amber-200 group"
-                  title={`Click to filter complaints matching "${issue.issue_category}"`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-700 group-hover:text-amber-950 truncate max-w-xs">{issue.issue_category}</span>
-                    <span className="font-bold text-slate-900 group-hover:text-amber-800">{issue.count} →</span>
+          {(!metrics?.issueCategoryStats || metrics.issueCategoryStats.length === 0 || totalCount === 0) ? (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              No complaint issues reported yet
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {metrics.issueCategoryStats.map((issue) => {
+                const maxCount = Number(metrics.issueCategoryStats[0]?.count) || 1;
+                const pct = Math.round((Number(issue.count) / maxCount) * 100);
+                return (
+                  <div 
+                    key={issue.issue_category} 
+                    onClick={() => onNavigateToComplaints && onNavigateToComplaints({ search: issue.issue_category })}
+                    className="space-y-1 text-xs p-2 rounded-xl hover:bg-amber-50/70 cursor-pointer transition-all border border-transparent hover:border-amber-200 group"
+                    title={`Click to filter complaints matching "${issue.issue_category}"`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-700 group-hover:text-amber-950 truncate max-w-xs">{issue.issue_category}</span>
+                      <span className="font-bold text-slate-900 group-hover:text-amber-800">{issue.count} →</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -406,46 +428,58 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {metrics?.technicianLeaderboard?.map((tech) => (
-                <tr 
-                  key={tech.id} 
-                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ technician_id: String(tech.id) })}
-                  className="hover:bg-emerald-50/50 cursor-pointer transition-colors"
-                  title={`Click to view all complaints assigned to ${tech.name}`}
-                >
-                  <td className="px-4 py-3.5 font-bold text-slate-900 flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                      {tech.name.charAt(0)}
-                    </div>
-                    <span>{tech.name}</span>
-                  </td>
-                  <td className="px-4 py-3.5 text-slate-600">{tech.area_zone}</td>
-                  <td className="px-4 py-3.5">
-                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-                      {tech.specialization}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3.5 text-center font-bold text-amber-600">
-                    {tech.pending_count || 0}
-                  </td>
-                  <td className="px-4 py-3.5 text-center font-bold text-emerald-600">
-                    {tech.resolved_count || 0}
-                  </td>
-                  <td className="px-4 py-3.5 text-center text-slate-600">
-                    {tech.avg_resolution_hours ? `${tech.avg_resolution_hours}h` : 'N/A'}
-                  </td>
-                  <td className="px-4 py-3.5 text-right font-bold text-slate-900">
-                    {tech.avg_rating ? (
-                      <span className="flex items-center justify-end gap-1 text-amber-500">
-                        <Star className="w-3.5 h-3.5 fill-amber-400" />
-                        {tech.avg_rating}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 font-normal">No reviews</span>
-                    )}
+              {(!metrics?.technicianLeaderboard || metrics.technicianLeaderboard.length === 0) ? (
+                <tr>
+                  <td colSpan="7" className="px-4 py-8 text-center text-slate-400">
+                    No active technicians assigned yet
                   </td>
                 </tr>
-              ))}
+              ) : (
+                metrics.technicianLeaderboard.map((tech) => {
+                  const rating = tech.avg_rating || tech.average_rating;
+                  const hasRating = rating && Number(rating) > 0;
+                  return (
+                    <tr 
+                      key={tech.id} 
+                      onClick={() => onNavigateToComplaints && onNavigateToComplaints({ technician_id: String(tech.id) })}
+                      className="hover:bg-emerald-50/50 cursor-pointer transition-colors"
+                      title={`Click to view all complaints assigned to ${tech.name}`}
+                    >
+                      <td className="px-4 py-3.5 font-bold text-slate-900 flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
+                          {tech.name.charAt(0)}
+                        </div>
+                        <span>{tech.name}</span>
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-600">{tech.area_zone}</td>
+                      <td className="px-4 py-3.5">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
+                          {tech.specialization}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-center font-bold text-amber-600">
+                        {tech.active_tickets_count || tech.pending_count || 0}
+                      </td>
+                      <td className="px-4 py-3.5 text-center font-bold text-emerald-600">
+                        {tech.resolved_tickets_count || tech.resolved_count || 0}
+                      </td>
+                      <td className="px-4 py-3.5 text-center text-slate-600">
+                        {tech.avg_resolution_hours ? `${tech.avg_resolution_hours}h` : 'N/A'}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-bold text-slate-900">
+                        {hasRating ? (
+                          <span className="flex items-center justify-end gap-1 text-amber-500">
+                            <Star className="w-3.5 h-3.5 fill-amber-400" />
+                            {rating}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">No reviews</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -453,3 +487,4 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
     </div>
   );
 };
+

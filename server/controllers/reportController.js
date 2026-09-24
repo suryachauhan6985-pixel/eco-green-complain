@@ -87,14 +87,14 @@ function getDashboardMetrics(req, res) {
 
     res.json({
       counts,
-      avg_resolution_hours: avgRes.avg_resolution_hours || 24.5,
+      avg_resolution_hours: avgRes.avg_resolution_hours || 0,
       resolved_total: avgRes.resolved_total || 0,
       productStats,
       issueCategoryStats,
       priorityStats,
       technicianLeaderboard,
       customerSatisfaction: {
-        averageRating: ratingMetrics.average_rating || 4.8,
+        averageRating: ratingMetrics.average_rating || 0,
         totalReviews: ratingMetrics.total_ratings_received || 0
       }
     });

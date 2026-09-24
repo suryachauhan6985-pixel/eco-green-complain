@@ -1635,7 +1635,7 @@ app.get('/api/customers/search', async (req, res) => {
 app.get('/api/reports/metrics', optionalAuth, async (req, res) => {
   try {
     res.setHeader('Cache-Control', 'public, s-maxage=5, stale-while-revalidate=30');
-    const [countRes, prodRes, catRes, techRes] = await Promise.all([
+    const [countRes, prodRes, catRes, techRes, resTimeRes, ratingRes] = await Promise.all([
       query(`
         SELECT 
           COUNT(*) as total,
@@ -1661,20 +1661,57 @@ app.get('/api/reports/metrics', optionalAuth, async (req, res) => {
         SELECT t.id, t.name, t.phone, t.area_zone, t.specialization, t.is_available,
           COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress')) as active_tickets_count,
           COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
-          COALESCE(ROUND(AVG(c.rating)::numeric, 1), 5.0) as average_rating
+          ROUND(AVG(c.rating)::numeric, 1) as average_rating
         FROM technicians t
         LEFT JOIN complaints c ON c.assigned_technician_id = t.id
         GROUP BY t.id
         ORDER BY resolved_tickets_count DESC
+      `),
+      query(`
+        SELECT 
+          COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM (COALESCE(resolved_at, closed_at, updated_at) - created_at)) / 3600)::numeric, 1), 0) as avg_resolution_hours,
+          COUNT(*) FILTER (WHERE status IN ('Resolved', 'Closed')) as resolved_total
+        FROM complaints
+        WHERE status IN ('Resolved', 'Closed')
+      `),
+      query(`
+        SELECT 
+          COALESCE(ROUND(AVG(rating)::numeric, 1), 0) as average_rating,
+          COUNT(rating) as total_reviews
+        FROM complaints
+        WHERE rating IS NOT NULL AND rating > 0
       `)
     ]);
 
+    const countsRow = countRes.rows[0] || {};
+    const counts = {
+      total: Number(countsRow.total || 0),
+      registered_count: Number(countsRow.registered_count || 0),
+      unassigned_count: Number(countsRow.unassigned_count || 0),
+      assigned_count: Number(countsRow.assigned_count || 0),
+      in_progress_count: Number(countsRow.in_progress_count || 0),
+      on_hold_count: Number(countsRow.on_hold_count || 0),
+      resolved_count: Number(countsRow.resolved_count || 0),
+      closed_count: Number(countsRow.closed_count || 0),
+      reopened_count: Number(countsRow.reopened_count || 0)
+    };
+
+    const avgResolutionHours = Number(resTimeRes.rows[0]?.avg_resolution_hours || 0);
+    const resolvedTotal = Number(resTimeRes.rows[0]?.resolved_total || 0);
+    const averageRating = Number(ratingRes.rows[0]?.average_rating || 0);
+    const totalReviews = Number(ratingRes.rows[0]?.total_reviews || 0);
+
     return res.json({
-      counts: countRes.rows[0],
+      counts,
+      avg_resolution_hours: avgResolutionHours,
+      resolved_total: resolvedTotal,
       productStats: prodRes.rows,
       issueCategoryStats: catRes.rows,
       technicianLeaderboard: techRes.rows,
-      customerSatisfaction: { averageRating: 4.9, totalReviews: 12 }
+      customerSatisfaction: { 
+        averageRating: averageRating, 
+        totalReviews: totalReviews 
+      }
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
