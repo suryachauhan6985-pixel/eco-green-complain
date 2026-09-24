@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp } from '../../utils/templateUtils';
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
@@ -23,6 +24,7 @@ export const ComplaintDetailDrawer = ({
   onViewCustomerHistory 
 }) => {
   const { currentUser } = useAuth();
+  const { addNotification } = useNotifications();
   const { confirm, alert, showToast } = useDialog();
   const [ticket, setTicket] = useState(null);
   const [attachments, setAttachments] = useState([]);
@@ -230,6 +232,24 @@ export const ComplaintDetailDrawer = ({
         customerWa,
         techWa
       });
+
+      // Trigger In-App Notification for the assigned technician
+      if (assignedTech) {
+        addNotification({
+          type: 'assignment',
+          ticketId: ticket.ticket_id || ticket.id,
+          complaintId: ticket.id,
+          title: `New Ticket Assigned: ${ticket.ticket_id}`,
+          message: `You have been assigned to customer ${ticket.customer_name} (${ticket.product_type} - ${ticket.issue_category}). Expected visit: ${expectedDate || 'Within 24 Hours'}`,
+          customerName: ticket.customer_name,
+          targetRole: 'technician',
+          targetTechnicianId: selectedTechId,
+          targetTechnicianName: assignedTech.name,
+          performedByName: currentUser?.name || 'Staff Supervisor',
+          performedByRole: currentUser?.role || 'staff'
+        });
+      }
+
       showToast(`Technician ${assignedTech?.name || ''} assigned successfully!`, 'success');
     } catch (err) {
       showToast('Failed to assign technician: ' + err.message, 'error');
@@ -279,6 +299,22 @@ export const ComplaintDetailDrawer = ({
       });
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+
+      // Trigger in-app notification (reverse flow: tech updates -> staff receives; staff updates -> tech receives)
+      addNotification({
+        type: 'status_update',
+        ticketId: ticket.ticket_id || ticket.id,
+        complaintId: ticket.id,
+        title: `Ticket ${ticket.ticket_id}: Status "${newStatus}"`,
+        message: `${currentUser?.name || 'Technician'} updated status to "${newStatus}" for ${ticket.customer_name}.${defaultNote ? ` Note: ${defaultNote}` : ''}`,
+        customerName: ticket.customer_name,
+        targetRole: currentUser?.role === 'technician' ? 'staff' : 'technician',
+        targetTechnicianId: ticket.assigned_technician_id,
+        targetTechnicianName: ticket.technician_name,
+        performedByName: currentUser?.name || 'Technician',
+        performedByRole: currentUser?.role || 'technician'
+      });
+
       showToast(`Stage updated to "${newStatus}"! Live customer tracking & staff updated.`, 'success');
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');
@@ -345,9 +381,26 @@ export const ComplaintDetailDrawer = ({
         status: followUpStatus !== ticket.status ? followUpStatus : undefined,
         notify_customer: notifyCustomerToggle
       });
+      const savedNote = followUpNote;
       setFollowUpNote('');
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+
+      // Trigger in-app notification
+      addNotification({
+        type: 'note',
+        ticketId: ticket.ticket_id || ticket.id,
+        complaintId: ticket.id,
+        title: `Note Added on ${ticket.ticket_id}`,
+        message: `${currentUser?.name || 'User'}: "${savedNote.slice(0, 100)}"`,
+        customerName: ticket.customer_name,
+        targetRole: currentUser?.role === 'technician' ? 'staff' : 'technician',
+        targetTechnicianId: ticket.assigned_technician_id,
+        targetTechnicianName: ticket.technician_name,
+        performedByName: currentUser?.name || 'User',
+        performedByRole: currentUser?.role || 'staff'
+      });
+
       showToast('Follow-up note added to ticket history', 'success');
     } catch (err) {
       showToast('Failed to add note: ' + err.message, 'error');
@@ -385,6 +438,22 @@ export const ComplaintDetailDrawer = ({
       await api.resolveComplaint(ticket.id, data);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+
+      // Trigger in-app notification for Staff & Admin (reverse flow)
+      addNotification({
+        type: 'resolved',
+        ticketId: ticket.ticket_id || ticket.id,
+        complaintId: ticket.id,
+        title: `Ticket Resolved: ${ticket.ticket_id}`,
+        message: `${currentUser?.name || 'Technician'} marked ticket as Resolved for customer ${ticket.customer_name}. Notes: ${resolutionNotes}`,
+        customerName: ticket.customer_name,
+        targetRole: 'staff',
+        targetTechnicianId: ticket.assigned_technician_id,
+        targetTechnicianName: ticket.technician_name,
+        performedByName: currentUser?.name || 'Technician',
+        performedByRole: currentUser?.role || 'technician'
+      });
+
       showToast('Complaint resolved successfully!', 'success');
     } catch (err) {
       showToast('Failed to resolve complaint: ' + err.message, 'error');

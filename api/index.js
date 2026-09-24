@@ -1080,6 +1080,33 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       }
     }
 
+    // Insert In-App Notification for Technician
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_assign`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, 'assignment', $2, $3, $4, $5, $6, 'technician', $7, $8, $9, $10)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        comp.ticket_id,
+        comp.id,
+        `New Ticket Assigned: ${comp.ticket_id}`,
+        `You have been assigned complaint ${comp.ticket_id} for ${comp.customer_name} (${comp.product_type} - ${comp.issue_category}). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`,
+        comp.customer_name,
+        technician_id,
+        tech?.name || 'Technician',
+        req.user?.name || 'Staff Supervisor',
+        req.user?.role || 'staff'
+      ]);
+    } catch (notifErr) {
+      console.warn('[Assign in-app notification error]', notifErr.message);
+    }
+
     return res.json({ message: 'Technician assigned successfully', complaint: comp });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1098,6 +1125,33 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, $6)',
       [id, status ? `Status: ${status}` : 'Note', notes || 'Follow-up update', req.user.name, req.user.role, notify_customer ? 1 : 0]
     );
+    // Insert In-App Notification (reverse flow: tech updates -> staff receives; staff updates -> tech receives)
+    try {
+      await ensureInAppTable();
+      const compLookup = await query('SELECT ticket_id, customer_name, assigned_technician_id FROM complaints WHERE id = $1', [id]);
+      const currentC = compLookup.rows[0];
+      const notifId = `notif_${Date.now()}_note`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, performed_by_name, performed_by_role
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        status ? 'status_update' : 'note',
+        currentC?.ticket_id || '',
+        id,
+        status ? `Ticket ${currentC?.ticket_id} Status: ${status}` : `New Note on ${currentC?.ticket_id}`,
+        `${req.user.name}: "${notes || status || 'Updated'}"`,
+        currentC?.customer_name || '',
+        req.user.role === 'technician' ? 'staff' : 'technician',
+        currentC?.assigned_technician_id || null,
+        req.user.name,
+        req.user.role
+      ]);
+    } catch (_) {}
+
     return res.json({ message: 'Note added successfully' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1127,6 +1181,28 @@ app.post('/api/complaints/:id/resolve', authenticateToken, async (req, res) => {
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
       [id, 'Resolved', `Issue resolved: ${resolution_notes || 'All checks passed.'}`, req.user.name, req.user.role]
     );
+
+    // Insert In-App Notification for Staff & Admin
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_resolve`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role
+        ) VALUES ($1, 'resolved', $2, $3, $4, $5, $6, 'staff', $7, $8)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        comp.ticket_id,
+        comp.id,
+        `Ticket Resolved: ${comp.ticket_id}`,
+        `${req.user.name} marked complaint for ${comp.customer_name} as Resolved. Notes: ${resolution_notes || 'All checks passed.'}`,
+        comp.customer_name,
+        req.user.name,
+        req.user.role
+      ]);
+    } catch (_) {}
 
     // Send Feedback Request WhatsApp
     try {
@@ -1880,6 +1956,143 @@ app.delete('/api/notifications/simulated', optionalAuth, async (req, res) => {
   try {
     await query("DELETE FROM notification_logs WHERE channel = 'simulated'").catch(() => {});
     return res.json({ success: true, message: 'Simulated notifications cleared' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== IN-APP NOTIFICATIONS ====================
+let inAppTableChecked = false;
+async function ensureInAppTable() {
+  if (inAppTableChecked) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS in_app_notifications (
+        id VARCHAR(100) PRIMARY KEY,
+        type VARCHAR(50) NOT NULL,
+        ticket_id VARCHAR(50),
+        complaint_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        customer_name TEXT,
+        target_role VARCHAR(50) DEFAULT 'all',
+        target_technician_id INTEGER,
+        target_technician_name TEXT,
+        performed_by_name TEXT,
+        performed_by_role VARCHAR(50),
+        read_by JSONB DEFAULT '[]'::jsonb,
+        acknowledged_by JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    inAppTableChecked = true;
+  } catch (err) {
+    console.warn('[DB Note: in_app_notifications table]', err.message);
+  }
+}
+
+app.get('/api/in-app-notifications', optionalAuth, async (req, res) => {
+  try {
+    await ensureInAppTable();
+    const r = await query('SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 100');
+    const mapped = (r.rows || []).map(row => ({
+      id: row.id,
+      type: row.type,
+      ticketId: row.ticket_id,
+      complaintId: row.complaint_id,
+      title: row.title,
+      message: row.message,
+      customerName: row.customer_name,
+      targetRole: row.target_role,
+      targetTechnicianId: row.target_technician_id,
+      targetTechnicianName: row.target_technician_name,
+      performedByName: row.performed_by_name,
+      performedByRole: row.performed_by_role,
+      readBy: Array.isArray(row.read_by) ? row.read_by : [],
+      acknowledgedBy: Array.isArray(row.acknowledged_by) ? row.acknowledged_by : [],
+      createdAt: row.created_at
+    }));
+    return res.json({ notifications: mapped });
+  } catch (err) {
+    return res.json({ notifications: [] });
+  }
+});
+
+app.post('/api/in-app-notifications', optionalAuth, async (req, res) => {
+  try {
+    await ensureInAppTable();
+    const b = req.body || {};
+    const id = b.id || `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    await query(`
+      INSERT INTO in_app_notifications (
+        id, type, ticket_id, complaint_id, title, message, customer_name,
+        target_role, target_technician_id, target_technician_name,
+        performed_by_name, performed_by_role, read_by, acknowledged_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT (id) DO NOTHING
+    `, [
+      id,
+      b.type || 'info',
+      b.ticketId || '',
+      b.complaintId || null,
+      b.title || 'System Notification',
+      b.message || '',
+      b.customerName || '',
+      b.targetRole || 'all',
+      b.targetTechnicianId || null,
+      b.targetTechnicianName || '',
+      b.performedByName || 'Staff',
+      b.performedByRole || 'staff',
+      JSON.stringify(b.readBy || []),
+      JSON.stringify(b.acknowledgedBy || [])
+    ]);
+    return res.status(201).json({ success: true, id });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/in-app-notifications/:id/read', optionalAuth, async (req, res) => {
+  try {
+    await ensureInAppTable();
+    const { id } = req.params;
+    const userKey = req.user ? (req.user.username || req.user.email || req.user.name || req.user.role) : 'current_user';
+    await query(`
+      UPDATE in_app_notifications
+      SET read_by = CASE
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || jsonb_build_array($1::text)
+        ELSE jsonb_build_array($1::text)
+      END
+      WHERE id = $2 OR ticket_id = $2
+    `, [userKey, id]);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/in-app-notifications/read-all', optionalAuth, async (req, res) => {
+  try {
+    await ensureInAppTable();
+    const userKey = req.user ? (req.user.username || req.user.email || req.user.name || req.user.role) : 'current_user';
+    await query(`
+      UPDATE in_app_notifications
+      SET read_by = CASE
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || jsonb_build_array($1::text)
+        ELSE jsonb_build_array($1::text)
+      END
+    `, [userKey]);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/in-app-notifications', optionalAuth, async (req, res) => {
+  try {
+    await ensureInAppTable();
+    await query('DELETE FROM in_app_notifications');
+    return res.json({ success: true, message: 'All in-app notifications cleared' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

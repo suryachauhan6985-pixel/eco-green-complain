@@ -991,6 +991,22 @@ export const api = {
     method: 'DELETE'
   }),
 
+  // In-App Notification Center
+  getInAppNotifications: () => request('/in-app-notifications'),
+  createInAppNotification: (notifData) => request('/in-app-notifications', {
+    method: 'POST',
+    body: JSON.stringify(notifData)
+  }),
+  markInAppNotificationRead: (id) => request(`/in-app-notifications/${id}/read`, {
+    method: 'PUT'
+  }),
+  markAllInAppNotificationsRead: () => request('/in-app-notifications/read-all', {
+    method: 'PUT'
+  }),
+  clearInAppNotifications: () => request('/in-app-notifications', {
+    method: 'DELETE'
+  }),
+
   // Reports
   getMetrics: () => request('/reports/metrics'),
   getExportCsvUrl: () => `${API_BASE}/reports/export-csv`,

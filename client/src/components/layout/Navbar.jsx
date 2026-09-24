@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { 
   Sun, Shield, Users, Wrench, Search, Plus, 
   BarChart3, Settings, Bell, ChevronDown, Check, LogOut,
@@ -14,7 +15,8 @@ export const Navbar = ({
   onOpenTour,
   onReloadDemoData
 }) => {
-  const { currentUser, logout, unreadSimulatedCount } = useAuth();
+  const { currentUser, logout } = useAuth();
+  const { unreadCount } = useNotifications();
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
 
   const roles = [
@@ -217,13 +219,14 @@ export const Navbar = ({
             {/* Notification Drawer Trigger */}
             <button
               onClick={onToggleNotificationDrawer}
-              title="Live WhatsApp & Email Alerts"
+              title={`Notification Center (${unreadCount} unread)`}
               className="relative p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors shrink-0"
+              aria-label="Notification Center"
             >
               <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-              {unreadSimulatedCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-white animate-bounce">
-                  {unreadSimulatedCount}
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] font-bold min-w-4 h-4 sm:min-w-5 sm:h-5 px-1 rounded-full flex items-center justify-center border-2 border-white animate-bounce shadow-2xs">
+                  {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </button>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
@@ -67,6 +68,7 @@ const getProductComponentIcon = (type) => {
 
 export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint, initialData = null }) => {
   const { showToast } = useDialog();
+  const { addNotification } = useNotifications();
   const [directSending, setDirectSending] = useState(false);
   const [directSent, setDirectSent] = useState(false);
   const [directSendError, setDirectSendError] = useState(null);
@@ -394,6 +396,22 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
       const res = await api.createComplaint(data);
       setCreatedTicket(res.complaint);
+
+      // Trigger In-App Notification for Staff & Admin
+      if (res && res.complaint) {
+        addNotification({
+          type: 'new_ticket',
+          ticketId: res.complaint.ticket_id || res.complaint.id,
+          complaintId: res.complaint.id,
+          title: `New Ticket Registered: ${res.complaint.ticket_id}`,
+          message: `Customer ${res.complaint.customer_name} raised a ticket for ${res.complaint.product_type} (${res.complaint.issue_category}).`,
+          customerName: res.complaint.customer_name,
+          targetRole: 'staff',
+          performedByName: formData.customer_name || 'Front Desk',
+          performedByRole: 'staff'
+        });
+      }
+
       showToast('Complaint registered successfully', 'success');
       if (onComplaintCreated) onComplaintCreated(res.complaint);
     } catch (err) {

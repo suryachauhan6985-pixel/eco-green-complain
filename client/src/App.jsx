@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DialogProvider, useDialog } from './context/DialogContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { Navbar } from './components/layout/Navbar';
 import { NotificationDrawer } from './components/layout/NotificationDrawer';
+import { NotificationPopup } from './components/common/NotificationPopup';
 import { ComplaintList } from './components/complaints/ComplaintList';
 import { NewComplaintModal } from './components/complaints/NewComplaintModal';
 import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDrawer';
@@ -439,6 +441,18 @@ function AppContent() {
         onViewCustomerHistory={(phone) => setHistoryPhone(phone)}
       />
 
+      {/* Floating Role-Based Notification Popup Toast */}
+      <NotificationPopup
+        onSelectComplaint={handleSelectComplaint}
+      />
+
+      {/* Slide-over Notification Center Drawer */}
+      <NotificationDrawer
+        isOpen={isNotificationDrawerOpen}
+        onClose={() => setIsNotificationDrawerOpen(false)}
+        onSelectComplaint={handleSelectComplaint}
+      />
+
       <React.Suspense fallback={null}>
         {Boolean(historyPhone) && (
           <CustomerHistoryModal
@@ -507,7 +521,9 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <DialogProvider>
-          <AppContent />
+          <NotificationProvider>
+            <AppContent />
+          </NotificationProvider>
         </DialogProvider>
       </AuthProvider>
     </ErrorBoundary>
