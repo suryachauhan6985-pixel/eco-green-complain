@@ -26,8 +26,9 @@ const PERMANENT_STORAGE_KEY = 'egs_permanent_complaints';
 export function getPermanentComplaints() {
   try {
     const list = JSON.parse(localStorage.getItem(PERMANENT_STORAGE_KEY) || '[]');
-    // Clean out old automated test rows (Harish Nambiar with ticket > 112)
-    const cleaned = list.filter(c => !(c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112'));
+    const dummyTicketPrefixes = ['EGS-2026-000101', 'EGS-2026-000102', 'EGS-2026-000103', 'EGS-2026-000104', 'EGS-2026-000105', 'EGS-2026-000106', 'EGS-2026-000107', 'EGS-2026-000108', 'EGS-2026-000109', 'EGS-2026-000110', 'EGS-2026-000111', 'EGS-2026-000112'];
+    // Clean out old automated test rows & dummy complaints
+    const cleaned = list.filter(c => !(c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112') && !dummyTicketPrefixes.includes(c.ticket_id));
     if (cleaned.length !== list.length) {
       localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(cleaned));
     }
@@ -801,8 +802,37 @@ function fallbackHandler(endpoint, options) {
     return mockStore.getMetrics();
   }
 
+  if (endpoint === '/auth/login' && method === 'POST') {
+    const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+    const identifier = String(body.identifier || body.email || '').trim();
+    const password = String(body.password || '').trim();
+    if ((identifier === '6352454247' || identifier === 'admin@ecogreensolar.com' || identifier === 'admin') && password === 'admin3636') {
+      return {
+        token: 'admin-live-session-token',
+        user: {
+          id: 1,
+          name: 'Admin Supervisor',
+          email: 'admin@ecogreensolar.com',
+          role: 'admin',
+          phone: '6352454247'
+        }
+      };
+    }
+    const users = mockStore.getUsers();
+    const found = users.find(u => (u.phone === identifier || u.email === identifier || u.name === identifier));
+    if (found && (password === 'admin3636' || password === found.password)) {
+      return {
+        token: `session-token-${found.id}`,
+        user: found
+      };
+    }
+    const err = new Error('Invalid User ID or password. Use 6352454247 / admin3636');
+    err.status = 401;
+    throw err;
+  }
+
   if (endpoint.startsWith('/auth/me')) {
-    return { user: { id: 1, name: 'Admin Supervisor', email: 'admin@ecogreensolar.com', role: 'admin' } };
+    return { user: { id: 1, name: 'Admin Supervisor', email: 'admin@ecogreensolar.com', role: 'admin', phone: '6352454247' } };
   }
 
   if (endpoint.startsWith('/customers/search')) {
