@@ -2,7 +2,7 @@
 > **Version:** Production Clean State | **Target Release:** 2026  
 > **Clean Database State:** Zero dummy staff, zero dummy technicians, zero dummy complaints.  
 > **Master Admin Credentials:** Phone: `6352454247` | Password: `admin3636`  
-> **Live Production URL:** [https://eco-green-solar-cms.vercel.app](https://eco-green-solar-cms.vercel.app)
+> **Live Production URL:** [https://complain.ecogreensolar.co.in](https://complain.ecogreensolar.co.in)
 
 ---
 
@@ -19,7 +19,7 @@
 ---
 
 ## Phase 1: Admin Login & Clean Slate Verification
-- [ ] **Step 1.1:** Open the application in your browser: [https://eco-green-solar-cms.vercel.app](https://eco-green-solar-cms.vercel.app).
+- [ ] **Step 1.1:** Open the application in your browser: [https://complain.ecogreensolar.co.in](https://complain.ecogreensolar.co.in).
 - [ ] **Step 1.2:** On the login screen, enter:
   - **User ID / Mobile:** `6352454247`
   - **Password:** `admin3636`
@@ -155,7 +155,7 @@
 
 ## Phase 6: Customer Public Tracking Portal (Zero Login)
 - [ ] **Step 6.1:** Open a private/incognito browser window.
-- [ ] **Step 6.2:** Visit: `https://eco-green-solar-cms.vercel.app/track` (or click "Are you an Eco Green Customer? Public Portal" on login page).
+- [ ] **Step 6.2:** Visit: `https://complain.ecogreensolar.co.in/track` (or click "Are you an Eco Green Customer? Public Portal" on login page).
 - [ ] **Step 6.3: Track Ticket**:
   - Enter the Ticket ID from Phase 3 (e.g., `EGS-2026-000101`) OR the Customer Phone Number.
   - Click **Track Status**.

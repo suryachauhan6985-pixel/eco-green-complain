@@ -32,3 +32,5 @@ server/whatsapp_auth/
 
 # Animoria cache & staged cleanup
 .animoria/
+
+.env*
