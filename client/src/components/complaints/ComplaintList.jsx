@@ -9,6 +9,7 @@ import {
   AlertTriangle, Gauge, Layers, Trash2
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
+import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/SkeletonLoader';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -528,11 +529,10 @@ export const ComplaintList = ({
           });
 
           if (loading && listToFilter.length === 0) {
-            return (
-              <div className="py-16 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-                Loading complaints...
-              </div>
+            return viewMode === 'list' ? (
+              <ComplaintTableSkeleton rows={8} />
+            ) : (
+              <ComplaintGridSkeleton count={8} />
             );
           }
 

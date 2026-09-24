@@ -12,6 +12,7 @@ import {
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
   Edit2, Trash2, ChevronDown, RotateCcw
 } from 'lucide-react';
+import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
 const EMOJI_CATEGORIES = {
   'Smileys': ['😀', '😃', '😄', '😁', '😊', '😇', '🙂', '😉', '😌', '😍', '🥰', '😘', '🤗', '🤔', '🤨', '😐', '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐', '😯', '😪', '😫', '😴', '😌', '😛', '😜', '😝', '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲'],
@@ -1134,10 +1135,7 @@ export const WhatsAppWebInbox = ({
         {/* Scrollable Conversation List */}
         <div className="flex-1 overflow-y-auto divide-y divide-[#f5f6f6] bg-white">
           {loadingConversations && conversations.length === 0 ? (
-            <div className="p-8 text-center text-[#8696a0] text-xs">
-              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#00a884]" />
-              <span>Loading WhatsApp chats...</span>
-            </div>
+            <WhatsAppChatListSkeleton count={7} />
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center text-[#8696a0] text-xs space-y-3">
               <div className="w-12 h-12 rounded-full bg-slate-100 text-[#008069] flex items-center justify-center mx-auto">

@@ -1222,12 +1222,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
                 {/* City / Village, District & State Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Field 1: City / Village (शहर / गाँव) */}
+                  {/* Field 1: City / Village */}
                   <div className="relative">
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
                         <Building2 className="w-3 h-3 text-emerald-600" />
-                        City / Village <span className="text-[10px] text-slate-400 font-normal">(शहर / गाँव)</span>
+                        City / Village
                       </label>
                       {searchingCity && (
                         <span className="text-[10px] text-emerald-600 flex items-center gap-1">
@@ -1304,12 +1304,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     )}
                   </div>
 
-                  {/* Field 2: District (जिला) */}
+                  {/* Field 2: District */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-emerald-600" />
-                        District <span className="text-[10px] text-slate-400 font-normal">(जिला)</span>
+                        District
                       </label>
                       {formData.district && pincodeStatus === 'valid' && (
                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
@@ -1330,12 +1330,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     />
                   </div>
 
-                  {/* Field 3: State (राज्य) */}
+                  {/* Field 3: State */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
                         <Map className="w-3 h-3 text-emerald-600" />
-                        State <span className="text-[10px] text-slate-400 font-normal">(राज्य)</span>
+                        State
                       </label>
                       {formData.state && pincodeStatus === 'valid' && (
                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">

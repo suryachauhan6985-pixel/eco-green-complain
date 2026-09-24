@@ -15,12 +15,10 @@ const TEMPLATE_METADATA = {
     audience: 'customer',
     order: 1,
     stageBadge: 'Stage 1: Registration',
-    stageHindi: 'चरण 1: शिकायत दर्ज',
     targetName: 'Customer',
     recipientLabel: 'Sent to Customer (+91 Mobile)',
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when a new complaint ticket is lodged in the system',
-    triggerHindi: 'नया टिकट रजिस्टर होते ही ग्राहक के WhatsApp व Email पर तत्काल रसीद जाती है।',
     metaTemplateName: 'complaint_registered',
     metaLanguage: 'en_US',
     recommendedPlaceholders: [
@@ -32,12 +30,10 @@ const TEMPLATE_METADATA = {
     audience: 'customer',
     order: 2,
     stageBadge: 'Stage 2: Technician Assigned',
-    stageHindi: 'चरण 2: तकनीशियन आवंटन',
     targetName: 'Customer',
     recipientLabel: 'Sent to Customer (+91 Mobile)',
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when staff allocates a technician to the customer ticket',
-    triggerHindi: 'स्टाफ द्वारा टेक्नीशियन असाइन करते ही ग्राहक को टेक्नीशियन नाम व विजिट समय मिलता है।',
     metaTemplateName: 'technician_assigned',
     metaLanguage: 'en_US',
     recommendedPlaceholders: [
@@ -49,12 +45,10 @@ const TEMPLATE_METADATA = {
     audience: 'customer',
     order: 3,
     stageBadge: 'Stage 3: Progress & Follow-up',
-    stageHindi: 'चरण 3: प्रगति एवं नोट्स',
     targetName: 'Customer',
     recipientLabel: 'Sent to Customer (+91 Mobile)',
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when staff or technician logs a visit note or progress update',
-    triggerHindi: 'साइट विजिट, पार्ट्स रिक्वायरमेंट या जांच के दौरान नोट्स अपडेट होने पर ग्राहक को सूचना।',
     metaTemplateName: 'status__followup_note_update',
     metaLanguage: 'en',
     recommendedPlaceholders: [
@@ -66,12 +60,10 @@ const TEMPLATE_METADATA = {
     audience: 'customer',
     order: 4,
     stageBadge: 'Stage 4: Service Resolved',
-    stageHindi: 'चरण 4: कार्य पूर्ण (Resolved)',
     targetName: 'Customer',
     recipientLabel: 'Sent to Customer (+91 Mobile)',
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when technician marks the service work as completed on site',
-    triggerHindi: 'तकनीशियन द्वारा कार्य पूरा मार्क करने पर ग्राहक को कार्य पूर्णता की सूचना।',
     metaTemplateName: 'complaint_resolved',
     metaLanguage: 'en_US',
     recommendedPlaceholders: [
@@ -83,12 +75,10 @@ const TEMPLATE_METADATA = {
     audience: 'customer',
     order: 5,
     stageBadge: 'Stage 5: Closure & Rating',
-    stageHindi: 'चरण 5: टिकट क्लोज व रेटिंग अनुरोध',
     targetName: 'Customer',
     recipientLabel: 'Sent to Customer (+91 Mobile)',
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered when desk marks ticket officially closed & invites 1-5 star review',
-    triggerHindi: 'अंतिम सत्यापन के बाद टिकट क्लोज होते ही ग्राहक से 1-5 स्टार रेटिंग फीडबैक मांगा जाता है।',
     metaTemplateName: 'complaint_closed__feedback_request',
     metaLanguage: 'en',
     recommendedPlaceholders: [
@@ -99,12 +89,10 @@ const TEMPLATE_METADATA = {
     audience: 'customer',
     order: 6,
     stageBadge: 'Stage 6: Reopen Alert',
-    stageHindi: 'चरण 6: दोबारा जांच अनुरोध',
     targetName: 'Customer',
     recipientLabel: 'Sent to Customer (+91 Mobile)',
     recipientBadgeColor: 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Triggered if customer reports recurring issue and ticket is reopened',
-    triggerHindi: 'यदि सौर उपकरण में समस्या पुनः उत्पन्न होती है तो री-ओपनिंग अलर्ट जाता है।',
     metaTemplateName: 'complaint_reopened_notification',
     metaLanguage: 'en',
     recommendedPlaceholders: [
@@ -117,12 +105,10 @@ const TEMPLATE_METADATA = {
     audience: 'technician',
     order: 1,
     stageBadge: 'Stage 1: Work Order Dispatch',
-    stageHindi: 'चरण 1: कार्य आदेश (वर्क ऑर्डर)',
     targetName: 'Field Technician',
     recipientLabel: 'Sent to Assigned Field Technician (+91)',
     recipientBadgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
     triggerTitle: 'Triggered when staff assigns ticket — dispatches full customer address & issue',
-    triggerHindi: 'तकनीशियन को ग्राहक का नाम, मोबाइल नंबर, पूरा पता, समस्या व समय का जॉब ऑर्डर जाता है।',
     metaTemplateName: 'technician_work_order',
     metaLanguage: 'en_US',
     recommendedPlaceholders: [
@@ -135,12 +121,10 @@ const TEMPLATE_METADATA = {
     audience: 'technician',
     order: 2,
     stageBadge: 'Stage 2: Pending Visit Reminder',
-    stageHindi: 'चरण 2: विजिट रिमाइंडर',
     targetName: 'Field Technician',
     recipientLabel: 'Sent to Assigned Field Technician (+91)',
     recipientBadgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
     triggerTitle: 'Triggered as scheduled reminder before the technician visit date',
-    triggerHindi: 'विजिट से पहले तकनीशियन को ग्राहक से समन्वय करने हेतु स्वचालित रिमाइंडर।',
     metaTemplateName: 'technician_pending_visit_reminder',
     metaLanguage: 'en',
     recommendedPlaceholders: [
@@ -152,12 +136,10 @@ const TEMPLATE_METADATA = {
     audience: 'technician',
     order: 3,
     stageBadge: 'Stage 3: Reassignment Notice',
-    stageHindi: 'चरण 3: कार्य पुन: आवंटन',
     targetName: 'Field Technician',
     recipientLabel: 'Sent to Assigned Field Technician (+91)',
     recipientBadgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
     triggerTitle: 'Triggered if a ticket is transferred to another technician or cancelled',
-    triggerHindi: 'यदि टिकट किसी अन्य तकनीशियन को सौंपा जाता है तो पुराने तकनीशियन को सूचना मिलती है।',
     metaTemplateName: 'technician_job_reassigned_notice',
     metaLanguage: 'en',
     recommendedPlaceholders: [
@@ -379,11 +361,9 @@ export const TemplateManager = () => {
   const activeMetadata = selectedTemplate ? (TEMPLATE_METADATA[selectedTemplate.template_key] || {
     audience: isTechKey(selectedTemplate.template_key) ? 'technician' : 'customer',
     stageBadge: 'Custom Trigger',
-    stageHindi: 'कस्टम ट्रिगर',
     recipientLabel: isTechKey(selectedTemplate.template_key) ? 'Sent to Field Technician' : 'Sent to Customer',
     recipientBadgeColor: isTechKey(selectedTemplate.template_key) ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-sky-100 text-sky-800 border-sky-200',
     triggerTitle: 'Custom automated trigger',
-    triggerHindi: 'सिस्टम द्वारा स्वचालित रूप से प्रेषित',
     metaStatus: 'SESSION_MSG',
     recommendedPlaceholders: ['{{customer_name}}', '{{complaint_id}}', '{{feedback_url}}']
   }) : null;
@@ -580,8 +560,8 @@ export const TemplateManager = () => {
                     <User className="w-3.5 h-3.5 text-sky-600" />
                     <span>Customer Notifications ({customerTemplates.length} Stages)</span>
                   </div>
-                  <span className="text-[10px] font-medium text-sky-700">
-                    ग्राहक को संदेश
+                  <span className="text-[10px] font-semibold text-sky-700 uppercase tracking-wider">
+                    Outbound Alerts
                   </span>
                 </div>
 
@@ -628,8 +608,8 @@ export const TemplateManager = () => {
                     <Wrench className="w-3.5 h-3.5 text-amber-600" />
                     <span>Technician Notifications ({technicianTemplates.length} Stages)</span>
                   </div>
-                  <span className="text-[10px] font-medium text-amber-800">
-                    तकनीशियन को संदेश
+                  <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider">
+                    Field Dispatch
                   </span>
                 </div>
 
@@ -745,7 +725,7 @@ export const TemplateManager = () => {
                     {selectedTemplate.name}
                   </h3>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    {activeMetadata?.triggerTitle} • <span className="text-slate-500 italic">{activeMetadata?.triggerHindi}</span>
+                    {activeMetadata?.triggerTitle}
                   </p>
                 </div>
 

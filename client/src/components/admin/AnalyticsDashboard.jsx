@@ -5,6 +5,7 @@ import {
   TrendingUp, Users, AlertCircle, RefreshCw, Star, Sun, Droplets, Wind,
   Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload
 } from 'lucide-react';
+import { AnalyticsDashboardSkeleton } from '../common/SkeletonLoader';
 
 export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [metrics, setMetrics] = useState(null);
@@ -93,12 +94,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   }, []);
 
   if (loading && !metrics) {
-    return (
-      <div className="py-20 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-        <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-        Loading analytics & performance reports...
-      </div>
-    );
+    return <AnalyticsDashboardSkeleton />;
   }
 
   const counts = metrics?.counts || {};

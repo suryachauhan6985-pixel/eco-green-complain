@@ -25,10 +25,11 @@ const StaffTechnicianManager = React.lazy(() => import('./components/admin/Staff
 const OnboardingTour = React.lazy(() => import('./components/common/OnboardingTour').then(m => ({ default: m.OnboardingTour })));
 const WhatsAppWebInbox = React.lazy(() => import('./components/whatsapp/WhatsAppWebInbox').then(m => ({ default: m.WhatsAppWebInbox })));
 
+import { AppPageSkeleton, ComplaintGridSkeleton } from './components/common/SkeletonLoader';
+
 const LoadingFallback = () => (
-  <div className="flex flex-col items-center justify-center p-12 min-h-[260px] w-full text-slate-400">
-    <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-    <span className="text-xs font-medium text-slate-500">Loading view...</span>
+  <div className="p-6">
+    <ComplaintGridSkeleton count={6} />
   </div>
 );
 
@@ -200,14 +201,7 @@ function AppContent() {
   }, [currentUser?.role]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white text-xs">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-          <p className="font-bold text-emerald-400">Loading Eco Green Solar Workspace...</p>
-        </div>
-      </div>
-    );
+    return <AppPageSkeleton />;
   }
 
   if (!currentUser) {

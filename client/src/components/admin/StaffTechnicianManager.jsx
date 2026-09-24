@@ -6,6 +6,7 @@ import {
   Layers, Tag, Key, Lock, Eye, EyeOff, Copy, Check, Sparkles
 } from 'lucide-react';
 import { useDialog } from '../../context/DialogContext';
+import { StaffTeamSkeleton } from '../common/SkeletonLoader';
 
 export const StaffTechnicianManager = () => {
   const { confirm, alert, showToast: showGlobalToast } = useDialog();
@@ -445,10 +446,7 @@ export const StaffTechnicianManager = () => {
 
       {/* Main List */}
       {loading ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-          Loading team members...
-        </div>
+        <StaffTeamSkeleton count={6} />
       ) : activeTab === 'technicians' ? (
         /* Technicians 2-Column Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
