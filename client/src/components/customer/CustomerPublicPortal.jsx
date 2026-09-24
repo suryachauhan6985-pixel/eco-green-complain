@@ -128,8 +128,13 @@ export const CustomerPublicPortal = ({
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Customer Header Banner */}
       <div className="text-center py-6 px-4 bg-gradient-to-b from-emerald-800 to-teal-900 text-white rounded-3xl shadow-lg">
-        <div className="bg-white/95 rounded-2xl p-2.5 inline-block shadow-md mx-auto mb-3">
-          <img src="/company-logo.png" alt="Eco Green Solar" className="h-9 sm:h-11 w-auto object-contain" />
+        {/* Transparent & Enlarged Logo matching login screen */}
+        <div className="mb-4 flex justify-center items-center py-1">
+          <img 
+            src="/company-logo-white.png" 
+            alt="Eco Green Solar" 
+            className="h-14 sm:h-16 w-auto object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] hover:scale-105 transition-transform" 
+          />
         </div>
         <h2 className="text-xl sm:text-2xl font-black">Customer Service & Ticket Tracker</h2>
         <p className="text-xs sm:text-sm text-emerald-100 max-w-md mx-auto mt-1">

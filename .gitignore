@@ -29,3 +29,6 @@ whatsapp_auth/
 server/whatsapp_auth/
 
 .vercel
+
+# Animoria cache & staged cleanup
+.animoria/
