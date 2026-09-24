@@ -97,8 +97,6 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
     }
   };
 
-  if (!isOpen) return null;
-
   // Filter in-app notifications
   const filteredInbox = notifications.filter(n => {
     if (inboxFilter === 'unread') return isUnread(n, currentUser);
@@ -232,6 +230,8 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
         };
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
