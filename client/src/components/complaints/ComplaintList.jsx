@@ -754,14 +754,16 @@ export const ComplaintList = ({
                               <MessageCircle className="w-4 h-4" />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteComplaint(e, c)}
-                            title="Delete Complaint Permanently"
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {['admin', 'staff'].includes(currentUser?.role) && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteComplaint(e, c)}
+                              title="Delete Complaint Permanently"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => onSelectComplaint(c.id)}
@@ -963,15 +965,17 @@ export const ComplaintList = ({
                         </button>
                       )}
 
-                      {/* Delete Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteComplaint(e, c)}
-                        title="Delete Complaint Permanently"
-                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Delete Button (Admin & Staff only) */}
+                      {['admin', 'staff'].includes(currentUser?.role) && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteComplaint(e, c)}
+                          title="Delete Complaint Permanently"
+                          className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
 
                       <button
                         type="button"

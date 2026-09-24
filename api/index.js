@@ -5,24 +5,30 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 
-// Strict File Upload Security (Restricts MIME types & File Extensions to mitigate Stored XSS & Malicious Executables)
+// Strict File Upload Security (Supports Images, PDFs, and Videos like MP4, WebM, MOV for fault reporting)
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/gif',
-  'application/pdf'
+  'application/pdf',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/3gpp',
+  'video/x-msvideo',
+  'video/mpeg'
 ]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for video proof and documents
   fileFilter: (req, file, cb) => {
     const mime = (file.mimetype || '').toLowerCase();
     const ext = (file.originalname || '').split('.').pop().toLowerCase();
     const dangerousExts = ['html', 'htm', 'svg', 'js', 'exe', 'bat', 'cmd', 'sh', 'php', 'py', 'pl', 'jsp', 'cgi', 'vbs'];
     if (dangerousExts.includes(ext) || !ALLOWED_MIME_TYPES.has(mime)) {
-      return cb(new Error('Invalid file type. Only JPEG, PNG, WebP, GIF, and PDF documents are allowed.'));
+      return cb(new Error('Invalid file type. Only photos (JPEG, PNG, WebP), PDF documents, and videos (MP4, WebM, MOV, 3GP) are allowed.'));
     }
     cb(null, true);
   }
@@ -42,8 +48,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Lightweight In-Memory Rate Limiter (Protects against Brute-Force and DoS)
 const rateLimitMap = new Map();
@@ -1398,8 +1404,8 @@ app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
       const buf = Buffer.from(base64, 'base64');
 
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
-      if (mime.startsWith('image/')) {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; media-src 'self' data: blob:; style-src 'unsafe-inline'; sandbox allow-downloads");
+      if (mime.startsWith('image/') || mime.startsWith('video/') || mime === 'application/pdf') {
         res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.file_name)}"`);
       } else {
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(att.file_name)}"`);
@@ -1608,7 +1614,7 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
 });
 
 // Resolve Complaint
-app.post('/api/complaints/:id/resolve', authenticateToken, async (req, res) => {
+app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), async (req, res) => {
   try {
     const { id } = req.params;
     const { resolution_notes, spare_parts_used } = req.body;
@@ -1625,6 +1631,23 @@ app.post('/api/complaints/:id/resolve', authenticateToken, async (req, res) => {
     `, [resolution_notes || 'Resolved on site', spare_parts_used || 'None', id]);
 
     const comp = compRes.rows[0];
+
+    // If technician attached a closing proof photo/video, store it permanently in complaint_attachments
+    if (req.file) {
+      try {
+        const base64Data = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
+        const insRes = await query(`
+          INSERT INTO complaint_attachments (
+            complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING id
+        `, [id, req.file.originalname, '/api/attachments/temp', req.file.mimetype, base64Data, req.user.name || 'Technician']);
+        const attId = insRes.rows[0].id;
+        await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [`/api/attachments/${attId}`, attId]);
+      } catch (attErr) {
+        console.warn('[Resolve Attachment Note]', attErr.message);
+      }
+    }
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
@@ -1731,14 +1754,15 @@ app.post('/api/complaints/:id/feedback', async (req, res) => {
   }
 });
 
-// Delete Complaint (Restricted exclusively to Administrator)
-app.delete('/api/complaints/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+// Delete Complaint (Restricted exclusively to Administrator and Helpdesk Staff; Technicians are blocked)
+app.delete('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
   try {
     const { id } = req.params;
     await query('DELETE FROM complaint_timelines WHERE complaint_id = $1', [id]);
     await query('DELETE FROM complaint_attachments WHERE complaint_id = $1', [id]);
+    await query('DELETE FROM in_app_notifications WHERE complaint_id = $1', [String(id)]);
     await query('DELETE FROM complaints WHERE id = $1', [id]);
-    return res.json({ success: true, message: 'Complaint deleted' });
+    return res.json({ success: true, message: 'Complaint deleted permanently' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -90,13 +90,14 @@
   - Priority: Select `High`.
   - Warranty: Toggle In-Warranty / Out-of-Warranty.
   - If Out-of-Warranty: Enter Estimated Charges (e.g., `350`) and check *"Notify customer of estimated charges on registration receipt"*.
-- [ ] **Step 3.7: Test Attachments & Location URL**:
-  - Attach a rooftop/inverter photo or defect document (JPEG/PNG/PDF).
+- [ ] **Step 3.7: Test Fault Video & Photo Uploads + Location URL**:
+  - Attach a fault video (MP4, WebM, MOV, 3GP) or inverter error photo / PDF (up to 50MB).
+  - Verify instant video badge and video player preview lightbox before submitting.
   - Paste a Google Maps Location URL (e.g., `https://maps.app.goo.gl/...`).
 - [ ] **Step 3.8: Submit Complaint**:
   - Click **Submit Complaint Ticket**.
   - Verify generated Ticket ID (e.g., `EGS-2026-000101`).
-  - Verify that the complaint appears on the Complaints Board.
+  - Verify that the complaint appears on the Complaints Board with all video & document attachments permanently stored.
 
 ---
 
@@ -135,6 +136,10 @@
   - Under Supervisor Review, click **Close Ticket & Request Feedback**.
   - Verify status updates to **Closed**.
   - Customer receives 1-5 Star rating review invite via WhatsApp.
+- [ ] **Step 4.8: Role-Based Permanent Complaint Deletion**:
+  - **Admin & Staff Rights**: Verify that both Admin and Staff see the red **Delete (Trash icon)** button in the complaints table, grid cards, and drawer header.
+  - Deleting a complaint permanently removes the complaint, timelines, and all uploaded fault videos/photos.
+  - **Technician Restriction**: Verify that Technicians CANNOT delete complaints (delete buttons are completely hidden from table, grid, and drawer, and direct API calls are blocked with 403 Forbidden).
 
 ---
 
@@ -207,4 +212,6 @@
 | **Language** | 100% clean English across all forms, templates, badges, and modals (zero Hindi text) | `VERIFIED` |
 | **UX/UI** | Animated Skeleton Loaders replace all plain text/spinners across list, grid, dashboard & chats | `VERIFIED` |
 | **Location** | Postal Pincode auto-fill (District, State, Village chips) + City Autosuggest active | `VERIFIED` |
+| **Fault Videos** | MP4/WebM/MOV fault videos & photos permanently stored in DB until complaint deletion with built-in video player | `VERIFIED` |
+| **Permissions** | Admin & Staff can delete complaints permanently; Technicians strictly restricted from deletion | `VERIFIED` |
 | **Messaging** | Meta WhatsApp Cloud API templates & two-way inbox configured for all lifecycle stages | `VERIFIED` |

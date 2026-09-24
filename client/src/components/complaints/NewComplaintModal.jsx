@@ -8,7 +8,7 @@ import {
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
-  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map
+  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -473,14 +473,19 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       const selected = Array.from(e.target.files);
       const newItems = await Promise.all(
         selected.map(async (file) => {
-          const optimized = file.type.startsWith('image/') ? await compressImageFile(file) : file;
+          const isImg = file.type.startsWith('image/');
+          const isVid = file.type.startsWith('video/');
+          const optimized = isImg ? await compressImageFile(file) : file;
           return {
             id: Math.random().toString(36).substring(2, 9),
             file: optimized,
             name: optimized.name,
-            size: (optimized.size / 1024).toFixed(1) + ' KB',
-            isImage: optimized.type.startsWith('image/'),
-            preview: optimized.type.startsWith('image/') ? URL.createObjectURL(optimized) : null
+            size: optimized.size > 1024 * 1024
+              ? (optimized.size / (1024 * 1024)).toFixed(1) + ' MB'
+              : (optimized.size / 1024).toFixed(1) + ' KB',
+            isImage: isImg,
+            isVideo: isVid,
+            preview: (isImg || isVid) ? URL.createObjectURL(optimized) : null
           };
         })
       );
@@ -1640,6 +1645,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                             className="w-12 h-12 object-cover rounded-lg shrink-0 border border-slate-100 cursor-pointer hover:opacity-85 transition-opacity" 
                             title="Click to zoom preview"
                           />
+                        ) : item.isVideo ? (
+                          <div 
+                            onClick={() => setPreviewItem(item)}
+                            className="w-12 h-12 bg-amber-500/10 text-amber-600 border border-amber-200 rounded-lg shrink-0 flex flex-col items-center justify-center cursor-pointer hover:bg-amber-500/20 transition-colors"
+                            title="Click to play video"
+                          >
+                            <Video className="w-5 h-5 text-amber-600" />
+                            <span className="text-[8px] font-bold uppercase mt-0.5">Video</span>
+                          </div>
                         ) : (
                           <div className="w-12 h-12 bg-slate-100 rounded-lg shrink-0 flex items-center justify-center text-slate-500">
                             <FileText className="w-6 h-6" />
@@ -1725,7 +1739,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
               </button>
             </div>
             <div className="p-2 flex items-center justify-center max-h-[70vh] overflow-auto bg-slate-50/50 rounded-xl mt-2">
-              {previewItem.isImage && previewItem.preview ? (
+              {previewItem.isVideo && previewItem.preview ? (
+                <video
+                  src={previewItem.preview}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="max-w-full max-h-[65vh] rounded-lg shadow-xs"
+                />
+              ) : previewItem.isImage && previewItem.preview ? (
                 <img 
                   src={previewItem.preview} 
                   alt={previewItem.name} 

@@ -9,7 +9,7 @@ import {
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
-  Play, Pause
+  Play, Pause, Video
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -1131,7 +1131,7 @@ export const ComplaintDetailDrawer = ({
                             <input
                               type="file"
                               multiple
-                              accept="image/*,application/pdf"
+                              accept="image/*,video/*,application/pdf"
                               className="hidden"
                               disabled={uploadingAtt}
                               onChange={handleUploadMoreAttachments}
@@ -1145,7 +1145,13 @@ export const ComplaintDetailDrawer = ({
                               const isPdf = att.file_type === 'application/pdf' || 
                                             (att.file_name && att.file_name.toLowerCase().endsWith('.pdf')) || 
                                             (fileUrl && fileUrl.startsWith('data:application/pdf'));
-                              const isImg = !isPdf && (
+                              const isVideo = !isPdf && (
+                                            att.file_type?.startsWith('video/') ||
+                                            (fileUrl && fileUrl.startsWith('data:video/')) ||
+                                            (fileUrl && fileUrl.match(/\.(mp4|webm|mov|3gp|avi|mkv)($|\?)/i)) ||
+                                            (att.file_name?.match(/\.(mp4|webm|mov|3gp|avi|mkv)$/i))
+                              );
+                              const isImg = !isPdf && !isVideo && (
                                             att.file_type?.startsWith('image/') || 
                                             (fileUrl && fileUrl.startsWith('data:image/')) || 
                                             (fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) || 
@@ -1156,7 +1162,16 @@ export const ComplaintDetailDrawer = ({
                                   key={att.id}
                                   className="group bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl p-2 transition-all flex items-center gap-2 relative overflow-hidden"
                                 >
-                                  {isImg ? (
+                                  {isVideo ? (
+                                    <div 
+                                      onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isVideo: true })}
+                                      className="w-12 h-12 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded-lg flex flex-col items-center justify-center shrink-0 cursor-pointer transition-colors border border-amber-200/60"
+                                      title="Click to play fault video"
+                                    >
+                                      <Video className="w-5 h-5 text-amber-600" />
+                                      <span className="text-[8px] font-extrabold uppercase tracking-wider text-amber-700">Video</span>
+                                    </div>
+                                  ) : isImg ? (
                                     <div className="relative w-12 h-12 shrink-0">
                                       <img
                                         src={fileUrl}
@@ -1191,7 +1206,7 @@ export const ComplaintDetailDrawer = ({
                                     <div className="flex items-center gap-1.5 mt-1">
                                       <button
                                         type="button"
-                                        onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: isImg, isPdf })}
+                                        onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isVideo, isImage: isImg, isPdf })}
                                         className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 cursor-pointer bg-emerald-100/70 px-1.5 py-0.5 rounded"
                                       >
                                         <Eye className="w-3 h-3" /> Preview
@@ -1698,11 +1713,11 @@ export const ComplaintDetailDrawer = ({
 
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                                Closing Proof Photo (Optional)
+                                Closing Proof Photo / Video (Optional)
                               </label>
                               <input
                                 type="file"
-                                accept="image/*"
+                                accept="image/*,video/*"
                                 onChange={(e) => setResolutionPhoto(e.target.files?.[0] || null)}
                                 className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 text-slate-600"
                               />
@@ -2671,7 +2686,19 @@ export const ComplaintDetailDrawer = ({
               </div>
             </div>
             <div className="p-2 flex items-center justify-center max-h-[75vh] overflow-auto bg-slate-50/70 rounded-xl mt-2">
-              {previewDocModal.isImage ? (
+              {previewDocModal.isVideo ? (
+                <div className="relative flex flex-col items-center justify-center w-full">
+                  <video 
+                    controls 
+                    autoPlay 
+                    playsInline
+                    src={previewDocModal.url} 
+                    className="max-w-full max-h-[70vh] rounded-lg shadow-sm bg-black"
+                  >
+                    Your browser does not support video playback.
+                  </video>
+                </div>
+              ) : previewDocModal.isImage ? (
                 <div className="relative flex flex-col items-center justify-center w-full">
                   <img 
                     src={previewDocModal.url} 
