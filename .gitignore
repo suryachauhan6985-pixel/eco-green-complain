@@ -27,3 +27,5 @@ Thumbs.db
 # WhatsApp session cache (persisted in SQLite DB)
 whatsapp_auth/
 server/whatsapp_auth/
+
+.vercel

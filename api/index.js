@@ -24,7 +24,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'ecogreen_solar_cms_secret_key_2026
 const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '1387211441132836';
 const META_WABA_ID = process.env.META_WABA_ID || '1015283491554000';
 const DEFAULT_META_ACCESS_TOKEN = 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
-const getMetaAccessToken = () => process.env.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+const getMetaAccessToken = () => META_ACCESS_TOKEN;
 const APP_URL = process.env.APP_URL || 'https://complain.ecogreensolar.co.in';
 
 // Helper: Run query
@@ -1040,8 +1041,9 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     );
 
     // Send WhatsApp to customer
+    let waCustomerResult = null;
     try {
-      await sendWhatsApp({
+      waCustomerResult = await sendWhatsApp({
         to: comp.customer_phone,
         templateName: 'technician_assigned',
         variables: {
@@ -1053,12 +1055,14 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       });
     } catch (waErr) {
       console.warn('[Assign WhatsApp Customer Note]', waErr.message);
+      waCustomerResult = { success: false, error: waErr.message };
     }
 
     // Send WhatsApp to technician
+    let waTechResult = null;
     if (tech?.phone) {
       try {
-        await sendWhatsApp({
+        waTechResult = await sendWhatsApp({
           to: tech.phone,
           templateName: 'technician_work_order',
           variables: {
@@ -1077,6 +1081,7 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         });
       } catch (waErr) {
         console.warn('[Assign WhatsApp Tech Note]', waErr.message);
+        waTechResult = { success: false, error: waErr.message };
       }
     }
 
@@ -1107,7 +1112,12 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       console.warn('[Assign in-app notification error]', notifErr.message);
     }
 
-    return res.json({ message: 'Technician assigned successfully', complaint: comp });
+    return res.json({
+      message: 'Technician assigned successfully',
+      complaint: comp,
+      whatsapp_customer: waCustomerResult,
+      whatsapp_technician: waTechResult
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1205,8 +1215,9 @@ app.post('/api/complaints/:id/resolve', authenticateToken, async (req, res) => {
     } catch (_) {}
 
     // Send Feedback Request WhatsApp
+    let waResult = null;
     try {
-      await sendWhatsApp({
+      waResult = await sendWhatsApp({
         to: comp.customer_phone,
         templateName: 'complaint_resolved',
         variables: {
@@ -1219,9 +1230,10 @@ app.post('/api/complaints/:id/resolve', authenticateToken, async (req, res) => {
       });
     } catch (waErr) {
       console.warn('[Resolve WhatsApp Note]', waErr.message);
+      waResult = { success: false, error: waErr.message };
     }
 
-    return res.json({ message: 'Complaint resolved', complaint: comp });
+    return res.json({ message: 'Complaint resolved', complaint: comp, whatsapp: waResult });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

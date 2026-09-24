@@ -210,7 +210,7 @@ export const ComplaintDetailDrawer = ({
     if (!selectedTechId) return showToast('Please select a technician to assign', 'error');
     try {
       setAssigning(true);
-      await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
+      const res = await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
       setIsReassignOpen(false);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
@@ -230,7 +230,8 @@ export const ComplaintDetailDrawer = ({
         tech: assignedTech,
         expectedDate,
         customerWa,
-        techWa
+        techWa,
+        apiRes: res
       });
 
       // Trigger In-App Notification for the assigned technician
@@ -250,7 +251,20 @@ export const ComplaintDetailDrawer = ({
         });
       }
 
-      showToast(`Technician ${assignedTech?.name || ''} assigned successfully!`, 'success');
+      const custWaSuccess = res?.whatsapp_customer?.success;
+      const techWaSuccess = res?.whatsapp_technician?.success;
+
+      if (res?.whatsapp_customer && !custWaSuccess) {
+        showToast(`Customer WhatsApp alert failed: ${res.whatsapp_customer.error || 'Meta Error'}`, 'warning');
+      }
+      if (res?.whatsapp_technician && !techWaSuccess) {
+        showToast(`Technician WhatsApp alert failed: ${res.whatsapp_technician.error || 'Meta Error'}`, 'warning');
+      }
+      if (custWaSuccess && techWaSuccess) {
+        showToast(`Technician assigned & WhatsApp alerts delivered to Meta API!`, 'success');
+      } else {
+        showToast(`Technician ${assignedTech?.name || ''} assigned successfully!`, 'success');
+      }
     } catch (err) {
       showToast('Failed to assign technician: ' + err.message, 'error');
     } finally {
@@ -435,7 +449,7 @@ export const ComplaintDetailDrawer = ({
       if (spareParts) data.append('spare_parts_used', spareParts);
       if (resolutionPhoto) data.append('closing_photo', resolutionPhoto);
 
-      await api.resolveComplaint(ticket.id, data);
+      const res = await api.resolveComplaint(ticket.id, data);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
 
@@ -454,7 +468,11 @@ export const ComplaintDetailDrawer = ({
         performedByRole: currentUser?.role || 'technician'
       });
 
-      showToast('Complaint resolved successfully!', 'success');
+      if (res?.whatsapp && !res.whatsapp.success) {
+        showToast(`Complaint resolved, but customer feedback WhatsApp alert failed: ${res.whatsapp.error || 'Meta Error'}`, 'warning');
+      } else {
+        showToast('Complaint resolved & customer WhatsApp feedback alert sent!', 'success');
+      }
     } catch (err) {
       showToast('Failed to resolve complaint: ' + err.message, 'error');
     } finally {
@@ -2435,113 +2453,173 @@ export const ComplaintDetailDrawer = ({
               </div>
 
               {/* Background Relay Dispatch Notice Banner */}
-              <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex items-start gap-2.5">
-                <div className="p-1 bg-emerald-600 text-white rounded-lg shrink-0 mt-0.5">
-                  <CheckCircle className="w-4 h-4" />
-                </div>
-                <div className="text-xs text-emerald-950">
-                  <strong className="block font-bold">⚡ Dispatched via Official WhatsApp Cloud API (+91 78784 44414)</strong>
-                  <span className="text-[11px] text-emerald-800">
-                    Customer aur Technician ke alerts direct official WhatsApp Meta Cloud API (+91 78784 44414) se deliver kiye gaye hain!
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const custSuccess = assignSuccessModal.apiRes?.whatsapp_customer?.success;
+                const techSuccess = assignSuccessModal.apiRes?.whatsapp_technician?.success;
+                const hasFailure = (assignSuccessModal.apiRes?.whatsapp_customer && !custSuccess) || (assignSuccessModal.apiRes?.whatsapp_technician && !techSuccess);
+
+                return (
+                  <div className={`border rounded-xl p-3 flex items-start gap-2.5 ${hasFailure ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-300'}`}>
+                    <div className={`p-1 text-white rounded-lg shrink-0 mt-0.5 ${hasFailure ? 'bg-amber-600' : 'bg-emerald-600'}`}>
+                      <CheckCircle className="w-4 h-4" />
+                    </div>
+                    <div className="text-xs">
+                      <strong className={`block font-bold ${hasFailure ? 'text-amber-950' : 'text-emerald-950'}`}>
+                        {hasFailure ? '⚠️ WhatsApp Cloud API Notice' : '⚡ Dispatched via Official WhatsApp Cloud API (+91 78784 44414)'}
+                      </strong>
+                      <span className={`text-[11px] ${hasFailure ? 'text-amber-800' : 'text-emerald-800'}`}>
+                        {hasFailure
+                          ? 'One or more automated WhatsApp messages encountered a delivery issue. Please use the "Open WhatsApp Web" or "Direct WhatsApp" buttons below.'
+                          : 'Customer aur Technician ke alerts direct official WhatsApp Meta Cloud API (+91 78784 44414) se deliver kiye gaye hain!'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* SECTION 1: Customer WhatsApp Notification */}
-              <div className="bg-white rounded-xl p-4 border border-emerald-300 shadow-sm space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                      <MessageCircle className="w-4 h-4" />
+              {(() => {
+                const isCustSuccess = assignSuccessModal.apiRes?.whatsapp_customer?.success;
+                const isCustFailed = assignSuccessModal.apiRes?.whatsapp_customer && !isCustSuccess;
+                const custError = assignSuccessModal.apiRes?.whatsapp_customer?.error;
+
+                return (
+                  <div className={`rounded-xl p-4 border shadow-sm space-y-2.5 ${isCustFailed ? 'bg-amber-50/50 border-amber-300' : 'bg-white border-emerald-300'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-lg text-white flex items-center justify-center shrink-0 ${isCustFailed ? 'bg-amber-600' : 'bg-emerald-600'}`}>
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-slate-900 text-xs">1. Customer Visit Confirmation</h4>
+                          <p className="text-[10px] text-slate-500">Customer: <strong>{ticket.customer_name}</strong> (📞 {ticket.customer_phone})</p>
+                        </div>
+                      </div>
+                      {isCustFailed ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Delivery Issue
+                        </span>
+                      ) : isCustSuccess ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Dispatched (Meta API)
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                          Ready to Send
+                        </span>
+                      )}
                     </div>
-                    <div>
-                      <h4 className="font-black text-slate-900 text-xs">1. Customer Visit Confirmation</h4>
-                      <p className="text-[10px] text-slate-500">Customer: <strong>{ticket.customer_name}</strong> (📞 {ticket.customer_phone})</p>
+
+                    {isCustFailed && (
+                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-2 text-xs text-rose-900 text-[11px]">
+                        <strong>⚠️ Customer Meta WhatsApp Alert:</strong> {custError || 'Delivery could not be confirmed.'}
+                      </div>
+                    )}
+
+                    {/* Message Preview */}
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 whitespace-pre-line max-h-28 overflow-y-auto leading-relaxed shadow-inner">
+                      {assignSuccessModal.customerWa.rawText}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(assignSuccessModal.customerWa.rawText);
+                          setCopiedCustWa(true);
+                          setTimeout(() => setCopiedCustWa(false), 2000);
+                        }}
+                        className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center gap-1 text-xs transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{copiedCustWa ? 'Copied!' : 'Copy Text'}</span>
+                      </button>
+
+                      <a
+                        href={assignSuccessModal.customerWa.sendUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-slate-400 hover:text-emerald-700 flex items-center gap-1 underline transition-colors"
+                      >
+                        <span>Open WhatsApp Web</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Dispatched (Meta API)
-                  </span>
-                </div>
-
-                {/* Message Preview */}
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 whitespace-pre-line max-h-28 overflow-y-auto leading-relaxed shadow-inner">
-                  {assignSuccessModal.customerWa.rawText}
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(assignSuccessModal.customerWa.rawText);
-                      setCopiedCustWa(true);
-                      setTimeout(() => setCopiedCustWa(false), 2000);
-                    }}
-                    className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center gap-1 text-xs transition-colors"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedCustWa ? 'Copied!' : 'Copy Text'}</span>
-                  </button>
-
-                  <a
-                    href={assignSuccessModal.customerWa.sendUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[11px] text-slate-400 hover:text-emerald-700 flex items-center gap-1 underline transition-colors"
-                  >
-                    <span>Open WhatsApp Web</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* SECTION 2: Technician WhatsApp Work Order */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-teal-700 text-white flex items-center justify-center shrink-0">
-                      <Wrench className="w-4 h-4" />
+              {(() => {
+                const isTechSuccess = assignSuccessModal.apiRes?.whatsapp_technician?.success;
+                const isTechFailed = assignSuccessModal.apiRes?.whatsapp_technician && !isTechSuccess;
+                const techError = assignSuccessModal.apiRes?.whatsapp_technician?.error;
+
+                return (
+                  <div className={`rounded-xl p-4 border space-y-2.5 ${isTechFailed ? 'bg-amber-50/50 border-amber-300' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-lg text-white flex items-center justify-center shrink-0 ${isTechFailed ? 'bg-amber-600' : 'bg-teal-700'}`}>
+                          <Wrench className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-800 text-xs">2. Technician Field Work Order</h4>
+                          <p className="text-[10px] text-slate-500">Technician: <strong>{assignSuccessModal.tech?.name}</strong> (📞 {assignSuccessModal.tech?.phone || 'N/A'})</p>
+                        </div>
+                      </div>
+                      {isTechFailed ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Delivery Issue
+                        </span>
+                      ) : isTechSuccess ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span> Dispatched (Meta API)
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                          Ready to Send
+                        </span>
+                      )}
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-xs">2. Technician Field Work Order</h4>
-                      <p className="text-[10px] text-slate-500">Technician: <strong>{assignSuccessModal.tech?.name}</strong> (📞 {assignSuccessModal.tech?.phone || 'N/A'})</p>
+
+                    {isTechFailed && (
+                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-2 text-xs text-rose-900 text-[11px]">
+                        <strong>⚠️ Technician Meta WhatsApp Alert:</strong> {techError || 'Delivery could not be confirmed.'}
+                      </div>
+                    )}
+
+                    {/* Work Order Preview */}
+                    <div className="bg-white p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 whitespace-pre-line max-h-24 overflow-y-auto leading-relaxed shadow-inner">
+                      {assignSuccessModal.techWa.rawText}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(assignSuccessModal.techWa.rawText);
+                          setCopiedTechWa(true);
+                          setTimeout(() => setCopiedTechWa(false), 2000);
+                        }}
+                        className="py-1.5 px-3 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold flex items-center gap-1 text-xs transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{copiedTechWa ? 'Copied!' : 'Copy Text'}</span>
+                      </button>
+
+                      <a
+                        href={assignSuccessModal.techWa.sendUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-slate-400 hover:text-teal-700 flex items-center gap-1 underline transition-colors"
+                      >
+                        <span>Open WhatsApp Web</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span> Dispatched (Meta API)
-                  </span>
-                </div>
-
-                {/* Work Order Preview */}
-                <div className="bg-white p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 whitespace-pre-line max-h-24 overflow-y-auto leading-relaxed shadow-inner">
-                  {assignSuccessModal.techWa.rawText}
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(assignSuccessModal.techWa.rawText);
-                      setCopiedTechWa(true);
-                      setTimeout(() => setCopiedTechWa(false), 2000);
-                    }}
-                    className="py-1.5 px-3 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold flex items-center gap-1 text-xs transition-colors"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedTechWa ? 'Copied!' : 'Copy Text'}</span>
-                  </button>
-
-                  <a
-                    href={assignSuccessModal.techWa.sendUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[11px] text-slate-400 hover:text-teal-700 flex items-center gap-1 underline transition-colors"
-                  >
-                    <span>Open WhatsApp Web</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}

@@ -111,6 +111,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [fileList, setFileList] = useState([]); // [{ file, preview, id }]
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState(null);
+  const [createdWhatsApp, setCreatedWhatsApp] = useState(null);
   const [waData, setWaData] = useState(null);
   const [copied, setCopied] = useState(false);
   const [copiedWaMsg, setCopiedWaMsg] = useState(false);
@@ -396,6 +397,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
       const res = await api.createComplaint(data);
       setCreatedTicket(res.complaint);
+      setCreatedWhatsApp(res.whatsapp || null);
 
       // Trigger In-App Notification for Staff & Admin
       if (res && res.complaint) {
@@ -412,7 +414,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
         });
       }
 
-      showToast('Complaint registered successfully', 'success');
+      if (res && res.whatsapp) {
+        if (res.whatsapp.success) {
+          showToast('Complaint registered & WhatsApp alert delivered to Meta API!', 'success');
+        } else {
+          showToast(`Complaint registered, but customer WhatsApp failed: ${res.whatsapp.error || 'Meta Error'}`, 'warning');
+        }
+      } else {
+        showToast('Complaint registered successfully', 'success');
+      }
       if (onComplaintCreated) onComplaintCreated(res.complaint);
     } catch (err) {
       showToast('Failed to create complaint: ' + err.message, 'error');
@@ -449,6 +459,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const resetAndClose = () => {
     setStep('product');
     setCreatedTicket(null);
+    setCreatedWhatsApp(null);
     setPreviewItem(null);
     setDirectSending(false);
     setDirectSent(false);
@@ -603,24 +614,48 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 const finalWaText = waData?.rawText || defaultFallbackText;
                 const finalWaUrl = waData?.sendUrl || `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(finalWaText)}`;
 
+                const isWaSuccess = createdWhatsApp?.success;
+                const isWaFailed = createdWhatsApp && !createdWhatsApp.success;
+
                 return (
-                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50/60 rounded-2xl p-4 border border-emerald-300 text-left space-y-3 shadow-sm">
+                  <div className={`rounded-2xl p-4 border text-left space-y-3 shadow-sm ${isWaFailed ? 'bg-gradient-to-br from-amber-50 to-rose-50/60 border-amber-300' : 'bg-gradient-to-br from-emerald-50 to-teal-50/60 border-emerald-300'}`}>
                     <div className="flex items-center justify-between gap-2.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-700/20">
+                        <div className={`w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 shadow-md ${isWaFailed ? 'bg-amber-600 shadow-amber-700/20' : 'bg-emerald-600 shadow-emerald-700/20'}`}>
                           <MessageCircle className="w-5 h-5" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-black text-emerald-950">Official Customer WhatsApp Alert</h4>
-                          <p className="text-[11px] text-emerald-800">
-                            Sent automatically to <strong>{createdTicket.customer_phone}</strong> via Official WhatsApp (+91 78784 44414)
+                          <h4 className="text-xs font-black text-slate-900">Official Customer WhatsApp Alert</h4>
+                          <p className="text-[11px] text-slate-600">
+                            Sent to <strong>{createdTicket.customer_phone}</strong> via Official WhatsApp (+91 78784 44414)
                           </p>
                         </div>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Dispatched (Meta API)
-                      </span>
+                      {isWaFailed ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 shrink-0 flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-rose-500"></span> Delivery Issue
+                        </span>
+                      ) : isWaSuccess ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Dispatched (Meta API)
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 shrink-0 flex items-center gap-1">
+                          Processing
+                        </span>
+                      )}
                     </div>
+
+                    {isWaFailed && (
+                      <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-xs text-rose-900 space-y-1">
+                        <span className="font-bold flex items-center gap-1 text-[11px]">
+                          ⚠️ Meta Cloud API Alert: {createdWhatsApp.error || 'Message could not be dispatched'}
+                        </span>
+                        <p className="text-[11px] text-rose-700">
+                          Please click "Open WhatsApp Web" below to send the confirmation directly to the customer without delay.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Formatted Message Preview */}
                     <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 text-[11px] font-mono text-slate-700 whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto shadow-inner">
