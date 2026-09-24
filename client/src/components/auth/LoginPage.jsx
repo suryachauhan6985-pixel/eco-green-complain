@@ -85,29 +85,6 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
   };
 
   const [activeSlide, setActiveSlide] = useState(0);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    setProgress(0);
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          return 0;
-        }
-        return prev + 2;
-      });
-    }, 100);
-
-    const slideTimer = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % SLIDES.length);
-      setProgress(0);
-    }, 5000);
-
-    return () => {
-      clearInterval(progressInterval);
-      clearInterval(slideTimer);
-    };
-  }, [activeSlide]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -141,9 +118,9 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-emerald-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-teal-600/20 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 z-10">
-        {/* Left Side: Brand Visual & Interactive Carousel */}
-        <div className="lg:col-span-5 bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 p-6 sm:p-8 text-white flex flex-col justify-between relative overflow-hidden">
+      <div className="max-w-md lg:max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 z-10 lg:min-h-[590px]">
+        {/* Left Side: Brand Visual & Interactive Carousel (Hidden on Mobile for Senior UX) */}
+        <div className="hidden lg:flex lg:col-span-5 bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 p-7 text-white flex-col justify-between relative overflow-hidden h-full">
           {/* Subtle moving ambient glows */}
           <div className="absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/20 rounded-full blur-2xl animate-pulse pointer-events-none" />
           <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-teal-400/20 rounded-full blur-2xl animate-pulse pointer-events-none" />
@@ -151,15 +128,15 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div>
               {/* Perfectly Centered & Enlarged Transparent Logo */}
-              <div className="mb-6 flex justify-center items-center py-2">
+              <div className="mb-5 flex justify-center items-center py-1">
                 <img 
                   src="/company-logo-white.png" 
                   alt="Eco Green Solar" 
-                  className="h-14 sm:h-16 w-auto object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] hover:scale-105 transition-transform" 
+                  className="h-14 w-auto object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] hover:scale-105 transition-transform" 
                 />
               </div>
 
-              {/* Interactive Carousel Slide Selector Chips */}
+              {/* Interactive Carousel Slide Selector Chips (Clean solid tabs without running line) */}
               <div className="flex items-center gap-1.5 p-1 bg-white/10 backdrop-blur-md rounded-2xl mb-4 border border-white/10">
                 {SLIDES.map((slide, idx) => {
                   const isActive = activeSlide === idx;
@@ -167,49 +144,40 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                     <button
                       key={slide.id}
                       type="button"
-                      onClick={() => {
-                        setActiveSlide(idx);
-                        setProgress(0);
-                      }}
-                      className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer relative overflow-hidden text-center ${
+                      onClick={() => setActiveSlide(idx)}
+                      className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer text-center ${
                         isActive 
                           ? 'bg-emerald-500 text-white shadow-xs' 
                           : 'text-emerald-200/70 hover:text-white hover:bg-white/5'
                       }`}
                     >
                       <span>{slide.tabName}</span>
-                      {isActive && (
-                        <div 
-                          className="absolute bottom-0 left-0 h-0.5 bg-amber-300 transition-all duration-100" 
-                          style={{ width: `${progress}%` }} 
-                        />
-                      )}
                     </button>
                   );
                 })}
               </div>
 
-              {/* Dynamic Animated Slide Content */}
-              <div className="transition-all duration-500 min-h-[290px] flex flex-col justify-between">
+              {/* Dynamic Slide Content with Fixed Stable Height to PREVENT card height jumping */}
+              <div className="h-[290px] flex flex-col justify-between overflow-hidden">
                 <div>
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-semibold text-emerald-300 mb-2.5 backdrop-blur-xs">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-semibold text-emerald-300 mb-2 backdrop-blur-xs">
                     <Sparkles className="w-3 h-3 text-emerald-300 animate-spin" style={{ animationDuration: '8s' }} />
                     <span>{SLIDES[activeSlide].badge}</span>
                   </div>
 
-                  <h2 className="text-xl sm:text-2xl font-black text-white leading-tight mb-2 transition-all duration-300">
+                  <h2 className="text-xl font-black text-white leading-tight mb-2 line-clamp-2">
                     {SLIDES[activeSlide].title}
                   </h2>
-                  <p className="text-xs text-emerald-100/90 leading-relaxed mb-4">
+                  <p className="text-xs text-emerald-100/90 leading-relaxed mb-3 line-clamp-3">
                     {SLIDES[activeSlide].desc}
                   </p>
 
-                  {/* Animated Highlights */}
-                  <div className="space-y-2.5">
+                  {/* Highlights */}
+                  <div className="space-y-2">
                     {SLIDES[activeSlide].highlights.map((h, i) => (
-                      <div key={i} className="flex items-start gap-2 text-xs text-emerald-50/95 animate-in fade-in slide-in-from-left-2 duration-300">
+                      <div key={i} className="flex items-start gap-2 text-xs text-emerald-50/95">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                        <span><strong>{h.label}:</strong> {h.detail}</span>
+                        <span className="line-clamp-2"><strong>{h.label}:</strong> {h.detail}</span>
                       </div>
                     ))}
                   </div>
@@ -218,7 +186,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
             </div>
 
             {/* Footer note on left */}
-            <div className="mt-6 pt-3 border-t border-emerald-700/50 text-[11px] text-emerald-200/80 flex items-center justify-between">
+            <div className="mt-4 pt-3 border-t border-emerald-700/50 text-[11px] text-emerald-200/80 flex items-center justify-between">
               <span>© 2026 Eco Green Solar</span>
               <span className="font-mono text-[10px] bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-600/40 text-emerald-300">CMS Enterprise</span>
             </div>
@@ -226,8 +194,20 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
         </div>
 
         {/* Right Side: Sign In Form & Role Quick-Select */}
-        <div className="lg:col-span-7 p-6 sm:p-8 flex flex-col justify-between bg-white">
+        <div className="lg:col-span-7 p-6 sm:p-8 flex flex-col justify-between bg-white h-full">
           <div>
+            {/* Mobile-Only Clean Brand Header */}
+            <div className="lg:hidden flex flex-col items-center text-center mb-6 pb-4 border-b border-slate-100">
+              <img 
+                src="/company-logo.png" 
+                alt="Eco Green Solar" 
+                className="h-12 w-auto object-contain mb-1.5 filter drop-shadow-2xs" 
+              />
+              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                CMS Enterprise Portal
+              </span>
+            </div>
+
             <div className="flex items-center justify-between gap-2 mb-4">
               <div>
                 <h3 className="text-lg sm:text-xl font-black text-slate-900">
