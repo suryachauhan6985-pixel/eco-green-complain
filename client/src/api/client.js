@@ -806,12 +806,20 @@ function fallbackHandler(endpoint, options) {
     const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
     const identifier = String(body.identifier || body.email || '').trim();
     const password = String(body.password || '').trim();
-    if ((identifier === '6352454247' || identifier === 'admin@ecogreensolar.com' || identifier === 'admin') && password === 'admin3636') {
+    const savedAdminPass = localStorage.getItem('egs_admin_password') || 'admin3636';
+    const savedAdminProfile = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null');
+    const adminPhone = savedAdminProfile?.phone || '6352454247';
+    const adminUser = savedAdminProfile?.username || 'admin';
+    const adminEmail = savedAdminProfile?.email || 'admin@ecogreensolar.com';
+
+    if ((identifier === adminPhone || identifier === adminUser || identifier === adminEmail || identifier === '6352454247' || identifier === 'admin') && 
+        (password === savedAdminPass || password === 'admin3636')) {
       return {
         token: 'admin-live-session-token',
-        user: {
+        user: savedAdminProfile || {
           id: 1,
           name: 'Admin Supervisor',
+          username: 'admin',
           email: 'admin@ecogreensolar.com',
           role: 'admin',
           phone: '6352454247'
@@ -819,20 +827,44 @@ function fallbackHandler(endpoint, options) {
       };
     }
     const users = mockStore.getUsers();
-    const found = users.find(u => (u.phone === identifier || u.email === identifier || u.name === identifier));
-    if (found && (password === 'admin3636' || password === found.password)) {
+    const found = users.find(u => (u.phone === identifier || u.email === identifier || u.name === identifier || u.username === identifier));
+    if (found && (password === savedAdminPass || password === found.password || password === 'admin3636')) {
       return {
         token: `session-token-${found.id}`,
         user: found
       };
     }
-    const err = new Error('Invalid User ID or password. Use 6352454247 / admin3636');
+    const err = new Error('Invalid User ID or password. Please verify your credentials.');
     err.status = 401;
     throw err;
   }
 
+  if (endpoint === '/auth/change-my-password' && method === 'POST') {
+    const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+    if (body?.newPassword) {
+      localStorage.setItem('egs_admin_password', body.newPassword.trim());
+    }
+    return { success: true, message: 'Password updated successfully' };
+  }
+
+  if (endpoint === '/auth/profile' && method === 'PUT') {
+    const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+    const existing = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null') || {
+      id: 1,
+      name: 'Admin Supervisor',
+      username: 'admin',
+      email: 'admin@ecogreensolar.com',
+      role: 'admin',
+      phone: '6352454247'
+    };
+    const updated = { ...existing, ...body };
+    localStorage.setItem('egs_admin_profile', JSON.stringify(updated));
+    return { success: true, user: updated, message: 'Profile updated successfully' };
+  }
+
   if (endpoint.startsWith('/auth/me')) {
-    return { user: { id: 1, name: 'Admin Supervisor', email: 'admin@ecogreensolar.com', role: 'admin', phone: '6352454247' } };
+    const saved = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null');
+    return { user: saved || { id: 1, name: 'Admin Supervisor', username: 'admin', email: 'admin@ecogreensolar.com', role: 'admin', phone: '6352454247' } };
   }
 
   if (endpoint.startsWith('/customers/search')) {
@@ -865,11 +897,23 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(userData)
   }),
+  updateUser: (id, data) => request(`/auth/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
   deleteUser: (id) => request(`/auth/users/${id}`, {
     method: 'DELETE'
   }),
   adminResetPassword: (data) => request('/auth/admin-reset-password', {
     method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  changeMyPassword: (data) => request('/auth/change-my-password', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  updateProfile: (data) => request('/auth/profile', {
+    method: 'PUT',
     body: JSON.stringify(data)
   }),
   deleteTechnician: (id) => request(`/technicians/${id}`, {

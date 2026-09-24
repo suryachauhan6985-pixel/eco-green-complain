@@ -685,6 +685,66 @@ app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) =
   }
 });
 
+app.post('/api/auth/change-my-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'New password must be at least 4 characters long' });
+    }
+
+    const userRes = await query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'User account not found' });
+    const user = userRes.rows[0];
+
+    // If current password provided, verify it
+    if (currentPassword && currentPassword.trim()) {
+      const valid = await bcrypt.compare(currentPassword.trim(), user.password_hash);
+      if (!valid) {
+        return res.status(400).json({ error: 'Current password does not match' });
+      }
+    }
+
+    const hash = await bcrypt.hash(newPassword.trim(), 10);
+    await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, req.user.id]);
+
+    return res.json({
+      success: true,
+      message: `Password updated successfully for ${user.name}`
+    });
+  } catch (err) {
+    console.error('Change password error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to change password' });
+  }
+});
+
+app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+  try {
+    const { name, phone, email, username } = req.body;
+    const cleanPhone = phone ? phone.trim() : null;
+    const cleanEmail = email ? email.trim() : null;
+    const cleanUsername = username ? username.trim().toLowerCase() : null;
+    const cleanName = name ? name.trim() : null;
+
+    const updateRes = await query(
+      `UPDATE users 
+       SET name = COALESCE($1, name), 
+           phone = COALESCE($2, phone), 
+           email = COALESCE($3, email), 
+           username = COALESCE($4, username),
+           updated_at = NOW() 
+       WHERE id = $5 
+       RETURNING id, name, username, email, role, phone`,
+      [cleanName, cleanPhone, cleanEmail, cleanUsername, req.user.id]
+    );
+
+    if (updateRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    return res.json({ user: updateRes.rows[0], message: 'Profile updated successfully' });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to update profile' });
+  }
+});
+
 app.delete('/api/auth/users/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -703,7 +763,7 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
       SELECT t.*, 
         COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress', 'On Hold')) as active_tickets_count,
         COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
-        COALESCE(ROUND(AVG(c.rating)::numeric, 1), 5.0) as average_rating
+        ROUND(AVG(c.rating)::numeric, 1) as average_rating
       FROM technicians t
       LEFT JOIN complaints c ON c.assigned_technician_id = t.id
       GROUP BY t.id

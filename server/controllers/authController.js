@@ -321,4 +321,55 @@ async function adminResetPassword(req, res) {
   }
 }
 
-module.exports = { login, getMe, listUsers, createUser, updateUser, deleteUser, adminResetPassword };
+async function changeMyPassword(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'New password must be at least 4 characters long' });
+    }
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User account not found' });
+
+    if (currentPassword && currentPassword.trim()) {
+      const valid = await bcrypt.compare(currentPassword.trim(), user.password_hash);
+      if (!valid) {
+        return res.status(400).json({ error: 'Current password does not match' });
+      }
+    }
+
+    const hash = await bcrypt.hash(newPassword.trim(), 10);
+    db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, req.user.id);
+
+    res.json({
+      success: true,
+      message: `Password updated successfully for ${user.name}`
+    });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Failed to change password: ' + err.message });
+  }
+}
+
+function updateProfile(req, res) {
+  try {
+    const { name, phone, email, username } = req.body;
+    db.prepare(`
+      UPDATE users 
+      SET name = COALESCE(?, name),
+          phone = COALESCE(?, phone),
+          email = COALESCE(?, email),
+          username = COALESCE(?, username),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(name?.trim() || null, phone?.trim() || null, email?.trim() || null, username?.trim().toLowerCase() || null, req.user.id);
+
+    const user = db.prepare('SELECT id, name, username, email, role, phone FROM users WHERE id = ?').get(req.user.id);
+    res.json({ user, message: 'Profile updated successfully' });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ error: 'Failed to update profile: ' + err.message });
+  }
+}
+
+module.exports = { login, getMe, listUsers, createUser, updateUser, deleteUser, adminResetPassword, changeMyPassword, updateProfile };

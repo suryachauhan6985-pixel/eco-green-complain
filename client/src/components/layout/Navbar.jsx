@@ -4,8 +4,9 @@ import { useNotifications } from '../../context/NotificationContext';
 import { 
   Sun, Shield, Users, Wrench, Search, Plus, 
   BarChart3, Settings, Bell, ChevronDown, Check, LogOut,
-  Compass, RotateCcw, Sparkles, X, MessageCircle, QrCode 
+  Compass, RotateCcw, Sparkles, X, MessageCircle, QrCode, Key
 } from 'lucide-react';
+import { AccountSettingsModal } from '../admin/AccountSettingsModal';
 
 export const Navbar = ({ 
   currentTab, 
@@ -18,6 +19,7 @@ export const Navbar = ({
   const { currentUser, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
+  const [accountModalOpen, setAccountModalOpen] = React.useState(false);
 
   const roles = [
     { id: 'admin', label: 'Admin Supervisor', icon: Shield, desc: 'Full System Control & Reports' },
@@ -315,8 +317,19 @@ export const Navbar = ({
                       </p>
                     </div>
 
-                    {/* Desktop Sign Out Button */}
-                    <div className="px-3 pt-2">
+                    {/* Desktop Manage Credentials & Sign Out */}
+                    <div className="px-3 pt-2 space-y-1.5">
+                      <button
+                        onClick={() => {
+                          setRoleMenuOpen(false);
+                          setAccountModalOpen(true);
+                        }}
+                        className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <Key className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Manage Admin Credentials</span>
+                      </button>
+
                       <button
                         onClick={() => {
                           logout();
@@ -385,20 +398,29 @@ export const Navbar = ({
                         </div>
                       </div>
 
-                      <p className="text-[11px] text-slate-500 mb-4 leading-relaxed bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60 text-amber-900">
-                        🔒 Direct account switching is restricted. To log into another role (Admin, Staff, Technician), please sign out to the login screen.
-                      </p>
+                      <div className="space-y-2">
+                        <button
+                          onClick={() => {
+                            setRoleMenuOpen(false);
+                            setAccountModalOpen(true);
+                          }}
+                          className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          <Key className="w-4 h-4 text-emerald-600" />
+                          <span>Manage Admin Credentials</span>
+                        </button>
 
-                      <button
-                        onClick={() => {
-                          logout();
-                          setRoleMenuOpen(false);
-                        }}
-                        className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Log Out / Switch Account</span>
-                      </button>
+                        <button
+                          onClick={() => {
+                            logout();
+                            setRoleMenuOpen(false);
+                          }}
+                          className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Log Out / Switch Account</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </>
@@ -407,6 +429,12 @@ export const Navbar = ({
           </div>
         </div>
       </div>
+
+      {/* Admin Credentials & Profile Modal */}
+      <AccountSettingsModal 
+        isOpen={accountModalOpen} 
+        onClose={() => setAccountModalOpen(false)} 
+      />
     </header>
   );
 };

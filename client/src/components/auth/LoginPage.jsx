@@ -48,41 +48,16 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
   const { login } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(true);
-  const [savedProfile, setSavedProfile] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Auto-fill saved credentials ONLY if this specific device was previously logged in
+  // Clear legacy stored credentials so fields remain clean and empty until user taps to autofill
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('ecogreen_device_auth_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.identifier && parsed?.password) {
-          setIdentifier(parsed.identifier);
-          setPassword(parsed.password);
-          setSavedProfile({
-            name: parsed.name || parsed.identifier,
-            role: parsed.role || 'staff',
-            identifier: parsed.identifier
-          });
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load saved device credentials:', e);
       localStorage.removeItem('ecogreen_device_auth_v1');
-    }
+    } catch (_) {}
   }, []);
-
-  const handleClearSaved = () => {
-    localStorage.removeItem('ecogreen_device_auth_v1');
-    setIdentifier('');
-    setPassword('');
-    setSavedProfile(null);
-    setError('');
-  };
 
   const [activeSlide, setActiveSlide] = useState(0);
 
@@ -92,19 +67,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
     setLoading(true);
 
     try {
-      const loggedInUser = await login(identifier.trim(), password);
-      
-      // Save credentials exclusively to this local device if Remember Me is active
-      if (rememberMe) {
-        localStorage.setItem('ecogreen_device_auth_v1', JSON.stringify({
-          identifier: identifier.trim(),
-          password,
-          role: loggedInUser?.role || 'staff',
-          name: loggedInUser?.name || identifier.trim()
-        }));
-      } else {
-        localStorage.removeItem('ecogreen_device_auth_v1');
-      }
+      await login(identifier.trim(), password);
     } catch (err) {
       setError(err.message || 'Invalid User ID or password. Please verify and try again.');
     } finally {
@@ -219,41 +182,15 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
               </div>
             </div>
 
-            {/* Device-Specific Profile Status or Guidance */}
-            {savedProfile ? (
-              <div className="mb-5 p-3.5 bg-emerald-50/90 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-                    {savedProfile.role === 'technician' ? <Wrench className="w-4 h-4" /> : savedProfile.role === 'admin' ? <Shield className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900 truncate">{savedProfile.name}</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
-                        {savedProfile.role}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 truncate">Saved on this device for one-tap sign in</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleClearSaved}
-                  className="text-xs font-semibold text-emerald-800 hover:text-rose-600 hover:underline shrink-0 cursor-pointer"
-                >
-                  Use another account
-                </button>
+            {/* Authorized Login Guidance */}
+            <div className="mb-5 p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center gap-3 text-slate-600">
+              <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+                <Lock className="w-4 h-4" />
               </div>
-            ) : (
-              <div className="mb-5 p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center gap-3 text-slate-600">
-                <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <p className="text-xs leading-relaxed">
-                  Enter the <strong>User ID</strong> and <strong>Password</strong> provided by your administrator.
-                </p>
-              </div>
-            )}
+              <p className="text-xs leading-relaxed">
+                Enter your authorized <strong>User ID / Mobile</strong> and <strong>Password</strong> to access operations.
+              </p>
+            </div>
 
             {/* Error Message if any */}
             {error && (
@@ -273,10 +210,12 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                   <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
+                    id="login-username"
+                    name="username"
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Enter your User ID or phone"
+                    placeholder="Enter User ID or registered mobile"
                     autoComplete="username"
                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-900"
                   />
@@ -291,6 +230,8 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    id="login-password"
+                    name="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -308,32 +249,12 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs pt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-slate-600 select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                  />
-                  <span className="font-medium">Save login on this device</span>
-                </label>
-                {savedProfile && (
-                  <button
-                    type="button"
-                    onClick={handleClearSaved}
-                    className="text-slate-400 hover:text-rose-600 font-medium cursor-pointer"
-                  >
-                    Clear saved
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 cursor-pointer"
-              >
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 cursor-pointer"
+                >
                 {loading ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -346,6 +267,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                   </>
                 )}
               </button>
+            </div>
             </form>
           </div>
 
