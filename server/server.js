@@ -19,6 +19,7 @@ const technicianController = require('./controllers/technicianController');
 const notificationController = require('./controllers/notificationController');
 const reportController = require('./controllers/reportController');
 const customerDirectoryController = require('./controllers/customerDirectoryController');
+const locationController = require('./controllers/locationController');
 const realtimeService = require('./services/realtimeService');
 const { verifyWebhook, handleIncomingWebhook } = require('./services/whatsappWebhookService');
 
@@ -236,6 +237,11 @@ app.delete('/api/products/:id', authenticateToken, requireRole('admin'), (req, r
 app.get('/api/categories', complaintController.listCategories);
 app.post('/api/categories', authenticateToken, requireRole('admin', 'staff'), complaintController.addCategory);
 app.delete('/api/categories/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.deleteCategory);
+
+// ================= LOCATION / PINCODE ROUTES =================
+app.get('/api/location/pincode/:pincode', locationController.getPincodeDetails);
+app.get('/api/location/search', locationController.searchByCityOrPostOffice);
+app.get('/api/location/postoffice/:query', locationController.searchByCityOrPostOffice);
 
 // ================= COMPLAINT ROUTES =================
 // Real-time Event Stream (Server-Sent Events) for instant Staff & Admin live sync

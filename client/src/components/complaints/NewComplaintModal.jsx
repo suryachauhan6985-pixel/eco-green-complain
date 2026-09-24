@@ -8,7 +8,7 @@ import {
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
-  Gauge, Layers, ArrowLeft, Plus
+  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -79,6 +79,10 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     customer_email: '',
     customer_address: '',
     city: '',
+    pincode: '',
+    district: '',
+    state: '',
+    post_office: '',
     consumer_no: '',
     order_no: '',
     invoice_no: '',
@@ -159,6 +163,128 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
     return () => clearTimeout(timer);
   }, [formData.customer_phone]);
+
+  // Location & Postal Pincode state
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [pincodeStatus, setPincodeStatus] = useState(null); // null | 'valid' | 'invalid'
+  const [pincodeMessage, setPincodeMessage] = useState('');
+  const [pincodePostOffices, setPincodePostOffices] = useState([]);
+  const [pincodeVerifiedData, setPincodeVerifiedData] = useState(null);
+
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [searchingCity, setSearchingCity] = useState(false);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+
+  // Pincode Verification Function
+  const verifyPincode = async (code) => {
+    const clean = (code || '').replace(/\D/g, '').slice(0, 6);
+    if (clean.length !== 6) {
+      setPincodeStatus(null);
+      setPincodeMessage('');
+      setPincodePostOffices([]);
+      setPincodeVerifiedData(null);
+      return;
+    }
+
+    try {
+      setPincodeLoading(true);
+      setPincodeMessage('');
+      const res = await api.getPincodeDetails(clean);
+      if (res && res.success) {
+        setPincodeStatus('valid');
+        setPincodeVerifiedData(res);
+        setPincodePostOffices(res.postOffices || []);
+
+        setFormData(prev => ({
+          ...prev,
+          pincode: clean,
+          district: res.district || prev.district,
+          city: res.district || prev.city,
+          state: res.state || prev.state,
+          post_office: (res.postOffices && res.postOffices.length === 1 ? res.postOffices[0] : (prev.post_office || ''))
+        }));
+      } else {
+        setPincodeStatus('invalid');
+        setPincodeMessage(res?.message || 'Invalid Pincode. Please enter a valid 6-digit pincode.');
+        setPincodePostOffices([]);
+        setPincodeVerifiedData(null);
+      }
+    } catch (err) {
+      setPincodeStatus('invalid');
+      setPincodeMessage('Invalid Pincode. Please enter a valid 6-digit pincode.');
+      setPincodePostOffices([]);
+      setPincodeVerifiedData(null);
+    } finally {
+      setPincodeLoading(false);
+    }
+  };
+
+  // Debounced 6-digit Pincode Auto-verification
+  useEffect(() => {
+    const clean = (formData.pincode || '').replace(/\D/g, '').trim();
+    if (clean.length === 6) {
+      const timer = setTimeout(() => {
+        verifyPincode(clean);
+      }, 300);
+      return () => clearTimeout(timer);
+    } else if (clean.length > 0 && clean.length < 6 && pincodeStatus === 'valid') {
+      setPincodeStatus(null);
+      setPincodeVerifiedData(null);
+    }
+  }, [formData.pincode]);
+
+  // Debounced City/District Search for Autosuggesting Pincodes
+  useEffect(() => {
+    const val = (formData.city || '').trim();
+    if (pincodeStatus === 'valid' && (val === pincodeVerifiedData?.district || val === pincodeVerifiedData?.postOffice)) {
+      return;
+    }
+
+    if (!val || val.length < 3) {
+      setCitySuggestions([]);
+      setSearchingCity(false);
+      setShowCitySuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setSearchingCity(true);
+        const res = await api.searchLocation(val);
+        if (res && res.success && res.results && res.results.length > 0) {
+          setCitySuggestions(res.results);
+          setShowCitySuggestions(true);
+        } else {
+          setCitySuggestions([]);
+          setShowCitySuggestions(false);
+        }
+      } catch (e) {
+        setCitySuggestions([]);
+        setShowCitySuggestions(false);
+      } finally {
+        setSearchingCity(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [formData.city]);
+
+  const handleSelectCitySuggestion = (suggestion) => {
+    setFormData(prev => ({
+      ...prev,
+      city: suggestion.district,
+      district: suggestion.district,
+      pincode: suggestion.pincode,
+      state: suggestion.state,
+      post_office: suggestion.postOffice
+    }));
+    setPincodeStatus('valid');
+    setPincodeVerifiedData(suggestion);
+    setPincodePostOffices([suggestion.postOffice]);
+    setPincodeMessage('');
+    setShowCitySuggestions(false);
+  };
+
 
   useEffect(() => {
     if (isOpen) {
@@ -1041,19 +1167,202 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">City / Village / District</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                        <Hash className="w-3 h-3 text-emerald-600" />
+                        Postal Pincode <span className="text-[10px] text-slate-400 font-normal">(Optional - 6 digits)</span>
+                      </label>
+                      {formData.pincode && formData.pincode.length === 6 && !pincodeLoading && pincodeStatus === 'valid' && (
+                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">
+                          <Check className="w-3 h-3" /> Verified
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        placeholder="e.g. 282001, 302001, 380001"
+                        value={formData.pincode || ''}
+                        onChange={(e) => {
+                          const clean = e.target.value.replace(/\D/g, '').slice(0, 6);
+                          setFormData(prev => ({ ...prev, pincode: clean }));
+                          if (clean.length < 6) {
+                            setPincodeStatus(null);
+                            setPincodeMessage('');
+                            setPincodePostOffices([]);
+                            setPincodeVerifiedData(null);
+                          }
+                        }}
+                        className={`w-full text-xs px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 font-mono tracking-wider ${
+                          pincodeLoading
+                            ? 'border-slate-300 focus:ring-emerald-500 pr-8'
+                            : pincodeStatus === 'valid'
+                            ? 'border-emerald-500 focus:ring-emerald-500 pr-8 bg-emerald-50/20'
+                            : pincodeStatus === 'invalid'
+                            ? 'border-rose-400 focus:ring-rose-400 pr-8 bg-rose-50/20'
+                            : 'border-slate-300 focus:ring-emerald-500'
+                        }`}
+                      />
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                        {pincodeLoading ? (
+                          <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                        ) : pincodeStatus === 'valid' ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        ) : pincodeStatus === 'invalid' ? (
+                          <AlertCircle className="w-4 h-4 text-rose-500" />
+                        ) : null}
+                      </div>
+                    </div>
+                    {pincodeStatus === 'invalid' && (
+                      <p className="mt-1 text-[10px] text-rose-600 font-medium flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        {pincodeMessage || 'Invalid Pincode. Please enter a valid 6-digit pincode.'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bidirectional City/District and State Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                        <Building2 className="w-3 h-3 text-emerald-600" />
+                        City / District <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      {searchingCity && (
+                        <span className="text-[10px] text-emerald-600 flex items-center gap-1">
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Searching...
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
-                      placeholder="e.g., Jaipur, Ajmer, Kota..."
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      placeholder="e.g., Agra, Jaipur, Ahmedabad, Surat..."
+                      value={formData.city || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value, district: e.target.value }))}
+                      onFocus={() => { if (citySuggestions.length > 0) setShowCitySuggestions(true); }}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+
+                    {/* Autosuggest Dropdown for City/District Search */}
+                    {showCitySuggestions && citySuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="p-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                          <span>Matching Pincodes & Locations ({citySuggestions.length})</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowCitySuggestions(false)}
+                            className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {citySuggestions.map((item, idx) => (
+                          <div
+                            key={`${item.pincode}_${item.postOffice}_${idx}`}
+                            onClick={() => handleSelectCitySuggestion(item)}
+                            className="p-2.5 hover:bg-emerald-50/70 cursor-pointer transition-colors text-left flex items-center justify-between gap-2"
+                          >
+                            <div>
+                              <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                                <span>📍 {item.postOffice}</span>
+                                <span className="text-[11px] font-normal text-slate-500">({item.district})</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                {item.state}
+                              </div>
+                            </div>
+                            <div className="shrink-0 flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono font-bold text-[11px] rounded border border-emerald-200">
+                                {item.pincode}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                        <Map className="w-3 h-3 text-emerald-600" />
+                        State <span className="text-[10px] text-slate-400 font-normal">(Auto-filled)</span>
+                      </label>
+                      {formData.state && pincodeStatus === 'valid' && (
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                          <Check className="w-2.5 h-2.5" /> Verified
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="e.g., Uttar Pradesh, Rajasthan, Gujarat"
+                      value={formData.state || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                      className={`w-full text-xs px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                        pincodeStatus === 'valid' && formData.state
+                          ? 'bg-slate-100/90 text-slate-700 border-slate-300 font-medium'
+                          : 'bg-white border-slate-300 focus:ring-emerald-500'
+                      }`}
                     />
                   </div>
                 </div>
 
+                {/* Post Office / Area selection dropdown if multiple exist */}
+                {pincodePostOffices.length > 0 && (
+                  <div className="p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-200 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[11px] font-bold text-emerald-950 flex items-center gap-1">
+                        <span>📮 Post Office / Area Selection</span>
+                        <span className="text-[10px] text-emerald-700 font-normal">({pincodePostOffices.length} options for PIN {formData.pincode})</span>
+                      </label>
+                      {formData.post_office && (
+                        <span className="text-[10px] text-emerald-800 font-bold truncate max-w-[200px]">Selected: {formData.post_office}</span>
+                      )}
+                    </div>
+                    <select
+                      value={formData.post_office || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, post_office: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-800"
+                    >
+                      <option value="">-- Choose local Area / Branch Post Office --</option>
+                      {pincodePostOffices.map((po, i) => (
+                        <option key={`${po}-${i}`} value={po}>{po}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">Site / Installation Address *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-600">Site / Installation Address *</label>
+                    {(formData.pincode || formData.city) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const parts = [
+                            formData.customer_address ? formData.customer_address.trim() : '',
+                            formData.post_office,
+                            formData.city || formData.district,
+                            formData.state ? `${formData.state}${formData.pincode ? ` - ${formData.pincode}` : ''}` : formData.pincode
+                          ].filter(Boolean);
+                          const combined = parts
+                            .filter((item, index, self) => self.indexOf(item) === index)
+                            .join(', ');
+                          setFormData(prev => ({
+                            ...prev,
+                            customer_address: combined
+                          }));
+                        }}
+                        className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>+ Append Verified Location to Address</span>
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     required

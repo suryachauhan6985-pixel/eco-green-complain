@@ -1161,6 +1161,8 @@ export const api = {
   }),
   resendTechnicianWorkOrder: (id) => request(`/complaints/${encodeURIComponent(id)}/resend-technician`, {
     method: 'POST'
-  })
+  }),
+  getPincodeDetails: (pincode) => request(`/location/pincode/${encodeURIComponent(pincode)}`),
+  searchLocation: (query) => request(`/location/search?query=${encodeURIComponent(query)}`)
 };
 
