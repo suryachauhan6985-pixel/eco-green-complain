@@ -932,6 +932,69 @@ app.delete('/api/technicians/:id', authenticateToken, requireRole('admin'), asyn
   }
 });
 
+// Batch Settle All Cash Collected for Technician (Admin / Staff)
+app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const actorName = req.user ? (req.user.name || req.user.email || 'Company Finance/Admin') : 'Company Finance/Admin';
+    const actorRole = req.user ? (req.user.role || 'admin') : 'admin';
+
+    // Find technician record if it exists to get exact tech id and name
+    const techCheck = await query('SELECT id, name FROM technicians WHERE id::text = $1 OR user_id::text = $1', [rawId]);
+    const techId = techCheck.rows.length > 0 ? techCheck.rows[0].id : rawId;
+    const techName = techCheck.rows.length > 0 ? techCheck.rows[0].name : 'Technician';
+
+    const pendingRes = await query(`
+      SELECT id, ticket_id, payment_collected FROM complaints
+      WHERE assigned_technician_id::text = $1
+        AND payment_collected > 0
+        AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+    `, [String(techId)]);
+
+    if (pendingRes.rows.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'No pending cash settlements for this technician', 
+        settledCount: 0, 
+        totalAmount: 0 
+      });
+    }
+
+    let totalAmount = 0;
+    const ids = [];
+    for (const c of pendingRes.rows) {
+      totalAmount += (parseFloat(c.payment_collected) || 0);
+      ids.push(c.id);
+    }
+
+    await query(`
+      UPDATE complaints SET
+        company_settlement_status = 'Settled with Company',
+        company_settled_at = CURRENT_TIMESTAMP,
+        company_settled_by = $1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ANY($2::bigint[])
+    `, [actorName, ids]);
+
+    for (const c of pendingRes.rows) {
+      await query(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+        VALUES ($1, 'Cash Settled with Company', $2, $3, $4, 0)
+      `, [
+        c.id, 
+        `Batch cash settlement of ₹${c.payment_collected} received from ${techName} and deposited into company accounts.`, 
+        actorName, 
+        actorRole
+      ]);
+    }
+
+    return res.json({ success: true, settledCount: pendingRes.rows.length, totalAmount });
+  } catch (err) {
+    console.error('Batch settlement error:', err);
+    return res.status(500).json({ error: 'Failed to settle technician balance: ' + err.message });
+  }
+});
+
 // ==================== COMPLAINTS ROUTES ====================
 app.get('/api/complaints', authenticateToken, async (req, res) => {
   try {
@@ -1787,6 +1850,87 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
     return res.json({ message: 'Payment recorded successfully' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Settle Cash Collected with Company Account (Admin / Staff)
+app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes = '', amount_received } = req.body || {};
+
+    const compRes = await query(`
+      SELECT c.*, t.name as tech_name 
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id::text = $1 OR c.ticket_id = $1
+    `, [id]);
+
+    if (compRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const complaint = compRes.rows[0];
+    const settledAmt = amount_received !== undefined ? parseFloat(amount_received) : (parseFloat(complaint.payment_collected) || 0);
+    const actorName = req.user ? (req.user.name || req.user.email || 'Company Finance/Admin') : 'Company Finance/Admin';
+    const actorRole = req.user ? (req.user.role || 'admin') : 'admin';
+
+    const updateRes = await query(`
+      UPDATE complaints SET
+        company_settlement_status = 'Settled with Company',
+        company_settled_at = CURRENT_TIMESTAMP,
+        company_settled_by = $1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING *
+    `, [actorName, complaint.id]);
+
+    const timelineMsg = `Company confirmed receipt of ₹${settledAmt} collected by technician ${complaint.tech_name || 'Assigned Tech'} into company account.${notes ? ` • Note: ${notes}` : ''}`;
+
+    await query(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES ($1, 'Cash Settled with Company', $2, $3, $4, 0)
+    `, [complaint.id, timelineMsg, actorName, actorRole]);
+
+    // In-app notification
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_settle_${complaint.id}`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, 'payment_settled', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        complaint.ticket_id,
+        complaint.id,
+        `Payment Settled: ₹${settledAmt}`,
+        `Payment of ₹${settledAmt} for ticket ${complaint.ticket_id} settled with company by ${actorName}`,
+        complaint.customer_name,
+        'all',
+        complaint.assigned_technician_id,
+        complaint.tech_name,
+        actorName,
+        actorRole
+      ]);
+    } catch (nErr) {
+      console.warn('[Settlement In-App Notif Note]', nErr.message);
+    }
+
+    const updated = updateRes.rows[0];
+    return res.json({ 
+      message: 'Payment settled with company successfully', 
+      complaint: {
+        ...updated,
+        technician_name: complaint.tech_name
+      } 
+    });
+  } catch (err) {
+    console.error('Settle company payment error:', err);
+    return res.status(500).json({ error: 'Failed to settle payment with company: ' + err.message });
   }
 });
 

@@ -551,6 +551,63 @@ class LocalMockStore {
     return comp;
   }
 
+  recordPayment(id, { payment_collected, payment_status, payment_mode } = {}) {
+    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const comp = list.find(c => String(c.id) === String(id) || c.ticket_id === String(id));
+    if (comp) {
+      const amt = parseFloat(payment_collected) || 0;
+      comp.payment_collected = amt;
+      comp.payment_status = payment_status || (amt > 0 ? 'Paid' : 'Unpaid');
+      comp.payment_mode = payment_mode || 'Cash';
+      comp.payment_collected_at = new Date().toISOString();
+      comp.status_updated_at = new Date().toISOString();
+      localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
+    }
+    return comp;
+  }
+
+  settleCompanyPayment(id, { notes = '', amount_received } = {}) {
+    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const comp = list.find(c => String(c.id) === String(id) || c.ticket_id === String(id));
+    if (comp) {
+      comp.company_settlement_status = 'Settled with Company';
+      comp.company_settled_at = new Date().toISOString();
+      let currentUser = {};
+      try { currentUser = JSON.parse(localStorage.getItem('egs_user') || '{}'); } catch (_) {}
+      comp.company_settled_by = currentUser?.name || 'Company Finance/Admin';
+      comp.status_updated_at = new Date().toISOString();
+      localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
+    }
+    return comp;
+  }
+
+  settleAllTechnicianComplaints(techId) {
+    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    let settledCount = 0;
+    let totalAmount = 0;
+    let currentUser = {};
+    try { currentUser = JSON.parse(localStorage.getItem('egs_user') || '{}'); } catch (_) {}
+    const actorName = currentUser?.name || 'Company Finance/Admin';
+
+    list.forEach(c => {
+      const matchTech = String(c.assigned_technician_id) === String(techId) || String(c.technician_id) === String(techId);
+      const hasCash = (parseFloat(c.payment_collected) || 0) > 0;
+      const notSettled = c.company_settlement_status !== 'Settled with Company';
+
+      if (matchTech && hasCash && notSettled) {
+        c.company_settlement_status = 'Settled with Company';
+        c.company_settled_at = new Date().toISOString();
+        c.company_settled_by = actorName;
+        c.status_updated_at = new Date().toISOString();
+        settledCount++;
+        totalAmount += (parseFloat(c.payment_collected) || 0);
+      }
+    });
+
+    localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
+    return { success: true, settledCount, totalAmount };
+  }
+
   getMetrics() {
     const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
     const counts = {
@@ -747,6 +804,14 @@ function fallbackHandler(endpoint, options) {
         return { message: 'Payment recorded successfully', complaint: comp };
       }
 
+      if (endpoint.includes('/settle-company')) {
+        const id = endpoint.split('/')[2];
+        const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
+        const comp = mockStore.settleCompanyPayment(id, body);
+        saveComplaintPermanently(comp);
+        return { message: 'Payment settled with company successfully', complaint: comp };
+      }
+
       // Create complaint
       const comp = mockStore.createComplaint(options.body);
       saveComplaintPermanently(comp);
@@ -794,6 +859,10 @@ function fallbackHandler(endpoint, options) {
   }
 
   if (endpoint.startsWith('/technicians')) {
+    if (method === 'POST' && endpoint.includes('/settle-all')) {
+      const id = endpoint.split('/')[2];
+      return mockStore.settleAllTechnicianComplaints(id);
+    }
     if (method === 'DELETE') {
       const id = endpoint.split('/').pop();
       return mockStore.deleteTechnician(id);
