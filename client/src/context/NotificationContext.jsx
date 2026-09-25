@@ -195,6 +195,12 @@ export const NotificationProvider = ({ children }) => {
     return notifications.filter(n => isNotificationForUser(n, currentUser));
   }, [notifications, currentUser, isNotificationForUser]);
 
+  // Compute primary identifier key for a user (backward compatibility)
+  const getUserKey = useCallback((user) => {
+    if (!user) return '';
+    return user.username || user.email || user.name || user.role || '';
+  }, []);
+
   // Compute all valid identifier keys for a user (id, username, email, name, phone, role)
   const getUserKeys = useCallback((user) => {
     if (!user) return [];
@@ -346,7 +352,7 @@ export const NotificationProvider = ({ children }) => {
         api.markAllInAppNotificationsRead().catch(() => {});
       }
     } catch (_) {}
-  }, [currentUser, getUserKey, isNotificationForUser]);
+  }, [currentUser, getUserKeys, isNotificationForUser]);
 
   // Clear all notifications
   const clearNotifications = useCallback(() => {
