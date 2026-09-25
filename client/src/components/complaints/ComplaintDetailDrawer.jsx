@@ -67,6 +67,7 @@ export const ComplaintDetailDrawer = ({
   const [closing, setClosing] = useState(false);
 
   const [reopenReason, setReopenReason] = useState('');
+  const [reopenTechId, setReopenTechId] = useState('');
   const [reopening, setReopening] = useState(false);
 
   // Edit Complaint Modal State
@@ -543,13 +544,22 @@ export const ComplaintDetailDrawer = ({
   };
 
   const handleReopen = async () => {
+    if (!reopenReason.trim()) {
+      showToast('Please enter a mandatory reason for reopening this ticket', 'warning');
+      return;
+    }
     try {
       setReopening(true);
-      await api.reopenComplaint(ticket.id, reopenReason);
+      const targetTech = reopenTechId || ticket.assigned_technician_id;
+      await api.reopenComplaint(ticket.id, {
+        reason: reopenReason.trim(),
+        technician_id: targetTech
+      });
       setReopenReason('');
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
-      showToast('Complaint ticket reopened successfully', 'info');
+      const techObj = technicians.find(t => String(t.id) === String(targetTech));
+      showToast(`Complaint ticket reopened & assigned to ${techObj?.name || ticket.technician_name || 'technician'}!`, 'success');
     } catch (err) {
       showToast('Failed to reopen ticket: ' + err.message, 'error');
     } finally {
@@ -1848,18 +1858,59 @@ export const ComplaintDetailDrawer = ({
                       </div>
                     )}
 
-                    {/* TECHNICIAN FIELD RESOLUTION & SITE COMPLETION PROOF */}
-                    {(ticket.resolution_notes || ticket.closing_photo_url || ['Resolved', 'Closed'].includes(ticket.status)) && (
-                      <div className="bg-emerald-50/70 rounded-xl p-4 border border-emerald-300 shadow-2xs space-y-3">
+                    {/* TECHNICIAN FIELD RESOLUTION & SITE COMPLETION PROOF / PREVIOUS RESOLUTION HISTORY */}
+                    {(ticket.resolution_notes || ticket.closing_photo_url || ['Resolved', 'Closed', 'Reopened'].includes(ticket.status)) && (
+                      <div className={`rounded-xl p-4 border shadow-2xs space-y-3 ${
+                        ticket.status === 'Reopened' 
+                          ? 'bg-amber-50/80 border-amber-300' 
+                          : 'bg-emerald-50/70 border-emerald-300'
+                      }`}>
                         <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            Technician Field Resolution & Site Proof
+                          <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                            ticket.status === 'Reopened' ? 'text-amber-950' : 'text-emerald-950'
+                          }`}>
+                            {ticket.status === 'Reopened' ? (
+                              <>
+                                <History className="w-4 h-4 text-amber-700" />
+                                Previous Resolution & Visit History
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                Technician Field Resolution & Site Proof
+                              </>
+                            )}
                           </h4>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            {ticket.status === 'Closed' ? 'Verified & Closed' : 'Resolved on Site'}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            ticket.status === 'Reopened' 
+                              ? 'bg-amber-200 text-amber-950 border-amber-400' 
+                              : ticket.status === 'Closed' 
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          }`}>
+                            {ticket.status === 'Reopened' 
+                              ? '🔄 Previous Visit Log' 
+                              : ticket.status === 'Closed' 
+                                ? 'Verified & Closed' 
+                                : 'Resolved on Site'}
                           </span>
                         </div>
+
+                        {/* If Reopened: Show Previous Technician header */}
+                        {ticket.status === 'Reopened' && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white/80 rounded-lg border border-amber-200 text-xs">
+                            <div>
+                              <span className="text-[10px] text-slate-500 font-bold uppercase block">Previous Technician:</span>
+                              <strong className="text-slate-900">{ticket.technician_name || 'Previous Field Specialist'}</strong>
+                            </div>
+                            {ticket.resolved_at && (
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase block">Resolved On:</span>
+                                <span className="text-slate-700 font-medium">{formatIndianDateTime(ticket.resolved_at)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {/* Resolution Summary */}
                         <div className="space-y-1">
@@ -2011,29 +2062,66 @@ export const ComplaintDetailDrawer = ({
 
                     {/* REOPEN SECTION (Only when Closed) */}
                     {ticket.status === 'Closed' && (
-                      <div className="bg-rose-50/50 rounded-xl p-4 border border-rose-200 space-y-2">
-                        <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <RotateCcw className="w-3.5 h-3.5 text-rose-700" />
-                          Reopen Complaint Flow
-                        </h4>
+                      <div className="bg-rose-50/60 rounded-xl p-4 border border-rose-300 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-rose-950 uppercase tracking-wider flex items-center gap-1.5">
+                            <RotateCcw className="w-4 h-4 text-rose-700" />
+                            Reopen Complaint Flow
+                          </h4>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-900 border border-rose-300">
+                            Reactivation & Reassignment
+                          </span>
+                        </div>
                         <p className="text-xs text-rose-800">
-                          If customer reports recurrence of the issue, reactivate this ticket preserving all previous history.
+                          Reactivate this ticket with reason. You can reassign to the previous technician or select a new technician from the dropdown below.
                         </p>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Reason for reopening..."
-                            value={reopenReason}
-                            onChange={(e) => setReopenReason(e.target.value)}
-                            className="flex-1 text-xs px-3 py-2 bg-white border border-rose-300 rounded-lg"
-                          />
-                          <button
-                            onClick={handleReopen}
-                            disabled={reopening}
-                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
-                          >
-                            {reopening ? 'Reopening...' : 'Reopen Ticket'}
-                          </button>
+
+                        <div className="space-y-2.5 pt-1">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Assign Technician for Reopened Visit:
+                            </label>
+                            <select
+                              value={reopenTechId || ticket.assigned_technician_id || ''}
+                              onChange={(e) => setReopenTechId(e.target.value)}
+                              className="w-full text-xs px-3 py-2 bg-white border border-rose-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium text-slate-800"
+                            >
+                              {ticket.assigned_technician_id && (
+                                <option value={ticket.assigned_technician_id}>
+                                  👤 {ticket.technician_name || 'Previous Specialist'} (Previous Technician - Default)
+                                </option>
+                              )}
+                              {technicians
+                                .filter(t => String(t.id) !== String(ticket.assigned_technician_id))
+                                .map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    👤 {t.name} ({t.area_zone || 'Field Zone'} {t.specialization ? `• ${t.specialization}` : ''})
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Reason for Reopening *
+                            </label>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input
+                                type="text"
+                                placeholder="Explain issue recurrence or reason for reopening..."
+                                value={reopenReason}
+                                onChange={(e) => setReopenReason(e.target.value)}
+                                className="flex-1 text-xs px-3 py-2 bg-white border border-rose-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                              />
+                              <button
+                                onClick={handleReopen}
+                                disabled={reopening || !reopenReason.trim()}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 shrink-0 cursor-pointer shadow-xs"
+                              >
+                                {reopening ? 'Reopening...' : 'Reopen & Dispatch'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}

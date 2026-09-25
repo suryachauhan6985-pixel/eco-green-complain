@@ -1111,10 +1111,11 @@ export const api = {
     }
     return res;
   },
-  reopenComplaint: async (id, reason) => {
+  reopenComplaint: async (id, reason, technician_id) => {
+    const payload = typeof reason === 'object' && reason !== null ? reason : { reason, technician_id };
     const res = await request(`/complaints/${id}/reopen`, {
       method: 'POST',
-      body: JSON.stringify({ reason })
+      body: JSON.stringify(payload)
     });
     if (res && res.complaint) {
       saveComplaintPermanently(res.complaint);

@@ -2134,25 +2134,81 @@ app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 's
 app.post('/api/complaints/:id/reopen', async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body || {};
+    const { reason, technician_id } = req.body || {};
+
+    // 1. Fetch existing complaint record
+    const existingRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1', [id]);
+    if (existingRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    const oldComp = existingRes.rows[0];
+
+    let newTechId = oldComp.assigned_technician_id;
+    let newTechName = oldComp.technician_name;
+    let newTechPhone = oldComp.technician_phone;
+
+    // 2. If new technician assigned, lookup tech details
+    if (technician_id && String(technician_id) !== String(oldComp.assigned_technician_id)) {
+      const techRow = await query('SELECT id, name, phone, area_zone, specialization FROM technicians WHERE id = $1', [technician_id]);
+      if (techRow.rows.length > 0) {
+        newTechId = techRow.rows[0].id;
+        newTechName = techRow.rows[0].name;
+        newTechPhone = techRow.rows[0].phone;
+      }
+    }
+
+    // 3. Archive previous resolution details into previous_resolution_history array
+    let prevHistory = [];
+    try {
+      if (Array.isArray(oldComp.previous_resolution_history)) {
+        prevHistory = oldComp.previous_resolution_history;
+      } else if (typeof oldComp.previous_resolution_history === 'string') {
+        prevHistory = JSON.parse(oldComp.previous_resolution_history);
+      }
+    } catch (_) {}
+
+    if (oldComp.resolution_notes || oldComp.closing_photo_url || oldComp.resolved_at) {
+      prevHistory.unshift({
+        resolved_at: oldComp.resolved_at || oldComp.status_updated_at || new Date().toISOString(),
+        technician_name: oldComp.technician_name || 'Previous Service Technician',
+        technician_id: oldComp.assigned_technician_id || null,
+        resolution_notes: oldComp.resolution_notes || '',
+        spare_parts_used: oldComp.spare_parts_used || '',
+        closing_photo_url: oldComp.closing_photo_url || '',
+        reopened_at: new Date().toISOString(),
+        reopen_reason: reason || 'Issue recurring / follow-up inspection requested'
+      });
+    }
+
+    // Ensure previous_resolution_history column exists
+    try {
+      await query('ALTER TABLE complaints ADD COLUMN IF NOT EXISTS previous_resolution_history JSONB');
+    } catch (_) {}
 
     const compRes = await query(`
       UPDATE complaints SET
         status = 'Reopened',
-        status_updated_at = CURRENT_TIMESTAMP
+        status_updated_at = CURRENT_TIMESTAMP,
+        assigned_technician_id = $2,
+        technician_name = $3,
+        technician_phone = $4,
+        previous_resolution_history = $5,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id::text = $1 OR ticket_id = $1
       RETURNING *
-    `, [id]);
-
-    if (compRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Complaint not found' });
-    }
+    `, [id, newTechId, newTechName, newTechPhone, JSON.stringify(prevHistory)]);
 
     const comp = compRes.rows[0];
 
+    const isReassigned = newTechId && String(newTechId) !== String(oldComp.assigned_technician_id);
+    const actionText = isReassigned ? 'Reopened & Reassigned' : 'Reopened';
+    const notesText = isReassigned 
+      ? `Ticket reopened and reassigned to ${newTechName} (Previous: ${oldComp.technician_name || 'N/A'}). Reason: ${reason || 'Issue recurring'}`
+      : `Ticket reopened. Reason: ${reason || 'Issue recurring / not resolved'}`;
+
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [comp.id, 'Reopened', `Ticket reopened by customer. Reason: ${reason || 'Issue recurring / not resolved'}`, comp.customer_name, 'customer']
+      [comp.id, actionText, notesText, comp.customer_name, 'customer']
     );
 
     // In-app notification for Staff, Admin, and assigned Technician

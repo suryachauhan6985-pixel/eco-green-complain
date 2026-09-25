@@ -6,7 +6,7 @@ import {
   Wrench, Phone, MessageCircle, MapPin, CheckCircle, Clock, 
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
   Search, X, IndianRupee, ChevronDown, ChevronUp, CheckCheck,
-  UserCheck, ShieldCheck, Layers, ExternalLink
+  UserCheck, ShieldCheck, Layers, ExternalLink, RotateCcw
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
@@ -741,6 +741,21 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                           <div className="text-[11px] text-emerald-800 mt-0.5">
                             <strong>Parts:</strong> {job.spare_parts_used}
                           </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reopened Alert with Previous Notes */}
+                    {job.status === 'Reopened' && (
+                      <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-300 text-xs text-amber-950 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Reopened Ticket (Previous Visit History Available)</span>
+                        </div>
+                        {job.resolution_notes && (
+                          <p className="text-[11px] text-amber-900 line-clamp-2">
+                            <strong>Previous Resolution:</strong> {job.resolution_notes}
+                          </p>
                         )}
                       </div>
                     )}
