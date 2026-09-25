@@ -429,12 +429,18 @@ export const ComplaintDetailDrawer = ({
 
     // Warning if ticket has service charges and payment has not been recorded as collected
     const estimatedAmt = Number(ticket?.estimated_charges || ticket?.payment_amount || 0);
-    const isPaid = ticket?.payment_collected === 1 || ticket?.payment_status === 'Paid';
+    const collectedAmt = Number(ticket?.payment_collected || 0);
+    const normalizedStatus = String(ticket?.payment_status || '').trim().toLowerCase();
+    const isPaid = (
+      (collectedAmt > 0 && collectedAmt >= estimatedAmt) ||
+      ['collected', 'paid', 'settled with company'].includes(normalizedStatus) ||
+      (collectedAmt > 0 && normalizedStatus === 'partially paid')
+    );
 
     if (estimatedAmt > 0 && !isPaid) {
       const proceed = await confirm({
         title: '⚠️ Uncollected Service Charges Alert',
-        message: `This ticket has a service charge of ₹${estimatedAmt.toLocaleString()}, which has NOT been recorded as collected.\n\nAre you sure you want to mark this complaint as Resolved without collecting payment?`,
+        message: `This ticket has an allocated service charge of ₹${estimatedAmt.toLocaleString()}, which has NOT been recorded as collected.\n\nAre you sure you want to mark this complaint as Resolved without collecting payment?`,
         confirmText: 'Resolve Without Payment',
         cancelText: 'Cancel & Collect Payment',
         type: 'warning'
@@ -1670,7 +1676,11 @@ export const ComplaintDetailDrawer = ({
                         </h4>
 
                         {/* Warning if ticket has service charges and payment is uncollected */}
-                        {Number(ticket.estimated_charges || ticket.payment_amount || 0) > 0 && !(ticket.payment_collected === 1 || ticket.payment_status === 'Paid') && (
+                        {Number(ticket.estimated_charges || ticket.payment_amount || 0) > 0 && !(
+                          (Number(ticket.payment_collected || 0) > 0 && Number(ticket.payment_collected || 0) >= Number(ticket.estimated_charges || ticket.payment_amount || 0)) ||
+                          ['collected', 'paid', 'settled with company'].includes(String(ticket.payment_status || '').trim().toLowerCase()) ||
+                          (Number(ticket.payment_collected || 0) > 0 && String(ticket.payment_status || '').trim().toLowerCase() === 'partially paid')
+                        ) && (
                           <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
                             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                             <div>
