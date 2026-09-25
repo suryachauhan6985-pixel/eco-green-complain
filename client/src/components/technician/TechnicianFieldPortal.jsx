@@ -9,6 +9,7 @@ import {
   UserCheck, ShieldCheck, Layers, ExternalLink
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
+import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 
 export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
   const { currentUser } = useAuth();
@@ -708,14 +709,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                             <Phone className="w-3 h-3" /> Call
                           </a>
                           <a
-                            href={`https://wa.me/${(job.customer_phone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                              `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
-                              `Namaste *${job.customer_name}*,\n\n` +
-                              `This is your assigned service technician regarding complaint ticket *#${job.ticket_id}* (${job.product_type || 'Solar System'}).\n\n` +
-                              `I am on my way / preparing to visit your site for the inspection. Please confirm if the premises are accessible.\n\n` +
-                              `📞 Helpdesk: +91 78784 44414\n` +
-                              `- Eco Green Technical Services`
-                            )}`}
+                            href={buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name).sendUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="px-2.5 py-1.5 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-lg font-bold text-[11px] flex items-center gap-1"

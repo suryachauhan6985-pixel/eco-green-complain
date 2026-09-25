@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp } from '../../utils/templateUtils';
+import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp, buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
   Send, CheckCircle, CheckCircle2, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
@@ -1383,26 +1383,14 @@ export const ComplaintDetailDrawer = ({
                                       <span>Call Customer</span>
                                     </a>
                                     {(() => {
-                                      const rawCust = (ticket.customer_phone || '').replace(/[^0-9]/g, '');
-                                      const cleanCust = rawCust.startsWith('91') ? rawCust : (rawCust.length === 10 ? `91${rawCust}` : rawCust);
-                                      const techGreeting = 
-                                        `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
-                                        `Namaste *${ticket.customer_name}*,\n\n` +
-                                        `This is *${currentUser?.name || ticket.technician_name || 'Eco Green Service Technician'}*, your assigned service engineer for complaint ticket *#${ticket.ticket_id}*.\n\n` +
-                                        `📋 *Service Request Summary:*\n` +
-                                        `• System: ${ticket.product_type || 'Solar System'}\n` +
-                                        `• Issue: ${ticket.issue_category || 'Service inspection required'}\n` +
-                                        `• Scheduled Visit: ${ticket.expected_visit_date ? formatIndianDateOnly(ticket.expected_visit_date) : 'Today / As Scheduled'}\n\n` +
-                                        `I am preparing to visit your premises for the on-site inspection and service. Please confirm if someone is available and if rooftop/system access can be provided.\n\n` +
-                                        `📞 Helpdesk: +91 78784 44414\n` +
-                                        `- Eco Green Technical Services`;
+                                      const waInfo = buildTechnicianCustomerWhatsApp(ticket, currentUser?.name || ticket.technician_name);
                                       return (
                                         <a
-                                          href={`https://wa.me/${cleanCust}?text=${encodeURIComponent(techGreeting)}`}
+                                          href={waInfo.sendUrl}
                                           target="_blank"
                                           rel="noreferrer"
                                           className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
-                                          title="Open WhatsApp Chat with Customer with refined greeting"
+                                          title="Open WhatsApp Chat with Customer"
                                         >
                                           <MessageCircle className="w-3.5 h-3.5" />
                                           <span>WhatsApp Customer</span>

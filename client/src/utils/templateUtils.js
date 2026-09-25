@@ -160,3 +160,30 @@ Please call the customer before visiting and confirm site access.
     phone: formattedPhone
   };
 }
+
+/**
+ * Standardized single template for Technician -> Customer WhatsApp greeting (ECO-13)
+ * Free of expected date and mobile number placeholders.
+ * Consistent across portal cards and ticket drawer.
+ */
+export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
+  const cleanPhone = (ticket.customer_phone || '').replace(/[^0-9]/g, '');
+  const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+  
+  const techGreeting = 
+    `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
+    `Namaste *${ticket.customer_name || 'Customer'}*,\n\n` +
+    `This is *${technicianName || ticket.technician_name || 'your assigned service technician'}* regarding complaint ticket *#${ticket.ticket_id || ticket.id}* (${ticket.product_type || 'Solar System'}).\n\n` +
+    `I am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n` +
+    `📞 Helpdesk: +91 78784 44414\n` +
+    `- Eco Green Technical Services`;
+
+  const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(techGreeting)}`;
+
+  return {
+    rawText: techGreeting,
+    sendUrl: waUrl,
+    phone: formattedPhone
+  };
+}
+
