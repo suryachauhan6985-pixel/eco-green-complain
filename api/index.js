@@ -1735,18 +1735,14 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
     const { id } = req.params;
     const { resolution_notes, spare_parts_used } = req.body;
 
-    const compRes = await query(`
-      UPDATE complaints SET
-        status = 'Resolved',
-        resolution_notes = $1,
-        spare_parts_used = $2,
-        resolved_at = CURRENT_TIMESTAMP,
-        status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-      RETURNING *
-    `, [resolution_notes || 'Resolved on site', spare_parts_used || 'None', id]);
+    const findComp = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    if (findComp.rows.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    const compRecord = findComp.rows[0];
+    const compId = compRecord.id;
 
-    const comp = compRes.rows[0];
+    let closingPhotoUrl = compRecord.closing_photo_url || null;
 
     // If technician attached a closing proof photo/video, store it permanently in complaint_attachments
     if (req.file) {
@@ -1757,17 +1753,41 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
             complaint_id, file_name, file_url, file_type, file_data, uploaded_by
           ) VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id
-        `, [id, req.file.originalname, '/api/attachments/temp', req.file.mimetype, base64Data, req.user.name || 'Technician']);
+        `, [compId, req.file.originalname, '/api/attachments/temp', req.file.mimetype, base64Data, req.user.name || 'Technician']);
         const attId = insRes.rows[0].id;
-        await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [`/api/attachments/${attId}`, attId]);
+        closingPhotoUrl = `/api/attachments/${attId}`;
+        await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [closingPhotoUrl, attId]);
       } catch (attErr) {
         console.warn('[Resolve Attachment Note]', attErr.message);
       }
     }
 
+    const compRes = await query(`
+      UPDATE complaints SET
+        status = 'Resolved',
+        resolution_notes = $1,
+        spare_parts_used = $2,
+        closing_photo_url = COALESCE($3, closing_photo_url),
+        resolved_at = CURRENT_TIMESTAMP,
+        status_updated_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+      RETURNING *
+    `, [resolution_notes || 'Resolved on site', spare_parts_used || 'None', closingPhotoUrl, compId]);
+
+    const comp = compRes.rows[0];
+
+    let timelineNotes = `Issue resolved: ${resolution_notes || 'All checks passed.'}`;
+    if (spare_parts_used && String(spare_parts_used).trim() && spare_parts_used !== 'None') {
+      timelineNotes += ` • Spare parts used: ${spare_parts_used}`;
+    }
+    if (closingPhotoUrl) {
+      timelineNotes += ` • Closing proof attached: ${req.file?.originalname || 'Site Completion Photo/Video'}`;
+    }
+
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [id, 'Resolved', `Issue resolved: ${resolution_notes || 'All checks passed.'}`, req.user.name, req.user.role]
+      [compId, 'Resolved', timelineNotes, req.user.name, req.user.role]
     );
 
     // Insert In-App Notification for Staff & Admin
@@ -1948,6 +1968,71 @@ app.post('/api/complaints/:id/feedback', async (req, res) => {
     return res.json({ message: 'Thank you for your feedback!' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Close Complaint (Staff / Admin)
+app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { closure_remarks } = req.body || {};
+
+    const compRes = await query(`
+      UPDATE complaints SET
+        status = 'Closed',
+        closed_at = CURRENT_TIMESTAMP,
+        status_updated_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $1 OR ticket_id = $1
+      RETURNING *
+    `, [id]);
+
+    if (compRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const comp = compRes.rows[0];
+    const performer = req.user ? (req.user.name || req.user.email || 'Support Supervisor') : 'Support Supervisor';
+    const role = req.user ? (req.user.role || 'staff') : 'staff';
+    const remarks = (closure_remarks || '').trim() || 'Ticket reviewed and closed with customer confirmation.';
+
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+      [comp.id, 'Closed', remarks, performer, role]
+    );
+
+    // In-app notification for Staff, Admin, and assigned Technician
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_close_${comp.id}`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, 'closed', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        comp.ticket_id,
+        comp.id,
+        `Ticket Closed: ${comp.ticket_id}`,
+        `Ticket ${comp.ticket_id} closed by ${performer}. Remarks: ${remarks}`,
+        comp.customer_name,
+        'all',
+        comp.assigned_technician_id,
+        comp.technician_name,
+        performer,
+        role
+      ]);
+    } catch (nErr) {
+      console.warn('[Close In-App Notif Note]', nErr.message);
+    }
+
+    return res.json({ message: 'Complaint closed successfully', complaint: comp });
+  } catch (err) {
+    console.error('Close complaint error:', err);
+    return res.status(500).json({ error: 'Failed to close complaint: ' + err.message });
   }
 });
 

@@ -327,8 +327,8 @@ export const CustomerPublicPortal = ({
             </div>
           )}
 
-          {/* Reopen Action Button if Closed or Resolved */}
-          {['Resolved', 'Closed'].includes(trackingData.complaint.status) && (
+          {/* Reopen Action Button (Only if Ticket is Closed) */}
+          {trackingData.complaint.status === 'Closed' && (
             <div className="pt-2 border-t border-slate-100">
               {!showReopenInput ? (
                 <button

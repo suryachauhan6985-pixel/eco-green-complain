@@ -5,11 +5,11 @@ import { useNotifications } from '../../context/NotificationContext';
 import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp } from '../../utils/templateUtils';
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
-  Send, CheckCircle, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
+  Send, CheckCircle, CheckCircle2, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
-  Play, Pause, Video
+  Play, Pause, Video, Download
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -1745,6 +1745,110 @@ export const ComplaintDetailDrawer = ({
                       </div>
                     )}
 
+                    {/* TECHNICIAN FIELD RESOLUTION & SITE COMPLETION PROOF */}
+                    {(ticket.resolution_notes || ticket.closing_photo_url || ['Resolved', 'Closed'].includes(ticket.status)) && (
+                      <div className="bg-emerald-50/70 rounded-xl p-4 border border-emerald-300 shadow-2xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            Technician Field Resolution & Site Proof
+                          </h4>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            {ticket.status === 'Closed' ? 'Verified & Closed' : 'Resolved on Site'}
+                          </span>
+                        </div>
+
+                        {/* Resolution Summary */}
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Action Taken / Resolution Summary
+                          </span>
+                          <p className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-emerald-200/80 leading-relaxed font-medium">
+                            {ticket.resolution_notes || 'Issue resolved and inspected on site.'}
+                          </p>
+                        </div>
+
+                        {/* Spare Parts Used */}
+                        {ticket.spare_parts_used && ticket.spare_parts_used !== 'None' && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              Spare Parts Replaced / Used
+                            </span>
+                            <p className="text-xs text-slate-700 bg-white px-3 py-2 rounded-lg border border-emerald-200/80 font-mono font-medium">
+                              {ticket.spare_parts_used}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Attached Proof Photo / Video */}
+                        {(() => {
+                          const closingProof = attachments.find(a => 
+                            (ticket.closing_photo_url && (a.file_url === ticket.closing_photo_url || a.file_data === ticket.closing_photo_url || `/api/attachments/${a.id}` === ticket.closing_photo_url)) ||
+                            a.file_name?.toLowerCase().includes('proof') ||
+                            a.file_name?.toLowerCase().includes('closing') ||
+                            a.uploaded_by?.toLowerCase().includes('tech')
+                          ) || (ticket.closing_photo_url ? { file_url: ticket.closing_photo_url, file_name: 'Closing Proof Photo/Video' } : null);
+
+                          if (!closingProof) return null;
+
+                          const fileUrl = closingProof.file_data || closingProof.file_url || `/api/attachments/${closingProof.id}`;
+                          const isVideo = closingProof.file_type?.startsWith('video/') ||
+                                          (fileUrl && fileUrl.startsWith('data:video/')) ||
+                                          (fileUrl && fileUrl.match(/\.(mp4|webm|mov|3gp|avi|mkv)($|\?)/i)) ||
+                                          (closingProof.file_name?.match(/\.(mp4|webm|mov|3gp|avi|mkv)$/i));
+
+                          return (
+                            <div className="pt-2 border-t border-emerald-200 space-y-1.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 flex items-center justify-between">
+                                <span>Closing Proof Photo / Video Document</span>
+                                <span className="text-[9px] text-emerald-800 font-semibold bg-emerald-100 px-1.5 py-0.5 rounded">
+                                  Attached by Technician
+                                </span>
+                              </span>
+
+                              <div className="bg-white p-2.5 rounded-lg border border-emerald-200 flex items-center justify-between gap-3">
+                                <div 
+                                  onClick={() => setPreviewDocModal({ url: fileUrl, name: closingProof.file_name || 'Closing Proof', isVideo })}
+                                  className="flex items-center gap-2.5 cursor-pointer group flex-1 min-w-0"
+                                >
+                                  {isVideo ? (
+                                    <div className="w-12 h-12 bg-amber-100 group-hover:bg-amber-200 rounded-lg flex items-center justify-center text-amber-700 shrink-0 border border-amber-300 transition-colors">
+                                      <Video className="w-5 h-5 text-amber-700" />
+                                    </div>
+                                  ) : (
+                                    <img 
+                                      src={fileUrl} 
+                                      alt="Closing Proof" 
+                                      className="w-12 h-12 object-cover rounded-lg border border-slate-200 group-hover:border-emerald-500 shrink-0 shadow-2xs transition-colors"
+                                    />
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
+                                      {closingProof.file_name || 'Site Completion Photo/Video'}
+                                    </p>
+                                    <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                                      <Eye className="w-3 h-3" /> Click to view / inspect full proof
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <a
+                                  href={fileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  download={closingProof.file_name || 'closing_proof'}
+                                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1 transition-colors"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>Download</span>
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
                     {/* CLOSURE REVIEW SECTION (Admin / Staff) */}
                     {['admin', 'staff'].includes(currentUser?.role) && ticket.status === 'Resolved' && (
                       <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-200 space-y-3">
@@ -1774,8 +1878,8 @@ export const ComplaintDetailDrawer = ({
                       </div>
                     )}
 
-                    {/* REOPEN SECTION (If Closed or Resolved) */}
-                    {['Closed', 'Resolved'].includes(ticket.status) && (
+                    {/* REOPEN SECTION (Only when Closed) */}
+                    {ticket.status === 'Closed' && (
                       <div className="bg-rose-50/50 rounded-xl p-4 border border-rose-200 space-y-2">
                         <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
                           <RotateCcw className="w-3.5 h-3.5 text-rose-700" />
@@ -1832,6 +1936,44 @@ export const ComplaintDetailDrawer = ({
                               </span>
                             </div>
                             <p className="text-slate-700 leading-relaxed">{item.notes}</p>
+                            {item.action === 'Resolved' && (() => {
+                              const closingProof = attachments.find(a => 
+                                (ticket.closing_photo_url && (a.file_url === ticket.closing_photo_url || a.file_data === ticket.closing_photo_url || `/api/attachments/${a.id}` === ticket.closing_photo_url)) ||
+                                a.file_name?.toLowerCase().includes('proof') ||
+                                a.file_name?.toLowerCase().includes('closing') ||
+                                a.uploaded_by?.toLowerCase().includes('tech')
+                              ) || (ticket.closing_photo_url ? { file_url: ticket.closing_photo_url, file_name: 'Closing Proof Photo/Video' } : null);
+
+                              if (!closingProof) return null;
+                              const fileUrl = closingProof.file_data || closingProof.file_url || `/api/attachments/${closingProof.id}`;
+                              const isVideo = closingProof.file_type?.startsWith('video/') ||
+                                              (fileUrl && fileUrl.startsWith('data:video/')) ||
+                                              (fileUrl && fileUrl.match(/\.(mp4|webm|mov|3gp|avi|mkv)($|\?)/i)) ||
+                                              (closingProof.file_name?.match(/\.(mp4|webm|mov|3gp|avi|mkv)$/i));
+
+                              return (
+                                <div className="mt-2.5 pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDocModal({ url: fileUrl, name: closingProof.file_name || 'Closing Proof', isVideo })}
+                                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                  >
+                                    {isVideo ? <Video className="w-3.5 h-3.5 text-amber-600" /> : <Eye className="w-3.5 h-3.5 text-emerald-700" />}
+                                    <span>View Technician Closing Proof {isVideo ? '(Video)' : '(Photo)'}</span>
+                                  </button>
+
+                                  <a
+                                    href={fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    download={closingProof.file_name || 'closing_proof'}
+                                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                  >
+                                    <Download className="w-3 h-3" /> Save
+                                  </a>
+                                </div>
+                              );
+                            })()}
                             <div className="mt-2 text-[10px] text-slate-500 flex items-center justify-between">
                               <span>By: <strong>{item.performed_by_name}</strong> ({item.performed_by_role})</span>
                               {item.notify_customer === 1 && (
