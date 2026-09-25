@@ -62,6 +62,38 @@ function formatWhatsAppListTime(dateInput) {
   return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
 }
 
+function getMessageDateKey(dateInput) {
+  if (!dateInput) return 'unknown';
+  const d = parseToLocalDate(dateInput);
+  if (!d) return 'unknown';
+  return d.toDateString();
+}
+
+function formatChatDateBadge(dateInput) {
+  if (!dateInput) return 'TODAY';
+  const d = parseToLocalDate(dateInput);
+  if (!d) return 'TODAY';
+
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return 'TODAY';
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) {
+    return 'YESTERDAY';
+  }
+
+  const isSameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(isSameYear ? {} : { year: 'numeric' })
+  }); // e.g. "Tue, 22 Sep" or "Tue, 22 Sep 2025"
+}
+
 export const WhatsAppWebInbox = ({ 
   onOpenComplaint, 
   onNewComplaintWithData, 
@@ -693,19 +725,35 @@ export const WhatsAppWebInbox = ({
         {messages.map((msg, idx) => {
           const isCustomer = msg.sender_type === 'customer';
           const timeStr = formatWhatsAppTime(msg.created_at) || '12:00 PM';
+          const fullDateTimeStr = parseToLocalDate(msg.created_at)?.toLocaleString() || timeStr;
+
+          const prevMsg = idx > 0 ? messages[idx - 1] : null;
+          const currentDateKey = getMessageDateKey(msg.created_at);
+          const prevDateKey = prevMsg ? getMessageDateKey(prevMsg.created_at) : null;
+          const isNewDay = idx === 0 || currentDateKey !== prevDateKey;
+          const dateBadgeText = formatChatDateBadge(msg.created_at);
 
           return (
-            <div
-              key={msg.id || idx}
-              className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group`}
-            >
+            <React.Fragment key={msg.id || idx}>
+              {/* WhatsApp Authentic Centered Date Badge Separator */}
+              {isNewDay && (
+                <div className="flex justify-center my-3 select-none">
+                  <span className="px-3 py-1 bg-white/95 text-[#54656f] text-[11px] font-semibold rounded-lg shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] uppercase tracking-wider border border-black/5">
+                    {dateBadgeText}
+                  </span>
+                </div>
+              )}
+
               <div
-                className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg ${
-                  isCustomer
-                    ? 'bg-white text-[#111b21] rounded-tl-none'
-                    : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
-                }`}
+                className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group`}
               >
+                <div
+                  className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg ${
+                    isCustomer
+                      ? 'bg-white text-[#111b21] rounded-tl-none'
+                      : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
+                  }`}
+                >
                 {/* Message Action Trigger Button (Revealed on hover) */}
                 {['admin', 'staff'].includes(currentUser?.role) && !editingMessageId && (
                   <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -878,7 +926,7 @@ export const WhatsAppWebInbox = ({
                   {(msg.is_edited || (msg.updated_at && msg.updated_at !== msg.created_at)) && (
                     <span className="italic text-[9px] text-[#8696a0] mr-0.5 font-sans">(edited)</span>
                   )}
-                  <span>{timeStr}</span>
+                  <span title={fullDateTimeStr}>{timeStr}</span>
                   {!isCustomer && (
                     <span className="inline-flex items-center ml-0.5" title={`Status: ${msg.status || 'sent'}${msg.failure_reason ? ' (' + msg.failure_reason + ')' : ''}`}>
                       {msg.status === 'read' ? (
@@ -938,8 +986,9 @@ export const WhatsAppWebInbox = ({
                 )}
               </div>
             </div>
-          );
-        })}
+          </React.Fragment>
+        );
+      })}
       </div>
     );
   };

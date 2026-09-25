@@ -56,11 +56,17 @@ export const Navbar = ({
               {currentUser?.role === 'customer' && (
                 <button
                   onClick={() => setCurrentTab('customer')}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-emerald-50 text-emerald-800 shadow-2xs"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    currentTab === 'customer'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
                 >
-                  <Search className="w-3.5 h-3.5 text-emerald-600" />
+                  <Search className={`w-3.5 h-3.5 ${currentTab === 'customer' ? 'text-white' : 'text-slate-500'}`} />
                   <span>Track & Raise Complaints</span>
-                  <span className="bg-emerald-200/70 text-emerald-900 text-[10px] font-bold px-1.5 py-0.2 rounded-full">Public</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                    currentTab === 'customer' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>Public</span>
                 </button>
               )}
 
@@ -68,9 +74,13 @@ export const Navbar = ({
               {currentUser?.role === 'technician' && (
                 <button
                   onClick={() => setCurrentTab('technician')}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-emerald-50 text-emerald-800 shadow-2xs"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    currentTab === 'technician'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
                 >
-                  <Wrench className="w-3.5 h-3.5 text-emerald-600" />
+                  <Wrench className={`w-3.5 h-3.5 ${currentTab === 'technician' ? 'text-white' : 'text-slate-500'}`} />
                   <span>My Field Workspace</span>
                 </button>
               )}
@@ -82,11 +92,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('complaints')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'complaints'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Users className="w-3.5 h-3.5 text-emerald-600" />
+                    <Users className={`w-3.5 h-3.5 ${currentTab === 'complaints' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Complaints Desk</span>
                   </button>
 
@@ -94,11 +104,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('technician')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'technician'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Wrench className="w-3.5 h-3.5 text-emerald-600" />
+                    <Wrench className={`w-3.5 h-3.5 ${currentTab === 'technician' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Field Operations</span>
                   </button>
 
@@ -107,10 +117,10 @@ export const Navbar = ({
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'whatsapp-inbox'
                         ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <MessageCircle className="w-3.5 h-3.5" />
+                    <MessageCircle className={`w-3.5 h-3.5 ${currentTab === 'whatsapp-inbox' ? 'text-white' : 'text-slate-500'}`} />
                     <span>WhatsApp Web</span>
                   </button>
                 </>
@@ -123,11 +133,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('complaints')}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'complaints'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Users className="w-3.5 h-3.5 text-emerald-600" />
+                    <Users className={`w-3.5 h-3.5 ${currentTab === 'complaints' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Complaints</span>
                   </button>
 
@@ -135,11 +145,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('technician')}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'technician'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Wrench className="w-3.5 h-3.5 text-emerald-600" />
+                    <Wrench className={`w-3.5 h-3.5 ${currentTab === 'technician' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Field View</span>
                   </button>
 
@@ -148,10 +158,10 @@ export const Navbar = ({
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'whatsapp-inbox'
                         ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <MessageCircle className="w-3.5 h-3.5" />
+                    <MessageCircle className={`w-3.5 h-3.5 ${currentTab === 'whatsapp-inbox' ? 'text-white' : 'text-slate-500'}`} />
                     <span>WhatsApp Web</span>
                   </button>
 
@@ -159,11 +169,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('team')}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'team'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                    <Shield className={`w-3.5 h-3.5 ${currentTab === 'team' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Staff & Techs</span>
                   </button>
 
@@ -171,11 +181,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('analytics')}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'analytics'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+                    <BarChart3 className={`w-3.5 h-3.5 ${currentTab === 'analytics' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Analytics</span>
                   </button>
 
@@ -183,11 +193,11 @@ export const Navbar = ({
                     onClick={() => setCurrentTab('templates')}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'templates'
-                        ? 'bg-emerald-50 text-emerald-800 shadow-2xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Settings className="w-3.5 h-3.5 text-emerald-600" />
+                    <Settings className={`w-3.5 h-3.5 ${currentTab === 'templates' ? 'text-white' : 'text-slate-500'}`} />
                     <span>Templates</span>
                   </button>
                 </>

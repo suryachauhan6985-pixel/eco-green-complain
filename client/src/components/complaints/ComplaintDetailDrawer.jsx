@@ -1932,20 +1932,34 @@ export const ComplaintDetailDrawer = ({
                       ) : (
                         waChatMessages.map((msg, idx) => {
                           const isCustomer = msg.sender_type === 'customer';
+                          const prevMsg = idx > 0 ? waChatMessages[idx - 1] : null;
+                          const msgDate = new Date(msg.created_at);
+                          const prevDate = prevMsg ? new Date(prevMsg.created_at) : null;
+                          const isNewDay = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
+                          const dateBadge = msgDate.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+                          const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
                           return (
-                            <div
-                              key={msg.id || idx}
-                              className={`flex flex-col ${isCustomer ? 'items-start' : 'items-end'}`}
-                            >
-                              <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-xs text-xs space-y-1.5 ${
-                                isCustomer
-                                  ? 'bg-white text-slate-900 border border-slate-200 rounded-tl-2xs'
-                                  : 'bg-emerald-700 text-white rounded-tr-2xs'
-                              }`}>
-                                <div className="flex items-center justify-between gap-3 text-[10px] opacity-80 border-b border-black/5 pb-1">
-                                  <span className="font-bold">{isCustomer ? msg.sender_name || 'Customer' : 'Eco Green Support'}</span>
-                                  <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <React.Fragment key={msg.id || idx}>
+                              {isNewDay && (
+                                <div className="flex justify-center my-2 select-none">
+                                  <span className="px-2.5 py-0.5 bg-slate-200/90 text-slate-700 text-[10px] font-bold rounded-full uppercase tracking-wider shadow-2xs">
+                                    {dateBadge}
+                                  </span>
                                 </div>
+                              )}
+                              <div
+                                className={`flex flex-col ${isCustomer ? 'items-start' : 'items-end'}`}
+                              >
+                                <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-xs text-xs space-y-1.5 ${
+                                  isCustomer
+                                    ? 'bg-white text-slate-900 border border-slate-200 rounded-tl-2xs'
+                                    : 'bg-emerald-700 text-white rounded-tr-2xs'
+                                }`}>
+                                  <div className="flex items-center justify-between gap-3 text-[10px] opacity-80 border-b border-black/5 pb-1">
+                                    <span className="font-bold">{isCustomer ? msg.sender_name || 'Customer' : 'Eco Green Support'}</span>
+                                    <span>{dateBadge} • {timeStr}</span>
+                                  </div>
 
                                 {/* Text Body */}
                                 {msg.message_body && (
@@ -1988,7 +2002,8 @@ export const ComplaintDetailDrawer = ({
                                   </div>
                                 )}
                               </div>
-                            </div>
+                              </div>
+                            </React.Fragment>
                           );
                         })
                       )}
