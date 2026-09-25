@@ -191,9 +191,11 @@ class LocalMockStore {
   createUser(userData) {
     const users = this.getUsers();
     const newId = Date.now();
+    const username = userData.username || (userData.email ? userData.email.split('@')[0] : 'user');
     const newUser = {
       id: newId,
       name: userData.name,
+      username: username,
       email: userData.email,
       role: userData.role,
       phone: userData.phone || '',
@@ -209,6 +211,7 @@ class LocalMockStore {
         id: newId,
         user_id: newId,
         name: userData.name,
+        username: username,
         phone: userData.phone || '',
         email: userData.email,
         area_zone: userData.area_zone || 'General Zone',

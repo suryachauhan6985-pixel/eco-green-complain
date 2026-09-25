@@ -34,3 +34,5 @@ server/whatsapp_auth/
 .animoria/
 
 .env*
+*.webm
+*.mp4

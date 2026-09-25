@@ -337,10 +337,15 @@ export const StaffTechnicianManager = () => {
       return;
     }
     try {
+      const safeUsername = formData.username.trim().toLowerCase();
+      const safeEmail = formData.email?.trim() 
+        ? formData.email.trim() 
+        : `${safeUsername.replace(/[^a-z0-9._-]/g, '.')}@ecogreensolar.internal`;
+
       await api.createUser({
         ...formData,
-        username: formData.username.trim().toLowerCase(),
-        email: formData.email?.trim() || undefined
+        username: safeUsername,
+        email: safeEmail
       });
       showToast(`New ${formData.role} created successfully!`);
       setIsAddModalOpen(false);
@@ -457,12 +462,10 @@ export const StaffTechnicianManager = () => {
                 }));
                 setIsAddModalOpen(true);
               }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 shrink-0 cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>
-                {activeTab === 'admin' ? 'Add Administrator' : (activeTab === 'staff' ? 'Add Staff' : 'Add Technician')}
-              </span>
+              <span>Add Member</span>
             </button>
           )}
         </div>
@@ -1031,7 +1034,7 @@ export const StaffTechnicianManager = () => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <Plus className="w-4 h-4 text-emerald-600" />
-                Add New Staff or Technician
+                Add New Member
               </h3>
               <button
                 onClick={() => setIsAddModalOpen(false)}

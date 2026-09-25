@@ -140,7 +140,8 @@ async function createUser(req, res) {
     }
 
     if (!email || !email.trim()) {
-      email = `${username}@ecogreensolar.internal`;
+      const emailUserPart = username.replace(/[^a-z0-9._-]/g, '.');
+      email = `${emailUserPart}@ecogreensolar.internal`;
     } else {
       email = email.trim();
     }

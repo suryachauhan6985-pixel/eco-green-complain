@@ -652,18 +652,47 @@ app.get('/api/auth/users', authenticateToken, async (req, res) => {
 
 app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
-    const { name, email, password, role, phone, username, area_zone, specialization } = req.body;
+    let { name, email, password, role, phone, username, area_zone, specialization } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Full Name is required' });
+    }
+
+    const safeUsername = (username && username.trim())
+      ? username.trim().toLowerCase()
+      : ((name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + Math.floor(100 + Math.random() * 900)).replace(/\.+/g, '.');
+
+    // Email is optional in form, but PostgreSQL 'users' table has a NOT NULL constraint on email.
+    // Ensure email is always populated with either real email or clean internal system email.
+    let safeEmail = (email && email.trim()) ? email.trim().toLowerCase() : '';
+    if (!safeEmail) {
+      const emailUserPart = safeUsername.replace(/[^a-z0-9._-]/g, '.');
+      safeEmail = `${emailUserPart}@ecogreensolar.internal`;
+    }
+
+    // Check if user already exists
+    const existing = await query(
+      'SELECT id, username, email FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2) LIMIT 1',
+      [safeUsername, safeEmail]
+    );
+    if (existing.rows.length > 0) {
+      if (!email || !email.trim()) {
+        safeEmail = `${safeUsername.replace(/[^a-z0-9._-]/g, '.')}.${Math.floor(100 + Math.random() * 900)}@ecogreensolar.internal`;
+      } else {
+        return res.status(400).json({ error: 'A member with this User ID / Username or Email already exists' });
+      }
+    }
+
     const hash = await bcrypt.hash(password || 'EcoGreen@123', 10);
     const r = await query(
       'INSERT INTO users (name, username, email, password_hash, role, phone, is_active) VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id, name, username, email, role, phone, created_at',
-      [name, username || email.split('@')[0], email, hash, role, phone || '']
+      [name.trim(), safeUsername, safeEmail, hash, role || 'technician', phone || '']
     );
     const newUser = r.rows[0];
 
     if (role === 'technician') {
       await query(
         'INSERT INTO technicians (user_id, name, phone, email, area_zone, specialization, is_available) VALUES ($1, $2, $3, $4, $5, $6, 1)',
-        [newUser.id, name, phone || '', email, area_zone || 'General Zone', specialization || 'All Products']
+        [newUser.id, name.trim(), phone || '', safeEmail, area_zone || 'General Zone', specialization || 'All Products']
       );
     }
     return res.status(201).json({ user: newUser, message: 'User created successfully' });
