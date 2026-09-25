@@ -61,13 +61,18 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
       setProfileError('User ID / Username is required');
       return;
     }
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      setProfileError('Mobile Phone must be exactly 10 digits');
+      return;
+    }
 
     try {
       setProfileLoading(true);
       const res = await api.updateProfile({
         name: name.trim(),
         username: username.trim().toLowerCase(),
-        phone: phone.trim(),
+        phone: cleanPhone,
         email: email.trim() || undefined
       });
 
@@ -76,7 +81,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
         ...(res?.user || {}),
         name: name.trim(),
         username: username.trim().toLowerCase(),
-        phone: phone.trim(),
+        phone: cleanPhone,
         email: email.trim()
       };
 
@@ -361,12 +366,15 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
                   <div className="relative">
                     <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
-                      type="text"
+                      type="tel"
                       required
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      maxLength={10}
+                      pattern="[0-9]{10}"
+                      title="Please enter a 10-digit mobile number"
                       placeholder="6352454247"
-                      className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
                     />
                   </div>
                 </div>

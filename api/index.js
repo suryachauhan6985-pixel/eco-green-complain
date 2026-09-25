@@ -658,6 +658,11 @@ app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), async
       return res.status(400).json({ error: 'Full Name is required' });
     }
 
+    const cleanPhone = phone ? String(phone).replace(/\D/g, '').slice(0, 10) : '';
+    if (phone && cleanPhone.length !== 10) {
+      return res.status(400).json({ error: 'Mobile / WhatsApp number must be exactly 10 digits' });
+    }
+
     const safeUsername = (username && username.trim())
       ? username.trim().toLowerCase()
       : ((name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + Math.floor(100 + Math.random() * 900)).replace(/\.+/g, '.');
@@ -686,14 +691,14 @@ app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), async
     const hash = await bcrypt.hash(password || 'EcoGreen@123', 10);
     const r = await query(
       'INSERT INTO users (name, username, email, password_hash, role, phone, is_active) VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id, name, username, email, role, phone, created_at',
-      [name.trim(), safeUsername, safeEmail, hash, role || 'technician', phone || '']
+      [name.trim(), safeUsername, safeEmail, hash, role || 'technician', cleanPhone || '']
     );
     const newUser = r.rows[0];
 
     if (role === 'technician') {
       await query(
         'INSERT INTO technicians (user_id, name, phone, email, area_zone, specialization, is_available) VALUES ($1, $2, $3, $4, $5, $6, 1)',
-        [newUser.id, name.trim(), phone || '', safeEmail, area_zone || 'General Zone', specialization || 'All Products']
+        [newUser.id, name.trim(), cleanPhone || '', safeEmail, area_zone || 'General Zone', specialization || 'All Products']
       );
     }
     return res.status(201).json({ user: newUser, message: 'User created successfully' });

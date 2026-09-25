@@ -47,6 +47,7 @@ export const StaffTechnicianManager = () => {
   const [copyFeedback, setCopyFeedback] = useState(false);
 
   // Add Form State
+  const [showAddPassword, setShowAddPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     username: '',
@@ -140,11 +141,16 @@ export const StaffTechnicianManager = () => {
       showGlobalToast('User ID / Username is required', 'error');
       return;
     }
+    const cleanPhone = (editFormData.phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      showGlobalToast('Mobile / WhatsApp number must be exactly 10 digits', 'error');
+      return;
+    }
     try {
       const payload = {
         name: editFormData.name,
         username: editFormData.username.trim().toLowerCase(),
-        phone: editFormData.phone,
+        phone: cleanPhone,
         email: editFormData.email?.trim() || undefined
       };
 
@@ -332,6 +338,11 @@ export const StaffTechnicianManager = () => {
       showGlobalToast('User ID / Username is required', 'error');
       return;
     }
+    const cleanPhone = (formData.phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      showGlobalToast('Mobile / WhatsApp number must be exactly 10 digits', 'error');
+      return;
+    }
     if (!formData.password?.trim()) {
       showGlobalToast('Login Password is required', 'error');
       return;
@@ -344,11 +355,13 @@ export const StaffTechnicianManager = () => {
 
       await api.createUser({
         ...formData,
+        phone: cleanPhone,
         username: safeUsername,
         email: safeEmail
       });
       showToast(`New ${formData.role} created successfully!`);
       setIsAddModalOpen(false);
+      setShowAddPassword(false);
       setFormData({
         name: '',
         username: '',
@@ -1089,22 +1102,38 @@ export const StaffTechnicianManager = () => {
                     required
                     placeholder="6352454247"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setFormData({ ...formData, phone: digits });
+                    }}
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    title="Please enter a 10-digit mobile number"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-mono"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Login Password *</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Enter login password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
-                />
+                <div className="relative">
+                  <input
+                    type={showAddPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Enter login password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-500 focus:bg-white rounded-xl py-2 pl-3 pr-10 text-xs font-mono transition-all outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPassword(!showAddPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+                    title={showAddPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -1187,8 +1216,14 @@ export const StaffTechnicianManager = () => {
                     type="tel"
                     required
                     value={editFormData.phone}
-                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2"
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setEditFormData({ ...editFormData, phone: digits });
+                    }}
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    title="Please enter a 10-digit mobile number"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-mono"
                   />
                 </div>
               </div>
