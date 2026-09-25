@@ -1753,7 +1753,7 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
             complaint_id, file_name, file_url, file_type, file_data, uploaded_by
           ) VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id
-        `, [compId, req.file.originalname, '/api/attachments/temp', req.file.mimetype, base64Data, req.user.name || 'Technician']);
+        `, [compId, req.file.originalname, '/api/attachments/temp', req.file.mimetype, base64Data, `${req.user?.name || 'Technician'} (Technician Resolution Proof)`]);
         const attId = insRes.rows[0].id;
         closingPhotoUrl = `/api/attachments/${attId}`;
         await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [closingPhotoUrl, attId]);

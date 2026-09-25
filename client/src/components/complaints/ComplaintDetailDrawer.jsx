@@ -86,6 +86,43 @@ export const ComplaintDetailDrawer = ({
   const [previewDocModal, setPreviewDocModal] = useState(null);
   const [uploadingAtt, setUploadingAtt] = useState(false);
 
+  // Separate Initial Complaint/Issue Attachments vs Technician Resolution Proof Attachments
+  const isResolutionProofAttachment = (att) => {
+    if (!att) return false;
+    if (ticket?.closing_photo_url && (
+      att.file_url === ticket.closing_photo_url || 
+      att.file_data === ticket.closing_photo_url || 
+      `/api/attachments/${att.id}` === ticket.closing_photo_url ||
+      String(att.id) === String(ticket.closing_photo_url).split('/').pop()
+    )) {
+      return true;
+    }
+    const uploadedBy = (att.uploaded_by || '').toLowerCase();
+    if (uploadedBy.includes('resolution proof') || uploadedBy.includes('technician resolution') || (uploadedBy.includes('tech') && ticket?.resolved_at)) {
+      return true;
+    }
+    const fileName = (att.file_name || '').toLowerCase();
+    if (fileName.includes('closing_proof') || fileName.includes('resolution_proof')) {
+      return true;
+    }
+    // If ticket was resolved and attachment was created around/after resolved_at
+    if (ticket?.resolved_at && att.created_at) {
+      const attTime = new Date(att.created_at).getTime();
+      const resolvedTime = new Date(ticket.resolved_at).getTime();
+      const createdTime = new Date(ticket.created_at).getTime();
+      if (Math.abs(attTime - resolvedTime) < 15 * 60 * 1000 && attTime > createdTime + 5 * 60 * 1000) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const initialIssueAttachments = attachments.filter(a => !isResolutionProofAttachment(a));
+  const resolutionProofAttachments = attachments.filter(a => isResolutionProofAttachment(a));
+  const allResolutionProofs = resolutionProofAttachments.length > 0 
+    ? resolutionProofAttachments 
+    : (ticket?.closing_photo_url ? [{ id: 'closing_photo', file_url: ticket.closing_photo_url, file_name: 'Technician Closing Proof Photo/Video', uploaded_by: ticket.technician_name || 'Technician' }] : []);
+
   const handleUploadMoreAttachments = async (e) => {
     if (!e.target.files || e.target.files.length === 0 || !ticket) return;
     try {
@@ -1129,7 +1166,7 @@ export const ComplaintDetailDrawer = ({
                       <div className="mt-4 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                            <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Proof Documents / Photos ({attachments.length}):
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Initial Complaint / Fault Proof ({initialIssueAttachments.length}):
                           </span>
                           <label className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
                             {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
@@ -1144,9 +1181,9 @@ export const ComplaintDetailDrawer = ({
                             />
                           </label>
                         </div>
-                        {attachments.length > 0 ? (
+                        {initialIssueAttachments.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                            {attachments.map((att) => {
+                            {initialIssueAttachments.map((att) => {
                               const fileUrl = att.file_data || att.file_url || `/api/attachments/${att.id}`;
                               const isPdf = att.file_type === 'application/pdf' || 
                                             (att.file_name && att.file_name.toLowerCase().endsWith('.pdf')) || 
@@ -1206,6 +1243,11 @@ export const ComplaintDetailDrawer = ({
                                     </div>
                                   )}
                                   <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1 mb-0.5">
+                                      <span className="text-[9px] font-semibold text-slate-600 bg-slate-200/70 border border-slate-300/60 px-1 py-0.5 rounded leading-none">
+                                        Uploaded with Complaint
+                                      </span>
+                                    </div>
                                     <p className="text-[11px] font-bold text-slate-800 truncate" title={att.file_name}>
                                       {att.file_name}
                                     </p>
@@ -1234,7 +1276,7 @@ export const ComplaintDetailDrawer = ({
                             })}
                           </div>
                         ) : (
-                          <p className="text-xs text-slate-400 italic">No proof photos or documents attached yet.</p>
+                          <p className="text-xs text-slate-400 italic">No fault photos or documents attached with the initial complaint.</p>
                         )}
                       </div>
                     </div>
@@ -1780,72 +1822,100 @@ export const ComplaintDetailDrawer = ({
                           </div>
                         )}
 
-                        {/* Attached Proof Photo / Video */}
-                        {(() => {
-                          const closingProof = attachments.find(a => 
-                            (ticket.closing_photo_url && (a.file_url === ticket.closing_photo_url || a.file_data === ticket.closing_photo_url || `/api/attachments/${a.id}` === ticket.closing_photo_url)) ||
-                            a.file_name?.toLowerCase().includes('proof') ||
-                            a.file_name?.toLowerCase().includes('closing') ||
-                            a.uploaded_by?.toLowerCase().includes('tech')
-                          ) || (ticket.closing_photo_url ? { file_url: ticket.closing_photo_url, file_name: 'Closing Proof Photo/Video' } : null);
-
-                          if (!closingProof) return null;
-
-                          const fileUrl = closingProof.file_data || closingProof.file_url || `/api/attachments/${closingProof.id}`;
-                          const isVideo = closingProof.file_type?.startsWith('video/') ||
-                                          (fileUrl && fileUrl.startsWith('data:video/')) ||
-                                          (fileUrl && fileUrl.match(/\.(mp4|webm|mov|3gp|avi|mkv)($|\?)/i)) ||
-                                          (closingProof.file_name?.match(/\.(mp4|webm|mov|3gp|avi|mkv)$/i));
-
-                          return (
-                            <div className="pt-2 border-t border-emerald-200 space-y-1.5">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 flex items-center justify-between">
-                                <span>Closing Proof Photo / Video Document</span>
-                                <span className="text-[9px] text-emerald-800 font-semibold bg-emerald-100 px-1.5 py-0.5 rounded">
-                                  Attached by Technician
-                                </span>
+                        {/* Attached Technician Resolution Proof Photo / Video */}
+                        {allResolutionProofs.length > 0 && (
+                          <div className="pt-2 border-t border-emerald-200 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-emerald-950 flex items-center gap-1.5">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Technician Site Completion Proof ({allResolutionProofs.length}):
                               </span>
-
-                              <div className="bg-white p-2.5 rounded-lg border border-emerald-200 flex items-center justify-between gap-3">
-                                <div 
-                                  onClick={() => setPreviewDocModal({ url: fileUrl, name: closingProof.file_name || 'Closing Proof', isVideo })}
-                                  className="flex items-center gap-2.5 cursor-pointer group flex-1 min-w-0"
-                                >
-                                  {isVideo ? (
-                                    <div className="w-12 h-12 bg-amber-100 group-hover:bg-amber-200 rounded-lg flex items-center justify-center text-amber-700 shrink-0 border border-amber-300 transition-colors">
-                                      <Video className="w-5 h-5 text-amber-700" />
-                                    </div>
-                                  ) : (
-                                    <img 
-                                      src={fileUrl} 
-                                      alt="Closing Proof" 
-                                      className="w-12 h-12 object-cover rounded-lg border border-slate-200 group-hover:border-emerald-500 shrink-0 shadow-2xs transition-colors"
-                                    />
-                                  )}
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
-                                      {closingProof.file_name || 'Site Completion Photo/Video'}
-                                    </p>
-                                    <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                                      <Eye className="w-3 h-3" /> Click to view / inspect full proof
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <a
-                                  href={fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  download={closingProof.file_name || 'closing_proof'}
-                                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1 transition-colors"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  <span>Download</span>
-                                </a>
-                              </div>
+                              <span className="text-[9px] text-emerald-800 font-bold bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
+                                Uploaded by Technician at Site Resolution
+                              </span>
                             </div>
-                          );
-                        })()}
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {allResolutionProofs.map((closingProof, idx) => {
+                                const fileUrl = closingProof.file_data || closingProof.file_url || `/api/attachments/${closingProof.id}`;
+                                const isPdf = closingProof.file_type === 'application/pdf' || 
+                                              (closingProof.file_name && closingProof.file_name.toLowerCase().endsWith('.pdf')) || 
+                                              (fileUrl && fileUrl.startsWith('data:application/pdf'));
+                                const isVideo = !isPdf && (
+                                                closingProof.file_type?.startsWith('video/') ||
+                                                (fileUrl && fileUrl.startsWith('data:video/')) ||
+                                                (fileUrl && fileUrl.match(/\.(mp4|webm|mov|3gp|avi|mkv)($|\?)/i)) ||
+                                                (closingProof.file_name?.match(/\.(mp4|webm|mov|3gp|avi|mkv)$/i))
+                                );
+                                const isImg = !isPdf && !isVideo;
+
+                                return (
+                                  <div
+                                    key={closingProof.id || idx}
+                                    className="bg-white p-2.5 rounded-lg border border-emerald-300/80 flex items-center justify-between gap-2.5 shadow-2xs hover:border-emerald-400 transition-all"
+                                  >
+                                    <div 
+                                      onClick={() => setPreviewDocModal({ url: fileUrl, name: closingProof.file_name || 'Closing Proof', isVideo, isImage: isImg, isPdf })}
+                                      className="flex items-center gap-2.5 cursor-pointer group flex-1 min-w-0"
+                                    >
+                                      {isVideo ? (
+                                        <div className="w-12 h-12 bg-amber-100 group-hover:bg-amber-200 rounded-lg flex items-center justify-center text-amber-700 shrink-0 border border-amber-300 transition-colors">
+                                          <Video className="w-5 h-5 text-amber-700" />
+                                        </div>
+                                      ) : isImg ? (
+                                        <img 
+                                          src={fileUrl} 
+                                          alt="Closing Proof" 
+                                          onError={(e) => {
+                                            e.currentTarget.style.display = 'none';
+                                            if (e.currentTarget.nextElementSibling) {
+                                              e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }
+                                          }}
+                                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 group-hover:border-emerald-500 shrink-0 shadow-2xs transition-colors"
+                                        />
+                                      ) : (
+                                        <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600 border border-slate-200">
+                                          <FileText className="w-5 h-5 text-emerald-600" />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[11px] font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate" title={closingProof.file_name}>
+                                          {closingProof.file_name || 'Site Completion Photo/Video'}
+                                        </p>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                          <span className="text-[9px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded truncate">
+                                            {closingProof.uploaded_by || ticket.technician_name || 'Technician'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewDocModal({ url: fileUrl, name: closingProof.file_name || 'Closing Proof', isVideo, isImage: isImg, isPdf })}
+                                        className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                        title="Preview proof"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
+                                      <a
+                                        href={fileUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        download={closingProof.file_name || 'closing_proof'}
+                                        className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-colors"
+                                        title="Download proof"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
