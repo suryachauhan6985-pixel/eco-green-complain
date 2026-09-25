@@ -363,11 +363,15 @@ export const StaffTechnicianManager = () => {
     setTimeout(() => setActionSuccess(''), 3500);
   };
 
-  const staffUsers = Array.isArray(users) 
-    ? users.filter(u => u && (u.role === 'staff' || u.role === 'admin')) 
+  const adminUsers = Array.isArray(users) 
+    ? users.filter(u => u && u.role === 'admin') 
     : [];
 
-  const editType = editingMember?.isTech ? 'technician' : 'staff';
+  const staffUsers = Array.isArray(users) 
+    ? users.filter(u => u && u.role === 'staff') 
+    : [];
+
+  const editType = editingMember?.isTech ? 'technician' : (editingMember?.role === 'admin' ? 'admin' : 'staff');
 
   return (
     <div className="space-y-4">
@@ -391,12 +395,12 @@ export const StaffTechnicianManager = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Tab Switcher */}
-          <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs font-bold">
+          <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs font-bold overflow-x-auto max-w-full">
             <button
               onClick={() => setActiveTab('technicians')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'technicians'
                   ? 'bg-white text-emerald-800 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -408,19 +412,31 @@ export const StaffTechnicianManager = () => {
 
             <button
               onClick={() => setActiveTab('staff')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'staff'
-                  ? 'bg-white text-emerald-800 shadow-xs'
+                  ? 'bg-white text-blue-800 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Shield className="w-3.5 h-3.5 text-emerald-600" />
+              <Users className="w-3.5 h-3.5 text-blue-600" />
               <span>Office Staff ({(staffUsers || []).length})</span>
             </button>
 
             <button
+              onClick={() => setActiveTab('admin')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                activeTab === 'admin'
+                  ? 'bg-white text-purple-800 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5 text-purple-600" />
+              <span>Administrators ({(adminUsers || []).length})</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('catalog')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'catalog'
                   ? 'bg-white text-emerald-800 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -434,11 +450,19 @@ export const StaffTechnicianManager = () => {
           {/* Add Button */}
           {activeTab !== 'catalog' && (
             <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+              onClick={() => {
+                setFormData(prev => ({
+                  ...prev,
+                  role: activeTab === 'admin' ? 'admin' : (activeTab === 'staff' ? 'staff' : 'technician')
+                }));
+                setIsAddModalOpen(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Member</span>
+              <span>
+                {activeTab === 'admin' ? 'Add Administrator' : (activeTab === 'staff' ? 'Add Staff' : 'Add Technician')}
+              </span>
             </button>
           )}
         </div>
@@ -448,9 +472,32 @@ export const StaffTechnicianManager = () => {
       {loading ? (
         <StaffTeamSkeleton count={6} />
       ) : activeTab === 'technicians' ? (
-        /* Technicians 2-Column Grid */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {(technicians || []).map((t) => (
+        (technicians || []).length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-2xs space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100 shadow-2xs">
+              <Wrench className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">No Field Technicians Registered Yet</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 leading-relaxed">
+                Add technicians to assign solar rooftop inspections, service complaints, and manage on-duty field teams.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(prev => ({ ...prev, role: 'technician' }));
+                setIsAddModalOpen(true);
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add First Technician</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {(technicians || []).map((t) => (
             <div
               key={t.id}
               className={`rounded-xl border p-4 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between gap-3 relative ${
@@ -602,95 +649,220 @@ export const StaffTechnicianManager = () => {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        )
       ) : activeTab === 'staff' ? (
-        /* Staff Users 2-Column Grid */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {(staffUsers || []).map((u) => (
-            <div
-              key={u.id}
-              className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between gap-3"
+        /* Office Staff Tab */
+        (staffUsers || []).length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-2xs space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto border border-blue-100 shadow-2xs">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">No Office Staff Members Registered</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 leading-relaxed">
+                Create front desk and support staff accounts to manage complaints, handle customer queries, and assign jobs.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(prev => ({ ...prev, role: 'staff' }));
+                setIsAddModalOpen(true);
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold text-sm">
-                      {u.name.charAt(0)}
+              <Plus className="w-4 h-4" />
+              <span>+ Add Office Staff</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {staffUsers.map((u) => (
+              <div
+                key={u.id}
+                className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between gap-3"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold text-sm">
+                        {u.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>{u.name}</span>
+                        </h4>
+                        <p className="text-[11px] font-mono text-blue-700 font-semibold">
+                          ID: @{u.username || u.email?.split('@')[0]}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <span>{u.name}</span>
-                        {u.role === 'admin' && (
-                          <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded font-bold uppercase">
-                            Admin
-                          </span>
-                        )}
-                      </h4>
-                      <p className="text-[11px] font-mono text-blue-700 font-semibold">
-                        ID: @{u.username || u.email?.split('@')[0]}
-                      </p>
-                    </div>
+
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 uppercase">
+                      Support Staff
+                    </span>
                   </div>
 
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 uppercase">
-                    {u.role}
-                  </span>
-                </div>
-
-                {/* Details */}
-                <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-800 bg-blue-50/90 px-2 py-1 rounded-md border border-blue-200/60">
-                    <Key className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>User ID: <span className="font-bold text-slate-900">{u.username || u.email?.split('@')[0]}</span></span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>{u.phone || 'No phone set'}</span>
-                  </div>
-                  {u.email && !u.email.endsWith('.internal') && (
+                  {/* Details */}
+                  <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-800 bg-blue-50/90 px-2 py-1 rounded-md border border-blue-200/60">
+                      <Key className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>User ID: <span className="font-bold text-slate-900">{u.username || u.email?.split('@')[0]}</span></span>
+                    </div>
                     <div className="flex items-center gap-1.5 text-[11px]">
-                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{u.email}</span>
+                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{u.phone || 'No phone set'}</span>
                     </div>
-                  )}
+                    {u.email && !u.email.endsWith('.internal') && (
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Actions */}
-              <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleOpenPasswordReset(u, false)}
-                  className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold"
-                  title="Reset Login Password"
-                >
-                  <Key className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Reset Key</span>
-                </button>
+                {/* Actions */}
+                <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPasswordReset(u, false)}
+                    className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+                    title="Reset Login Password"
+                  >
+                    <Key className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Reset Key</span>
+                  </button>
 
-                <button
-                  onClick={() => handleOpenEdit(u, 'staff')}
-                  className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold"
-                  title="Edit Staff Member"
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Edit</span>
-                </button>
+                  <button
+                    onClick={() => handleOpenEdit(u, 'staff')}
+                    className="text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                    title="Edit Staff Member"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Edit</span>
+                  </button>
 
-                {u.role !== 'admin' && (
                   <button
                     onClick={() => handleDeleteUser(u.id, u.name)}
-                    className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors flex items-center gap-1 text-[11px]"
+                    className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors flex items-center gap-1 text-[11px] cursor-pointer"
                     title="Remove Staff"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Remove</span>
                   </button>
-                )}
+                </div>
               </div>
+            ))}
+          </div>
+        )
+      ) : activeTab === 'admin' ? (
+        /* Administrators Tab */
+        (adminUsers || []).length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-2xs space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center mx-auto border border-purple-100 shadow-2xs">
+              <Shield className="w-6 h-6" />
             </div>
-          ))}
-        </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">No Administrators Found</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 leading-relaxed">
+                Administrator accounts manage system security, user permissions, and master settings.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(prev => ({ ...prev, role: 'admin' }));
+                setIsAddModalOpen(true);
+              }}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add Administrator</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {adminUsers.map((u) => (
+              <div
+                key={u.id}
+                className="bg-white rounded-xl border border-purple-200 p-4 shadow-2xs flex flex-col justify-between gap-3 relative"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-100 border border-purple-300 flex items-center justify-center text-purple-800 font-bold text-sm">
+                        {u.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>{u.name}</span>
+                          <span className="text-[9px] bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded font-bold uppercase border border-purple-200">
+                            Admin Supervisor
+                          </span>
+                        </h4>
+                        <p className="text-[11px] font-mono text-purple-700 font-semibold">
+                          ID: @{u.username || u.email?.split('@')[0]}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                      <Shield className="w-3 h-3 text-purple-600" />
+                      <span>Full Access</span>
+                    </span>
+                  </div>
+
+                  {/* Details */}
+                  <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-purple-50/40 p-2.5 rounded-lg border border-purple-100/60">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-900 bg-white px-2 py-1 rounded-md border border-purple-200/60">
+                      <Key className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                      <span>User ID: <span className="font-bold text-slate-900">{u.username || u.email?.split('@')[0]}</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{u.phone || 'No phone set'}</span>
+                    </div>
+                    {u.email && !u.email.endsWith('.internal') && (
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-2 border-t border-purple-100 text-xs gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-medium italic">
+                    Primary Administrator
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPasswordReset(u, false)}
+                      className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+                      title="Reset Login Password"
+                    >
+                      <Key className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Reset Key</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleOpenEdit(u, 'admin')}
+                      className="text-slate-700 hover:text-purple-700 px-2.5 py-1.5 rounded-lg hover:bg-purple-50 border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                      title="Edit Admin Member"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         /* Catalog & Issue Categories Management Tab */
         <div className="space-y-6">
@@ -879,6 +1051,7 @@ export const StaffTechnicianManager = () => {
                 >
                   <option value="technician">Field Technician (Mobile & On-Site Visits)</option>
                   <option value="staff">Support Staff / Front Desk (Tickets & Assign)</option>
+                  <option value="admin">Administrator / Supervisor (Full System Control)</option>
                 </select>
               </div>
 
