@@ -424,7 +424,12 @@ export const ComplaintDetailDrawer = ({
 
   const handleAddNote = async (e) => {
     e.preventDefault();
-    if (!followUpNote.trim()) return;
+    if (!followUpNote.trim()) {
+      showToast(followUpStatus === 'On Hold' 
+        ? 'Please enter a mandatory explanation/reason before putting the ticket on hold.'
+        : 'Please enter a note before saving.', 'error');
+      return;
+    }
     try {
       setSubmittingNote(true);
       await api.addTimelineNote(ticket.id, {
@@ -1630,12 +1635,19 @@ export const ComplaintDetailDrawer = ({
                             <>
                               <button
                                 type="button"
-                                onClick={() => handleQuickStatusChange('On Hold', 'Awaiting replacement parts or customer site access')}
-                                disabled={quickUpdatingStatus}
-                                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                                onClick={() => {
+                                  setFollowUpStatus('On Hold');
+                                  document.getElementById('log-visit-note-section')?.scrollIntoView({ behavior: 'smooth' });
+                                  setTimeout(() => {
+                                    const textarea = document.getElementById('visit-note-textarea');
+                                    if (textarea) textarea.focus();
+                                  }, 150);
+                                  showToast('Please enter the mandatory reason below and click "Update Status & Save Note" to put ticket on hold.', 'info');
+                                }}
+                                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
                               >
                                 <Pause className="w-3.5 h-3.5 fill-current" />
-                                <span>{quickUpdatingStatus ? 'Updating...' : '⏸️ Put "On Hold" (Parts / Access)'}</span>
+                                <span>⏸️ Put "On Hold" (Parts / Access)</span>
                               </button>
                               <button
                                 type="button"
@@ -1666,29 +1678,37 @@ export const ComplaintDetailDrawer = ({
                     )}
 
                     {/* FOLLOW-UP NOTE / VISIT LOG SECTION */}
-                    <div className="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Send className="w-3.5 h-3.5 text-emerald-700" />
-                        Log Site Visit / Follow-up Note
-                      </h4>
+                    <div id="log-visit-note-section" className={`rounded-xl p-4 border space-y-3 scroll-mt-20 transition-all ${followUpStatus === 'On Hold' ? 'bg-amber-50/60 border-amber-300' : 'bg-white border-slate-200'}`}>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Send className="w-3.5 h-3.5 text-emerald-700" />
+                          Log Site Visit / Follow-up Note
+                        </h4>
+                        {followUpStatus === 'On Hold' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                            ⏸️ Mandatory Reason Required for 'On Hold'
+                          </span>
+                        )}
+                      </div>
 
                       <form onSubmit={handleAddNote} className="space-y-3">
                         <textarea
+                          id="visit-note-textarea"
                           rows={2}
                           required
-                          placeholder="e.g., Reached site, inspected DC array. Awaiting replacement surge protector..."
+                          placeholder={followUpStatus === 'On Hold' ? "MANDATORY: State the reason why work is on hold (e.g., waiting for parts, site locked, customer unavailable)..." : "e.g., Reached site, inspected DC array. Awaiting replacement surge protector..."}
                           value={followUpNote}
                           onChange={(e) => setFollowUpNote(e.target.value)}
-                          className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className={`w-full text-xs px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 ${followUpStatus === 'On Hold' ? 'border-amber-400 focus:ring-amber-500' : 'border-slate-300 focus:ring-emerald-500'}`}
                         />
 
                         <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-500">Update Status:</span>
+                            <span className="text-[11px] text-slate-500 font-semibold">Update Status:</span>
                             <select
                               value={followUpStatus}
                               onChange={(e) => setFollowUpStatus(e.target.value)}
-                              className="text-xs px-2 py-1 bg-white border border-slate-300 rounded font-medium"
+                              className={`text-xs px-2 py-1 rounded font-semibold border ${followUpStatus === 'On Hold' ? 'bg-amber-100 text-amber-900 border-amber-400' : 'bg-white text-slate-800 border-slate-300'}`}
                             >
                               {(currentUser?.role === 'technician'
                                 ? ['In Progress', 'On Hold']
