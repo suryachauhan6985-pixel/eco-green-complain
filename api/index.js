@@ -1376,7 +1376,7 @@ app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array
         INSERT INTO in_app_notifications (
           id, type, ticket_id, complaint_id, title, message, customer_name,
           target_role, performed_by_name, performed_by_role
-        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'staff', $7, 'customer')
+        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'admin', $7, 'customer')
         ON CONFLICT (id) DO NOTHING
       `, [
         notifId,

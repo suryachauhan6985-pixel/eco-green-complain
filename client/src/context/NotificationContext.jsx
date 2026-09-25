@@ -136,18 +136,22 @@ export const NotificationProvider = ({ children }) => {
 
     // 2. Staff sees technician updates, resolutions, customer registrations, notes, reopens
     if (user.role === 'staff') {
-      const performedByMe = notif.performedByName && user.name && 
-        notif.performedByName.toLowerCase() === user.name.toLowerCase() &&
-        notif.performedByRole === 'staff';
+      // ECO-5: Restrict new ticket creation notifications to Admin role ONLY
+      if (notif.type === 'new_ticket') return false;
+
+      const performedByMe = (
+        (notif.performedByName && user.name && notif.performedByName.toLowerCase() === user.name.toLowerCase()) ||
+        (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
+        (notif.performedByUsername && user.username && notif.performedByUsername.toLowerCase() === user.username.toLowerCase())
+      );
       
       // Do not clutter staff inbox with actions they performed themselves
       if (performedByMe && notif.type !== 'system') return false;
 
       return (
         notif.targetRole === 'staff' ||
-        notif.targetRole === 'admin' ||
         notif.targetRole === 'all' ||
-        ['status_update', 'resolved', 'note', 'new_ticket', 'reopened', 'payment', 'feedback'].includes(notif.type)
+        ['status_update', 'resolved', 'note', 'reopened', 'payment', 'feedback'].includes(notif.type)
       );
     }
 

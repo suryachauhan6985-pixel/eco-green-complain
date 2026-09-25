@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
@@ -67,6 +68,7 @@ const getProductComponentIcon = (type) => {
 };
 
 export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint, initialData = null }) => {
+  const { currentUser } = useAuth();
   const { showToast } = useDialog();
   const { addNotification } = useNotifications();
   const [directSending, setDirectSending] = useState(false);
@@ -527,7 +529,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       setCreatedTicket(res.complaint);
       setCreatedWhatsApp(res.whatsapp || null);
 
-      // Trigger In-App Notification for Staff & Admin
+      // Trigger In-App Notification (Restricted to Admin Only as per ECO-5)
       if (res && res.complaint) {
         addNotification({
           type: 'new_ticket',
@@ -536,9 +538,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
           title: `New Ticket Registered: ${res.complaint.ticket_id}`,
           message: `Customer ${res.complaint.customer_name} raised a ticket for ${res.complaint.product_type} (${res.complaint.issue_category}).`,
           customerName: res.complaint.customer_name,
-          targetRole: 'staff',
-          performedByName: formData.customer_name || 'Front Desk',
-          performedByRole: 'staff'
+          targetRole: 'admin',
+          performedByName: currentUser?.name || 'Front Desk Staff',
+          performedByRole: currentUser?.role || 'staff',
+          performedByUserId: currentUser?.id,
+          performedByUsername: currentUser?.username
         });
       }
 
