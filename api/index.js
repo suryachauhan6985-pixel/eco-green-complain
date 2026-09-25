@@ -286,6 +286,46 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           ]
         }]
       };
+    } else if (templateName === 'complaint_closed') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const remarks = cleanParam(variables.closure_remarks || variables.notes, 'Issue resolved and verified.');
+      renderedBody = `☀️ *Eco Green Solar - Ticket Closed*\n\nNamaste *${custName}*,\n\nYour service complaint *${ticketId}* has been verified and successfully *CLOSED*.\n\n📝 *Closure Remarks:* ${remarks}\n\n🔗 *View Ticket Summary & Rate Service:* ${trackingUrl}\n\nIf you have any further questions, please reach our helpline at +91 78784 44414.\n\nThank you for choosing *Eco Green Solar Care*.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_closed',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: remarks },
+            { type: 'text', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (templateName === 'complaint_reopened') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const reason = cleanParam(variables.reason || variables.notes, 'Follow-up investigation required');
+      renderedBody = `☀️ *Eco Green Solar - Ticket Reopened*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reason}\n\nOur service desk is prioritizing your ticket and our technician will follow up shortly.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_reopened',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: reason },
+            { type: 'text', text: trackingUrl }
+          ]
+        }]
+      };
     } else if (mediaUrl) {
       renderedBody = message || (mediaType === 'image' ? '[Photo]' : '[Document]');
       if (mediaType === 'image') {
@@ -319,12 +359,39 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
     });
     clearTimeout(timeoutId);
 
-    const data = await resp.json();
-    const wamid = data?.messages?.[0]?.id || null;
-    const isSuccess = resp.ok && !!wamid;
-    const errorMsg = !isSuccess ? (data?.error?.message || data?.error?.error_user_msg || `Meta HTTP ${resp.status}`) : null;
+    let data = await resp.json();
+    let wamid = data?.messages?.[0]?.id || null;
+    let isSuccess = resp.ok && !!wamid;
+    let errorMsg = !isSuccess ? (data?.error?.message || data?.error?.error_user_msg || `Meta HTTP ${resp.status}`) : null;
 
-    console.log(`[WHATSAPP] Recipient: ${maskedPhone} | Meta Response: ${resp.status} | WAMID: ${wamid || 'none'} | Error: ${errorMsg || 'none'}`);
+    // Graceful fallback to text payload if template is not yet registered in Meta Business Manager
+    if (!isSuccess && payload.type === 'template' && renderedBody) {
+      try {
+        const textPayload = {
+          messaging_product: 'whatsapp',
+          to: formattedPhone,
+          type: 'text',
+          text: { body: renderedBody }
+        };
+        const textResp = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_NUMBER_ID}/messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(textPayload)
+        });
+        const textData = await textResp.json();
+        if (textResp.ok && textData?.messages?.[0]?.id) {
+          data = textData;
+          wamid = textData.messages[0].id;
+          isSuccess = true;
+          errorMsg = null;
+        }
+      } catch (_) {}
+    }
+
+    console.log(`[WHATSAPP] Recipient: ${maskedPhone} | Meta Response: ${isSuccess ? 200 : resp.status} | WAMID: ${wamid || 'none'} | Error: ${errorMsg || 'none'}`);
 
     // Insert into whatsapp_messages database table
     try {
@@ -2034,7 +2101,29 @@ app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 's
       console.warn('[Close In-App Notif Note]', nErr.message);
     }
 
-    return res.json({ message: 'Complaint closed successfully', complaint: comp });
+    // Send automated customer notification on Closed (ECO-14)
+    let waResult = null;
+    if (comp.customer_phone) {
+      try {
+        waResult = await sendWhatsApp({
+          to: comp.customer_phone,
+          templateName: 'complaint_closed',
+          message: `☀️ *Eco Green Solar - Ticket Closed*\n\nNamaste *${comp.customer_name}*,\n\nYour service complaint *${comp.ticket_id}* has been verified and successfully *CLOSED*.\n\n📝 *Closure Remarks:* ${remarks}\n\n🔗 *View Ticket Summary & Rate Service:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+          variables: {
+            customer_name: comp.customer_name,
+            ticket_id: comp.ticket_id,
+            closure_remarks: remarks,
+            complaint_id: comp.ticket_id,
+            db_complaint_id: comp.id
+          }
+        });
+      } catch (waErr) {
+        console.warn('[Close WhatsApp Note]', waErr.message);
+        waResult = { success: false, error: waErr.message };
+      }
+    }
+
+    return res.json({ message: 'Complaint closed successfully', complaint: comp, whatsapp: waResult });
   } catch (err) {
     console.error('Close complaint error:', err);
     return res.status(500).json({ error: 'Failed to close complaint: ' + err.message });
@@ -2093,7 +2182,30 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
       console.warn('[Reopen In-App Notif Note]', nErr.message);
     }
 
-    return res.json({ success: true, message: 'Ticket reopened successfully', complaint: comp });
+    // Send automated customer notification on Reopened (ECO-14)
+    let reopenWaResult = null;
+    if (comp.customer_phone) {
+      const reopenReasonText = reason || 'Issue recurring / follow-up inspection requested';
+      try {
+        reopenWaResult = await sendWhatsApp({
+          to: comp.customer_phone,
+          templateName: 'complaint_reopened',
+          message: `☀️ *Eco Green Solar - Ticket Reopened*\n\nNamaste *${comp.customer_name}*,\n\nYour complaint ticket *${comp.ticket_id}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reopenReasonText}\n\nOur service desk is prioritizing your ticket and our technician will follow up shortly.\n\n🔗 *Track Live Status:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+          variables: {
+            customer_name: comp.customer_name,
+            ticket_id: comp.ticket_id,
+            reason: reopenReasonText,
+            complaint_id: comp.ticket_id,
+            db_complaint_id: comp.id
+          }
+        });
+      } catch (waErr) {
+        console.warn('[Reopen WhatsApp Note]', waErr.message);
+        reopenWaResult = { success: false, error: waErr.message };
+      }
+    }
+
+    return res.json({ success: true, message: 'Ticket reopened successfully', complaint: comp, whatsapp: reopenWaResult });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
