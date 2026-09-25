@@ -192,18 +192,30 @@ export const NotificationProvider = ({ children }) => {
     return notifications.filter(n => isNotificationForUser(n, currentUser));
   }, [notifications, currentUser, isNotificationForUser]);
 
-  // Compute unread user notifications
-  const getUserKey = useCallback((user) => {
-    if (!user) return '';
-    return user.username || user.email || user.name || user.role;
+  // Compute all valid identifier keys for a user (id, username, email, name, phone, role)
+  const getUserKeys = useCallback((user) => {
+    if (!user) return [];
+    const keys = [
+      user.id !== undefined && user.id !== null ? String(user.id).toLowerCase() : null,
+      user.username ? String(user.username).toLowerCase() : null,
+      user.email ? String(user.email).toLowerCase() : null,
+      user.name ? String(user.name).toLowerCase() : null,
+      user.phone ? String(user.phone).replace(/[^0-9]/g, '').slice(-10) : null,
+      user.technician_id ? String(user.technician_id).toLowerCase() : null,
+      user.technicianId ? String(user.technicianId).toLowerCase() : null,
+      user.role ? String(user.role).toLowerCase() : null
+    ].filter(Boolean);
+    return Array.from(new Set(keys));
   }, []);
 
   const isUnread = useCallback((notif, user) => {
     if (!user) return false;
-    const userKey = getUserKey(user);
-    if (!notif.readBy || !Array.isArray(notif.readBy)) return true;
-    return !notif.readBy.includes(userKey);
-  }, [getUserKey]);
+    if (!notif.readBy || !Array.isArray(notif.readBy) || notif.readBy.length === 0) return true;
+    const userKeys = getUserKeys(user);
+    const readByLower = notif.readBy.map(k => String(k).toLowerCase());
+    const hasRead = userKeys.some(k => readByLower.includes(k));
+    return !hasRead;
+  }, [getUserKeys]);
 
   const unreadNotifications = useMemo(() => {
     if (!currentUser) return [];
@@ -275,15 +287,14 @@ export const NotificationProvider = ({ children }) => {
   // Mark single notification as read
   const markAsRead = useCallback((notificationId) => {
     if (!currentUser || !notificationId) return;
-    const userKey = getUserKey(currentUser);
+    const userKeys = getUserKeys(currentUser);
 
     setNotifications(prev => {
       const updated = prev.map(n => {
         if (n.id === notificationId || n.ticketId === notificationId) {
           const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
-          if (!currentRead.includes(userKey)) {
-            return { ...n, readBy: [...currentRead, userKey] };
-          }
+          const combined = Array.from(new Set([...currentRead, ...userKeys]));
+          return { ...n, readBy: combined };
         }
         return n;
       });
@@ -302,20 +313,19 @@ export const NotificationProvider = ({ children }) => {
         api.markInAppNotificationRead(notificationId).catch(() => {});
       }
     } catch (_) {}
-  }, [currentUser, getUserKey]);
+  }, [currentUser, getUserKeys]);
 
   // Mark all relevant notifications as read
   const markAllAsRead = useCallback(() => {
     if (!currentUser) return;
-    const userKey = getUserKey(currentUser);
+    const userKeys = getUserKeys(currentUser);
 
     setNotifications(prev => {
       const updated = prev.map(n => {
         if (isNotificationForUser(n, currentUser)) {
           const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
-          if (!currentRead.includes(userKey)) {
-            return { ...n, readBy: [...currentRead, userKey] };
-          }
+          const combined = Array.from(new Set([...currentRead, ...userKeys]));
+          return { ...n, readBy: combined };
         }
         return n;
       });

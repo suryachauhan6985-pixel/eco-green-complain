@@ -8,11 +8,15 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
   if (!activePopup) return null;
 
   const handleOpenTicket = () => {
-    if (activePopup.ticketId || activePopup.complaintId) {
+    if (!activePopup) return;
+    if (activePopup.id) {
       markAsRead(activePopup.id);
-      if (onSelectComplaint) {
-        onSelectComplaint(activePopup.ticketId || activePopup.complaintId);
-      }
+    }
+    if (activePopup.ticketId) {
+      markAsRead(activePopup.ticketId);
+    }
+    if (onSelectComplaint && (activePopup.ticketId || activePopup.complaintId)) {
+      onSelectComplaint(activePopup.ticketId || activePopup.complaintId);
     }
   };
 

@@ -609,7 +609,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name, technician_id: technicianId },
+      { id: user.id, username: user.username, email: user.email, role: user.role, name: user.name, phone: user.phone, technician_id: technicianId },
       JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -2717,15 +2717,22 @@ app.put('/api/in-app-notifications/:id/read', authenticateToken, async (req, res
   try {
     await ensureInAppTable();
     const { id } = req.params;
-    const userKey = req.user ? (req.user.username || req.user.email || req.user.name || req.user.role) : 'current_user';
+    const userKeys = [
+      req.user.id ? String(req.user.id) : null,
+      req.user.username || null,
+      req.user.email || null,
+      req.user.name || null,
+      req.user.role || null
+    ].filter(Boolean);
+
     await query(`
       UPDATE in_app_notifications
       SET read_by = CASE
-        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || jsonb_build_array($1::text)
-        ELSE jsonb_build_array($1::text)
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || $1::jsonb
+        ELSE $1::jsonb
       END
       WHERE id = $2 OR ticket_id = $2
-    `, [userKey, id]);
+    `, [JSON.stringify(userKeys), id]);
     return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2735,14 +2742,21 @@ app.put('/api/in-app-notifications/:id/read', authenticateToken, async (req, res
 app.put('/api/in-app-notifications/read-all', authenticateToken, async (req, res) => {
   try {
     await ensureInAppTable();
-    const userKey = req.user ? (req.user.username || req.user.email || req.user.name || req.user.role) : 'current_user';
+    const userKeys = [
+      req.user.id ? String(req.user.id) : null,
+      req.user.username || null,
+      req.user.email || null,
+      req.user.name || null,
+      req.user.role || null
+    ].filter(Boolean);
+
     await query(`
       UPDATE in_app_notifications
       SET read_by = CASE
-        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || jsonb_build_array($1::text)
-        ELSE jsonb_build_array($1::text)
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || $1::jsonb
+        ELSE $1::jsonb
       END
-    `, [userKey]);
+    `, [JSON.stringify(userKeys)]);
     return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });
