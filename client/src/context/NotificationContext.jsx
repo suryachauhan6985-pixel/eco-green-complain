@@ -131,33 +131,36 @@ export const NotificationProvider = ({ children }) => {
   const isNotificationForUser = useCallback((notif, user) => {
     if (!user || user.role === 'customer') return false;
 
+    // Suppress self-notifications for ANY role (technician, staff, admin)
+    const performedByMe = (
+      (notif.performedByName && user.name && notif.performedByName.toLowerCase() === user.name.toLowerCase()) ||
+      (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
+      (notif.performedByUsername && user.username && notif.performedByUsername.toLowerCase() === user.username.toLowerCase())
+    );
+    if (performedByMe && notif.type !== 'system') return false;
+
     // 1. Admin sees everything across the entire organization
     if (user.role === 'admin') return true;
 
-    // 2. Staff sees technician updates, resolutions, customer registrations, notes, reopens
+    // 2. Staff sees technician updates, status changes, resolutions, notes, reopens
     if (user.role === 'staff') {
       // ECO-5: Restrict new ticket creation notifications to Admin role ONLY
       if (notif.type === 'new_ticket') return false;
 
-      const performedByMe = (
-        (notif.performedByName && user.name && notif.performedByName.toLowerCase() === user.name.toLowerCase()) ||
-        (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
-        (notif.performedByUsername && user.username && notif.performedByUsername.toLowerCase() === user.username.toLowerCase())
-      );
-      
-      // Do not clutter staff inbox with actions they performed themselves
-      if (performedByMe && notif.type !== 'system') return false;
-
       return (
         notif.targetRole === 'staff' ||
         notif.targetRole === 'all' ||
+        notif.targetRole === 'admin' ||
         ['status_update', 'resolved', 'note', 'reopened', 'payment', 'feedback'].includes(notif.type)
       );
     }
 
-    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them
+    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them (and NEVER receives staff-targeted notifications)
     if (user.role === 'technician') {
-      const currentTechId = String(user.technicianId || user.id || '');
+      // Explicitly reject staff-targeted notifications
+      if (['staff', 'admin'].includes(notif.targetRole)) return false;
+
+      const currentTechId = String(user.technicianId || user.technician_id || user.id || '');
       const currentTechName = (user.name || '').trim().toLowerCase();
 
       const targetTechId = String(notif.targetTechnicianId || '');
@@ -176,7 +179,7 @@ export const NotificationProvider = ({ children }) => {
         return idMatches || nameMatches;
       }
 
-      if (['reopened', 'note', 'status_update'].includes(notif.type) && notif.targetRole === 'all') {
+      if (['reopened', 'note'].includes(notif.type) && notif.targetRole === 'all') {
         return idMatches || nameMatches;
       }
 

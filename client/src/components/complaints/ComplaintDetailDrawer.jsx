@@ -323,8 +323,8 @@ export const ComplaintDetailDrawer = ({
         message: `${currentUser?.name || 'Technician'} updated status to "${newStatus}" for ${ticket.customer_name}.${defaultNote ? ` Note: ${defaultNote}` : ''}`,
         customerName: ticket.customer_name,
         targetRole: currentUser?.role === 'technician' ? 'staff' : 'technician',
-        targetTechnicianId: ticket.assigned_technician_id,
-        targetTechnicianName: ticket.technician_name,
+        targetTechnicianId: currentUser?.role === 'technician' ? null : ticket.assigned_technician_id,
+        targetTechnicianName: currentUser?.role === 'technician' ? '' : ticket.technician_name,
         performedByName: currentUser?.name || 'Technician',
         performedByRole: currentUser?.role || 'technician'
       });
@@ -409,8 +409,8 @@ export const ComplaintDetailDrawer = ({
         message: `${currentUser?.name || 'User'}: "${savedNote.slice(0, 100)}"`,
         customerName: ticket.customer_name,
         targetRole: currentUser?.role === 'technician' ? 'staff' : 'technician',
-        targetTechnicianId: ticket.assigned_technician_id,
-        targetTechnicianName: ticket.technician_name,
+        targetTechnicianId: currentUser?.role === 'technician' ? null : ticket.assigned_technician_id,
+        targetTechnicianName: currentUser?.role === 'technician' ? '' : ticket.technician_name,
         performedByName: currentUser?.name || 'User',
         performedByRole: currentUser?.role || 'staff'
       });
@@ -462,8 +462,8 @@ export const ComplaintDetailDrawer = ({
         message: `${currentUser?.name || 'Technician'} marked ticket as Resolved for customer ${ticket.customer_name}. Notes: ${resolutionNotes}`,
         customerName: ticket.customer_name,
         targetRole: 'staff',
-        targetTechnicianId: ticket.assigned_technician_id,
-        targetTechnicianName: ticket.technician_name,
+        targetTechnicianId: null,
+        targetTechnicianName: '',
         performedByName: currentUser?.name || 'Technician',
         performedByRole: currentUser?.role || 'technician'
       });

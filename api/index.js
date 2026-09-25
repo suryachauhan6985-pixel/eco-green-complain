@@ -1654,7 +1654,7 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
         `${req.user.name}: "${notes || status || 'Updated'}"`,
         currentC?.customer_name || '',
         req.user.role === 'technician' ? 'staff' : 'technician',
-        currentC?.assigned_technician_id || null,
+        req.user.role === 'technician' ? null : (currentC?.assigned_technician_id || null),
         req.user.name,
         req.user.role
       ]);
@@ -2640,10 +2640,12 @@ app.get('/api/in-app-notifications', authenticateToken, async (req, res) => {
         OR type IN ('status_update', 'resolved', 'note', 'new_ticket', 'reopened', 'payment', 'feedback')
       ) ORDER BY created_at DESC LIMIT 150`;
     } else if (userRole === 'technician') {
-      // Technician only sees tickets and alerts explicitly assigned to them
-      params.push(userId || -1, `%${userName}%`, `%${userPhone}%`);
+      // Technician only sees tickets and alerts explicitly assigned to them, suppressing self actions and staff alerts
+      params.push(userId || -1, `%${userName}%`, `%${userPhone}%`, userName);
       sql += ` AND (
-        (target_role = 'technician' OR type IN ('assignment', 'reassigned', 'reopened', 'status_update', 'note'))
+        target_role NOT IN ('staff', 'admin')
+        AND performed_by_name != $4
+        AND (target_role = 'technician' OR type IN ('assignment', 'reassigned', 'reopened'))
         AND (
           target_technician_id = $1 
           OR (target_technician_name IS NOT NULL AND target_technician_name ILIKE $2)
