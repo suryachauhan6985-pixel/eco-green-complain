@@ -9,7 +9,7 @@ import {
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
-  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video
+  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -1623,18 +1623,32 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                   Upload Photo/Video Proof (Optional, Max 5)
                 </label>
-                <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 transition-colors">
-                  <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                  <span className="text-xs text-slate-600 font-medium">Click to select files or photos</span>
-                  <span className="text-[10px] text-slate-400">Inverter error photos, tank leak images (Max 5 files)</span>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,video/*,.pdf"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:bg-emerald-50/30 transition-colors">
+                    <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-xs text-slate-700 font-semibold">Browse Files / Gallery</span>
+                    <span className="text-[10px] text-slate-400">Photos, videos, PDFs (Max 5)</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,.pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                  <label className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
+                    <Camera className="w-5 h-5 text-emerald-600 mb-1" />
+                    <span className="text-xs text-emerald-800 font-bold">Take Live Photo</span>
+                    <span className="text-[10px] text-emerald-600/80">Direct camera capture</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
 
                 {/* Live Preview List */}
                 {fileList.length > 0 && (

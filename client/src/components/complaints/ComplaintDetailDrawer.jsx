@@ -9,7 +9,7 @@ import {
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
-  Play, Pause, Video, Download
+  Play, Pause, Video, Download, Camera
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -1168,18 +1168,32 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
                             <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Initial Complaint / Fault Proof ({initialIssueAttachments.length}):
                           </span>
-                          <label className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
-                            {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                            <span>{uploadingAtt ? 'Uploading...' : 'Add Photo / Doc'}</span>
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*,video/*,application/pdf"
-                              className="hidden"
-                              disabled={uploadingAtt}
-                              onChange={handleUploadMoreAttachments}
-                            />
-                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <label className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                              {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+                              <span>{uploadingAtt ? 'Uploading...' : 'Take Photo'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                disabled={uploadingAtt}
+                                onChange={handleUploadMoreAttachments}
+                              />
+                            </label>
+                            <label className="cursor-pointer px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                              {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                              <span>{uploadingAtt ? 'Uploading...' : 'Add Doc'}</span>
+                              <input
+                                type="file"
+                                multiple
+                                accept="image/*,video/*,application/pdf"
+                                className="hidden"
+                                disabled={uploadingAtt}
+                                onChange={handleUploadMoreAttachments}
+                              />
+                            </label>
+                          </div>
                         </div>
                         {initialIssueAttachments.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
@@ -1767,12 +1781,51 @@ export const ComplaintDetailDrawer = ({
                               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                                 Closing Proof Photo / Video (Optional)
                               </label>
-                              <input
-                                type="file"
-                                accept="image/*,video/*"
-                                onChange={(e) => setResolutionPhoto(e.target.files?.[0] || null)}
-                                className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 text-slate-600"
-                              />
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors">
+                                    <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                                    <span>Take Live Photo</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      onChange={(e) => setResolutionPhoto(e.target.files?.[0] || null)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                  <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors">
+                                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Browse File / Video</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*,video/*"
+                                      onChange={(e) => setResolutionPhoto(e.target.files?.[0] || null)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                </div>
+                                {resolutionPhoto && (
+                                  <div className="flex items-center justify-between p-2 bg-emerald-50/80 rounded-lg border border-emerald-300 text-xs">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div className="w-8 h-8 rounded bg-emerald-200/60 flex items-center justify-center shrink-0 text-emerald-800 font-bold text-[10px]">
+                                        {resolutionPhoto.type?.startsWith('video/') ? <Video className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
+                                      </div>
+                                      <div className="truncate">
+                                        <p className="font-semibold text-slate-800 truncate text-[11px]">{resolutionPhoto.name}</p>
+                                        <p className="text-[10px] text-slate-500">{(resolutionPhoto.size / 1024).toFixed(1)} KB</p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setResolutionPhoto(null)}
+                                      className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 text-xs font-bold shrink-0"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
 
