@@ -130,6 +130,8 @@ export function buildTechnicianWorkOrderWhatsApp(ticket, technician, expectedVis
     ? new Date(expectedVisitDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : 'Immediate / Next Available Slot';
 
+  const portalLink = `${window.location.origin}/technician?ticket=${encodeURIComponent(ticket.ticket_id)}`;
+
   const workOrderText = `🛠️ *Eco Green Solar — New Field Work Order*
 
 Dear ${technician?.name || 'Technician'}, a new complaint ticket has been assigned to you.
@@ -143,6 +145,9 @@ ${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}
 📝 *Description:* ${ticket.issue_description}
 🛡️ *Warranty:* ${ticket.is_in_warranty ? 'In-Warranty (Free Service)' : 'Out-of-Warranty'}
 📅 *Scheduled Visit:* ${formattedDate}
+
+🔗 *Direct Field Ticket Link:*
+${portalLink}
 
 Please call the customer before visiting and confirm site access.
 - Eco Green Solar Operations Desk`;

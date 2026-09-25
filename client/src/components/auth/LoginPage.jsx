@@ -52,6 +52,22 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Detect any direct ticket / redirect target from URL
+  const [redirectNotice, setRedirectNotice] = useState(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirect = searchParams.get('redirect') || searchParams.get('returnUrl') || searchParams.get('next');
+      const ticket = searchParams.get('ticket') || searchParams.get('ticketId') || searchParams.get('complaintId');
+      if (ticket) {
+        return `Ticket: ${ticket}`;
+      }
+      if (redirect) {
+        return 'Target Ticket / Dashboard';
+      }
+    } catch (_) {}
+    return null;
+  });
+
   // Clear legacy stored credentials so fields remain clean and empty until user taps to autofill
   useEffect(() => {
     try {
@@ -68,6 +84,16 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
 
     try {
       await login(identifier.trim(), password);
+      // Process post-login redirect if specified
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectUrl = searchParams.get('redirect') || searchParams.get('returnUrl') || searchParams.get('next');
+        if (redirectUrl) {
+          window.history.replaceState(null, '', redirectUrl);
+          // Trigger popstate so App.jsx re-evaluates location
+          window.dispatchEvent(new Event('popstate'));
+        }
+      } catch (_) {}
     } catch (err) {
       setError(err.message || 'Invalid User ID or password. Please verify and try again.');
     } finally {
@@ -191,6 +217,14 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                 Enter your authorized <strong>User ID / Mobile</strong> and <strong>Password</strong> to access operations.
               </p>
             </div>
+
+            {/* Direct Ticket Link Notice */}
+            {redirectNotice && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 flex items-center gap-2 animate-in fade-in shadow-xs">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span><strong>Direct Link Detected:</strong> You will be forwarded directly to <strong>{redirectNotice}</strong> upon login.</span>
+              </div>
+            )}
 
             {/* Error Message if any */}
             {error && (

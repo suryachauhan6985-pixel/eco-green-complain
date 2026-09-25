@@ -111,8 +111,9 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       const notes = cleanParam(variables.notes || variables.issue_description, 'Inspection required');
       const priority = cleanParam(variables.priority, 'Normal');
       const visitDate = cleanParam(variables.expected_visit_date, 'Immediate / Today');
+      const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(tktId)}`;
 
-      deliveredText = `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello ${techName}, you have been assigned ticket *${tktId}*.\n\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddr}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`;
+      deliveredText = `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello ${techName}, you have been assigned ticket *${tktId}*.\n\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddr}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\n*Direct Ticket Link:* ${portalLink}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`;
 
       payload.type = 'template';
       payload.template = {

@@ -64,6 +64,37 @@ function getTrackingInfoFromUrl() {
   return { isTracking: false, ticketId: '' };
 }
 
+function getTicketIdFromUrl() {
+  try {
+    // 1. Check query parameters: ticket, ticketId, complaintId, id
+    const searchParams = new URLSearchParams(window.location.search);
+    const q = searchParams.get('ticket') || searchParams.get('ticketId') || searchParams.get('complaintId') || searchParams.get('id');
+    if (q) return decodeURIComponent(q);
+
+    // 2. Check path routes like /ticket/:id, /tickets/:id, /complaints/:id, /technician/:id
+    const parts = window.location.pathname.replace(/^\/+/, '').split('/');
+    if (parts.length >= 2) {
+      const prefix = parts[0].toLowerCase();
+      if (['ticket', 'tickets', 'complaint', 'complaints', 'technician'].includes(prefix) && parts[1]) {
+        return decodeURIComponent(parts[1]);
+      }
+    }
+
+    // 3. Check hash params if any (#/complaints?ticket=... or #ticket=...)
+    const hash = window.location.hash;
+    if (hash.includes('?')) {
+      const hashParams = new URLSearchParams(hash.split('?')[1]);
+      const hq = hashParams.get('ticket') || hashParams.get('ticketId') || hashParams.get('complaintId') || hashParams.get('id');
+      if (hq) return decodeURIComponent(hq);
+    }
+    const hashMatch = hash.match(/^#\/?(?:ticket|complaints|technician)\/([^\/?#]+)/i);
+    if (hashMatch && hashMatch[1]) {
+      return decodeURIComponent(hashMatch[1]);
+    }
+  } catch (_) {}
+  return null;
+}
+
 function normalizeTab(tab) {
   if (!tab) return null;
   const t = String(tab).toLowerCase().replace(/^#\/?/, '').replace(/^\/+/, '');
@@ -81,6 +112,7 @@ function AppContent() {
   const getTabFromLocation = () => {
     // 1. Check path (e.g. /complaints, /technician, /analytics, /team, /templates, /whatsapp-inbox)
     const rawPath = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
+    if (rawPath === 'ticket' || rawPath === 'tickets') return 'complaints';
     const validFromPath = normalizeTab(rawPath);
     if (validFromPath) return validFromPath;
 
@@ -89,12 +121,12 @@ function AppContent() {
     const validFromHash = normalizeTab(hash);
     if (validFromHash) return validFromHash;
 
-    return 'complaints';
+    return null;
   };
 
   const [currentTab, setCurrentTab] = useState(() => {
     const fromUrl = getTabFromLocation();
-    if (fromUrl && fromUrl !== 'complaints') return fromUrl;
+    if (fromUrl) return fromUrl;
     return 'complaints';
   });
 
@@ -104,27 +136,34 @@ function AppContent() {
     setCurrentTab(normalized);
     try {
       localStorage.setItem('egs_active_tab', normalized);
-      window.history.pushState(null, '', `/${normalized}`);
+      const search = window.location.search;
+      window.history.pushState(null, '', `/${normalized}${search}`);
     } catch (e) {}
   };
 
-  // Modals & Drawers state (with URL deep-linking support)
+  // Modals & Drawers state (with comprehensive URL deep-linking support)
   const [selectedComplaintId, setSelectedComplaintId] = useState(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('ticket') || null;
-    } catch (_) {
-      return null;
-    }
+    return getTicketIdFromUrl();
   });
 
   const handleSelectComplaint = (id) => {
     setSelectedComplaintId(id);
     try {
+      const currentUrl = new URL(window.location.href);
       if (id) {
-        window.history.pushState(null, '', `/${currentTab}?ticket=${encodeURIComponent(id)}`);
+        currentUrl.searchParams.set('ticket', id);
+        // Clear alternate param aliases to avoid duplication
+        currentUrl.searchParams.delete('ticketId');
+        currentUrl.searchParams.delete('complaintId');
+        currentUrl.searchParams.delete('id');
+        window.history.pushState(null, '', currentUrl.pathname + currentUrl.search);
       } else {
-        window.history.pushState(null, '', `/${currentTab}`);
+        currentUrl.searchParams.delete('ticket');
+        currentUrl.searchParams.delete('ticketId');
+        currentUrl.searchParams.delete('complaintId');
+        currentUrl.searchParams.delete('id');
+        // Also normalize /ticket/:id or /complaints/:id path back to /:currentTab
+        window.history.pushState(null, '', `/${currentTab}${currentUrl.search}`);
       }
     } catch (_) {}
   };
@@ -135,21 +174,26 @@ function AppContent() {
       setTrackingInfo(getTrackingInfoFromUrl());
       const active = getTabFromLocation();
       if (active) setCurrentTab(active);
-      const params = new URLSearchParams(window.location.search);
-      setSelectedComplaintId(params.get('ticket') || null);
+      const deepLinkedTicket = getTicketIdFromUrl();
+      setSelectedComplaintId(deepLinkedTicket);
     };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
-  // When user logs in, always focus on the Complaints page and set URL
+  // When user logs in, ensure tab and deep-linked ticket are respected
   useEffect(() => {
     if (currentUser) {
       const fromUrl = getTabFromLocation();
-      const target = fromUrl || 'complaints';
+      const target = fromUrl || (currentUser.role === 'technician' ? 'technician' : 'complaints');
       setCurrentTab(target);
+      const deepLinkedTicket = getTicketIdFromUrl();
+      if (deepLinkedTicket) {
+        setSelectedComplaintId(deepLinkedTicket);
+      }
       if (!window.location.pathname || window.location.pathname === '/') {
-        window.history.replaceState(null, '', `/${target}`);
+        const search = window.location.search;
+        window.history.replaceState(null, '', `/${target}${search}`);
       }
     }
   }, [currentUser?.id]);
