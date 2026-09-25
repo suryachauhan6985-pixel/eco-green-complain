@@ -164,7 +164,13 @@ export const WhatsAppWebInbox = ({
   const fileInputRef = useRef(null);
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+  const isNearBottomRef = useRef(true);
+  const lastSelectedPhoneRef = useRef(null);
+  const userSentMessageRef = useRef(false);
   const previousMessageCountRef = useRef(0);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
 
   // Synthesize notification chime using Web Audio API
   const playNotificationChime = () => {
@@ -309,6 +315,25 @@ export const WhatsAppWebInbox = ({
     }
   }, []);
 
+  const scrollToBottom = (behavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setUnreadWhileScrolled(0);
+    setShowScrollBottomBtn(false);
+    isNearBottomRef.current = true;
+  };
+
+  const handleChatScroll = () => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isAtBottom = distanceFromBottom <= 120;
+    isNearBottomRef.current = isAtBottom;
+    setShowScrollBottomBtn(!isAtBottom);
+    if (isAtBottom) {
+      setUnreadWhileScrolled(0);
+    }
+  };
+
   // When selectedPhone changes, load thread
   useEffect(() => {
     if (selectedPhone) {
@@ -317,6 +342,9 @@ export const WhatsAppWebInbox = ({
       setFilePreview(null);
       setShowEmojiPicker(false);
       setShowHeaderMenu(false);
+      setUnreadWhileScrolled(0);
+      setShowScrollBottomBtn(false);
+      isNearBottomRef.current = true;
     }
   }, [selectedPhone]);
 
@@ -331,10 +359,35 @@ export const WhatsAppWebInbox = ({
     return () => clearInterval(interval);
   }, [selectedPhone]);
 
-  // Auto-scroll to latest message
+  // Smart Scroll: ONLY scroll down if opening new chat, user sent a message, or user is ALREADY near the bottom.
+  // If user has scrolled up to read older chat messages, DO NOT interrupt or auto-scroll!
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!messages || messages.length === 0) return;
+
+    // Chat switched: scroll to bottom once
+    if (lastSelectedPhoneRef.current !== selectedPhone) {
+      lastSelectedPhoneRef.current = selectedPhone;
+      setTimeout(() => scrollToBottom('auto'), 50);
+      return;
+    }
+
+    // User just sent a message: scroll to bottom
+    if (userSentMessageRef.current) {
+      userSentMessageRef.current = false;
+      setTimeout(() => scrollToBottom('smooth'), 50);
+      return;
+    }
+
+    // If user is already reading at the bottom, auto-scroll to reveal new message
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      // User is scrolled up reading older messages: DO NOT scroll!
+      if (previousMessageCountRef.current > 0 && messages.length > previousMessageCountRef.current) {
+        setUnreadWhileScrolled(prev => prev + (messages.length - previousMessageCountRef.current));
+      }
+    }
+  }, [messages, selectedPhone]);
 
   // Handle file selection (Images & PDFs)
   const handleFileSelect = (e) => {
@@ -404,6 +457,8 @@ export const WhatsAppWebInbox = ({
     setReplyText('');
     handleClearSelectedFile();
     setShowEmojiPicker(false);
+    userSentMessageRef.current = true;
+    setTimeout(() => scrollToBottom('smooth'), 20);
 
     try {
       setSendingReply(true);
@@ -1502,6 +1557,8 @@ export const WhatsAppWebInbox = ({
 
             {/* Main Messages Stream (Eco Green Solar Watermark Background) */}
             <div 
+              ref={chatContainerRef}
+              onScroll={handleChatScroll}
               className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#efeae2] relative"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='140' height='140' viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='15' y='15' width='28' height='20' rx='2' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cline x1='29' y1='15' x2='29' y2='35' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cline x1='15' y1='25' x2='43' y2='25' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Ccircle cx='95' cy='25' r='7' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cpath d='M95 13v3 M95 34v3 M83 25h3 M104 25h3 M87 17l2 2 M101 31l2 2 M87 33l2-2 M101 19l2-2' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cpath d='M25 80 c0-8 8-12 15-12 c0 8-8 12-15 12z' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Ctext x='48' y='110' font-family='sans-serif' font-size='9' font-weight='800' fill='%23047857' fill-opacity='0.06' transform='rotate(-20 48 110)'%3EECO GREEN SOLAR%3C/text%3E%3C/svg%3E")`,
@@ -1518,6 +1575,23 @@ export const WhatsAppWebInbox = ({
                 <div ref={messagesEndRef} />
               </div>
             </div>
+
+            {/* Floating Scroll to Bottom Button */}
+            {showScrollBottomBtn && (
+              <button
+                type="button"
+                onClick={() => scrollToBottom('smooth')}
+                className="absolute bottom-16 sm:bottom-18 right-4 sm:right-6 bg-white hover:bg-slate-50 text-[#54656f] hover:text-[#111b21] p-2.5 rounded-full shadow-lg border border-slate-200 transition-all transform hover:scale-105 active:scale-95 z-30 cursor-pointer flex items-center justify-center group"
+                title="Scroll to latest messages"
+              >
+                <ChevronDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
+                {unreadWhileScrolled > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-[#25d366] text-white text-[10px] font-extrabold min-w-5 h-5 px-1 rounded-full flex items-center justify-center shadow-xs animate-bounce">
+                    {unreadWhileScrolled > 9 ? '9+' : unreadWhileScrolled}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Pending File Attachment Banner */}
             {selectedFile && (
