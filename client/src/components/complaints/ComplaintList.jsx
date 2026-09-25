@@ -722,6 +722,11 @@ export const ComplaintList = ({
                                   <span className="inline-flex items-center text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200" title="Cash is with technician">
                                     Tech Cash
                                   </span>
+                                  {c.collection_reason && (
+                                    <span className="inline-flex items-center text-[9px] font-medium text-slate-600 bg-slate-50 px-1 py-0.5 rounded border border-slate-200 max-w-[100px] truncate" title={c.collection_reason}>
+                                      {c.collection_reason}
+                                    </span>
+                                  )}
                                   {['admin', 'staff'].includes(currentUser?.role) && (
                                     <button
                                       type="button"

@@ -499,6 +499,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                                     <td className="py-2.5 px-3 font-mono">
                                       <strong className="text-slate-900 text-xs font-black">₹{comp.payment_collected || 0}</strong>
                                       <span className="text-[10px] text-slate-400 block">({comp.payment_status || 'Paid'})</span>
+                                      {comp.collection_reason && (
+                                        <span className="text-[10px] text-amber-900 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 font-sans font-semibold block mt-0.5 truncate max-w-[160px]" title={comp.collection_reason}>
+                                          📋 {comp.collection_reason}
+                                        </span>
+                                      )}
                                       {comp.payment_collected_at ? (
                                         <span className="text-[9px] text-slate-600 font-sans block mt-0.5" title="Payment Collection Date & Timestamp">
                                           📅 {new Date(comp.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{' '}
@@ -680,9 +685,17 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                         <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">
                           {job.product_type}
                         </span>
-                        {job.estimated_charges > 0 && (
+                        {job.payment_collected > 0 ? (
+                          <span className="text-[11px] font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            Collected: ₹{job.payment_collected} {job.collection_reason ? `(${job.collection_reason})` : ''}
+                          </span>
+                        ) : job.estimated_charges > 0 ? (
                           <span className="text-[11px] font-bold text-slate-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                             Charge: ₹{job.estimated_charges} • <span className={job.payment_status === 'Collected' ? 'text-emerald-700' : 'text-amber-700'}>{job.payment_status || 'Unpaid'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            Unallocated (On-Site Collection Enabled)
                           </span>
                         )}
                       </div>
@@ -701,7 +714,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                           <span className="text-slate-400 block text-[10px]">Customer:</span>
                           <strong className="text-slate-900 truncate block">{job.customer_name}</strong>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                           <a
                             href={`tel:${job.customer_phone}`}
                             className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-xs"
@@ -716,6 +729,22 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                           >
                             <MessageCircle className="w-3 h-3" /> WhatsApp
                           </a>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectComplaint && onSelectComplaint(job.ticket_id || job.id);
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer ${
+                              job.payment_collected > 0
+                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-300'
+                            }`}
+                            title={job.payment_collected > 0 ? `Collected: ₹${job.payment_collected}` : 'Collect On-Site Payment'}
+                          >
+                            <IndianRupee className="w-3 h-3 text-amber-700" />
+                            <span>{job.payment_collected > 0 ? `Paid: ₹${job.payment_collected}` : 'Collect Payment'}</span>
+                          </button>
                         </div>
                       </div>
 

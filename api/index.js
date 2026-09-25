@@ -2118,30 +2118,56 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
 app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { payment_collected, payment_mode } = req.body;
+    const { payment_collected, payment_mode, payment_notes, collection_reason } = req.body;
     const amt = Number(payment_collected || 0);
 
     const compRes = await query('SELECT * FROM complaints WHERE id = $1', [id]);
+    if (!compRes.rows.length) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
     const comp = compRes.rows[0];
     const est = Number(comp.estimated_charges || 0);
 
+    // If no service charges were allocated (est === 0) and payment is being collected (amt > 0),
+    // require mandatory collection_reason as per ECO-18
+    if (est === 0 && amt > 0 && (!collection_reason || !collection_reason.trim())) {
+      return res.status(400).json({ error: 'Reason for on-site collection is mandatory when no service charges were pre-allocated.' });
+    }
+
     let status = 'Unpaid';
-    if (amt >= est && est > 0) status = 'Collected';
-    else if (amt > 0) status = 'Partially Paid';
-    else status = est > 0 ? 'Unpaid' : 'Not Applicable';
+    if (amt > 0 && est === 0) {
+      status = 'Collected'; // Full payment collected for unallocated on-site service
+    } else if (amt >= est && est > 0) {
+      status = 'Collected';
+    } else if (amt > 0) {
+      status = 'Partially Paid';
+    } else {
+      status = est > 0 ? 'Unpaid' : 'Not Applicable';
+    }
+
+    try {
+      await query('ALTER TABLE complaints ADD COLUMN IF NOT EXISTS collection_reason TEXT');
+      await query('ALTER TABLE complaints ADD COLUMN IF NOT EXISTS payment_notes TEXT');
+    } catch (_) {}
 
     await query(`
       UPDATE complaints SET
         payment_collected = $1,
         payment_status = $2,
         payment_mode = $3,
+        payment_notes = $4,
+        collection_reason = $5,
         payment_collected_at = CURRENT_TIMESTAMP
-      WHERE id = $4
-    `, [amt, status, payment_mode || 'Cash', id]);
+      WHERE id = $6
+    `, [amt, status, payment_mode || 'Cash', payment_notes || '', collection_reason ? collection_reason.trim() : null, id]);
+
+    const reasonSuffix = collection_reason ? ` • Reason: ${collection_reason.trim()}` : (est === 0 && amt > 0 ? ' • On-Site Unallocated Collection' : '');
+    const notesSuffix = payment_notes ? ` • Note: ${payment_notes.trim()}` : '';
+    const timelineNotes = `Payment of ₹${amt} collected via ${payment_mode || 'Cash'}. Status: ${status}${reasonSuffix}${notesSuffix}`;
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
-      [id, 'Payment Recorded', `Payment of ₹${amt} collected via ${payment_mode || 'Cash'}. Status: ${status}`, req.user.name, req.user.role]
+      [id, 'Payment Recorded', timelineNotes, req.user.name, req.user.role]
     );
 
     return res.json({ message: 'Payment recorded successfully' });

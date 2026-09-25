@@ -80,7 +80,8 @@ export const ComplaintDetailDrawer = ({
   const [paymentData, setPaymentData] = useState({
     payment_collected: '',
     payment_method: 'Cash',
-    payment_notes: ''
+    payment_notes: '',
+    collection_reason: ''
   });
   const [showUnderpaidWarning, setShowUnderpaidWarning] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
@@ -611,8 +612,9 @@ export const ComplaintDetailDrawer = ({
     }
     setPaymentData({
       payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
-      payment_method: 'Cash',
-      payment_notes: ''
+      payment_method: ticket.payment_mode || 'Cash',
+      payment_notes: ticket.payment_notes || '',
+      collection_reason: ticket.collection_reason || ''
     });
     setShowUnderpaidWarning(false);
     setIsRecordingPayment(true);
@@ -627,6 +629,12 @@ export const ComplaintDetailDrawer = ({
 
     const entered = Number(paymentData.payment_collected || 0);
     const expected = Number(ticket.estimated_charges || 0);
+
+    // Mandatory reason check for unallocated tickets as per ECO-18
+    if (expected === 0 && entered > 0 && (!paymentData.collection_reason || !paymentData.collection_reason.trim())) {
+      showToast('Reason for on-site collection is mandatory when no service charges were allocated.', 'warning');
+      return;
+    }
 
     if (!forceSubmit && expected > 0 && entered < expected) {
       setShowUnderpaidWarning(true);
@@ -1050,6 +1058,11 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-[11px] text-slate-500 block">Payment Collected:</span>
                           <strong className="text-base font-black text-emerald-700">₹{ticket.payment_collected || 0}</strong>
                           <span className="text-[10px] text-slate-500 block">Status: {ticket.payment_status || 'Unpaid'}</span>
+                          {ticket.collection_reason && (
+                            <span className="text-[10px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block mt-1 truncate" title={ticket.collection_reason}>
+                              Reason: {ticket.collection_reason}
+                            </span>
+                          )}
                         </div>
 
                         <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex flex-col justify-center">
@@ -1060,7 +1073,7 @@ export const ComplaintDetailDrawer = ({
                               className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                             >
                               <CreditCard className="w-3.5 h-3.5" />
-                              Record Payment Collected
+                              {Number(ticket.estimated_charges || 0) === 0 ? 'Collect On-Site Payment' : 'Record Payment Collected'}
                             </button>
                           ) : (
                             <button
@@ -2676,10 +2689,25 @@ export const ComplaintDetailDrawer = ({
                 </div>
               )}
 
+              {/* Unallocated Payment Notice */}
+              {Number(ticket.estimated_charges || 0) === 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-bold">Unallocated On-Site Collection</strong>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      No initial charges were allocated at registration. You may record on-site collections, but a mandatory justification reason (e.g. spare parts replacement, out-of-warranty labor) is required for company cash reconciliation.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
                 <div>
                   <span className="text-[11px] text-slate-500 block">Quoted Service Charge</span>
-                  <strong className="text-base font-black text-slate-900">₹{ticket.estimated_charges || 0}</strong>
+                  <strong className="text-base font-black text-slate-900">
+                    {Number(ticket.estimated_charges || 0) > 0 ? `₹${ticket.estimated_charges}` : '₹0 (Unallocated)'}
+                  </strong>
                 </div>
                 <div>
                   <span className="text-[11px] text-slate-500 block">Current Status</span>
@@ -2725,8 +2753,8 @@ export const ComplaintDetailDrawer = ({
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-500">₹</span>
                   <input
                     type="number"
-                    min="0"
-                    step="50"
+                    min="1"
+                    step="10"
                     required
                     placeholder="Enter amount collected from customer"
                     value={paymentData.payment_collected}
@@ -2735,6 +2763,27 @@ export const ComplaintDetailDrawer = ({
                   />
                 </div>
               </div>
+
+              {/* Mandatory Reason for Unallocated Tickets */}
+              {Number(ticket.estimated_charges || 0) === 0 && (
+                <div>
+                  <label className="block text-[11px] font-bold text-amber-900 mb-1 flex items-center justify-between">
+                    <span>Reason for On-Site Collection *</span>
+                    <span className="text-[10px] text-amber-700 font-semibold">(Mandatory for ₹0 initial tickets)</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g., Spare parts replacement, extra wiring, non-warranty service fee"
+                    value={paymentData.collection_reason}
+                    onChange={(e) => setPaymentData({ ...paymentData, collection_reason: e.target.value })}
+                    className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/30 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Please provide an exact explanation of why payment was collected on site for auditing.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
@@ -2777,7 +2826,13 @@ export const ComplaintDetailDrawer = ({
                   <button
                     type="button"
                     onClick={() => handleRecordPaymentSubmit(false)}
-                    disabled={savingPayment || !paymentData.payment_collected || !ticket.assigned_technician_id}
+                    disabled={
+                      savingPayment || 
+                      !paymentData.payment_collected || 
+                      Number(paymentData.payment_collected) <= 0 ||
+                      !ticket.assigned_technician_id ||
+                      (Number(ticket.estimated_charges || 0) === 0 && (!paymentData.collection_reason || !paymentData.collection_reason.trim()))
+                    }
                     className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingPayment ? 'Saving...' : 'Record Payment'}
