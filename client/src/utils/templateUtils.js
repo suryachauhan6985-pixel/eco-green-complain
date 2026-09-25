@@ -54,8 +54,9 @@ export async function buildComplaintRegisteredWhatsApp(ticket) {
   const cleanPhone = (ticket.customer_phone || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
   const trackingUrl = `${window.location.origin}/track/${ticket.ticket_id}`;
-  const chargesLine = (ticket.notify_charges && ticket.estimated_charges > 0)
-    ? `\n💰 *Estimated Service Charge:* ₹${ticket.estimated_charges} (Standard Visit & Diagnostic Fee)`
+  const estCharges = Number(ticket.estimated_charges || 0);
+  const chargesLine = (estCharges > 0 && ticket.notify_charges !== false && ticket.notify_charges !== 0)
+    ? `\n💰 *Estimated Service Charge:* ₹${estCharges} (Standard Visit & Diagnostic Fee)`
     : '';
 
   const data = {

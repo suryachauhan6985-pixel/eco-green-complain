@@ -192,8 +192,18 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
-      const issueCat = cleanParam(variables.issue_category, 'Service Request');
-      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      let issueCat = cleanParam(variables.issue_category, 'Service Request');
+
+      const estCharges = Number(variables.estimated_charges || 0);
+      const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
+
+      let chargesLine = '';
+      if (shouldNotifyCharges) {
+        issueCat = `${issueCat} (Service Fee: ₹${estCharges})`;
+        chargesLine = `\n💰 Estimated Service Charge: ₹${estCharges}`;
+      }
+
+      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}${chargesLine}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
       
       payload.type = 'template';
       payload.template = {
@@ -1399,6 +1409,8 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
           ticket_id: newComp.ticket_id,
           product_type: newComp.product_type,
           issue_category: newComp.issue_category,
+          estimated_charges: newComp.estimated_charges,
+          notify_charges: newComp.notify_charges,
           db_complaint_id: newComp.id
         }
       });
@@ -1520,6 +1532,8 @@ app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array
           ticket_id: newComp.ticket_id,
           product_type: newComp.product_type,
           issue_category: newComp.issue_category,
+          estimated_charges: newComp.estimated_charges,
+          notify_charges: newComp.notify_charges,
           db_complaint_id: newComp.id
         }
       });

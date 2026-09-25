@@ -70,7 +70,8 @@ class NotificationService extends EventEmitter {
         expected_visit_date: data?.expected_visit_date || 'Within 24-48 Hours',
         notes: data?.notes || complaint?.issue_description || '',
         estimated_charges: complaint?.estimated_charges || data?.estimated_charges || 0,
-        charges_line: (complaint?.notify_charges || data?.notify_charges) && (complaint?.estimated_charges || data?.estimated_charges) > 0
+        notify_charges: (complaint?.notify_charges ?? data?.notify_charges ?? 1),
+        charges_line: ((complaint?.notify_charges ?? data?.notify_charges) !== false && (complaint?.notify_charges ?? data?.notify_charges) !== 0) && Number(complaint?.estimated_charges || data?.estimated_charges || 0) > 0
           ? `\n💰 *Estimated Service Charge:* ₹${complaint?.estimated_charges || data?.estimated_charges}`
           : '',
         feedback_url: `${liveAppUrl}/track/${complaint?.ticket_id || data?.ticket_id || ''}`,

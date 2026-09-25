@@ -42,7 +42,21 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
 
     // If template matches Meta registered templates, send as template message
     if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
-      deliveredText = `Eco Green Solar Support\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}\nProduct: ${cleanParam(variables.product_type, 'Solar Equipment')}\nIssue: ${cleanParam(variables.issue_category, 'Service Request')}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar Equipment');
+      let issueCat = cleanParam(variables.issue_category, 'Service Request');
+
+      const estCharges = Number(variables.estimated_charges || 0);
+      const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
+
+      let chargesLine = '';
+      if (shouldNotifyCharges) {
+        issueCat = `${issueCat} (Service Fee: ₹${estCharges})`;
+        chargesLine = `\n💰 Estimated Service Charge: ₹${estCharges}`;
+      }
+
+      deliveredText = `Eco Green Solar Support\nNamaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}${chargesLine}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -52,10 +66,10 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: cleanParam(variables.customer_name, 'Valued Customer') },
-              { type: 'text', text: cleanParam(variables.complaint_id || ticket_id, 'Ticket') },
-              { type: 'text', text: cleanParam(variables.product_type, 'Solar Equipment') },
-              { type: 'text', text: cleanParam(variables.issue_category, 'Service Request') },
+              { type: 'text', text: custName },
+              { type: 'text', text: ticketId },
+              { type: 'text', text: prodType },
+              { type: 'text', text: issueCat },
               { type: 'text', text: cleanTrackingUrl }
             ]
           }

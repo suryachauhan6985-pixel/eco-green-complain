@@ -758,6 +758,20 @@ export const TemplateManager = () => {
                   </span>
                 </div>
 
+                {selectedTemplate.template_key === 'complaint_registered' && (
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-emerald-950">
+                        Meta Cloud API &amp; Service Charge Delivery
+                      </p>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        Meta's live approved template uses 5 variables (Customer, Ticket ID, Product, Issue, Track URL). When an estimated service charge is allocated, the system automatically appends <code className="bg-emerald-100 text-emerald-900 px-1 py-0.5 rounded font-mono font-bold">(Service Fee: ₹...)</code> to the Issue parameter so WhatsApp customers receive it immediately without needing Meta re-approval.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className={`grid ${showPreview ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'} gap-4`}>
                   {/* Left: Input Textarea */}
                   <div className="space-y-2">
