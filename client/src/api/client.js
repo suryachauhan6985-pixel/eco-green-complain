@@ -9,15 +9,33 @@ import {
 const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '') || '/api';
 
 export function getAuthToken() {
-  return localStorage.getItem('egs_token');
+  try {
+    const sessionToken = sessionStorage.getItem('egs_token');
+    if (sessionToken) return sessionToken;
+    const localToken = localStorage.getItem('egs_token');
+    if (localToken && !sessionStorage.getItem('egs_tab_logged_out')) {
+      // Seed tab-isolated session from active login
+      sessionStorage.setItem('egs_token', localToken);
+      const cached = localStorage.getItem('egs_cached_user');
+      if (cached) sessionStorage.setItem('egs_cached_user', cached);
+      return localToken;
+    }
+  } catch (_) {}
+  return null;
 }
 
 export function setAuthToken(token) {
-  if (token) {
-    localStorage.setItem('egs_token', token);
-  } else {
-    localStorage.removeItem('egs_token');
-  }
+  try {
+    if (token) {
+      sessionStorage.setItem('egs_token', token);
+      sessionStorage.removeItem('egs_tab_logged_out');
+      localStorage.setItem('egs_token', token);
+    } else {
+      sessionStorage.removeItem('egs_token');
+      sessionStorage.setItem('egs_tab_logged_out', 'true');
+      localStorage.removeItem('egs_token');
+    }
+  } catch (_) {}
 }
 
 // Permanent Local Storage Backup Key

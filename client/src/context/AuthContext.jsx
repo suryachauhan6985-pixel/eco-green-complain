@@ -12,10 +12,14 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const token = getAuthToken();
-      const hasLoggedOut = localStorage.getItem('egs_logged_out');
+      const hasLoggedOut = sessionStorage.getItem('egs_tab_logged_out') || 
+        (localStorage.getItem('egs_logged_out') && !sessionStorage.getItem('egs_token'));
       if (token && !hasLoggedOut) {
-        const cached = localStorage.getItem('egs_cached_user');
-        return cached ? JSON.parse(cached) : null;
+        const cached = sessionStorage.getItem('egs_cached_user') || localStorage.getItem('egs_cached_user');
+        if (cached) {
+          sessionStorage.setItem('egs_cached_user', cached);
+          return JSON.parse(cached);
+        }
       }
     } catch (_) {}
     return null;
@@ -24,21 +28,23 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(() => {
     try {
       const token = getAuthToken();
-      const hasLoggedOut = localStorage.getItem('egs_logged_out');
+      const hasLoggedOut = sessionStorage.getItem('egs_tab_logged_out') || 
+        (localStorage.getItem('egs_logged_out') && !sessionStorage.getItem('egs_token'));
       if (!token || hasLoggedOut) return false;
-      const cached = localStorage.getItem('egs_cached_user');
-      return !cached; // 0ms load if cached user exists
+      const cached = sessionStorage.getItem('egs_cached_user') || localStorage.getItem('egs_cached_user');
+      return !cached;
     } catch (_) {
       return false;
     }
   });
   const [unreadSimulatedCount, setUnreadSimulatedCount] = useState(0);
 
-  // Initialize from token or default to Admin profile on first load
+  // Initialize from token or verify active session
   useEffect(() => {
     const initAuth = async () => {
       const token = getAuthToken();
-      const hasLoggedOut = localStorage.getItem('egs_logged_out');
+      const hasLoggedOut = sessionStorage.getItem('egs_tab_logged_out') || 
+        (localStorage.getItem('egs_logged_out') && !sessionStorage.getItem('egs_token'));
 
       if (token && !hasLoggedOut) {
         try {
@@ -47,7 +53,7 @@ export const AuthProvider = ({ children }) => {
           if (data?.user) {
             setCurrentUser(data.user);
             try {
-              localStorage.setItem('egs_cached_user', JSON.stringify(data.user));
+              sessionStorage.setItem('egs_cached_user', JSON.stringify(data.user));
             } catch (_) {}
           }
         } catch (err) {
@@ -56,14 +62,14 @@ export const AuthProvider = ({ children }) => {
             setAuthToken(null);
             setCurrentUser(null);
             try {
-              localStorage.removeItem('egs_cached_user');
+              sessionStorage.removeItem('egs_cached_user');
             } catch (_) {}
           }
         }
       } else {
         setCurrentUser(null);
         try {
-          localStorage.removeItem('egs_cached_user');
+          sessionStorage.removeItem('egs_cached_user');
         } catch (_) {}
       }
       setLoading(false);
@@ -77,12 +83,27 @@ export const AuthProvider = ({ children }) => {
     setAuthToken(data.token);
     setCurrentUser(data.user);
     try {
+      sessionStorage.setItem('egs_cached_user', JSON.stringify(data.user));
+      sessionStorage.removeItem('egs_tab_logged_out');
       localStorage.setItem('egs_cached_user', JSON.stringify(data.user));
     } catch (_) {}
     localStorage.removeItem('egs_logged_out');
-    localStorage.setItem('egs_active_tab', 'complaints');
+    
+    // Check if there is a pending deep link redirect
+    const urlParams = new URLSearchParams(window.location.search);
+    const redirectTarget = urlParams.get('redirect');
+    if (redirectTarget) {
+      try {
+        window.history.pushState(null, '', redirectTarget);
+      } catch (_) {}
+      return data.user;
+    }
+
+    const targetTab = data.user.role === 'technician' ? 'technician' : 'complaints';
+    localStorage.setItem('egs_active_tab', targetTab);
+    sessionStorage.setItem('egs_active_tab', targetTab);
     try {
-      window.history.pushState(null, '', '/complaints');
+      window.history.pushState(null, '', `/${targetTab}`);
     } catch (_) {}
     return data.user;
   };
@@ -91,6 +112,8 @@ export const AuthProvider = ({ children }) => {
     setAuthToken(null);
     setCurrentUser(null);
     try {
+      sessionStorage.removeItem('egs_cached_user');
+      sessionStorage.setItem('egs_tab_logged_out', 'true');
       localStorage.removeItem('egs_cached_user');
     } catch (_) {}
     localStorage.setItem('egs_logged_out', 'true');
