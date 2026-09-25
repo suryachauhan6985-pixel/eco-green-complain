@@ -326,6 +326,30 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           ]
         }]
       };
+    } else if (templateName === 'technician_reminder') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custAddress = cleanParam(variables.customer_address, 'Customer Address');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Today');
+      const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(ticketId)}`;
+      renderedBody = `⏰ *Eco Green Solar - Pending Visit Reminder*\n\nHello *${techName}*,\n\nThis is a reminder regarding pending ticket *${ticketId}*.\n\n👤 *Customer:* ${custName}\n📍 *Address:* ${custAddress}\n📅 *Expected Visit:* ${visitDate}\n\n🔗 *Open Ticket in Portal:* ${portalLink}\n\nPlease complete the visit and update status promptly.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_pending_visit_reminder',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: techName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: custName },
+            { type: 'text', text: custAddress },
+            { type: 'text', text: visitDate }
+          ]
+        }]
+      };
     } else if (mediaUrl) {
       renderedBody = message || (mediaType === 'image' ? '[Photo]' : '[Document]');
       if (mediaType === 'image') {
@@ -1755,6 +1779,187 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+// Resend Technician Work Order (supports both /resend-technician and /resend-work-order)
+const handleResendTechnicianWorkOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const compRes = await query('SELECT * FROM complaints WHERE id = $1', [id]);
+    if (!compRes.rows.length) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    const comp = compRes.rows[0];
+
+    if (!comp.assigned_technician_id) {
+      return res.status(400).json({ error: 'No technician assigned to this complaint' });
+    }
+
+    const techRes = await query('SELECT * FROM technicians WHERE id = $1', [comp.assigned_technician_id]);
+    const tech = techRes.rows[0];
+    if (!tech) {
+      return res.status(404).json({ error: 'Assigned technician not found' });
+    }
+    if (!tech.phone) {
+      return res.status(400).json({ error: 'Assigned technician has no phone number on record' });
+    }
+
+    let waTechResult = null;
+    try {
+      waTechResult = await sendWhatsApp({
+        to: tech.phone,
+        templateName: 'technician_work_order',
+        variables: {
+          technician_name: tech.name,
+          complaint_id: comp.ticket_id,
+          ticket_id: comp.ticket_id,
+          customer_name: comp.customer_name,
+          customer_phone: comp.customer_phone,
+          customer_address: comp.customer_address || comp.city || 'Gujarat',
+          product_type: comp.product_type,
+          issue_category: comp.issue_category,
+          notes: comp.issue_description || 'Site inspection',
+          priority: comp.priority || 'Medium',
+          expected_visit_date: comp.expected_visit_date || 'Today',
+          db_complaint_id: comp.id
+        }
+      });
+    } catch (waErr) {
+      console.warn('[Resend Work Order WhatsApp Note]', waErr.message);
+      waTechResult = { success: false, error: waErr.message };
+    }
+
+    // Timeline entry
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+      [id, 'Work Order Resent', `Work order resent to ${tech.name} (${tech.phone})`, req.user?.name || 'Staff', req.user?.role || 'staff']
+    );
+
+    // In-App Notification
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_resend_wo`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, 'assignment', $2, $3, $4, $5, $6, 'technician', $7, $8, $9, $10)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        comp.ticket_id,
+        comp.id,
+        `Work Order Resent: ${comp.ticket_id}`,
+        `Work order details resent for ${comp.ticket_id} (${comp.customer_name} - ${comp.product_type})`,
+        comp.customer_name,
+        tech.id,
+        tech.name,
+        req.user?.name || 'Staff Supervisor',
+        req.user?.role || 'staff'
+      ]);
+    } catch (notifErr) {
+      console.warn('[Resend WO in-app notification error]', notifErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: `Work order sent to ${tech.name} via WhatsApp!`,
+      whatsapp: waTechResult
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+app.post('/api/complaints/:id/resend-technician', authenticateToken, handleResendTechnicianWorkOrder);
+app.post('/api/complaints/:id/resend-work-order', authenticateToken, handleResendTechnicianWorkOrder);
+
+// Remind Technician (supports both /remind-tech and /send-reminder)
+const handleRemindTechnician = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const compRes = await query('SELECT * FROM complaints WHERE id = $1', [id]);
+    if (!compRes.rows.length) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    const comp = compRes.rows[0];
+
+    if (!comp.assigned_technician_id) {
+      return res.status(400).json({ error: 'No technician assigned to this complaint' });
+    }
+
+    const techRes = await query('SELECT * FROM technicians WHERE id = $1', [comp.assigned_technician_id]);
+    const tech = techRes.rows[0];
+    if (!tech) {
+      return res.status(404).json({ error: 'Assigned technician not found' });
+    }
+    if (!tech.phone) {
+      return res.status(400).json({ error: 'Assigned technician has no phone number on record' });
+    }
+
+    let waTechResult = null;
+    try {
+      waTechResult = await sendWhatsApp({
+        to: tech.phone,
+        templateName: 'technician_reminder',
+        variables: {
+          technician_name: tech.name,
+          ticket_id: comp.ticket_id,
+          complaint_id: comp.ticket_id,
+          customer_name: comp.customer_name,
+          customer_address: comp.customer_address || comp.city || 'Gujarat',
+          expected_visit_date: comp.expected_visit_date || 'Today',
+          db_complaint_id: comp.id
+        }
+      });
+    } catch (waErr) {
+      console.warn('[Remind Tech WhatsApp Note]', waErr.message);
+      waTechResult = { success: false, error: waErr.message };
+    }
+
+    // Timeline entry
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+      [id, 'Technician Reminded', `Reminder sent to ${tech.name} (${tech.phone})`, req.user?.name || 'Staff', req.user?.role || 'staff']
+    );
+
+    // In-App Notification
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_remind_tech`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, 'reminder', $2, $3, $4, $5, $6, 'technician', $7, $8, $9, $10)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        comp.ticket_id,
+        comp.id,
+        `Visit Reminder: ${comp.ticket_id}`,
+        `Reminder for pending visit for complaint ${comp.ticket_id} (${comp.customer_name})`,
+        comp.customer_name,
+        tech.id,
+        tech.name,
+        req.user?.name || 'Staff Supervisor',
+        req.user?.role || 'staff'
+      ]);
+    } catch (notifErr) {
+      console.warn('[Remind Tech in-app notification error]', notifErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: `Reminder WhatsApp sent to ${tech.name}!`,
+      whatsapp: waTechResult
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+app.post('/api/complaints/:id/remind-tech', authenticateToken, handleRemindTechnician);
+app.post('/api/complaints/:id/send-reminder', authenticateToken, handleRemindTechnician);
 
 // Add Timeline Note
 app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
