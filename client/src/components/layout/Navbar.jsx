@@ -21,11 +21,24 @@ export const Navbar = ({
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
   const [accountModalOpen, setAccountModalOpen] = React.useState(false);
 
+  const currentRoleName = 
+    currentUser?.role === 'technician' ? 'Technician' :
+    currentUser?.role === 'staff' ? 'Staff' :
+    currentUser?.role === 'customer' ? 'Customer' : 'Admin';
+
+  const dynamicRoleLabel = currentUser?.name 
+    ? `${currentRoleName} (${currentUser.name})`
+    : (
+      currentUser?.role === 'technician' ? 'Field Technician' :
+      currentUser?.role === 'staff' ? 'Support Staff' :
+      currentUser?.role === 'customer' ? 'Customer Portal' : 'Admin Supervisor'
+    );
+
   const roles = [
-    { id: 'admin', label: 'Admin Supervisor', icon: Shield, desc: 'Full System Control & Reports' },
-    { id: 'staff', label: 'Support Staff / Front Desk', icon: Users, desc: 'Ticket Registration & Assign' },
-    { id: 'technician', label: 'Technician (Rohit Kumar)', icon: Wrench, desc: 'Mobile Field Service' },
-    { id: 'customer', label: 'Customer (Public Portal)', icon: Search, desc: 'Track & Raise Complaints' }
+    { id: 'admin', label: currentUser?.role === 'admin' ? dynamicRoleLabel : 'Admin Supervisor', icon: Shield, desc: 'Full System Control & Reports' },
+    { id: 'staff', label: currentUser?.role === 'staff' ? dynamicRoleLabel : 'Support Staff / Front Desk', icon: Users, desc: 'Ticket Registration & Assign' },
+    { id: 'technician', label: currentUser?.role === 'technician' ? dynamicRoleLabel : 'Field Technician', icon: Wrench, desc: 'Mobile Field Service' },
+    { id: 'customer', label: currentUser?.role === 'customer' ? dynamicRoleLabel : 'Customer (Public Portal)', icon: Search, desc: 'Track & Raise Complaints' }
   ];
 
   const currentRoleConfig = roles.find(r => r.id === currentUser?.role) || roles[0];
@@ -257,11 +270,11 @@ export const Navbar = ({
                     {/* Desktop Role Button */}
                     <button
                       onClick={() => setRoleMenuOpen(!roleMenuOpen)}
-                      className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold border border-slate-200 transition-colors max-w-[210px]"
+                      className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold border border-slate-200 transition-colors max-w-[240px]"
                       title="Active Account & Profile"
                     >
                       <RoleIcon className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <span className="truncate">{currentRoleConfig.label}</span>
+                      <span className="truncate">{dynamicRoleLabel}</span>
                       <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
                     </button>
 
@@ -275,8 +288,8 @@ export const Navbar = ({
                       <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-2xs shrink-0">
                         <RoleIcon className="w-3.5 h-3.5 text-amber-200" />
                       </div>
-                      <span className="text-[11px] font-bold text-slate-700">
-                        {shortRoleLabel}
+                      <span className="text-[11px] font-bold text-slate-700 truncate max-w-[100px]">
+                        {currentUser?.name?.split(' ')[0] || shortRoleLabel}
                       </span>
                       <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
                     </button>
@@ -302,7 +315,7 @@ export const Navbar = ({
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold text-slate-900 truncate">{currentUser?.name || 'Authorized User'}</p>
                           <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            {currentRoleConfig.label}
+                            {dynamicRoleLabel}
                           </span>
                         </div>
                       </div>
@@ -337,7 +350,7 @@ export const Navbar = ({
                         className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
                       >
                         <Key className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Manage Admin Credentials</span>
+                        <span>{currentUser?.role === 'admin' ? 'Manage Admin Credentials' : 'My Account & Password'}</span>
                       </button>
 
                       <button
@@ -389,7 +402,7 @@ export const Navbar = ({
                           <div className="min-w-0 flex-1">
                             <h4 className="text-sm font-bold text-slate-900 truncate">{currentUser?.name || 'User'}</h4>
                             <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                              {currentRoleConfig.label}
+                              {dynamicRoleLabel}
                             </span>
                           </div>
                         </div>
@@ -417,7 +430,7 @@ export const Navbar = ({
                           className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
                         >
                           <Key className="w-4 h-4 text-emerald-600" />
-                          <span>Manage Admin Credentials</span>
+                          <span>{currentUser?.role === 'admin' ? 'Manage Admin Credentials' : 'My Account & Password'}</span>
                         </button>
 
                         <button

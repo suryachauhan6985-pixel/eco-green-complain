@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, Shield, Key, User, Phone, Mail, CheckCircle2, 
   AlertCircle, Eye, EyeOff, Sparkles, Copy, Check, Lock, Save
@@ -10,13 +10,30 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   const { currentUser, setCurrentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('password'); // 'password' | 'profile'
 
+  // Role info
+  const roleTitle = currentUser?.role 
+    ? (currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)) 
+    : 'Account';
+
   // Profile Form State
-  const [name, setName] = useState(currentUser?.name || 'Admin Supervisor');
-  const [username, setUsername] = useState(currentUser?.username || 'admin');
-  const [phone, setPhone] = useState(currentUser?.phone || '6352454247');
-  const [email, setEmail] = useState(currentUser?.email || 'admin@ecogreensolar.com');
+  const [name, setName] = useState(currentUser?.name || '');
+  const [username, setUsername] = useState(currentUser?.username || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState('');
+
+  // Synchronize state whenever modal opens or currentUser changes
+  useEffect(() => {
+    if (currentUser && isOpen) {
+      setName(currentUser.name || '');
+      setUsername(currentUser.username || '');
+      setPhone(currentUser.phone || '');
+      setEmail(currentUser.email || '');
+      setProfileError('');
+      setPasswordError('');
+    }
+  }, [currentUser, isOpen]);
 
   // Password Form State
   const [currentPassword, setCurrentPassword] = useState('');
@@ -31,7 +48,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   if (!isOpen) return null;
 
   const handleGeneratePassword = () => {
-    const prefixes = ['EcoGreen', 'SolarTech', 'CleanEnergy', 'AdminPower'];
+    const prefixes = ['EcoGreen', 'SolarTech', 'CleanEnergy', 'SolarPro'];
     const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
     const num = Math.floor(1000 + Math.random() * 9000);
     const gen = `${prefix}@${num}`;
@@ -41,13 +58,13 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   };
 
   const handleCopyCredentials = () => {
-    const idToCopy = username || phone || email || 'admin';
+    const idToCopy = username || phone || email || 'user';
     const passToCopy = newPassword || '••••••••';
-    const text = `🌿 *Eco Green Solar CMS Admin Credentials*\n👤 *Name:* ${name}\n🔑 *User ID / Phone:* ${idToCopy}\n🔒 *Password:* ${passToCopy}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
+    const text = `🌿 *Eco Green Solar CMS ${roleTitle} Credentials*\n👤 *Name:* ${name}\n🔑 *User ID / Phone:* ${idToCopy}\n🔒 *Password:* ${passToCopy}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
-    if (showToast) showToast('Admin credentials copied to clipboard!', 'success');
+    if (showToast) showToast(`${roleTitle} credentials copied to clipboard!`, 'success');
   };
 
   const handleUpdateProfile = async (e) => {
@@ -87,9 +104,11 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
 
       setCurrentUser(updatedUser);
       localStorage.setItem('egs_cached_user', JSON.stringify(updatedUser));
-      localStorage.setItem('egs_admin_profile', JSON.stringify(updatedUser));
+      if (updatedUser?.role === 'admin') {
+        localStorage.setItem('egs_admin_profile', JSON.stringify(updatedUser));
+      }
       
-      if (showToast) showToast('Admin profile details updated successfully!', 'success');
+      if (showToast) showToast(`${roleTitle} profile details updated successfully!`, 'success');
       onClose();
     } catch (err) {
       setProfileError(err.message || 'Failed to update profile');
@@ -119,10 +138,12 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
         newPassword: newPassword.trim()
       });
 
-      // Also ensure fallback mock store stays in sync
-      localStorage.setItem('egs_admin_password', newPassword.trim());
+      // Also ensure fallback mock store stays in sync if admin
+      if (currentUser?.role === 'admin') {
+        localStorage.setItem('egs_admin_password', newPassword.trim());
+      }
 
-      if (showToast) showToast('Admin password changed successfully! Use your new password on next login.', 'success');
+      if (showToast) showToast('Password changed successfully! Use your new password on next login.', 'success');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -144,8 +165,8 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold leading-tight">Admin Credentials & Security</h3>
-              <p className="text-xs text-emerald-200/90 mt-0.5">Manage master admin login, phone, and password</p>
+              <h3 className="text-base font-bold leading-tight">{roleTitle} Credentials & Security</h3>
+              <p className="text-xs text-emerald-200/90 mt-0.5">Manage your {roleTitle.toLowerCase()} account login, phone, and password</p>
             </div>
           </div>
           <button
@@ -273,7 +294,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
               {newPassword && (
                 <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs">
                   <div>
-                    <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">New Admin Password Preview</span>
+                    <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">New {roleTitle} Password Preview</span>
                     <span className="font-mono font-bold text-emerald-950 text-sm">{newPassword}</span>
                   </div>
                   <button
@@ -335,7 +356,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Admin Supervisor"
+                    placeholder="Enter full name"
                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
@@ -353,7 +374,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
                       required
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="admin"
+                      placeholder="username"
                       className="w-full text-xs pl-8 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
                     />
                   </div>
@@ -373,7 +394,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
                       maxLength={10}
                       pattern="[0-9]{10}"
                       title="Please enter a 10-digit mobile number"
-                      placeholder="6352454247"
+                      placeholder="10-digit mobile number"
                       className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
                     />
                   </div>
@@ -390,14 +411,14 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@ecogreensolar.com"
+                    placeholder="email@example.com"
                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500">
-                💡 <strong>Login Tip:</strong> You can log in using either your <strong>Mobile ({phone})</strong>, <strong>User ID (@{username})</strong>, or <strong>Email</strong>.
+                💡 <strong>Login Tip:</strong> You can log in using either your <strong>Mobile ({phone || 'phone'})</strong>, <strong>User ID (@{username || 'id'})</strong>, or <strong>Email</strong>.
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3">
