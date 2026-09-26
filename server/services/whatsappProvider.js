@@ -234,7 +234,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
       const custName = cleanParam(variables.customer_name, 'Customer');
 
-      deliveredText = `*Eco Green Solar - Job Transferred*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`;
+      deliveredText = `*Eco Green Solar - Job Transferred*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {
@@ -371,7 +371,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const newTech = cleanParam(variables.new_technician_name, 'another specialist');
       const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up requested');
 
-      deliveredText = `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello *${techName}*,\n\nPlease note that ticket *${tktId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTech}*).\n\n⚠️ *Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to revisit this site as another technician has been assigned for follow-up.\n- Eco Green Dispatch`;
+      deliveredText = `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello *${techName}*,\n\nPlease note that ticket *${tktId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTech}*).\n\n⚠️ *Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to revisit this site as another technician has been assigned for follow-up.\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {
