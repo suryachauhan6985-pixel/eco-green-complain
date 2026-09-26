@@ -11,16 +11,42 @@ import {
 
 export const TRIGGER_OPTIONS = [
   { id: 'complaint_registered', label: 'Ticket Lodged / Registered', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket' },
-  { id: 'technician_assigned', label: 'Technician Assigned', audience: 'customer', desc: 'Fires when technician is allocated to visit customer' },
+  { id: 'technician_assigned', label: 'Technician Assigned / Reassigned (Customer)', audience: 'customer', desc: 'Fires to customer whenever technician is allocated or changed' },
   { id: 'status_update', label: 'Status & Visit Note Update', audience: 'customer', desc: 'Fires when progress or note is recorded on ticket' },
   { id: 'complaint_resolved', label: 'Service Work Completed / Resolved', audience: 'customer', desc: 'Fires when technician marks job resolved on site' },
   { id: 'complaint_closed', label: 'Ticket Closed & Rating Request', audience: 'customer', desc: 'Fires when ticket is closed to collect 1-5 star review' },
   { id: 'complaint_reopened', label: 'Ticket Reopened Alert', audience: 'customer', desc: 'Fires if customer or supervisor reopens an issue' },
-  { id: 'technician_work_order', label: 'Work Order Dispatch', audience: 'technician', desc: 'Fires to newly assigned technician with customer address' },
+  { id: 'technician_work_order', label: 'Work Order Dispatch (New Job)', audience: 'technician', desc: 'Fires to newly assigned technician with customer address' },
   { id: 'technician_reminder', label: 'Pending Visit Reminder', audience: 'technician', desc: 'Fires as schedule reminder for upcoming service visit' },
-  { id: 'technician_reassigned', label: 'Job Reassigned to Another Tech', audience: 'technician', desc: 'Fires to previous technician when job transferred' },
+  { id: 'technician_reassigned', label: 'Job Reassigned to Another Tech (Previous Tech Notice)', audience: 'technician', desc: 'Fires to previous technician when job transferred' },
   { id: 'custom_trigger', label: 'Custom Outbound Trigger', audience: 'all', desc: 'Triggered via custom API or manual supervisor broadcast' }
 ];
+
+export const isTechnicianTemplate = (t) => {
+  if (!t) return false;
+  const key = (t.template_key || '').toLowerCase();
+  // Specifically: technician_assigned is ALWAYS a customer notification!
+  if (key === 'technician_assigned') return false;
+
+  // Actual technician templates:
+  if (
+    key === 'technician_work_order' ||
+    key === 'technician_reminder' ||
+    key === 'technician_pending_visit_reminder' ||
+    key === 'technician_reassigned' ||
+    key === 'technician_job_reassigned_notice'
+  ) {
+    return true;
+  }
+
+  const trig = (t.trigger_event || '').toLowerCase();
+  if (trig === 'technician_assigned') return false; // Explicitly Customer!
+  if (trig === 'technician_work_order' || trig === 'technician_reminder' || trig === 'technician_reassigned') {
+    return true;
+  }
+
+  return (t.audience || '').toLowerCase() === 'technician';
+};
 
 export const ALL_PLACEHOLDERS = [
   { key: '{{customer_name}}', desc: 'Customer Full Name' },
@@ -119,17 +145,13 @@ export const TemplateManager = () => {
       ];
 
       const list = rawList.map(t => {
-        const isTech = (t.audience || '').toLowerCase() === 'technician' ||
-          (t.template_key || '').startsWith('technician_') ||
-          (t.trigger_event || '').startsWith('technician_') ||
-          (t.name || '').toLowerCase().includes('technician');
-
+        const isTech = isTechnicianTemplate(t);
         const isVerified = verifiedKeys.includes(t.template_key);
         const metaStatus = isVerified ? (t.meta_status === 'REJECTED' ? 'REJECTED' : 'APPROVED') : (t.meta_status || 'PENDING');
 
         return {
           ...t,
-          audience: isTech ? 'technician' : (t.audience || 'customer'),
+          audience: isTech ? 'technician' : 'customer',
           meta_status: metaStatus,
           is_active: t.is_active !== undefined ? t.is_active : 1
         };
@@ -160,10 +182,7 @@ export const TemplateManager = () => {
 
   const selectTemplate = (tmpl) => {
     if (!tmpl) return;
-    const isTech = (tmpl.audience || '').toLowerCase() === 'technician' ||
-      (tmpl.template_key || '').startsWith('technician_') ||
-      (tmpl.trigger_event || '').startsWith('technician_') ||
-      (tmpl.name || '').toLowerCase().includes('technician');
+    const isTech = isTechnicianTemplate(tmpl);
 
     const verifiedKeys = [
       'complaint_registered', 'technician_assigned', 'status_update', 
@@ -175,7 +194,7 @@ export const TemplateManager = () => {
 
     setSelectedTemplate(tmpl);
     setTemplateName(tmpl.name || '');
-    setTemplateAudience(isTech ? 'technician' : (tmpl.audience || 'customer'));
+    setTemplateAudience(isTech ? 'technician' : 'customer');
     setTemplateTrigger(tmpl.trigger_event || tmpl.template_key || 'manual');
     setMetaTemplateName(tmpl.meta_template_name || tmpl.template_key || '');
     setMetaStatus(finalMetaStatus);
@@ -334,11 +353,7 @@ export const TemplateManager = () => {
     const staff = [];
 
     templates.forEach(t => {
-      const isTech = (t.audience || '').toLowerCase() === 'technician' ||
-        (t.template_key || '').startsWith('technician_') ||
-        (t.trigger_event || '').startsWith('technician_') ||
-        (t.name || '').toLowerCase().includes('technician');
-
+      const isTech = isTechnicianTemplate(t);
       const isStaff = (t.audience || '').toLowerCase() === 'staff';
 
       if (isTech) tech.push(t);
@@ -580,10 +595,7 @@ export const TemplateManager = () => {
             ) : (
               filteredList.map((tmpl) => {
                 const isSelected = selectedTemplate?.id === tmpl.id;
-                const isTech = (tmpl.audience || '').toLowerCase() === 'technician' ||
-                  (tmpl.template_key || '').startsWith('technician_') ||
-                  (tmpl.trigger_event || '').startsWith('technician_') ||
-                  (tmpl.name || '').toLowerCase().includes('technician');
+                const isTech = isTechnicianTemplate(tmpl);
                 const isStaff = (tmpl.audience || '').toLowerCase() === 'staff';
 
                 return (

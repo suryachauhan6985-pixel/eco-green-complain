@@ -2840,6 +2840,12 @@ async function ensureNotificationTemplatesTable() {
 
     await query(`
       UPDATE notification_templates 
+      SET audience = 'customer' 
+      WHERE template_key = 'technician_assigned'
+    `).catch(() => {});
+
+    await query(`
+      UPDATE notification_templates 
       SET meta_status = 'APPROVED' 
       WHERE template_key IN (
         'complaint_registered', 'technician_assigned', 'status_update', 
