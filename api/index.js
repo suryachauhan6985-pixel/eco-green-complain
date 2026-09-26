@@ -4630,8 +4630,10 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
                 : ((comp && comp.customer_name && comp.customer_name !== 'Customer') ? comp.customer_name : (profileName || formatDisplayPhone(canonicalPhone)));
 
               let messageBody = '';
+              let mediaId = null;
               let mediaType = null;
               let mediaUrl = null;
+              let mediaCaption = null;
 
               if (msg.type === 'text') {
                 messageBody = msg.text?.body || '';
@@ -4641,16 +4643,28 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
                 messageBody = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || '[Selected Option]';
               } else if (msg.type === 'image') {
                 mediaType = 'image';
-                messageBody = msg.image?.caption || '[Image Received]';
+                mediaId = msg.image?.id || null;
+                mediaCaption = msg.image?.caption || '';
+                mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}` : null;
+                messageBody = mediaCaption || '[Image Received]';
               } else if (msg.type === 'document') {
                 mediaType = 'document';
-                messageBody = msg.document?.caption || `[Document: ${msg.document?.filename || 'Document'}]`;
+                mediaId = msg.document?.id || null;
+                const docName = msg.document?.filename || 'Document.pdf';
+                mediaCaption = msg.document?.caption || docName;
+                mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?filename=${encodeURIComponent(docName)}` : null;
+                messageBody = msg.document?.caption || `[Document: ${docName}]`;
               } else if (msg.type === 'audio') {
                 mediaType = 'audio';
+                mediaId = msg.audio?.id || null;
+                mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?filename=voice_note.ogg` : null;
                 messageBody = '[Voice Note / Audio]';
               } else if (msg.type === 'video') {
                 mediaType = 'video';
-                messageBody = msg.video?.caption || '[Video Received]';
+                mediaId = msg.video?.id || null;
+                mediaCaption = msg.video?.caption || '';
+                mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?filename=video.mp4` : null;
+                messageBody = mediaCaption || '[Video Received]';
               } else if (msg.type === 'location') {
                 mediaType = 'location';
                 messageBody = `📍 Location: ${msg.location?.latitude}, ${msg.location?.longitude} (${msg.location?.name || msg.location?.address || 'Site Pin'})`;
@@ -4658,13 +4672,13 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
                 messageBody = `[${msg.type || 'Message'} Received]`;
               }
 
-              console.log(`[WHATSAPP-INCOMING] From: ${canonicalPhone} (${resolvedSenderName}) | Role: ${senderType} | Text: ${messageBody} | WAMID: ${wamId}`);
+              console.log(`[WHATSAPP-INCOMING] From: ${canonicalPhone} (${resolvedSenderName}) | Role: ${senderType} | Media: ${mediaType || 'none'} | Text: ${messageBody} | WAMID: ${wamId}`);
 
               await query(
                 `INSERT INTO whatsapp_messages (
-                  complaint_id, phone, sender_type, sender_name, message_body, media_type, media_url, wam_id, status, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [comp?.id || null, canonicalPhone, senderType, resolvedSenderName, messageBody, mediaType, mediaUrl, wamId]
+                  complaint_id, phone, sender_type, sender_name, message_body, media_id, media_type, media_url, media_caption, wam_id, status, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [comp?.id || null, canonicalPhone, senderType, resolvedSenderName, messageBody, mediaId, mediaType, mediaUrl, mediaCaption, wamId]
               ).catch((e) => console.error('[Webhook Insert Error]:', e.message));
             }
           }
@@ -4676,6 +4690,61 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
   } catch (e) {
     console.warn('[Webhook Error]', e.message);
     return res.status(200).send('EVENT_RECEIVED');
+  }
+});
+
+// WhatsApp Media Proxy (streams media securely from Meta Cloud API lookaside CDN to frontend)
+app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req, res) => {
+  const { mediaId } = req.params;
+  const token = process.env.META_ACCESS_TOKEN;
+  if (!token) {
+    return res.status(500).send('META_ACCESS_TOKEN is not configured');
+  }
+
+  try {
+    // 1. Get direct media CDN download URL from Meta Graph API
+    const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!metaRes.ok) {
+      const errText = await metaRes.text();
+      console.error('[WhatsApp Media] Meta error for ID', mediaId, errText);
+      return res.status(metaRes.status).send('Failed to locate media on Meta');
+    }
+
+    const metaData = await metaRes.json();
+    if (!metaData.url) {
+      return res.status(404).send('Media URL not provided by Meta');
+    }
+
+    // 2. Fetch binary media from Meta CDN with Authorization header
+    const fileRes = await fetch(metaData.url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!fileRes.ok) {
+      console.error('[WhatsApp Media] File fetch error:', fileRes.statusText);
+      return res.status(fileRes.status).send('Failed to download media binary from Meta CDN');
+    }
+
+    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = metaData.file_size || fileRes.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // Cache for 7 days
+
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const ext = contentType.includes('/') ? contentType.split('/')[1].replace('jpeg', 'jpg') : 'jpg';
+    const filename = req.query.filename || `whatsapp_${mediaId}.${ext}`;
+    res.setHeader('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${filename}"`);
+
+    const arrayBuffer = await fileRes.arrayBuffer();
+    return res.status(200).send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error('[WhatsApp Media Proxy Error]:', err.message);
+    return res.status(500).send('Error streaming media');
   }
 });
 
