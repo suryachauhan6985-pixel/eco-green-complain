@@ -197,7 +197,12 @@ class LocalMockStore {
     localStorage.setItem('egs_mock_technicians', JSON.stringify(INITIAL_TECHNICIANS));
     localStorage.setItem('egs_mock_users', JSON.stringify(INITIAL_USERS));
     localStorage.setItem('egs_mock_notifications', JSON.stringify(INITIAL_SIMULATED_NOTIFICATIONS));
-    if (!localStorage.getItem('egs_mock_templates')) {
+    try {
+      const storedTmpls = JSON.parse(localStorage.getItem('egs_mock_templates') || '[]');
+      if (!Array.isArray(storedTmpls) || storedTmpls.length < INITIAL_TEMPLATES.length || storedTmpls.some(t => !t.audience)) {
+        localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
+      }
+    } catch (_) {
       localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
     }
   }

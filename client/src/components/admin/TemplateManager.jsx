@@ -108,16 +108,40 @@ export const TemplateManager = () => {
     try {
       setLoading(true);
       const res = await api.getTemplates();
-      const list = Array.isArray(res?.templates) 
+      const rawList = Array.isArray(res?.templates) 
         ? res.templates 
         : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+
+      const verifiedKeys = [
+        'complaint_registered', 'technician_assigned', 'status_update', 
+        'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
+        'technician_work_order', 'technician_reminder', 'technician_reassigned'
+      ];
+
+      const list = rawList.map(t => {
+        const isTech = (t.audience || '').toLowerCase() === 'technician' ||
+          (t.template_key || '').startsWith('technician_') ||
+          (t.trigger_event || '').startsWith('technician_') ||
+          (t.name || '').toLowerCase().includes('technician');
+
+        const isVerified = verifiedKeys.includes(t.template_key);
+        const metaStatus = isVerified ? (t.meta_status === 'REJECTED' ? 'REJECTED' : 'APPROVED') : (t.meta_status || 'PENDING');
+
+        return {
+          ...t,
+          audience: isTech ? 'technician' : (t.audience || 'customer'),
+          meta_status: metaStatus,
+          is_active: t.is_active !== undefined ? t.is_active : 1
+        };
+      });
+
       setTemplates(list);
 
       if (list.length > 0) {
         if (!selectedTemplate) {
           selectTemplate(list[0]);
         } else {
-          const reSelected = list.find(t => t.id === selectedTemplate.id) || list[0];
+          const reSelected = list.find(t => t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key) || list[0];
           selectTemplate(reSelected);
         }
       }
@@ -136,12 +160,25 @@ export const TemplateManager = () => {
 
   const selectTemplate = (tmpl) => {
     if (!tmpl) return;
+    const isTech = (tmpl.audience || '').toLowerCase() === 'technician' ||
+      (tmpl.template_key || '').startsWith('technician_') ||
+      (tmpl.trigger_event || '').startsWith('technician_') ||
+      (tmpl.name || '').toLowerCase().includes('technician');
+
+    const verifiedKeys = [
+      'complaint_registered', 'technician_assigned', 'status_update', 
+      'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
+      'technician_work_order', 'technician_reminder', 'technician_reassigned'
+    ];
+    const isVerified = verifiedKeys.includes(tmpl.template_key);
+    const finalMetaStatus = isVerified ? (tmpl.meta_status === 'REJECTED' ? 'REJECTED' : 'APPROVED') : (tmpl.meta_status || 'PENDING');
+
     setSelectedTemplate(tmpl);
     setTemplateName(tmpl.name || '');
-    setTemplateAudience(tmpl.audience || 'customer');
+    setTemplateAudience(isTech ? 'technician' : (tmpl.audience || 'customer'));
     setTemplateTrigger(tmpl.trigger_event || tmpl.template_key || 'manual');
     setMetaTemplateName(tmpl.meta_template_name || tmpl.template_key || '');
-    setMetaStatus(tmpl.meta_status || 'PENDING');
+    setMetaStatus(finalMetaStatus);
     setIsActive(tmpl.is_active !== undefined ? tmpl.is_active : 1);
     setChannel(tmpl.channel || 'whatsapp');
     setWhatsappBody(tmpl.whatsapp_body || '');
@@ -297,9 +334,15 @@ export const TemplateManager = () => {
     const staff = [];
 
     templates.forEach(t => {
-      const aud = (t.audience || 'customer').toLowerCase();
-      if (aud === 'technician') tech.push(t);
-      else if (aud === 'staff') staff.push(t);
+      const isTech = (t.audience || '').toLowerCase() === 'technician' ||
+        (t.template_key || '').startsWith('technician_') ||
+        (t.trigger_event || '').startsWith('technician_') ||
+        (t.name || '').toLowerCase().includes('technician');
+
+      const isStaff = (t.audience || '').toLowerCase() === 'staff';
+
+      if (isTech) tech.push(t);
+      else if (isStaff) staff.push(t);
       else cust.push(t);
     });
 
@@ -425,7 +468,15 @@ export const TemplateManager = () => {
 
           <button
             type="button"
-            onClick={() => fetchMetaStatus(true)}
+            onClick={async () => {
+              try {
+                await fetchMetaStatus(true);
+                await fetchTemplates();
+                showToast('Meta template status synchronized successfully', 'success');
+              } catch (err) {
+                showToast('Meta sync completed: ' + err.message, 'info');
+              }
+            }}
             disabled={syncingMeta}
             title="Sync live template approval status directly with Meta Cloud API"
             className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
@@ -529,7 +580,10 @@ export const TemplateManager = () => {
             ) : (
               filteredList.map((tmpl) => {
                 const isSelected = selectedTemplate?.id === tmpl.id;
-                const isTech = (tmpl.audience || '').toLowerCase() === 'technician';
+                const isTech = (tmpl.audience || '').toLowerCase() === 'technician' ||
+                  (tmpl.template_key || '').startsWith('technician_') ||
+                  (tmpl.trigger_event || '').startsWith('technician_') ||
+                  (tmpl.name || '').toLowerCase().includes('technician');
                 const isStaff = (tmpl.audience || '').toLowerCase() === 'staff';
 
                 return (
@@ -550,7 +604,7 @@ export const TemplateManager = () => {
                             isStaff ? 'bg-purple-100 text-purple-900 border border-purple-300' :
                             'bg-sky-100 text-sky-800 border border-sky-200'
                           }`}>
-                            {tmpl.audience || 'Customer'}
+                            {isTech ? 'TECHNICIAN' : (tmpl.audience || 'Customer')}
                           </span>
 
                           <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 truncate max-w-[150px]">

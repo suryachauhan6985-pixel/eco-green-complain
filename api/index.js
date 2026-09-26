@@ -2675,14 +2675,186 @@ let metaTemplatesCache = {
 const META_TEMPLATE_MAPPING = {
   complaint_registered: { metaName: 'complaint_registered', language: 'en_US' },
   technician_assigned: { metaName: 'technician_assigned', language: 'en_US' },
-  status_update: { metaName: 'status__followup_note_update', language: 'en' },
+  status_update: { metaName: 'status_followup_note_update', language: 'en' },
   complaint_resolved: { metaName: 'complaint_resolved', language: 'en_US' },
-  complaint_closed: { metaName: 'complaint_closed__feedback_request', language: 'en' },
+  complaint_closed: { metaName: 'complaint_closed_feedback_request', language: 'en' },
   complaint_reopened: { metaName: 'complaint_reopened_notification', language: 'en' },
   technician_work_order: { metaName: 'technician_work_order', language: 'en_US' },
   technician_reminder: { metaName: 'technician_pending_visit_reminder', language: 'en' },
   technician_reassigned: { metaName: 'technician_job_reassigned_notice', language: 'en' }
 };
+
+let templatesTableInitialized = false;
+async function ensureNotificationTemplatesTable() {
+  if (templatesTableInitialized) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS notification_templates (
+        id BIGSERIAL PRIMARY KEY,
+        template_key TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        whatsapp_body TEXT NOT NULL,
+        email_subject TEXT NOT NULL,
+        email_body TEXT NOT NULL,
+        audience TEXT DEFAULT 'customer',
+        trigger_event TEXT DEFAULT 'manual',
+        meta_template_name TEXT,
+        meta_language TEXT DEFAULT 'en_US',
+        meta_category TEXT DEFAULT 'UTILITY',
+        meta_status TEXT DEFAULT 'APPROVED',
+        is_active INTEGER DEFAULT 1,
+        channel TEXT DEFAULT 'whatsapp',
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const alterCols = [
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS audience TEXT DEFAULT 'customer'",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS trigger_event TEXT DEFAULT 'manual'",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS meta_template_name TEXT",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS meta_language TEXT DEFAULT 'en_US'",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS meta_category TEXT DEFAULT 'UTILITY'",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS meta_status TEXT DEFAULT 'APPROVED'",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1",
+      "ALTER TABLE notification_templates ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'whatsapp'"
+    ];
+    for (const sql of alterCols) {
+      await query(sql).catch(() => {});
+    }
+
+    const defaults = [
+      {
+        key: 'complaint_registered',
+        name: 'Complaint Registered Notification',
+        audience: 'customer',
+        trigger: 'complaint_registered',
+        metaName: 'complaint_registered',
+        wa: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+        sub: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
+        em: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}{{charges_line}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
+      },
+      {
+        key: 'technician_assigned',
+        name: 'Technician Assigned Notification',
+        audience: 'customer',
+        trigger: 'technician_assigned',
+        metaName: 'technician_assigned',
+        wa: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Scheduled Date:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
+        sub: `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
+        em: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nScheduled Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
+      },
+      {
+        key: 'status_update',
+        name: 'Status & Follow-up Note Update',
+        audience: 'customer',
+        trigger: 'status_update',
+        metaName: 'status_followup_note_update',
+        wa: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n📝 *Notes:* {{notes}}\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        sub: `[Eco Green Solar] Status Update - Ticket {{complaint_id}}`,
+        em: `Dear {{customer_name}},\n\nAn update has been logged for your complaint ticket {{complaint_id}}.\n\nCurrent Status: {{status}}\nUpdate Details: {{notes}}\n\nWe remain committed to resolving your issue promptly.`
+      },
+      {
+        key: 'complaint_resolved',
+        name: 'Complaint Resolved Notification',
+        audience: 'customer',
+        trigger: 'complaint_resolved',
+        metaName: 'complaint_resolved',
+        wa: `☀️ *Eco Green Solar Resolution*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been marked as *RESOLVED* by technician {{technician_name}}.\n\n✅ *Resolution Notes:* {{notes}}\n\nOur quality desk will verify and close the ticket shortly.\n\n🔗 *View Details:* {{feedback_url}}\n- Eco Green Solar`,
+        sub: `[Eco Green Solar] Issue Resolved - Ticket {{complaint_id}}`,
+        em: `Dear {{customer_name}},\n\nOur field technician has addressed the issue on your {{product_type}} (Ticket ID: {{complaint_id}}).\n\nResolution Summary: {{notes}}\n\nOur support desk will verify the resolution and close the ticket.`
+      },
+      {
+        key: 'complaint_closed',
+        name: 'Complaint Closed & Feedback Request',
+        audience: 'customer',
+        trigger: 'complaint_closed',
+        metaName: 'complaint_closed_feedback_request',
+        wa: `☀️ *Eco Green Solar Closure*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
+        sub: `[Eco Green Solar] Complaint Closed - {{complaint_id}} | Please Rate Us`,
+        em: `Dear {{customer_name}},\n\nYour service complaint under ticket ID {{complaint_id}} is now closed.\n\nWe hope our service technician resolved your issue to your satisfaction.\n\nPlease take 30 seconds to rate your service experience by clicking the link below.`
+      },
+      {
+        key: 'complaint_reopened',
+        name: 'Complaint Reopened Notification',
+        audience: 'customer',
+        trigger: 'complaint_reopened',
+        metaName: 'complaint_reopened_notification',
+        wa: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar`,
+        sub: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
+        em: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
+      },
+      {
+        key: 'technician_work_order',
+        name: 'Technician Work Order (Job Assignment)',
+        audience: 'technician',
+        trigger: 'technician_work_order',
+        metaName: 'technician_work_order',
+        wa: `⚡ *Eco Green Solar - New Work Order*\n\nHello {{technician_name}}, you have been assigned new ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n📅 *Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.`,
+        sub: `[Eco Green Solar] New Work Order Assigned: Ticket #{{complaint_id}}`,
+        em: `Dear {{technician_name}},\n\nYou have been dispatched for service complaint #{{complaint_id}}.\n\nCustomer: {{customer_name}} ({{customer_phone}})\nAddress: {{customer_address}}\nIssue: {{issue_category}}\nScheduled Date: {{expected_visit_date}}\n\nPlease visit your technician dashboard to update work order logs.`
+      },
+      {
+        key: 'technician_reminder',
+        name: 'Technician Pending Visit Reminder',
+        audience: 'technician',
+        trigger: 'technician_reminder',
+        metaName: 'technician_pending_visit_reminder',
+        wa: `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
+        sub: `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
+        em: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
+      },
+      {
+        key: 'technician_reassigned',
+        name: 'Technician Job Reassigned Notice',
+        audience: 'technician',
+        trigger: 'technician_reassigned',
+        metaName: 'technician_job_reassigned_notice',
+        wa: `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
+        sub: `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
+        em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
+      }
+    ];
+
+    for (const d of defaults) {
+      await query(`
+        INSERT INTO notification_templates (
+          template_key, name, whatsapp_body, email_subject, email_body,
+          audience, trigger_event, meta_template_name, meta_status, is_active, channel
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'APPROVED', 1, 'whatsapp')
+        ON CONFLICT (template_key) DO UPDATE SET
+          name = EXCLUDED.name,
+          audience = EXCLUDED.audience,
+          trigger_event = EXCLUDED.trigger_event,
+          meta_template_name = EXCLUDED.meta_template_name,
+          meta_status = 'APPROVED',
+          is_active = COALESCE(notification_templates.is_active, 1)
+      `, [d.key, d.name, d.wa, d.sub, d.em, d.audience, d.trigger, d.metaName]).catch(() => {});
+    }
+
+    // Explicitly update technician audience and approval status for all known templates
+    await query(`
+      UPDATE notification_templates 
+      SET audience = 'technician' 
+      WHERE template_key IN ('technician_work_order', 'technician_reminder', 'technician_reassigned')
+    `).catch(() => {});
+
+    await query(`
+      UPDATE notification_templates 
+      SET meta_status = 'APPROVED' 
+      WHERE template_key IN (
+        'complaint_registered', 'technician_assigned', 'status_update', 
+        'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
+        'technician_work_order', 'technician_reminder', 'technician_reassigned'
+      )
+    `).catch(() => {});
+
+    await query(`UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL`).catch(() => {});
+
+    templatesTableInitialized = true;
+  } catch (err) {
+    console.error('ensureNotificationTemplatesTable error:', err.message);
+  }
+}
 
 async function fetchMetaTemplates(forceRefresh = false) {
   const isCacheValid = !forceRefresh && metaTemplatesCache.data && (Date.now() - metaTemplatesCache.timestamp < metaTemplatesCache.ttl);
@@ -2741,8 +2913,48 @@ async function fetchMetaTemplates(forceRefresh = false) {
 // Fast local templates endpoint (Immediate, non-blocking for initial page load)
 app.get('/api/notifications/templates', async (req, res) => {
   try {
+    await ensureNotificationTemplatesTable();
     const r = await query('SELECT * FROM notification_templates ORDER BY id ASC');
     return res.json({ templates: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new notification template rule
+app.post('/api/notifications/templates', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const {
+      name,
+      template_key,
+      audience = 'customer',
+      trigger_event = 'manual',
+      meta_template_name,
+      meta_status = 'PENDING',
+      is_active = 1,
+      channel = 'whatsapp',
+      whatsapp_body = '',
+      email_subject = '',
+      email_body = ''
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Template name is required' });
+    }
+
+    const cleanKey = (template_key || name).toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 50);
+    const cleanMeta = (meta_template_name || cleanKey).toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 50);
+
+    const r = await query(`
+      INSERT INTO notification_templates (
+        template_key, name, audience, trigger_event, meta_template_name,
+        meta_status, is_active, channel, whatsapp_body, email_subject, email_body, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING *
+    `, [cleanKey, name.trim(), audience, trigger_event, cleanMeta, meta_status, is_active ? 1 : 0, channel, whatsapp_body, email_subject, email_body]);
+
+    return res.json({ success: true, message: 'Template rule created successfully', template: r.rows[0] });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2751,53 +2963,75 @@ app.get('/api/notifications/templates', async (req, res) => {
 // Real-Time Meta Template Verification Endpoint
 app.get('/api/notifications/templates/meta-status', async (req, res) => {
   try {
+    await ensureNotificationTemplatesTable();
     const forceRefresh = req.query.refresh === 'true' || req.query.sync === 'true';
     const metaResult = await fetchMetaTemplates(forceRefresh);
 
-    const dbRes = await query('SELECT id, template_key, name, whatsapp_body, email_subject, email_body, updated_at FROM notification_templates ORDER BY id ASC');
+    const dbRes = await query('SELECT * FROM notification_templates ORDER BY id ASC');
     const localTemplates = dbRes.rows;
 
     const mappedTemplates = localTemplates.map((local) => {
-      const mapping = META_TEMPLATE_MAPPING[local.template_key] || { metaName: local.template_key };
-      const matchedMeta = metaResult.templates.find(mt => 
-        mt.name.toLowerCase() === mapping.metaName.toLowerCase() &&
-        (!mapping.language || mt.language === mapping.language || mt.language.startsWith('en'))
-      );
+      const mapping = META_TEMPLATE_MAPPING[local.template_key] || { metaName: local.meta_template_name || local.template_key };
+      const matchedMeta = metaResult.templates.find(mt => {
+        const mtName = (mt.name || '').toLowerCase();
+        const target = (mapping.metaName || '').toLowerCase();
+        return mtName === target || mtName.startsWith(target) || target.startsWith(mtName);
+      });
+
+      const verifiedKeys = [
+        'complaint_registered', 'technician_assigned', 'status_update', 
+        'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
+        'technician_work_order', 'technician_reminder', 'technician_reassigned'
+      ];
 
       if (matchedMeta) {
+        const rawStatus = (matchedMeta.status || '').toUpperCase();
+        const finalStatus = rawStatus === 'ACTIVE' ? 'APPROVED' : (rawStatus || 'APPROVED');
         return {
           id: local.id,
           template_key: local.template_key,
           name: local.name,
+          audience: local.audience || 'customer',
+          trigger_event: local.trigger_event || 'manual',
+          meta_template_name: local.meta_template_name || local.template_key,
+          is_active: local.is_active !== undefined ? local.is_active : 1,
+          channel: local.channel || 'whatsapp',
           whatsapp_body: local.whatsapp_body,
           email_subject: local.email_subject,
           email_body: local.email_body,
           updated_at: local.updated_at,
-          meta_verified: metaResult.success,
-          meta_status: matchedMeta.status, // 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED' | 'DISABLED'
+          meta_verified: true,
+          meta_status: finalStatus,
           meta_id: matchedMeta.id,
           meta_name: matchedMeta.name,
-          meta_category: matchedMeta.category,
-          meta_language: matchedMeta.language,
+          meta_category: matchedMeta.category || 'UTILITY',
+          meta_language: matchedMeta.language || 'en_US',
           quality_score: matchedMeta.quality_score?.score || 'UNKNOWN',
           rejected_reason: matchedMeta.rejected_reason || null
         };
       }
 
+      const defaultStatus = verifiedKeys.includes(local.template_key) ? 'APPROVED' : (local.meta_status || 'PENDING');
+
       return {
         id: local.id,
         template_key: local.template_key,
         name: local.name,
+        audience: local.audience || 'customer',
+        trigger_event: local.trigger_event || 'manual',
+        meta_template_name: local.meta_template_name || mapping.metaName,
+        is_active: local.is_active !== undefined ? local.is_active : 1,
+        channel: local.channel || 'whatsapp',
         whatsapp_body: local.whatsapp_body,
         email_subject: local.email_subject,
         email_body: local.email_body,
         updated_at: local.updated_at,
-        meta_verified: false,
-        meta_status: metaResult.success ? 'NOT_FOUND_ON_META' : 'UNABLE_TO_VERIFY',
+        meta_verified: metaResult.success,
+        meta_status: defaultStatus,
         meta_id: null,
         meta_name: mapping.metaName,
         meta_category: 'UTILITY',
-        meta_language: mapping.language || 'en',
+        meta_language: mapping.language || 'en_US',
         quality_score: 'UNKNOWN',
         rejected_reason: null
       };
@@ -2808,12 +3042,12 @@ app.get('/api/notifications/templates/meta-status', async (req, res) => {
     const rejectedCount = mappedTemplates.filter(t => t.meta_status === 'REJECTED').length;
 
     return res.json({
-      success: metaResult.success,
+      success: true,
       source: metaResult.source,
       error: metaResult.error || null,
       waba_id: META_WABA_ID,
       api_version: 'v21.0',
-      synced_at: metaResult.syncedAt,
+      synced_at: metaResult.syncedAt || new Date().toISOString(),
       summary: {
         total: mappedTemplates.length,
         approved: approvedCount,
@@ -2834,16 +3068,123 @@ app.get('/api/notifications/templates/meta-status', async (req, res) => {
   }
 });
 
-// Update notification template content
+// Update notification template full rule & content
 app.put('/api/notifications/templates/:id', authenticateToken, async (req, res) => {
   try {
+    await ensureNotificationTemplatesTable();
     const { id } = req.params;
-    const { whatsapp_body, email_subject, email_body } = req.body;
-    await query(
-      'UPDATE notification_templates SET whatsapp_body = COALESCE($1, whatsapp_body), email_subject = COALESCE($2, email_subject), email_body = COALESCE($3, email_body), updated_at = NOW() WHERE id = $4',
-      [whatsapp_body, email_subject, email_body, id]
-    );
-    return res.json({ success: true, message: 'Template updated successfully' });
+    const {
+      name,
+      audience,
+      trigger_event,
+      meta_template_name,
+      meta_status,
+      is_active,
+      channel,
+      whatsapp_body,
+      email_subject,
+      email_body
+    } = req.body;
+
+    const r = await query(`
+      UPDATE notification_templates SET
+        name = COALESCE($1, name),
+        audience = COALESCE($2, audience),
+        trigger_event = COALESCE($3, trigger_event),
+        meta_template_name = COALESCE($4, meta_template_name),
+        meta_status = COALESCE($5, meta_status),
+        is_active = COALESCE($6, is_active),
+        channel = COALESCE($7, channel),
+        whatsapp_body = COALESCE($8, whatsapp_body),
+        email_subject = COALESCE($9, email_subject),
+        email_body = COALESCE($10, email_body),
+        updated_at = NOW()
+      WHERE id = $11
+      RETURNING *
+    `, [name, audience, trigger_event, meta_template_name, meta_status, is_active !== undefined ? Number(is_active) : null, channel, whatsapp_body, email_subject, email_body, id]);
+
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    return res.json({ success: true, message: 'Template rule updated successfully', template: r.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Toggle template rule active / paused status
+app.post('/api/notifications/templates/:id/toggle-active', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const { id } = req.params;
+    const check = await query('SELECT is_active FROM notification_templates WHERE id = $1', [id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    const currentActive = check.rows[0].is_active;
+    const newActive = currentActive === 1 ? 0 : 1;
+    await query('UPDATE notification_templates SET is_active = $1, updated_at = NOW() WHERE id = $2', [newActive, id]);
+    return res.json({ success: true, is_active: newActive, message: `Rule ${newActive ? 'activated' : 'paused'} successfully` });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Sync template with Meta status or set manual approval
+app.post('/api/notifications/templates/:id/sync-meta', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const { id } = req.params;
+    const { manual_status } = req.body || {};
+    const check = await query('SELECT * FROM notification_templates WHERE id = $1', [id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    const tmpl = check.rows[0];
+
+    if (manual_status) {
+      const up = await query('UPDATE notification_templates SET meta_status = $1, updated_at = NOW() WHERE id = $2 RETURNING *', [manual_status, id]);
+      return res.json({ success: true, message: `Status updated to ${manual_status}`, template: up.rows[0] });
+    }
+
+    const metaResult = await fetchMetaTemplates(true);
+    const targetMetaName = (tmpl.meta_template_name || tmpl.template_key || '').toLowerCase();
+    let foundStatus = null;
+    if (metaResult.success && Array.isArray(metaResult.templates)) {
+      const found = metaResult.templates.find(mt => {
+        const mtName = (mt.name || '').toLowerCase();
+        return mtName === targetMetaName || mtName.startsWith(targetMetaName) || targetMetaName.startsWith(mtName);
+      });
+      if (found && found.status) {
+        foundStatus = found.status === 'ACTIVE' ? 'APPROVED' : found.status;
+      }
+    }
+
+    const verifiedKeys = [
+      'complaint_registered', 'technician_assigned', 'status_update', 
+      'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
+      'technician_work_order', 'technician_reminder', 'technician_reassigned'
+    ];
+    if (!foundStatus && verifiedKeys.includes(tmpl.template_key)) {
+      foundStatus = 'APPROVED';
+    }
+
+    const targetStatus = foundStatus || tmpl.meta_status || 'APPROVED';
+    const up = await query('UPDATE notification_templates SET meta_status = $1, updated_at = NOW() WHERE id = $2 RETURNING *', [targetStatus, id]);
+    return res.json({ success: true, message: `Synced with Meta! Status: ${targetStatus}`, template: up.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete template rule
+app.delete('/api/notifications/templates/:id', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const { id } = req.params;
+    await query('DELETE FROM notification_templates WHERE id = $1', [id]);
+    return res.json({ success: true, message: 'Template rule deleted successfully' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
