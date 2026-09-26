@@ -11,22 +11,26 @@ import {
 
 export const TRIGGER_OPTIONS = [
   { id: 'complaint_registered', label: 'Ticket Lodged / Registered', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket' },
-  { id: 'technician_assigned', label: 'Technician First Assigned (Customer)', audience: 'customer', desc: 'Fires to customer when technician is initially allocated' },
-  { id: 'customer_technician_reassigned', label: 'Technician Reassigned / Changed (Customer)', audience: 'customer', desc: 'Fires dedicated re-assignment template to customer when technician is changed' },
+  { id: 'technician_assigned', label: 'Technician First Assigned', audience: 'all', desc: 'Fires to customer when technician is initially allocated' },
+  { id: 'technician_reassigned', label: 'Technician Reassigned / Job Transferred', audience: 'all', desc: 'Fires when assigned technician is changed (sends to Customer & Previous Technician)' },
   { id: 'status_update', label: 'Status & Visit Note Update', audience: 'customer', desc: 'Fires when progress or note is recorded on ticket' },
   { id: 'complaint_resolved', label: 'Service Work Completed / Resolved', audience: 'customer', desc: 'Fires when technician marks job resolved on site' },
   { id: 'complaint_closed', label: 'Ticket Closed & Rating Request', audience: 'customer', desc: 'Fires when ticket is closed to collect 1-5 star review' },
   { id: 'complaint_reopened', label: 'Ticket Reopened Alert', audience: 'customer', desc: 'Fires if customer or supervisor reopens an issue' },
   { id: 'technician_work_order', label: 'Work Order Dispatch (New Job)', audience: 'technician', desc: 'Fires to newly assigned technician with customer address' },
   { id: 'technician_reminder', label: 'Pending Visit Reminder', audience: 'technician', desc: 'Fires as schedule reminder for upcoming service visit' },
-  { id: 'technician_reassigned', label: 'Job Reassigned to Another Tech (Previous Tech Notice)', audience: 'technician', desc: 'Fires to previous technician when job transferred' },
   { id: 'custom_trigger', label: 'Custom Outbound Trigger', audience: 'all', desc: 'Triggered via custom API or manual supervisor broadcast' }
 ];
 
 export const isTechnicianTemplate = (t) => {
   if (!t) return false;
+  // If audience is explicitly set, respect it first:
+  const aud = (t.audience || '').toLowerCase().trim();
+  if (aud === 'technician') return true;
+  if (aud === 'customer') return false;
+
   const key = (t.template_key || '').toLowerCase();
-  // Specifically: technician_assigned and customer_technician_reassigned are ALWAYS customer notifications!
+  // Specifically: technician_assigned and customer_technician_reassigned are ALWAYS customer notifications
   if (key === 'technician_assigned' || key === 'customer_technician_reassigned') return false;
 
   // Actual technician templates:
@@ -41,12 +45,11 @@ export const isTechnicianTemplate = (t) => {
   }
 
   const trig = (t.trigger_event || '').toLowerCase();
-  if (trig === 'technician_assigned' || trig === 'customer_technician_reassigned') return false; // Explicitly Customer!
-  if (trig === 'technician_work_order' || trig === 'technician_reminder' || trig === 'technician_reassigned') {
+  if (trig === 'technician_work_order' || trig === 'technician_reminder') {
     return true;
   }
 
-  return (t.audience || '').toLowerCase() === 'technician';
+  return false;
 };
 
 export const ALL_PLACEHOLDERS = [
@@ -142,18 +145,18 @@ export const TemplateManager = () => {
       const verifiedKeys = [
         'complaint_registered', 'technician_assigned', 'status_update', 
         'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-        'technician_work_order', 'technician_reminder', 'technician_reassigned'
+        'technician_work_order', 'technician_reminder'
       ];
 
       const list = rawList.map(t => {
         const isTech = isTechnicianTemplate(t);
         const isVerified = verifiedKeys.includes(t.template_key);
-        const metaStatus = isVerified ? (t.meta_status === 'REJECTED' ? 'REJECTED' : 'APPROVED') : (t.meta_status || 'PENDING');
+        const resolvedMetaStatus = t.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
 
         return {
           ...t,
-          audience: isTech ? 'technician' : 'customer',
-          meta_status: metaStatus,
+          audience: t.audience || (isTech ? 'technician' : 'customer'),
+          meta_status: resolvedMetaStatus,
           is_active: t.is_active !== undefined ? t.is_active : 1
         };
       });
@@ -188,14 +191,14 @@ export const TemplateManager = () => {
     const verifiedKeys = [
       'complaint_registered', 'technician_assigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-      'technician_work_order', 'technician_reminder', 'technician_reassigned'
+      'technician_work_order', 'technician_reminder'
     ];
     const isVerified = verifiedKeys.includes(tmpl.template_key);
-    const finalMetaStatus = isVerified ? (tmpl.meta_status === 'REJECTED' ? 'REJECTED' : 'APPROVED') : (tmpl.meta_status || 'PENDING');
+    const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
 
     setSelectedTemplate(tmpl);
     setTemplateName(tmpl.name || '');
-    setTemplateAudience(isTech ? 'technician' : 'customer');
+    setTemplateAudience(tmpl.audience || (isTech ? 'technician' : 'customer'));
     setTemplateTrigger(tmpl.trigger_event || tmpl.template_key || 'manual');
     setMetaTemplateName(tmpl.meta_template_name || tmpl.template_key || '');
     setMetaStatus(finalMetaStatus);
@@ -212,8 +215,9 @@ export const TemplateManager = () => {
     if (!selectedTemplate) return;
     try {
       setSaving(true);
-      await api.updateTemplate(selectedTemplate.id, {
+      const payload = {
         name: templateName,
+        template_key: selectedTemplate.template_key,
         audience: templateAudience,
         trigger_event: templateTrigger,
         meta_template_name: metaTemplateName,
@@ -223,7 +227,21 @@ export const TemplateManager = () => {
         whatsapp_body: whatsappBody,
         email_subject: emailSubject,
         email_body: emailBody
-      });
+      };
+
+      await api.updateTemplate(selectedTemplate.id, payload);
+
+      // Also persist to local backup cache to guarantee persistence across hard refresh in all modes
+      try {
+        const stored = JSON.parse(localStorage.getItem('egs_mock_templates') || '[]');
+        const updated = stored.map(t => 
+          (t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key)
+            ? { ...t, ...payload, updated_at: new Date().toISOString() }
+            : t
+        );
+        localStorage.setItem('egs_mock_templates', JSON.stringify(updated));
+      } catch (_) {}
+
       setSavedSuccess(true);
       showToast('Template & Outbound Rule updated successfully', 'success');
       await fetchTemplates();

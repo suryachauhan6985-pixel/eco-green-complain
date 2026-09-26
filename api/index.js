@@ -2914,7 +2914,7 @@ async function ensureNotificationTemplatesTable() {
         key: 'customer_technician_reassigned',
         name: 'Customer Technician Reassigned Notice',
         audience: 'customer',
-        trigger: 'customer_technician_reassigned',
+        trigger: 'technician_reassigned',
         metaName: 'customer_technician_reassigned',
         metaStatus: 'PENDING',
         wa: `☀️ *Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n👷 *New Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n📅 *Estimated Visit:* {{expected_visit_date}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
@@ -2993,49 +2993,40 @@ async function ensureNotificationTemplatesTable() {
         audience: 'technician',
         trigger: 'technician_reassigned',
         metaName: 'technician_job_reassigned_notice',
-        metaStatus: 'APPROVED',
-        wa: `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
-        sub: `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
-        em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
+        metaStatus: 'PENDING',
+        wa: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
+        sub: `[Eco Green Solar] Job Transferred: Ticket #{{complaint_id}} - {{customer_name}}`,
+        em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) previously assigned to you has been reassigned to another technician.\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.`
       }
     ];
 
     for (const d of defaults) {
+      // Use ON CONFLICT DO UPDATE ONLY for missing fields, preserving existing user customizations
       await query(`
         INSERT INTO notification_templates (
           template_key, name, whatsapp_body, email_subject, email_body,
           audience, trigger_event, meta_template_name, meta_status, is_active, channel
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, 'whatsapp')
         ON CONFLICT (template_key) DO UPDATE SET
-          name = EXCLUDED.name,
-          audience = EXCLUDED.audience,
-          trigger_event = EXCLUDED.trigger_event,
-          meta_template_name = EXCLUDED.meta_template_name,
+          audience = CASE 
+            WHEN notification_templates.audience IS NULL OR notification_templates.audience = '' THEN EXCLUDED.audience 
+            ELSE notification_templates.audience 
+          END,
+          trigger_event = CASE 
+            WHEN notification_templates.trigger_event IS NULL OR notification_templates.trigger_event = '' OR notification_templates.trigger_event = 'manual' OR notification_templates.trigger_event = 'customer_technician_reassigned' THEN EXCLUDED.trigger_event 
+            ELSE notification_templates.trigger_event 
+          END,
+          meta_template_name = COALESCE(notification_templates.meta_template_name, EXCLUDED.meta_template_name),
           is_active = COALESCE(notification_templates.is_active, 1)
       `, [d.key, d.name, d.wa, d.sub, d.em, d.audience, d.trigger, d.metaName, d.metaStatus || 'PENDING']).catch(() => {});
     }
 
-    // Explicitly update technician audience and approval status for all known templates
+    // Ensure unified reassign trigger event is assigned cleanly
     await query(`
       UPDATE notification_templates 
-      SET audience = 'technician' 
-      WHERE template_key IN ('technician_work_order', 'technician_reminder', 'technician_reassigned')
-    `).catch(() => {});
-
-    await query(`
-      UPDATE notification_templates 
-      SET audience = 'customer' 
-      WHERE template_key IN ('technician_assigned', 'customer_technician_reassigned')
-    `).catch(() => {});
-
-    await query(`
-      UPDATE notification_templates 
-      SET meta_status = 'APPROVED' 
-      WHERE template_key IN (
-        'complaint_registered', 'technician_assigned', 'status_update', 
-        'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-        'technician_work_order', 'technician_reminder', 'technician_reassigned'
-      )
+      SET trigger_event = 'technician_reassigned' 
+      WHERE template_key IN ('customer_technician_reassigned', 'technician_reassigned') 
+        AND (trigger_event IS NULL OR trigger_event = '' OR trigger_event = 'customer_technician_reassigned')
     `).catch(() => {});
 
     await query(`UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL`).catch(() => {});
@@ -3171,7 +3162,7 @@ app.get('/api/notifications/templates/meta-status', async (req, res) => {
       const verifiedKeys = [
         'complaint_registered', 'technician_assigned', 'status_update', 
         'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-        'technician_work_order', 'technician_reminder', 'technician_reassigned'
+        'technician_work_order', 'technician_reminder'
       ];
 
       if (matchedMeta) {
@@ -3265,6 +3256,7 @@ app.put('/api/notifications/templates/:id', authenticateToken, async (req, res) 
     const { id } = req.params;
     const {
       name,
+      template_key,
       audience,
       trigger_event,
       meta_template_name,
@@ -3289,9 +3281,9 @@ app.put('/api/notifications/templates/:id', authenticateToken, async (req, res) 
         email_subject = COALESCE($9, email_subject),
         email_body = COALESCE($10, email_body),
         updated_at = NOW()
-      WHERE id = $11
+      WHERE id::text = $11::text OR template_key = $12
       RETURNING *
-    `, [name, audience, trigger_event, meta_template_name, meta_status, is_active !== undefined ? Number(is_active) : null, channel, whatsapp_body, email_subject, email_body, id]);
+    `, [name, audience, trigger_event, meta_template_name, meta_status, is_active !== undefined ? Number(is_active) : null, channel, whatsapp_body, email_subject, email_body, String(id), String(template_key || id)]);
 
     if (r.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });

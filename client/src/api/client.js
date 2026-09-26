@@ -199,12 +199,55 @@ class LocalMockStore {
     localStorage.setItem('egs_mock_notifications', JSON.stringify(INITIAL_SIMULATED_NOTIFICATIONS));
     try {
       const storedTmpls = JSON.parse(localStorage.getItem('egs_mock_templates') || '[]');
-      if (!Array.isArray(storedTmpls) || storedTmpls.length < INITIAL_TEMPLATES.length || storedTmpls.some(t => !t.audience)) {
+      if (!Array.isArray(storedTmpls) || storedTmpls.length === 0) {
         localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
+      } else {
+        // Merge missing template rules if any, while strictly preserving user's customized templates
+        const existingKeys = new Set(storedTmpls.map(t => t.template_key));
+        const missing = INITIAL_TEMPLATES.filter(t => !existingKeys.has(t.template_key));
+        if (missing.length > 0) {
+          localStorage.setItem('egs_mock_templates', JSON.stringify([...storedTmpls, ...missing]));
+        }
       }
     } catch (_) {
       localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
     }
+  }
+
+  getTemplates() {
+    return JSON.parse(localStorage.getItem('egs_mock_templates') || JSON.stringify(INITIAL_TEMPLATES));
+  }
+
+  updateTemplate(id, data) {
+    const list = this.getTemplates();
+    const idx = list.findIndex(t => String(t.id) === String(id) || t.template_key === String(id) || (data.template_key && t.template_key === data.template_key));
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...data, updated_at: new Date().toISOString() };
+      localStorage.setItem('egs_mock_templates', JSON.stringify(list));
+      return { success: true, message: 'Template updated successfully', template: list[idx] };
+    }
+    return { success: false, error: 'Template not found' };
+  }
+
+  toggleTemplateActive(id) {
+    const list = this.getTemplates();
+    const idx = list.findIndex(t => String(t.id) === String(id) || t.template_key === String(id));
+    if (idx !== -1) {
+      list[idx].is_active = list[idx].is_active ? 0 : 1;
+      list[idx].updated_at = new Date().toISOString();
+      localStorage.setItem('egs_mock_templates', JSON.stringify(list));
+      return { success: true, is_active: list[idx].is_active, message: 'Status updated' };
+    }
+    return { success: false, error: 'Template not found' };
+  }
+
+  createTemplate(data) {
+    const list = this.getTemplates();
+    const newId = Date.now();
+    const newTmpl = { ...data, id: newId, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    list.push(newTmpl);
+    localStorage.setItem('egs_mock_templates', JSON.stringify(list));
+    return { success: true, message: 'Template rule created', template: newTmpl };
   }
 
   getUsers() {
@@ -890,7 +933,20 @@ function fallbackHandler(endpoint, options) {
   }
 
   if (endpoint.startsWith('/notifications/templates')) {
-    return { templates: JSON.parse(localStorage.getItem('egs_mock_templates') || '[]') };
+    if (method === 'PUT') {
+      const id = endpoint.split('/').pop();
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+      return mockStore.updateTemplate(id, body);
+    }
+    if (method === 'POST' && endpoint.includes('/toggle-active')) {
+      const id = endpoint.split('/')[3];
+      return mockStore.toggleTemplateActive(id);
+    }
+    if (method === 'POST') {
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+      return mockStore.createTemplate(body);
+    }
+    return { templates: mockStore.getTemplates() };
   }
 
   if (endpoint.startsWith('/reports/metrics')) {

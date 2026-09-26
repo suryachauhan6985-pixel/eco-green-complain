@@ -99,7 +99,8 @@ function updateTemplate(req, res) {
       email_body 
     } = req.body;
 
-    const existing = db.prepare('SELECT * FROM notification_templates WHERE id = ?').get(id);
+    const targetKey = req.body.template_key || id;
+    const existing = db.prepare('SELECT * FROM notification_templates WHERE id = ? OR template_key = ?').get(id, targetKey);
     if (!existing) {
       return res.status(404).json({ error: 'Template not found' });
     }
@@ -120,7 +121,7 @@ function updateTemplate(req, res) {
         email_subject = COALESCE(?, email_subject),
         email_body = COALESCE(?, email_body),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = ? OR template_key = ?
     `).run(
       name !== undefined ? name.trim() : null,
       audience !== undefined ? audience : null,
@@ -134,10 +135,11 @@ function updateTemplate(req, res) {
       whatsapp_body !== undefined ? whatsapp_body.trim() : null,
       email_subject !== undefined ? email_subject.trim() : null,
       email_body !== undefined ? email_body.trim() : null,
-      id
+      existing.id,
+      existing.template_key
     );
 
-    const updated = db.prepare('SELECT * FROM notification_templates WHERE id = ?').get(id);
+    const updated = db.prepare('SELECT * FROM notification_templates WHERE id = ?').get(existing.id);
     res.json({ success: true, message: 'Template rule updated successfully', template: updated });
   } catch (err) {
     console.error('Update template error:', err);
@@ -204,7 +206,7 @@ async function getMetaStatus(req, res) {
     const verifiedKeys = [
       'complaint_registered', 'technician_assigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-      'technician_work_order', 'technician_reminder', 'technician_reassigned'
+      'technician_work_order', 'technician_reminder'
     ];
 
     const refreshed = db.prepare('SELECT id, template_key, meta_template_name, meta_status, meta_category, meta_language FROM notification_templates').all();

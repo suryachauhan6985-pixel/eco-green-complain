@@ -640,7 +640,7 @@ function migrateNotificationTemplates() {
         key: 'customer_technician_reassigned',
         name: 'Customer Technician Reassigned Notice',
         audience: 'customer',
-        trigger_event: 'customer_technician_reassigned',
+        trigger_event: 'technician_reassigned',
         meta_template_name: 'customer_technician_reassigned',
         meta_language: 'en_US',
         meta_category: 'UTILITY',

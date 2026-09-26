@@ -55,7 +55,7 @@ export const INITIAL_TEMPLATES = [
     template_key: 'customer_technician_reassigned',
     name: 'Customer Technician Reassigned Notice',
     audience: 'customer',
-    trigger_event: 'customer_technician_reassigned',
+    trigger_event: 'technician_reassigned',
     meta_template_name: 'customer_technician_reassigned',
     meta_status: 'PENDING',
     is_active: 1,
@@ -155,11 +155,11 @@ export const INITIAL_TEMPLATES = [
     audience: 'technician',
     trigger_event: 'technician_reassigned',
     meta_template_name: 'technician_job_reassigned_notice',
-    meta_status: 'APPROVED',
+    meta_status: 'PENDING',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
-    email_subject: `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
-    email_body: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
+    whatsapp_body: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
+    email_subject: `[Eco Green Solar] Job Transferred: Ticket #{{complaint_id}} - {{customer_name}}`,
+    email_body: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) previously assigned to you has been reassigned to another technician.\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.`
   }
 ];
