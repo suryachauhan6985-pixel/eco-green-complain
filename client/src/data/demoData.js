@@ -57,12 +57,12 @@ export const INITIAL_TEMPLATES = [
     audience: 'customer',
     trigger_event: 'technician_reassigned',
     meta_template_name: 'customer_technician_reassigned',
-    meta_status: 'PENDING',
+    meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n👷 *New Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n📅 *Estimated Visit:* {{expected_visit_date}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `*Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n*New Technician:* {{technician_name}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
     email_subject: `[Eco Green Solar] Service Technician Update - Ticket {{complaint_id}}`,
-    email_body: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}} (Phone: {{technician_phone}}).\n\nScheduled Date: {{expected_visit_date}}\n\nOur team is working to resolve your issue as soon as possible.`
+    email_body: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}}.\n\nOur team is working to resolve your issue as soon as possible.`
   },
   {
     id: 4,

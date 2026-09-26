@@ -385,10 +385,10 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
     } else if (templateName === 'customer_technician_reassigned' || templateName === 'technician_reassigned_customer') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
       const techName = cleanParam(variables.technician_name, 'Technician');
-      const techPhone = cleanParam(variables.technician_phone, '');
-      const visitDate = cleanParam(variables.expected_visit_date, 'Within 24-48 Hours');
-      renderedBody = `☀️ *Eco Green Solar - Technician Reassigned*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been reassigned to a new technician.\n\n👷 *New Technician:* ${techName}${techPhone ? `\n📞 *Mobile:* ${techPhone}` : ''}\n📅 *Expected Visit:* ${visitDate}\n\nOur service engineer will contact you shortly to coordinate the visit.\n\n🔗 *Track Live:* ${trackingUrl}\n\nEco Green Solar Customer Care.`;
+
+      renderedBody = `*Eco Green Solar - Technician Reassigned*\n\nDear ${custName}, your complaint *${ticketId}* (${prodType}) has been reassigned to a new technician.\n\n*New Technician:* ${techName}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* ${trackingUrl}\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {
@@ -399,8 +399,8 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           parameters: [
             { type: 'text', text: custName },
             { type: 'text', text: ticketId },
+            { type: 'text', text: prodType },
             { type: 'text', text: techName },
-            { type: 'text', text: techPhone || 'Helpdesk' },
             { type: 'text', text: trackingUrl }
           ]
         }]
@@ -1923,6 +1923,8 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         variables: {
           customer_name: comp.customer_name,
           ticket_id: comp.ticket_id,
+          complaint_id: comp.ticket_id,
+          product_type: comp.product_type || 'Solar System',
           technician_name: tech?.name,
           technician_phone: tech?.phone || '',
           expected_visit_date: expected_visit_date || 'Within 24-48 Hours',
@@ -3101,10 +3103,10 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'technician_reassigned',
         metaName: 'customer_technician_reassigned',
-        metaStatus: 'PENDING',
-        wa: `☀️ *Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n👷 *New Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n📅 *Estimated Visit:* {{expected_visit_date}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        metaStatus: 'APPROVED',
+        wa: `*Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n*New Technician:* {{technician_name}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Service Technician Update - Ticket {{complaint_id}}`,
-        em: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}} (Phone: {{technician_phone}}).\n\nScheduled Date: {{expected_visit_date}}\n\nOur team is working to resolve your issue as soon as possible.`
+        em: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}}.\n\nOur team is working to resolve your issue as soon as possible.`
       },
       {
         key: 'status_update',

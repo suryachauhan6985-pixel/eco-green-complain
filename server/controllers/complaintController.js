@@ -787,6 +787,8 @@ async function assignTechnician(req, res) {
         data: {
           customer_name: complaint.customer_name,
           ticket_id: complaint.ticket_id,
+          complaint_id: complaint.ticket_id,
+          product_type: complaint.product_type || 'Solar System',
           technician_name: technician.name,
           technician_phone: technician.phone || '',
           expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
