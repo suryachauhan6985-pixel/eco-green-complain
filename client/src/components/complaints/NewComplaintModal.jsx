@@ -4,6 +4,7 @@ import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
+import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
@@ -565,9 +566,24 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
         }
       });
 
-      fileList.forEach(item => {
-        data.append('attachments', item.file);
-      });
+      // Direct Cloud Storage Upload (bypasses Vercel 4.5MB limit, supports up to 50MB files!)
+      if (fileList.length > 0) {
+        const uploadedAttachments = [];
+        for (const item of fileList) {
+          try {
+            const uploaded = await uploadFileToSupabase(item.file);
+            if (uploaded) uploadedAttachments.push(uploaded);
+          } catch (storageErr) {
+            console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
+            if (item.file.size <= 4 * 1024 * 1024) {
+              data.append('attachments', item.file);
+            }
+          }
+        }
+        if (uploadedAttachments.length > 0) {
+          data.append('attachment_urls', JSON.stringify(uploadedAttachments));
+        }
+      }
 
       const res = await api.createComplaint(data);
       setCreatedTicket(res.complaint);

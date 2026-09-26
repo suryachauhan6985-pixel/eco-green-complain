@@ -394,7 +394,28 @@ async function createComplaint(req, res) {
 
     const complaintId = result.lastInsertRowid;
 
-    // Save attachments if uploaded
+    // Save attachments if uploaded (Direct Cloud Storage URLs or Multipart Files)
+    let directAttachments = [];
+    if (req.body.attachment_urls) {
+      try {
+        directAttachments = typeof req.body.attachment_urls === 'string'
+          ? JSON.parse(req.body.attachment_urls)
+          : req.body.attachment_urls;
+      } catch (e) {
+        console.warn('Failed to parse attachment_urls:', e.message);
+      }
+    }
+
+    if (Array.isArray(directAttachments) && directAttachments.length > 0) {
+      const attachStmt = db.prepare(`
+        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const att of directAttachments) {
+        attachStmt.run(complaintId, att.file_name || 'Document', att.file_url, att.file_type || 'application/octet-stream', att.file_url, actorName);
+      }
+    }
+
     if (req.files && req.files.length > 0) {
       const attachStmt = db.prepare(`
         INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)

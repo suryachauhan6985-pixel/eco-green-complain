@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
+import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { 
   Search, Send, FileText, Paperclip, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -462,7 +463,16 @@ export const WhatsAppWebInbox = ({
 
     try {
       setSendingReply(true);
-      await api.sendWhatsAppDirectReply(selectedPhone, currentText, currentFile);
+      let mediaData = null;
+      if (currentFile) {
+        try {
+          showToast(`Uploading ${currentFile.name} (up to 50MB)...`, 'info');
+          mediaData = await uploadFileToSupabase(currentFile);
+        } catch (storageErr) {
+          console.warn('Direct upload warning, falling back:', storageErr.message);
+        }
+      }
+      await api.sendWhatsAppDirectReply(selectedPhone, currentText, mediaData ? null : currentFile, mediaData);
       setTimeout(() => loadMessages(selectedPhone, true), 800);
       loadConversations(true);
     } catch (err) {

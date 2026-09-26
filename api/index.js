@@ -1579,7 +1579,39 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
     const r = await query(insertSql, values);
     const newComp = r.rows[0];
 
-    // Save any uploaded attachments
+    // Save any uploaded attachments (Direct Cloud Storage URLs or Multipart Files)
+    let directAttachments = [];
+    if (body.attachment_urls) {
+      try {
+        directAttachments = typeof body.attachment_urls === 'string'
+          ? JSON.parse(body.attachment_urls)
+          : body.attachment_urls;
+      } catch (e) {
+        console.warn('Failed to parse attachment_urls:', e.message);
+      }
+    }
+
+    if (Array.isArray(directAttachments) && directAttachments.length > 0) {
+      for (const att of directAttachments) {
+        try {
+          await query(`
+            INSERT INTO complaint_attachments (
+              complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+          `, [
+            newComp.id,
+            att.file_name || 'Document',
+            att.file_url,
+            att.file_type || 'application/octet-stream',
+            att.file_url,
+            req.user?.name || 'Helpdesk'
+          ]);
+        } catch (attErr) {
+          console.warn('[Direct Attachment Insert Note]', attErr.message);
+        }
+      }
+    }
+
     const files = req.files || [];
     if (files.length > 0) {
       for (const f of files) {
@@ -1728,7 +1760,39 @@ app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array
     const r = await query(insertSql, values);
     const newComp = r.rows[0];
 
-    // Save attachments
+    // Save attachments (Direct Cloud Storage URLs or Multipart Files)
+    let directAttachments = [];
+    if (body.attachment_urls) {
+      try {
+        directAttachments = typeof body.attachment_urls === 'string'
+          ? JSON.parse(body.attachment_urls)
+          : body.attachment_urls;
+      } catch (e) {
+        console.warn('Failed to parse attachment_urls:', e.message);
+      }
+    }
+
+    if (Array.isArray(directAttachments) && directAttachments.length > 0) {
+      for (const att of directAttachments) {
+        try {
+          await query(`
+            INSERT INTO complaint_attachments (
+              complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+          `, [
+            newComp.id,
+            att.file_name || 'Document',
+            att.file_url,
+            att.file_type || 'application/octet-stream',
+            att.file_url,
+            customer_name
+          ]);
+        } catch (attErr) {
+          console.warn('[Direct Attachment Insert Note]', attErr.message);
+        }
+      }
+    }
+
     const files = req.files || [];
     if (files.length > 0) {
       for (const f of files) {
@@ -1811,9 +1875,44 @@ app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('att
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint not found' });
     const complaintId = compRes.rows[0].id;
 
-    const files = req.files || [];
     const saved = [];
 
+    // Support Direct Cloud Storage URLs
+    let directAttachments = [];
+    if (req.body.attachment_urls) {
+      try {
+        directAttachments = typeof req.body.attachment_urls === 'string'
+          ? JSON.parse(req.body.attachment_urls)
+          : req.body.attachment_urls;
+      } catch (e) {
+        console.warn('Failed to parse attachment_urls:', e.message);
+      }
+    }
+
+    if (Array.isArray(directAttachments) && directAttachments.length > 0) {
+      for (const att of directAttachments) {
+        try {
+          const insRes = await query(`
+            INSERT INTO complaint_attachments (
+              complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id, file_name, file_url, file_type, file_data, created_at
+          `, [
+            complaintId,
+            att.file_name || 'Document',
+            att.file_url,
+            att.file_type || 'application/octet-stream',
+            att.file_url,
+            req.user?.name || 'Staff'
+          ]);
+          saved.push(insRes.rows[0]);
+        } catch (attErr) {
+          console.warn('[Direct Attachment Insert Note]', attErr.message);
+        }
+      }
+    }
+
+    const files = req.files || [];
     for (const f of files) {
       const base64Data = `data:${f.mimetype || 'image/jpeg'};base64,${f.buffer.toString('base64')}`;
       const insRes = await query(`
@@ -2377,8 +2476,19 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
 
     let closingPhotoUrl = compRecord.closing_photo_url || null;
 
-    // If technician attached a closing proof photo/video, store it permanently in complaint_attachments
-    if (req.file) {
+    // If technician attached a closing proof photo/video via Direct Storage URL or Multipart
+    if (req.body.closing_photo_url) {
+      closingPhotoUrl = req.body.closing_photo_url;
+      try {
+        await query(`
+          INSERT INTO complaint_attachments (
+            complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+        `, [compId, req.body.closing_photo_name || 'Resolution Proof', closingPhotoUrl, req.body.closing_photo_type || 'image/jpeg', closingPhotoUrl, `${req.user?.name || 'Technician'} (Technician Resolution Proof)`]);
+      } catch (attErr) {
+        console.warn('[Resolve Attachment Note]', attErr.message);
+      }
+    } else if (req.file) {
       try {
         const base64Data = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
         const insRes = await query(`
@@ -4591,6 +4701,70 @@ app.post('/api/whatsapp/send-manual', authenticateToken, async (req, res) => {
     const result = await sendWhatsApp({ to, message });
     return res.json(result);
   } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Direct reply to any phone number (with optional attachment)
+app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachment'), async (req, res) => {
+  try {
+    const { phone, message, media_url, media_type, media_caption } = req.body;
+    if (!phone || (!message && !req.file && !media_url)) {
+      return res.status(400).json({ error: 'phone and message or attachment are required' });
+    }
+
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    // Check if complaint exists for this phone
+    const compRes = await query(
+      `SELECT * FROM complaints 
+       WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 
+       ORDER BY id DESC LIMIT 1`,
+      [last10]
+    );
+    const complaint = compRes.rows[0] || null;
+
+    let finalMediaUrl = media_url || null;
+    let finalMediaType = media_type || null;
+    let finalMediaCaption = media_caption || null;
+
+    if (req.file) {
+      const base64Data = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
+      finalMediaUrl = base64Data;
+      finalMediaType = req.file.mimetype.startsWith('image/') ? 'image' : (req.file.mimetype.startsWith('video/') ? 'video' : 'document');
+      finalMediaCaption = req.file.originalname;
+    }
+
+    const waRes = await sendWhatsApp({
+      to: formattedPhone,
+      message: (message || '').trim(),
+      mediaUrl: finalMediaUrl,
+      mediaType: finalMediaType
+    });
+
+    const insRes = await query(`
+      INSERT INTO whatsapp_messages (
+        complaint_id, phone, sender_type, sender_name,
+        message_body, media_url, media_type, media_caption, wam_id, status, created_at, updated_at
+      ) VALUES ($1, $2, 'company', $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      RETURNING *
+    `, [
+      complaint ? complaint.id : null,
+      formattedPhone,
+      req.user?.name || 'Eco Green Support',
+      (message || '').trim(),
+      finalMediaUrl,
+      finalMediaType,
+      finalMediaCaption,
+      waRes?.wamid || null,
+      waRes?.success ? 'sent' : 'failed'
+    ]);
+
+    return res.json({ success: true, message: insRes.rows[0], whatsapp: waRes });
+  } catch (err) {
+    console.error('Direct reply error:', err);
     return res.status(500).json({ error: err.message });
   }
 });

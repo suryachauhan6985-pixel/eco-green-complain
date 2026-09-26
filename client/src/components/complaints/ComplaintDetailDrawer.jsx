@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
+import { uploadFileToSupabase } from '../../utils/storageUpload';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -153,12 +154,30 @@ export const ComplaintDetailDrawer = ({
     }
     try {
       setUploadingAtt(true);
+      showToast(`Uploading ${files.length} document/photo(s) directly to cloud storage (up to 50MB)...`, 'info');
+      const uploadedAttachments = [];
+      const fallbackFiles = [];
+
+      for (const f of files) {
+        try {
+          const up = await uploadFileToSupabase(f);
+          if (up) uploadedAttachments.push(up);
+        } catch (upErr) {
+          console.warn('Direct upload fallback:', upErr.message);
+          if (f.size <= 4 * 1024 * 1024) fallbackFiles.push(f);
+        }
+      }
+
       const fd = new FormData();
-      files.forEach(f => fd.append('attachments', f));
+      fallbackFiles.forEach(f => fd.append('attachments', f));
+      if (uploadedAttachments.length > 0) {
+        fd.append('attachment_urls', JSON.stringify(uploadedAttachments));
+      }
+
       const res = await api.uploadComplaintAttachments(ticket.id, fd);
       if (res && res.attachments) {
         setAttachments(prev => [...res.attachments, ...prev]);
-        showToast(`${files.length} document/photo(s) attached successfully!`, 'success');
+        showToast(`${res.attachments.length || files.length} document/photo(s) attached successfully!`, 'success');
         if (onComplaintUpdated) onComplaintUpdated();
       }
     } catch (err) {
@@ -527,7 +546,22 @@ export const ComplaintDetailDrawer = ({
       const data = new FormData();
       data.append('resolution_notes', resolutionNotes);
       if (spareParts) data.append('spare_parts_used', spareParts);
-      if (resolutionPhoto) data.append('closing_photo', resolutionPhoto);
+      if (resolutionPhoto) {
+        try {
+          showToast('Uploading resolution photo/video to cloud storage...', 'info');
+          const uploaded = await uploadFileToSupabase(resolutionPhoto);
+          if (uploaded && uploaded.file_url) {
+            data.append('closing_photo_url', uploaded.file_url);
+            data.append('closing_photo_name', uploaded.file_name);
+            data.append('closing_photo_type', uploaded.file_type);
+          }
+        } catch (storageErr) {
+          console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
+          if (resolutionPhoto.size <= 4 * 1024 * 1024) {
+            data.append('closing_photo', resolutionPhoto);
+          }
+        }
+      }
 
       const res = await api.resolveComplaint(ticket.id, data);
       await fetchTicketDetails();

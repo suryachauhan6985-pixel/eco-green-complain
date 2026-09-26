@@ -1345,9 +1345,20 @@ export const api = {
   },
   getWhatsAppRawEvents: (phone) => request(`/whatsapp/raw-events/${encodeURIComponent(phone)}`),
   syncBackupWhatsApp: () => Promise.resolve({ success: true }),
-  sendWhatsAppDirectReply: async (phone, message, attachment = null) => {
+  sendWhatsAppDirectReply: async (phone, message, attachment = null, directMedia = null) => {
     let res;
-    if (attachment) {
+    if (directMedia && directMedia.file_url) {
+      res = await request('/whatsapp/direct-reply', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone,
+          message,
+          media_url: directMedia.file_url,
+          media_type: directMedia.file_type?.startsWith('image/') ? 'image' : (directMedia.file_type?.startsWith('video/') ? 'video' : 'document'),
+          media_caption: directMedia.file_name
+        })
+      });
+    } else if (attachment) {
       const formData = new FormData();
       formData.append('phone', phone);
       if (message) formData.append('message', message);
