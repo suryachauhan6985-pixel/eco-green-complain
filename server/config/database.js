@@ -797,10 +797,10 @@ function migrateNotificationTemplates() {
         name = COALESCE(notification_templates.name, excluded.name),
         audience = CASE WHEN notification_templates.audience IS NULL OR notification_templates.audience = '' THEN excluded.audience ELSE notification_templates.audience END,
         trigger_event = CASE WHEN notification_templates.trigger_event IS NULL OR notification_templates.trigger_event = '' OR notification_templates.trigger_event = 'manual' THEN excluded.trigger_event ELSE notification_templates.trigger_event END,
-        meta_template_name = CASE WHEN notification_templates.meta_template_name IS NULL OR notification_templates.meta_template_name = '' THEN excluded.meta_template_name ELSE notification_templates.meta_template_name END,
-        meta_language = COALESCE(notification_templates.meta_language, excluded.meta_language),
-        meta_category = COALESCE(notification_templates.meta_category, excluded.meta_category),
-        meta_status = COALESCE(notification_templates.meta_status, excluded.meta_status),
+        meta_template_name = CASE WHEN excluded.meta_template_name IS NOT NULL AND excluded.meta_template_name != '' THEN excluded.meta_template_name ELSE notification_templates.meta_template_name END,
+        meta_language = COALESCE(excluded.meta_language, notification_templates.meta_language),
+        meta_category = COALESCE(excluded.meta_category, notification_templates.meta_category),
+        meta_status = CASE WHEN excluded.meta_status IS NOT NULL THEN excluded.meta_status ELSE notification_templates.meta_status END,
         is_active = COALESCE(notification_templates.is_active, excluded.is_active),
         channel = COALESCE(notification_templates.channel, excluded.channel)
     `);

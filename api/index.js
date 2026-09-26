@@ -192,18 +192,13 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
-      let issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
 
       const estCharges = Number(variables.estimated_charges || 0);
       const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
+      const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      let chargesLine = '';
-      if (shouldNotifyCharges) {
-        issueCat = `${issueCat} (Service Fee: ₹${estCharges})`;
-        chargesLine = `\n💰 Estimated Service Charge: ₹${estCharges}`;
-      }
-
-      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}${chargesLine}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
       
       payload.type = 'template';
       payload.template = {
@@ -216,7 +211,8 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
             { type: 'text', text: ticketId },
             { type: 'text', text: prodType },
             { type: 'text', text: issueCat },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', text: trackingUrl },
+            { type: 'text', text: chargesParam }
           ]
         }]
       };
@@ -296,7 +292,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           ]
         }]
       };
-    } else if (templateName === 'complaint_closed') {
+    } else if (templateName === 'complaint_closed' || templateName === 'complaint_closed_feedback_request' || templateName === 'complaint_closed__feedback_request') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const remarks = cleanParam(variables.closure_remarks || variables.notes, 'Issue resolved and verified.');
@@ -304,19 +300,18 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
 
       payload.type = 'template';
       payload.template = {
-        name: 'complaint_closed',
-        language: { code: 'en_US' },
+        name: 'complaint_closed__feedback_request',
+        language: { code: 'en' },
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: remarks },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };
-    } else if (templateName === 'complaint_reopened') {
+    } else if (templateName === 'complaint_reopened' || templateName === 'complaint_reopened_notification') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const reason = cleanParam(variables.reason || variables.notes, 'Follow-up investigation required');
@@ -324,22 +319,44 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
 
       payload.type = 'template';
       payload.template = {
-        name: 'complaint_reopened',
-        language: { code: 'en_US' },
+        name: 'complaint_reopened_notification',
+        language: { code: 'en' },
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: reason },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };
-    } else if (templateName === 'technician_reminder') {
+    } else if (templateName === 'status_update' || templateName === 'status_followup_note_update' || templateName === 'status__followup_note_update') {
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const status = cleanParam(variables.status, 'In Progress');
+      const notes = cleanParam(variables.notes, 'Update added');
+      renderedBody = `*Eco Green Solar Alert*\n\nUpdate on Complaint *${ticketId}* (${prodType}):\nStatus: *${status}*\n\n*Notes:* ${notes}\n\n*Track Live:* ${trackingUrl}\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'status__followup_note_update',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'status', text: status },
+            { type: 'text', parameter_name: 'notes', text: notes },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (templateName === 'technician_reminder' || templateName === 'technician_pending_visit_reminder') {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, '-');
       const custAddress = cleanParam(variables.customer_address, 'Customer Address');
       const visitDate = cleanParam(variables.expected_visit_date, 'Today');
       const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(ticketId)}`;
@@ -352,11 +369,12 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: techName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: custName },
-            { type: 'text', text: custAddress },
-            { type: 'text', text: visitDate }
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
           ]
         }]
       };

@@ -40,25 +40,42 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       return s || fallback;
     };
 
-    const isMetaApproved = metaStatus === 'APPROVED' || !metaStatus;
+    const META_OFFICIAL_TEMPLATES = new Set([
+      'complaint_registered',
+      'complaint_registered_customer',
+      'technician_assigned',
+      'technician_assigned_customer',
+      'customer_technician_reassigned',
+      'complaint_resolved',
+      'technician_work_order',
+      'technician_reminder',
+      'technician_pending_visit_reminder',
+      'technician_reassigned',
+      'technician_job_reassigned_notice',
+      'complaint_closed',
+      'complaint_closed_feedback_request',
+      'complaint_closed__feedback_request',
+      'complaint_reopened',
+      'complaint_reopened_notification',
+      'status_update',
+      'status_followup_note_update',
+      'status__followup_note_update'
+    ]);
+
+    const isMetaApproved = metaStatus === 'APPROVED' || !metaStatus || META_OFFICIAL_TEMPLATES.has(templateName);
 
     // If template matches Meta registered templates and is approved, send as official template message
     if (isMetaApproved && (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer')) {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
-      let issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
 
       const estCharges = Number(variables.estimated_charges || 0);
       const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
+      const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      let chargesLine = '';
-      if (shouldNotifyCharges) {
-        issueCat = `${issueCat} (Service Fee: ₹${estCharges})`;
-        chargesLine = `\n💰 Estimated Service Charge: ₹${estCharges}`;
-      }
-
-      deliveredText = `Eco Green Solar Support\nNamaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}${chargesLine}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      deliveredText = `Eco Green Solar Support\nNamaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -72,7 +89,8 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
               { type: 'text', text: ticketId },
               { type: 'text', text: prodType },
               { type: 'text', text: issueCat },
-              { type: 'text', text: cleanTrackingUrl }
+              { type: 'text', text: cleanTrackingUrl },
+              { type: 'text', text: chargesParam }
             ]
           }
         ]
@@ -252,7 +270,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           }
         ]
       };
-    } else if (templateName === 'complaint_closed' || templateName === 'complaint_closed_feedback_request') {
+    } else if (templateName === 'complaint_closed' || templateName === 'complaint_closed_feedback_request' || templateName === 'complaint_closed__feedback_request') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
 
@@ -260,7 +278,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
 
       payload.type = 'template';
       payload.template = {
-        name: 'complaint_closed_feedback_request',
+        name: 'complaint_closed__feedback_request',
         language: { code: 'en' },
         components: [
           {
@@ -294,7 +312,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           }
         ]
       };
-    } else if (templateName === 'status_update' || templateName === 'status_followup_note_update') {
+    } else if (templateName === 'status_update' || templateName === 'status_followup_note_update' || templateName === 'status__followup_note_update') {
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar System');
       const status = cleanParam(variables.status, 'In Progress');
@@ -304,7 +322,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
 
       payload.type = 'template';
       payload.template = {
-        name: 'status_followup_note_update',
+        name: 'status__followup_note_update',
         language: { code: 'en' },
         components: [
           {
