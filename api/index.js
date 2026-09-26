@@ -2845,8 +2845,10 @@ const META_TEMPLATE_MAPPING = {
   complaint_closed: { metaName: 'complaint_closed_feedback_request', language: 'en' },
   complaint_reopened: { metaName: 'complaint_reopened_notification', language: 'en' },
   technician_work_order: { metaName: 'technician_work_order', language: 'en_US' },
+  technician_reassigned_work_order: { metaName: 'technician_reassigned_work_order', language: 'en_US' },
   technician_reminder: { metaName: 'technician_pending_visit_reminder', language: 'en' },
-  technician_reassigned: { metaName: 'technician_job_reassigned_notice', language: 'en' }
+  technician_job_transferred: { metaName: 'technician_job_transferred_notice', language: 'en' },
+  technician_reassigned: { metaName: 'technician_job_transferred_notice', language: 'en' }
 };
 
 let templatesTableInitialized = false;
@@ -2988,11 +2990,22 @@ async function ensureNotificationTemplatesTable() {
         em: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
       },
       {
-        key: 'technician_reassigned',
-        name: 'Technician Job Reassigned Notice',
+        key: 'technician_reassigned_work_order',
+        name: 'Technician Reassigned Work Order (New Tech)',
         audience: 'technician',
         trigger: 'technician_reassigned',
-        metaName: 'technician_job_reassigned_notice',
+        metaName: 'technician_reassigned_work_order',
+        metaStatus: 'PENDING',
+        wa: `⚡ *Eco Green Solar - Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n📅 *Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.`,
+        sub: `[Eco Green Solar] Reassigned Work Order: Ticket #{{complaint_id}}`,
+        em: `Dear {{technician_name}},\n\nTicket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned to you.\n\nPlease check your Technician Portal for complete site details.`
+      },
+      {
+        key: 'technician_reassigned',
+        name: 'Technician Job Transferred (Previous Tech Notice)',
+        audience: 'technician',
+        trigger: 'technician_reassigned',
+        metaName: 'technician_job_transferred_notice',
         metaStatus: 'PENDING',
         wa: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
         sub: `[Eco Green Solar] Job Transferred: Ticket #{{complaint_id}} - {{customer_name}}`,
@@ -3021,12 +3034,24 @@ async function ensureNotificationTemplatesTable() {
       `, [d.key, d.name, d.wa, d.sub, d.em, d.audience, d.trigger, d.metaName, d.metaStatus || 'PENDING']).catch(() => {});
     }
 
-    // Ensure unified reassign trigger event is assigned cleanly
+    // Explicitly sync the transferred notice row in production Supabase
+    await query(`
+      UPDATE notification_templates 
+      SET 
+        name = 'Technician Job Transferred (Previous Tech Notice)',
+        meta_template_name = 'technician_job_transferred_notice',
+        whatsapp_body = $1,
+        meta_status = 'PENDING',
+        trigger_event = 'technician_reassigned',
+        audience = 'technician'
+      WHERE template_key IN ('technician_reassigned', 'technician_job_transferred')
+    `, [`⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`]).catch(() => {});
+
+    // Ensure all reassign triggers are unified cleanly
     await query(`
       UPDATE notification_templates 
       SET trigger_event = 'technician_reassigned' 
-      WHERE template_key IN ('customer_technician_reassigned', 'technician_reassigned') 
-        AND (trigger_event IS NULL OR trigger_event = '' OR trigger_event = 'customer_technician_reassigned')
+      WHERE template_key IN ('customer_technician_reassigned', 'technician_reassigned', 'technician_reassigned_work_order')
     `).catch(() => {});
 
     await query(`UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL`).catch(() => {});

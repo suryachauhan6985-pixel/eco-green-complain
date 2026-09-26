@@ -36,9 +36,11 @@ export const isTechnicianTemplate = (t) => {
   // Actual technician templates:
   if (
     key === 'technician_work_order' ||
+    key === 'technician_reassigned_work_order' ||
     key === 'technician_reminder' ||
     key === 'technician_pending_visit_reminder' ||
     key === 'technician_reassigned' ||
+    key === 'technician_job_transferred' ||
     key === 'technician_job_reassigned_notice'
   ) {
     return true;
