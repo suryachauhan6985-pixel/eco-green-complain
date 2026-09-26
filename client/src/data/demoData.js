@@ -116,9 +116,9 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason:* {{reopen_reason}}\n\n👷 *Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
     email_subject: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
-    email_body: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
+    email_body: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nTechnician: {{technician_name}} ({{technician_phone}})\nReason: {{reopen_reason}}\n\nOur operations team is working to arrange an immediate re-inspection.`
   },
   {
     id: 8,
@@ -189,5 +189,19 @@ export const INITIAL_TEMPLATES = [
     whatsapp_body: `☀️ *Eco Green Solar - Field Service Desk*\n\nNamaste *{{customer_name}}*,\n\nThis is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\nI am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n📞 Helpdesk: +91 78784 44414\n- Eco Green Technical Services`,
     email_subject: `[Eco Green Solar] Service Visit Inspection - Ticket #{{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nYour assigned service technician {{technician_name}} is preparing to visit your site regarding complaint ticket #{{complaint_id}} ({{product_type}}).\n\nPlease ensure premises and rooftop access are available upon arrival.\n\nHelpline: +91 78784 44414\n- Eco Green Solar Technical Services`
+  },
+  {
+    id: 13,
+    template_key: 'technician_reopened_work_order',
+    name: 'Technician Reopened Work Order',
+    audience: 'technician',
+    trigger_event: 'technician_reopened_work_order',
+    meta_template_name: 'technician_reopened_work_order',
+    meta_status: 'PENDING',
+    is_active: 1,
+    channel: 'whatsapp',
+    whatsapp_body: `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n⚠️ *Reason for Reopening:* {{reopen_reason}}\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
+    email_subject: `[Eco Green Solar] Reopened Work Order: Ticket #{{complaint_id}}`,
+    email_body: `Dear {{technician_name}},\n\nComplaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been REOPENED for follow-up service.\n\nReason: {{reopen_reason}}\n\nPlease check your Technician Portal for site details and coordinate with the customer.`
   }
 ];

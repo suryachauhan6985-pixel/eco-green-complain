@@ -781,6 +781,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
                           <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
                           <span>Reopened Ticket (Previous Visit History Available)</span>
                         </div>
+                        {job.previous_technician_name && (
+                          <p className="text-[11px] text-amber-800 font-medium">
+                            <strong>Previous Specialist:</strong> {job.previous_technician_name}
+                          </p>
+                        )}
                         {job.resolution_notes && (
                           <p className="text-[11px] text-amber-900 line-clamp-2">
                             <strong>Previous Resolution:</strong> {job.resolution_notes}

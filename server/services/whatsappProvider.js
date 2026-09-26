@@ -294,8 +294,12 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
     } else if (templateName === 'complaint_reopened' || templateName === 'complaint_reopened_notification') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const techName = cleanParam(variables.technician_name, '');
+      const techPhone = cleanParam(variables.technician_phone, '');
+      const reason = cleanParam(variables.reason || variables.notes, 'Issue recurring / follow-up requested');
+      const techInfo = techName ? `\n\n👷 *Assigned Technician:* ${techName}${techPhone ? ` (${techPhone})` : ''}` : '';
 
-      deliveredText = `*Eco Green Solar Priority Alert*\n\nNamaste, ${custName}, your complaint *${tktId}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n*Track:* ${cleanTrackingUrl}\n- Eco Green Solar`;
+      deliveredText = `☀️ *Eco Green Solar Priority Alert*\n\nNamaste, ${custName}, your complaint *${tktId}* has been *REOPENED* upon your request.\n\n⚠️ *Reason:* ${reason}${techInfo}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n*Track:* ${cleanTrackingUrl}\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {
@@ -308,6 +312,37 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
               { type: 'text', parameter_name: 'customer_name', text: custName },
               { type: 'text', parameter_name: 'complaint_id', text: tktId },
               { type: 'text', parameter_name: 'feedback_url', text: cleanTrackingUrl }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reopened_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, '-');
+      const custAddress = cleanParam(variables.customer_address, 'Customer Site Address');
+      const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Issue recurring / follow-up requested');
+      const prevTech = cleanParam(variables.previous_technician_name, '');
+      const prevTechLine = prevTech ? `\n👷 *Previous Specialist:* ${prevTech}` : '';
+      const portalLink = `https://complain.ecogreensolar.co.in/technician?ticket=${encodeURIComponent(tktId)}`;
+
+      deliveredText = `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello *${techName}*,\n\nTicket *${tktId}* has been *REOPENED* for service follow-up.${prevTechLine}\n\n⚠️ *Reason for Reopening:* ${reopenReason}\n\n👤 *Customer:* ${custName}\n📞 *Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n\n🔗 *Open Ticket in Portal:* ${portalLink}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_reopened_work_order',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+              { type: 'text', parameter_name: 'customer_address', text: custAddress },
+              { type: 'text', parameter_name: 'reopen_reason', text: reopenReason }
             ]
           }
         ]

@@ -88,6 +88,23 @@ export const ComplaintDetailDrawer = ({
   const [previewDocModal, setPreviewDocModal] = useState(null);
   const [uploadingAtt, setUploadingAtt] = useState(false);
 
+  // Previous resolution history extraction for reopened tickets
+  const previousResolution = React.useMemo(() => {
+    if (!ticket?.previous_resolution_history) return null;
+    try {
+      const list = Array.isArray(ticket.previous_resolution_history)
+        ? ticket.previous_resolution_history
+        : JSON.parse(ticket.previous_resolution_history || '[]');
+      return list && list.length > 0 ? list[0] : null;
+    } catch (_) {
+      return null;
+    }
+  }, [ticket?.previous_resolution_history]);
+
+  const previousTechName = ticket?.previous_technician_name || 
+                           previousResolution?.technician_name || 
+                           'Previous Field Specialist';
+
   // Separate Initial Complaint/Issue Attachments vs Technician Resolution Proof Attachments
   const isResolutionProofAttachment = (att) => {
     if (!att) return false;
@@ -123,7 +140,7 @@ export const ComplaintDetailDrawer = ({
   const resolutionProofAttachments = attachments.filter(a => isResolutionProofAttachment(a));
   const allResolutionProofs = resolutionProofAttachments.length > 0 
     ? resolutionProofAttachments 
-    : (ticket?.closing_photo_url ? [{ id: 'closing_photo', file_url: ticket.closing_photo_url, file_name: 'Technician Closing Proof Photo/Video', uploaded_by: ticket.technician_name || 'Technician' }] : []);
+    : (ticket?.closing_photo_url ? [{ id: 'closing_photo', file_url: ticket.closing_photo_url, file_name: 'Technician Closing Proof Photo/Video', uploaded_by: ticket.status === 'Reopened' ? previousTechName : (ticket.technician_name || 'Technician') }] : []);
 
   const handleUploadMoreAttachments = async (e) => {
     if (!e.target.files || e.target.files.length === 0 || !ticket) return;
@@ -1912,12 +1929,12 @@ export const ComplaintDetailDrawer = ({
                           <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white/80 rounded-lg border border-amber-200 text-xs">
                             <div>
                               <span className="text-[10px] text-slate-500 font-bold uppercase block">Previous Technician:</span>
-                              <strong className="text-slate-900">{ticket.technician_name || 'Previous Field Specialist'}</strong>
+                              <strong className="text-slate-900">{previousTechName}</strong>
                             </div>
-                            {ticket.resolved_at && (
+                            {(previousResolution?.resolved_at || ticket.resolved_at) && (
                               <div className="text-right">
                                 <span className="text-[10px] text-slate-500 font-bold uppercase block">Resolved On:</span>
-                                <span className="text-slate-700 font-medium">{formatIndianDateTime(ticket.resolved_at)}</span>
+                                <span className="text-slate-700 font-medium">{formatIndianDateTime(previousResolution?.resolved_at || ticket.resolved_at)}</span>
                               </div>
                             )}
                           </div>
@@ -1929,18 +1946,18 @@ export const ComplaintDetailDrawer = ({
                             Action Taken / Resolution Summary
                           </span>
                           <p className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-emerald-200/80 leading-relaxed font-medium">
-                            {ticket.resolution_notes || 'Issue resolved and inspected on site.'}
+                            {previousResolution?.resolution_notes || ticket.resolution_notes || 'Issue resolved and inspected on site.'}
                           </p>
                         </div>
 
                         {/* Spare Parts Used */}
-                        {ticket.spare_parts_used && ticket.spare_parts_used !== 'None' && (
+                        {((previousResolution?.spare_parts_used || ticket.spare_parts_used) && (previousResolution?.spare_parts_used || ticket.spare_parts_used) !== 'None') && (
                           <div className="space-y-1">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                               Spare Parts Replaced / Used
                             </span>
                             <p className="text-xs text-slate-700 bg-white px-3 py-2 rounded-lg border border-emerald-200/80 font-mono font-medium">
-                              {ticket.spare_parts_used}
+                              {previousResolution?.spare_parts_used || ticket.spare_parts_used}
                             </p>
                           </div>
                         )}
@@ -2007,7 +2024,7 @@ export const ComplaintDetailDrawer = ({
                                         </p>
                                         <div className="flex items-center gap-1.5 mt-1">
                                           <span className="text-[9px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded truncate">
-                                            {closingProof.uploaded_by || ticket.technician_name || 'Technician'}
+                                            {closingProof.uploaded_by || (ticket.status === 'Reopened' ? previousTechName : ticket.technician_name) || 'Technician'}
                                           </span>
                                         </div>
                                       </div>

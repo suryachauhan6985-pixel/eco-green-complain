@@ -315,7 +315,11 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const reason = cleanParam(variables.reason || variables.notes, 'Follow-up investigation required');
-      renderedBody = `☀️ *Eco Green Solar - Ticket Reopened*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reason}\n\nOur service desk is prioritizing your ticket and our technician will follow up shortly.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+      const techName = cleanParam(variables.technician_name, '');
+      const techPhone = cleanParam(variables.technician_phone, '');
+      const techInfo = techName ? `\n\n👷 *Assigned Technician:* ${techName}${techPhone ? ` (${techPhone})` : ''}` : '';
+
+      renderedBody = `☀️ *Eco Green Solar Priority Alert*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reason}${techInfo}\n\nOur service technician will coordinate with you shortly to inspect and resolve your system.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
 
       payload.type = 'template';
       payload.template = {
@@ -419,6 +423,35 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
             { type: 'text', text: ticketId },
             { type: 'text', text: custName },
             { type: 'text', text: notes }
+          ]
+        }]
+      };
+    } else if (templateName === 'technician_reopened_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, '-');
+      const custAddress = cleanParam(variables.customer_address, 'Customer Site Address');
+      const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up inspection required');
+      const prevTech = cleanParam(variables.previous_technician_name, '');
+      const prevTechLine = prevTech ? `\n👷 *Previous Specialist:* ${prevTech}` : '';
+      const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(ticketId)}`;
+
+      renderedBody = `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello *${techName}*,\n\nTicket *${ticketId}* has been *REOPENED* for service follow-up.${prevTechLine}\n\n⚠️ *Reason for Reopening:* ${reopenReason}\n\n👤 *Customer:* ${custName}\n📞 *Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n\n🔗 *Open Ticket in Portal:* ${portalLink}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_reopened_work_order',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'reopen_reason', text: reopenReason }
           ]
         }]
       };
@@ -2612,9 +2645,11 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
       });
     }
 
-    // Ensure previous_resolution_history column exists
+    // Ensure previous_resolution_history and previous_technician columns exist
     try {
       await query('ALTER TABLE complaints ADD COLUMN IF NOT EXISTS previous_resolution_history JSONB');
+      await query('ALTER TABLE complaints ADD COLUMN IF NOT EXISTS previous_technician_id BIGINT');
+      await query('ALTER TABLE complaints ADD COLUMN IF NOT EXISTS previous_technician_name TEXT');
     } catch (_) {}
 
     const compRes = await query(`
@@ -2622,16 +2657,20 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
         status = 'Reopened',
         status_updated_at = CURRENT_TIMESTAMP,
         assigned_technician_id = $2,
+        previous_technician_id = $3,
+        previous_technician_name = $4,
         closed_at = NULL,
-        previous_resolution_history = $3,
+        previous_resolution_history = $5,
         updated_at = CURRENT_TIMESTAMP
       WHERE id::text = $1 OR ticket_id = $1
       RETURNING *
-    `, [id, newTechId, JSON.stringify(prevHistory)]);
+    `, [id, newTechId, oldComp.assigned_technician_id || null, oldComp.technician_name || null, JSON.stringify(prevHistory)]);
 
     const comp = compRes.rows[0];
     comp.technician_name = newTechName;
     comp.technician_phone = newTechPhone;
+    comp.previous_technician_name = oldComp.technician_name || null;
+    comp.previous_technician_id = oldComp.assigned_technician_id || null;
 
     const isReassigned = newTechId && String(newTechId) !== String(oldComp.assigned_technician_id);
     const actionText = isReassigned ? 'Reopened & Reassigned' : 'Reopened';
@@ -2656,48 +2695,138 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
           id, type, ticket_id, complaint_id, title, message, customer_name,
           target_role, target_technician_id, target_technician_name,
           performed_by_name, performed_by_role
-        ) VALUES ($1, 'reopened', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'customer')
+        ) VALUES ($1, 'reopened', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (id) DO NOTHING
       `, [
         notifId,
         comp.ticket_id,
         comp.id,
         `Ticket Reopened: ${comp.ticket_id}`,
-        `Customer ${comp.customer_name} reopened ticket ${comp.ticket_id}. Reason: ${reason || 'Issue recurring'}`,
+        `Ticket ${comp.ticket_id} reopened. Reason: ${reason || 'Issue recurring'}`,
         comp.customer_name,
         'all',
         comp.assigned_technician_id,
         comp.technician_name,
-        comp.customer_name
+        actorName,
+        actorRole
       ]);
     } catch (nErr) {
       console.warn('[Reopen In-App Notif Note]', nErr.message);
     }
 
-    // Send automated customer notification on Reopened (ECO-14)
-    let reopenWaResult = null;
+    const reopenReasonText = reason || 'Issue recurring / follow-up inspection requested';
+
+    // 1. Send customer notification with assigned technician details
+    let customerWaResult = null;
     if (comp.customer_phone) {
-      const reopenReasonText = reason || 'Issue recurring / follow-up inspection requested';
+      const techInfoText = comp.technician_name
+        ? `\n\n👷 *Assigned Technician:* ${comp.technician_name}${comp.technician_phone ? `\n📞 *Mobile:* ${comp.technician_phone}` : ''}`
+        : '';
+
+      const custMessage = `☀️ *Eco Green Solar Priority Alert*\n\nNamaste *${comp.customer_name}*,\n\nYour complaint ticket *${comp.ticket_id}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reopenReasonText}${techInfoText}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live Status:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+
       try {
-        reopenWaResult = await sendWhatsApp({
+        customerWaResult = await sendWhatsApp({
           to: comp.customer_phone,
           templateName: 'complaint_reopened',
-          message: `☀️ *Eco Green Solar - Ticket Reopened*\n\nNamaste *${comp.customer_name}*,\n\nYour complaint ticket *${comp.ticket_id}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reopenReasonText}\n\nOur service desk is prioritizing your ticket and our technician will follow up shortly.\n\n🔗 *Track Live Status:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+          message: custMessage,
           variables: {
             customer_name: comp.customer_name,
             ticket_id: comp.ticket_id,
             reason: reopenReasonText,
+            technician_name: comp.technician_name || '',
+            technician_phone: comp.technician_phone || '',
             complaint_id: comp.ticket_id,
             db_complaint_id: comp.id
           }
         });
       } catch (waErr) {
-        console.warn('[Reopen WhatsApp Note]', waErr.message);
-        reopenWaResult = { success: false, error: waErr.message };
+        console.warn('[Reopen Customer WhatsApp Note]', waErr.message);
+        customerWaResult = { success: false, error: waErr.message };
       }
     }
 
-    return res.json({ success: true, message: 'Ticket reopened successfully', complaint: comp, whatsapp: reopenWaResult });
+    // 2. Send automated WhatsApp notification to Technician
+    let technicianWaResult = null;
+    if (newTechPhone) {
+      try {
+        if (isReassigned) {
+          // Reopened & assigned to a NEW technician
+          const newTechMsg = `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello *${newTechName}*, ticket *${comp.ticket_id}* has been *REOPENED* and assigned to you.\n\n👷 *Previous Specialist:* ${oldComp.technician_name || 'N/A'}\n⚠️ *Reason for Reopening:* ${reopenReasonText}\n\n👤 *Customer:* ${comp.customer_name}\n📞 *Phone:* ${comp.customer_phone}\n📍 *Address:* ${comp.customer_address || comp.city || 'Customer Site'}\n🔧 *Issue:* ${comp.issue_category || comp.product_type || 'Solar System'}\n🚨 *Priority:* ${comp.priority || 'Medium'}\n\n🔗 *Technician Portal:* ${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`;
+
+          technicianWaResult = await sendWhatsApp({
+            to: newTechPhone,
+            templateName: 'technician_reopened_work_order',
+            message: newTechMsg,
+            variables: {
+              technician_name: newTechName,
+              complaint_id: comp.ticket_id,
+              ticket_id: comp.ticket_id,
+              previous_technician_name: oldComp.technician_name || 'Previous Technician',
+              reopen_reason: reopenReasonText,
+              customer_name: comp.customer_name,
+              customer_phone: comp.customer_phone,
+              customer_address: comp.customer_address || comp.city || 'Customer Site',
+              issue_category: comp.issue_category || 'Service Follow-up',
+              product_type: comp.product_type || 'Solar System',
+              priority: comp.priority || 'Medium',
+              technician_portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`
+            }
+          });
+
+          // Also alert previous technician that job has been reassigned upon reopening
+          if (oldComp.technician_phone && String(oldComp.technician_phone).trim() !== String(newTechPhone).trim()) {
+            const prevTechNotice = `⚠️ *Eco Green Solar - Job Transferred*\n\nHello *${oldComp.technician_name}*, please note that ticket *${comp.ticket_id}* (Customer: ${comp.customer_name}) previously assigned to you has been reopened and reassigned to another technician (*${newTechName}*).\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.\n- Eco Green Dispatch`;
+
+            await sendWhatsApp({
+              to: oldComp.technician_phone,
+              templateName: 'technician_reassigned',
+              message: prevTechNotice,
+              variables: {
+                technician_name: oldComp.technician_name,
+                complaint_id: comp.ticket_id,
+                ticket_id: comp.ticket_id,
+                customer_name: comp.customer_name,
+                notes: `Reopened & reassigned to ${newTechName}. Reason: ${reopenReasonText}`
+              }
+            }).catch(e => console.warn('[Reopen Prev Tech WA Error]', e.message));
+          }
+        } else {
+          // Reopened & assigned to the SAME technician
+          const sameTechMsg = `🔄 *Eco Green Solar - Ticket Reopened*\n\nHello *${newTechName}*, complaint ticket *${comp.ticket_id}* previously handled by you has been *REOPENED* by customer / support.\n\n⚠️ *Reason for Reopening:* ${reopenReasonText}\n\n👤 *Customer:* ${comp.customer_name}\n📞 *Phone:* ${comp.customer_phone}\n📍 *Address:* ${comp.customer_address || comp.city || 'Customer Site'}\n🔧 *Issue:* ${comp.issue_category || comp.product_type || 'Solar System'}\n🚨 *Priority:* ${comp.priority || 'Medium'}\n\n🔗 *Technician Portal:* ${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}\n\nPlease revisit the site and resolve the pending complaint on priority.`;
+
+          technicianWaResult = await sendWhatsApp({
+            to: newTechPhone,
+            templateName: 'technician_reopened_work_order',
+            message: sameTechMsg,
+            variables: {
+              technician_name: newTechName,
+              complaint_id: comp.ticket_id,
+              ticket_id: comp.ticket_id,
+              previous_technician_name: newTechName,
+              reopen_reason: reopenReasonText,
+              customer_name: comp.customer_name,
+              customer_phone: comp.customer_phone,
+              customer_address: comp.customer_address || comp.city || 'Customer Site',
+              issue_category: comp.issue_category || 'Service Follow-up',
+              product_type: comp.product_type || 'Solar System',
+              priority: comp.priority || 'Medium',
+              technician_portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`
+            }
+          });
+        }
+      } catch (tErr) {
+        console.warn('[Reopen Technician WhatsApp Note]', tErr.message);
+        technicianWaResult = { success: false, error: tErr.message };
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Ticket reopened successfully', 
+      complaint: comp, 
+      whatsapp: { customer: customerWaResult, technician: technicianWaResult } 
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2874,6 +3003,7 @@ const META_TEMPLATE_MAPPING = {
   technician_work_order: { metaName: 'technician_work_order', language: 'en_US' },
   technician_reassigned_work_order: { metaName: 'technician_reassigned_work_order', language: 'en_US' },
   technician_reminder: { metaName: 'technician_pending_visit_reminder', language: 'en' },
+  technician_reopened_work_order: { metaName: 'technician_reopened_work_order', language: 'en' },
   technician_job_transferred: { metaName: 'technician_job_transferred_notice', language: 'en' },
   technician_reassigned: { metaName: 'technician_job_transferred_notice', language: 'en' }
 };
@@ -2990,9 +3120,9 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'complaint_reopened',
         metaName: 'complaint_reopened_notification',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar`,
+        wa: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason:* {{reopen_reason}}\n\n👷 *Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
-        em: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
+        em: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nTechnician: {{technician_name}} ({{technician_phone}})\nReason: {{reopen_reason}}\n\nOur team is working to arrange an immediate re-inspection.`
       },
       {
         key: 'technician_work_order',
@@ -3037,6 +3167,17 @@ async function ensureNotificationTemplatesTable() {
         wa: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
         sub: `[Eco Green Solar] Job Transferred: Ticket #{{complaint_id}} - {{customer_name}}`,
         em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) previously assigned to you has been reassigned to another technician.\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.`
+      },
+      {
+        key: 'technician_reopened_work_order',
+        name: 'Technician Reopened Work Order',
+        audience: 'technician',
+        trigger: 'technician_reopened_work_order',
+        metaName: 'technician_reopened_work_order',
+        metaStatus: 'PENDING',
+        wa: `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n⚠️ *Reason for Reopening:* {{reopen_reason}}\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
+        sub: `[Eco Green Solar] Reopened Work Order: Ticket #{{complaint_id}}`,
+        em: `Dear {{technician_name}},\n\nComplaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been REOPENED for follow-up service.\n\nReason: {{reopen_reason}}\n\nPlease check your Technician Portal for site details and coordinate with the customer.`
       }
     ];
 

@@ -1227,7 +1227,12 @@ async function reopenComplaint(req, res) {
     const { id } = req.params;
     const { reason, technician_id, performer_name, performer_role } = req.body || {};
 
-    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ? OR ticket_id = ?').get(id, id);
+    const complaint = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ? OR c.ticket_id = ?
+    `).get(id, id);
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
@@ -1236,30 +1241,30 @@ async function reopenComplaint(req, res) {
     const performer = performer_name || (req.user ? req.user.name : complaint.customer_name + ' (Customer Portal)');
     const role = performer_role || (req.user ? req.user.role : 'customer');
 
+    // Ensure columns exist in SQLite if needed
+    try {
+      db.prepare('ALTER TABLE complaints ADD COLUMN previous_technician_id INTEGER').run();
+    } catch (_) {}
+    try {
+      db.prepare('ALTER TABLE complaints ADD COLUMN previous_technician_name TEXT').run();
+    } catch (_) {}
+
     db.prepare(`
       UPDATE complaints 
       SET status = 'Reopened',
           assigned_technician_id = ?,
+          previous_technician_id = ?,
+          previous_technician_name = ?,
           closed_at = null,
           status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(newTechId, complaint.id);
+    `).run(newTechId, complaint.assigned_technician_id || null, complaint.technician_name || null, complaint.id);
 
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
       VALUES (?, 'Reopened', ?, ?, ?, 1)
     `).run(complaint.id, reason ? `Ticket reopened: ${reason}` : 'Customer requested ticket reopening due to persistent issue.', performer, role);
-
-    // Notify customer
-    notificationService.dispatchAsync({
-      complaintId: complaint.id,
-      templateKey: 'complaint_reopened',
-      data: {
-        customer_name: complaint.customer_name,
-        ticket_id: complaint.ticket_id
-      }
-    });
 
     const updated = db.prepare(`
       SELECT c.*, t.name as technician_name, t.phone as technician_phone 
@@ -1267,6 +1272,35 @@ async function reopenComplaint(req, res) {
       LEFT JOIN technicians t ON c.assigned_technician_id = t.id
       WHERE c.id = ?
     `).get(complaint.id);
+
+    // Notify customer with technician details
+    notificationService.dispatchAsync({
+      complaintId: complaint.id,
+      templateKey: 'complaint_reopened',
+      data: {
+        customer_name: complaint.customer_name,
+        ticket_id: complaint.ticket_id,
+        reason: reason || 'Issue recurring / follow-up requested',
+        technician_name: updated?.technician_name || '',
+        technician_phone: updated?.technician_phone || ''
+      }
+    });
+
+    // Notify technician of reopened ticket
+    notificationService.dispatchAsync({
+      complaintId: complaint.id,
+      templateKey: 'technician_reopened_work_order',
+      data: {
+        technician_name: updated?.technician_name || 'Technician',
+        complaint_id: complaint.ticket_id,
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: complaint.customer_address || complaint.city || '',
+        reopen_reason: reason || 'Issue recurring / follow-up requested',
+        previous_technician_name: complaint.technician_name || ''
+      }
+    });
 
     realtimeService.notifyComplaintUpdate({ id: complaint.id, action: 'reopened', status: 'Reopened' });
     res.json({ message: 'Complaint reopened successfully', complaint: updated });
