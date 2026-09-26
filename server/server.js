@@ -354,7 +354,12 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
 
 // ================= NOTIFICATION ROUTES =================
 app.get('/api/notifications/templates', notificationController.getTemplates);
+app.get('/api/notifications/templates/meta-status', notificationController.getMetaStatus);
+app.post('/api/notifications/templates', authenticateToken, requireRole('admin'), notificationController.createTemplate);
 app.put('/api/notifications/templates/:id', authenticateToken, requireRole('admin'), notificationController.updateTemplate);
+app.delete('/api/notifications/templates/:id', authenticateToken, requireRole('admin'), notificationController.deleteTemplate);
+app.post('/api/notifications/templates/:id/toggle-active', authenticateToken, requireRole('admin'), notificationController.toggleTemplateActive);
+app.post('/api/notifications/templates/:id/sync-meta', authenticateToken, requireRole('admin'), notificationController.syncTemplateWithMeta);
 app.get('/api/notifications/logs', authenticateToken, notificationController.getLogs);
 app.post('/api/notifications/logs/:id/resend', authenticateToken, requireRole('admin', 'staff'), notificationController.resendLog);
 app.get('/api/notifications/simulated', notificationController.getSimulatedMessages);

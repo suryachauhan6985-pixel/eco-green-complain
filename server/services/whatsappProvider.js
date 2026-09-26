@@ -10,7 +10,7 @@ const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '13872114411328
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
 const META_BUSINESS_ACCOUNT_ID = process.env.META_BUSINESS_ACCOUNT_ID || '1015283491554000';
 
-async function sendWhatsAppMessage({ to, message, templateName, variables = {}, ticket_id, recipient_name, mediaUrl, mediaType, mediaFileName }) {
+async function sendWhatsAppMessage({ to, message, templateName, metaStatus, variables = {}, ticket_id, recipient_name, mediaUrl, mediaType, mediaFileName }) {
   const provider = process.env.WHATSAPP_PROVIDER || (META_ACCESS_TOKEN ? 'META_CLOUD_API' : 'SIMULATED');
   const cleanTo = (to || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanTo.startsWith('91') ? cleanTo : (cleanTo.length === 10 ? `91${cleanTo}` : cleanTo);
@@ -40,8 +40,10 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
       return s || fallback;
     };
 
-    // If template matches Meta registered templates, send as template message
-    if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
+    const isMetaApproved = metaStatus === 'APPROVED' || !metaStatus;
+
+    // If template matches Meta registered templates and is approved, send as official template message
+    if (isMetaApproved && (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer')) {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
@@ -402,4 +404,43 @@ async function sendWhatsAppMessage({ to, message, templateName, variables = {}, 
   };
 }
 
-module.exports = { sendWhatsAppMessage };
+async function fetchMetaTemplates() {
+  const businessId = META_BUSINESS_ACCOUNT_ID || process.env.META_BUSINESS_ACCOUNT_ID;
+  const token = META_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN;
+
+  if (!businessId || !token) {
+    return { success: false, error: 'Meta Business Account ID or Access Token missing', templates: [] };
+  }
+
+  try {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${businessId}/message_templates?fields=name,status,category,language&limit=100`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return { 
+        success: false, 
+        error: data.error ? `${data.error.message} (Meta Code: ${data.error.code})` : 'Meta API error',
+        templates: [] 
+      };
+    }
+
+    return { 
+      success: true, 
+      templates: (data.data || []).map(t => ({
+        meta_name: t.name,
+        meta_status: t.status, // 'APPROVED', 'PENDING', 'REJECTED', 'PAUSED'
+        meta_category: t.category,
+        meta_language: t.language
+      }))
+    };
+  } catch (err) {
+    return { success: false, error: err.message, templates: [] };
+  }
+}
+
+module.exports = { sendWhatsAppMessage, fetchMetaTemplates };

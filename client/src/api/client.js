@@ -1146,12 +1146,26 @@ export const api = {
     method: 'POST'
   }),
 
-  // Notifications
+  // Notifications & Outbound Rules
   getTemplates: () => request('/notifications/templates'),
   getMetaTemplateStatus: (refresh = false) => request(`/notifications/templates/meta-status${refresh ? '?refresh=true' : ''}`, { timeout: 10000 }),
+  createTemplate: (templateData) => request('/notifications/templates', {
+    method: 'POST',
+    body: JSON.stringify(templateData)
+  }),
   updateTemplate: (id, templateData) => request(`/notifications/templates/${id}`, {
     method: 'PUT',
     body: JSON.stringify(templateData)
+  }),
+  deleteTemplate: (id) => request(`/notifications/templates/${id}`, {
+    method: 'DELETE'
+  }),
+  toggleTemplateActive: (id) => request(`/notifications/templates/${id}/toggle-active`, {
+    method: 'POST'
+  }),
+  syncTemplateWithMeta: (id, manualStatus) => request(`/notifications/templates/${id}/sync-meta`, {
+    method: 'POST',
+    body: JSON.stringify({ manual_status: manualStatus })
   }),
   getNotificationLogs: (complaintId) => {
     const q = complaintId ? `?complaint_id=${complaintId}` : '';

@@ -133,6 +133,15 @@ function initializeSchema() {
       whatsapp_body TEXT NOT NULL,
       email_subject TEXT NOT NULL,
       email_body TEXT NOT NULL,
+      audience TEXT DEFAULT 'customer',
+      trigger_event TEXT DEFAULT 'manual',
+      meta_template_name TEXT,
+      meta_language TEXT DEFAULT 'en_US',
+      meta_category TEXT DEFAULT 'UTILITY',
+      meta_status TEXT DEFAULT 'PENDING',
+      is_active INTEGER DEFAULT 1,
+      channel TEXT DEFAULT 'whatsapp',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -567,34 +576,197 @@ function migrateWhatsAppMessagesTable() {
 
 function migrateNotificationTemplates() {
   try {
-    const insertTmpl = db.prepare(`
-      INSERT OR IGNORE INTO notification_templates (template_key, name, whatsapp_body, email_subject, email_body)
-      VALUES (?, ?, ?, ?, ?)
+    const cols = db.prepare("PRAGMA table_info(notification_templates)").all().map(c => c.name);
+    if (!cols.includes('audience')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN audience TEXT DEFAULT 'customer'");
+    }
+    if (!cols.includes('trigger_event')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN trigger_event TEXT DEFAULT 'manual'");
+    }
+    if (!cols.includes('meta_template_name')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN meta_template_name TEXT");
+    }
+    if (!cols.includes('meta_language')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN meta_language TEXT DEFAULT 'en_US'");
+    }
+    if (!cols.includes('meta_category')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN meta_category TEXT DEFAULT 'UTILITY'");
+    }
+    if (!cols.includes('meta_status')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN meta_status TEXT DEFAULT 'PENDING'");
+    }
+    if (!cols.includes('is_active')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN is_active INTEGER DEFAULT 1");
+    }
+    if (!cols.includes('channel')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN channel TEXT DEFAULT 'whatsapp'");
+    }
+    if (!cols.includes('created_at')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+    }
+
+    const defaults = [
+      {
+        key: 'complaint_registered',
+        name: 'Complaint Registered Notification',
+        audience: 'customer',
+        trigger_event: 'complaint_registered',
+        meta_template_name: 'complaint_registered',
+        meta_language: 'en_US',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+        email_subject: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
+        email_body: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly. You can track your complaint status live at any time.`
+      },
+      {
+        key: 'technician_assigned',
+        name: 'Technician Assigned Notification',
+        audience: 'customer',
+        trigger_event: 'technician_assigned',
+        meta_template_name: 'technician_assigned',
+        meta_language: 'en_US',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
+        email_subject: `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
+        email_body: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nExpected Visit Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
+      },
+      {
+        key: 'status_update',
+        name: 'Status & Follow-up Note Update',
+        audience: 'customer',
+        trigger_event: 'status_update',
+        meta_template_name: 'status__followup_note_update',
+        meta_language: 'en',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n📝 *Notes:* {{notes}}\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        email_subject: `[Eco Green Solar] Status Update - Ticket {{complaint_id}}`,
+        email_body: `Dear {{customer_name}},\n\nAn update has been logged for your complaint ticket {{complaint_id}}.\n\nCurrent Status: {{status}}\nUpdate Details: {{notes}}\n\nWe remain committed to resolving your issue promptly.`
+      },
+      {
+        key: 'complaint_resolved',
+        name: 'Complaint Resolved Notification',
+        audience: 'customer',
+        trigger_event: 'complaint_resolved',
+        meta_template_name: 'complaint_resolved',
+        meta_language: 'en_US',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar Resolution*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been marked as *RESOLVED* by technician {{technician_name}}.\n\n✅ *Resolution Notes:* {{notes}}\n\nOur quality desk will verify and close the ticket shortly. If you have any questions, please contact our helpline.\n\n🔗 *View Details:* {{feedback_url}}\n- Eco Green Solar`,
+        email_subject: `[Eco Green Solar] Issue Resolved - Ticket {{complaint_id}}`,
+        email_body: `Dear {{customer_name}},\n\nOur field technician has addressed the issue on your {{product_type}} (Ticket ID: {{complaint_id}}).\n\nResolution Summary: {{notes}}\n\nOur support desk will verify the resolution and close the ticket.`
+      },
+      {
+        key: 'complaint_closed',
+        name: 'Complaint Closed & Feedback Request',
+        audience: 'customer',
+        trigger_event: 'complaint_closed',
+        meta_template_name: 'complaint_closed__feedback_request',
+        meta_language: 'en',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar Closure*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
+        email_subject: `[Eco Green Solar] Complaint Closed - {{complaint_id}} | Please Rate Us`,
+        email_body: `Dear {{customer_name}},\n\nYour service complaint under ticket ID {{complaint_id}} is now closed.\n\nPlease take 30 seconds to rate your service experience by clicking the link below.`
+      },
+      {
+        key: 'complaint_reopened',
+        name: 'Complaint Reopened Notification',
+        audience: 'customer',
+        trigger_event: 'complaint_reopened',
+        meta_template_name: 'complaint_reopened_notification',
+        meta_language: 'en',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar`,
+        email_subject: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
+        email_body: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
+      },
+      {
+        key: 'technician_work_order',
+        name: 'Technician Work Order (Job Assignment)',
+        audience: 'technician',
+        trigger_event: 'technician_work_order',
+        meta_template_name: 'technician_work_order',
+        meta_language: 'en_US',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
+        email_subject: `[Eco Green Solar] Work Order: Ticket #{{complaint_id}} - {{customer_name}}`,
+        email_body: `Dear {{technician_name}},\n\nYou have been assigned to service complaint ticket #{{complaint_id}}.\n\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue Category: {{issue_category}}\nDetails: {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease log in to your Technician Portal to view complete details, update progress, and record spare parts or payment collections.`
+      },
+      {
+        key: 'technician_reminder',
+        name: 'Technician Pending Visit Reminder',
+        audience: 'technician',
+        trigger_event: 'technician_reminder',
+        meta_template_name: 'technician_pending_visit_reminder',
+        meta_language: 'en',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
+        email_subject: `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
+        email_body: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
+      },
+      {
+        key: 'technician_reassigned',
+        name: 'Technician Job Reassigned Notice',
+        audience: 'technician',
+        trigger_event: 'technician_reassigned',
+        meta_template_name: 'technician_job_reassigned_notice',
+        meta_language: 'en',
+        meta_category: 'UTILITY',
+        meta_status: 'PENDING',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
+        email_subject: `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
+        email_body: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
+      }
+    ];
+
+    const insertOrUpdate = db.prepare(`
+      INSERT INTO notification_templates (
+        template_key, name, whatsapp_body, email_subject, email_body,
+        audience, trigger_event, meta_template_name, meta_language, meta_category, meta_status, is_active, channel
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(template_key) DO UPDATE SET
+        name = COALESCE(notification_templates.name, excluded.name),
+        audience = CASE WHEN notification_templates.audience IS NULL OR notification_templates.audience = '' THEN excluded.audience ELSE notification_templates.audience END,
+        trigger_event = CASE WHEN notification_templates.trigger_event IS NULL OR notification_templates.trigger_event = '' OR notification_templates.trigger_event = 'manual' THEN excluded.trigger_event ELSE notification_templates.trigger_event END,
+        meta_template_name = CASE WHEN notification_templates.meta_template_name IS NULL OR notification_templates.meta_template_name = '' THEN excluded.meta_template_name ELSE notification_templates.meta_template_name END,
+        meta_language = COALESCE(notification_templates.meta_language, excluded.meta_language),
+        meta_category = COALESCE(notification_templates.meta_category, excluded.meta_category),
+        meta_status = COALESCE(notification_templates.meta_status, excluded.meta_status),
+        is_active = COALESCE(notification_templates.is_active, excluded.is_active),
+        channel = COALESCE(notification_templates.channel, excluded.channel)
     `);
 
-    insertTmpl.run(
-      'technician_work_order',
-      'Technician Work Order (Job Assignment)',
-      `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
-      `[Eco Green Solar] Work Order: Ticket #{{complaint_id}} - {{customer_name}}`,
-      `Dear {{technician_name}},\n\nYou have been assigned to service complaint ticket #{{complaint_id}}.\n\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue Category: {{issue_category}}\nDetails: {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease log in to your Technician Portal to view complete details, update progress, and record spare parts or payment collections.`
-    );
+    defaults.forEach(t => {
+      insertOrUpdate.run(
+        t.key, t.name, t.whatsapp_body, t.email_subject, t.email_body,
+        t.audience, t.trigger_event, t.meta_template_name, t.meta_language, t.meta_category, t.meta_status, t.is_active, t.channel
+      );
+    });
 
-    insertTmpl.run(
-      'technician_reminder',
-      'Technician Pending Visit Reminder',
-      `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
-      `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
-      `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
-    );
-
-    insertTmpl.run(
-      'technician_reassigned',
-      'Technician Job Reassigned Notice',
-      `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
-      `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
-      `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
-    );
   } catch (e) {
     console.warn('[Database] Notification templates migration note:', e.message);
   }

@@ -47,6 +47,20 @@ class NotificationService extends EventEmitter {
       return;
     }
 
+    // Skip if outbound notification rule is disabled by administrator
+    if (template.is_active === 0) {
+      console.log(`[NotificationService] Rule "${templateKey}" is disabled (is_active=0). Skipping.`);
+      return;
+    }
+
+    // Filter channels based on template configuration
+    let activeChannels = channels;
+    if (template.channel === 'whatsapp') {
+      activeChannels = channels.filter(c => c === 'whatsapp');
+    } else if (template.channel === 'email') {
+      activeChannels = channels.filter(c => c === 'email');
+    }
+
     const complaint = complaintId 
       ? db.prepare('SELECT * FROM complaints WHERE id = ?').get(complaintId)
       : null;
@@ -83,7 +97,7 @@ class NotificationService extends EventEmitter {
       const targetEmail = forceEmailTo || complaint?.customer_email || data?.email;
 
       // Send WhatsApp if phone present and channel selected
-      if (channels.includes('whatsapp') && targetPhone) {
+      if (activeChannels.includes('whatsapp') && targetPhone) {
         const { normalizePhone } = require('../utils/phoneNormalizer');
         const canonicalTargetPhone = normalizePhone(targetPhone);
         const renderedWhatsApp = this.renderTemplate(template.whatsapp_body, mergedData);
@@ -96,7 +110,8 @@ class NotificationService extends EventEmitter {
           sendRes = await sendWhatsAppMessage({
             to: canonicalTargetPhone,
             message: renderedWhatsApp,
-            templateName: templateKey,
+            templateName: template.meta_template_name || templateKey,
+            metaStatus: template.meta_status,
             variables: mergedData
           });
           providerName = sendRes.provider;
