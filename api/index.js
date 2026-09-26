@@ -1927,11 +1927,6 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         } else {
           console.warn(`[ASSIGN-PREV-TECH-WA] PrevTech has no phone number:`, prevTech);
         }
-      } catch (prevErr) {
-        console.warn('[Previous Tech Notice Note]:', prevErr.message);
-        waPrevTechResult = { success: false, error: prevErr.message };
-      }
-    }
 
         // In-App Notification for Previous Technician (Tech A)
         await ensureInAppTable();
@@ -1957,6 +1952,7 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         ]);
       } catch (prevErr) {
         console.warn('[Previous Tech Notice Note]:', prevErr.message);
+        waPrevTechResult = { success: false, error: prevErr.message };
       }
     }
 
@@ -4622,11 +4618,14 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
                 `SELECT id, customer_name FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`,
                 [last10]
               );
-              const comp = compRes.rows[0] || null;
-
-              const senderName = (comp && comp.customer_name && comp.customer_name !== 'Customer')
-                ? comp.customer_name
-                : (profileName || formatDisplayPhone(canonicalPhone));
+              // Check if sender is a technician or customer
+              const techRes = await query(`SELECT id, name FROM technicians WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10]);
+              const tech = techRes.rows[0];
+              const isTech = !!tech;
+              const senderType = isTech ? 'technician' : 'customer';
+              const resolvedSenderName = isTech 
+                ? tech.name 
+                : ((comp && comp.customer_name && comp.customer_name !== 'Customer') ? comp.customer_name : (profileName || formatDisplayPhone(canonicalPhone)));
 
               let messageBody = '';
               let mediaType = null;
@@ -4634,6 +4633,10 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
 
               if (msg.type === 'text') {
                 messageBody = msg.text?.body || '';
+              } else if (msg.type === 'button') {
+                messageBody = msg.button?.text || msg.button?.payload || '[Button Reply]';
+              } else if (msg.type === 'interactive') {
+                messageBody = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || '[Selected Option]';
               } else if (msg.type === 'image') {
                 mediaType = 'image';
                 messageBody = msg.image?.caption || '[Image Received]';
@@ -4643,16 +4646,24 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
               } else if (msg.type === 'audio') {
                 mediaType = 'audio';
                 messageBody = '[Voice Note / Audio]';
+              } else if (msg.type === 'video') {
+                mediaType = 'video';
+                messageBody = msg.video?.caption || '[Video Received]';
+              } else if (msg.type === 'location') {
+                mediaType = 'location';
+                messageBody = `📍 Location: ${msg.location?.latitude}, ${msg.location?.longitude} (${msg.location?.name || msg.location?.address || 'Site Pin'})`;
               } else {
                 messageBody = `[${msg.type || 'Message'} Received]`;
               }
 
+              console.log(`[WHATSAPP-INCOMING] From: ${canonicalPhone} (${resolvedSenderName}) | Role: ${senderType} | Text: ${messageBody} | WAMID: ${wamId}`);
+
               await query(
                 `INSERT INTO whatsapp_messages (
                   complaint_id, phone, sender_type, sender_name, message_body, media_type, media_url, wam_id, status, created_at, updated_at
-                ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [comp?.id || null, canonicalPhone, senderName, messageBody, mediaType, mediaUrl, wamId]
-              ).catch(() => {});
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [comp?.id || null, canonicalPhone, senderType, resolvedSenderName, messageBody, mediaType, mediaUrl, wamId]
+              ).catch((e) => console.error('[Webhook Insert Error]:', e.message));
             }
           }
         }
