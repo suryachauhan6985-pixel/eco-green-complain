@@ -4618,9 +4618,11 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
                 `SELECT id, customer_name FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`,
                 [last10]
               );
+              const comp = compRes.rows[0] || null;
+
               // Check if sender is a technician or customer
               const techRes = await query(`SELECT id, name FROM technicians WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [last10]);
-              const tech = techRes.rows[0];
+              const tech = techRes.rows[0] || null;
               const isTech = !!tech;
               const senderType = isTech ? 'technician' : 'customer';
               const resolvedSenderName = isTech 
