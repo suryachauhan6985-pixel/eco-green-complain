@@ -798,9 +798,10 @@ async function assignTechnician(req, res) {
 
     // 2. Notify Technician via WhatsApp (Direct dispatch using configured notification template)
     if (technician.phone) {
+      const techTemplateKey = isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order';
       notificationService.dispatchAsync({
         complaintId: id,
-        templateKey: 'technician_work_order',
+        templateKey: techTemplateKey,
         channels: ['whatsapp'],
         forceWhatsAppTo: technician.phone,
         data: {

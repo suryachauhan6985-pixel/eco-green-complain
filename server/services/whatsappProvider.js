@@ -51,6 +51,10 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       'technician_reminder',
       'technician_pending_visit_reminder',
       'technician_reassigned',
+      'technician_job_transferred',
+      'technician_job_transferred_notice',
+      'technician_reassigned_work_order',
+      'technician_work_order_reassigned',
       'technician_job_reassigned_notice',
       'complaint_closed',
       'complaint_closed_feedback_request',
@@ -225,17 +229,16 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           }
         ]
       };
-    } else if (templateName === 'technician_reassigned' || templateName === 'technician_job_reassigned_notice') {
+    } else if (templateName === 'technician_reassigned' || templateName === 'technician_job_transferred') {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
-      const custName = cleanParam(variables.customer_name, 'Valued Customer');
-      const notes = cleanParam(variables.notes, 'Ticket reassigned.');
+      const custName = cleanParam(variables.customer_name, 'Customer');
 
-      deliveredText = `*Eco Green Solar - Job Update*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) has been reassigned or updated.\n\n*Notes:* ${notes}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`;
+      deliveredText = `*Eco Green Solar - Job Transferred*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`;
 
       payload.type = 'template';
       payload.template = {
-        name: 'technician_job_reassigned_notice',
+        name: 'technician_job_transferred_notice',
         language: { code: 'en' },
         components: [
           {
@@ -243,8 +246,43 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
             parameters: [
               { type: 'text', parameter_name: 'technician_name', text: techName },
               { type: 'text', parameter_name: 'complaint_id', text: tktId },
-              { type: 'text', parameter_name: 'customer_name', text: custName },
-              { type: 'text', parameter_name: 'notes', text: notes }
+              { type: 'text', parameter_name: 'customer_name', text: custName }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reassigned_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Customer Address');
+      const issueCat = cleanParam(variables.issue_category || variables.notes, 'Service Request');
+      const prodType = cleanParam(variables.product_type, 'Solar Rooftop Systems');
+      const priority = cleanParam(variables.priority, 'Medium');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Within 24 Hours');
+      const portalUrl = 'https://complain.ecogreensolar.co.in/technician';
+
+      deliveredText = `*Eco Green Solar - Reassigned Work Order*\n\nHello ${techName}, ticket *${tktId}* has been transferred & assigned to you.\n\n*Customer:* ${custName}\n*Phone:* ${custPhone}\n*Address:* ${custAddress}\n*Issue:* ${issueCat}\n*Product:* ${prodType}\n*Priority:* ${priority}\n*Visit By:* ${visitDate}\n\n🔗 *Technician Portal:* ${portalUrl}\n\nPlease contact customer before reaching site.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order_reassigned',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: techName },
+              { type: 'text', text: tktId },
+              { type: 'text', text: custName },
+              { type: 'text', text: custPhone },
+              { type: 'text', text: custAddress },
+              { type: 'text', text: issueCat },
+              { type: 'text', text: prodType },
+              { type: 'text', text: priority },
+              { type: 'text', text: visitDate },
+              { type: 'text', text: portalUrl }
             ]
           }
         ]
