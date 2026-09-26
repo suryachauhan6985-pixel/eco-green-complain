@@ -63,3 +63,6 @@
    - Always maintain documentation integrity in `TESTING_MASTER_CHECKLIST.md`.
 4. **Safety & Zero Data Loss:**
    - Never run destructive commands (deleting database without backup, dropping collections, etc.) without explicit permission.
+5. **Mandatory Git Commit & Push (Production Deployment):**
+   - Har code change ya bug fix ke baad code ko Git (`git push origin main`) par push karna anivarya hai, taaki changes turant live production server (`complain.ecogreensolar.co.in`) par update ho jayein.
+   - Always verify client build (`npm run build`) before pushing to avoid production breaks.
