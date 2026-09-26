@@ -247,6 +247,9 @@ export const ComplaintDetailDrawer = ({
   const handleAssign = async (e) => {
     e.preventDefault();
     if (!selectedTechId) return showToast('Please select a technician to assign', 'error');
+    const prevTechId = ticket.assigned_technician_id;
+    const prevTechName = ticket.technician_name;
+
     try {
       setAssigning(true);
       const res = await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
@@ -264,7 +267,24 @@ export const ComplaintDetailDrawer = ({
         apiRes: res
       });
 
-      // Trigger In-App Notification for the assigned technician
+      // If reassigned from an existing technician, notify previous technician (Tech A) WITHOUT new tech details
+      if (prevTechId && String(prevTechId) !== String(selectedTechId)) {
+        addNotification({
+          type: 'reassigned',
+          ticketId: ticket.ticket_id || ticket.id,
+          complaintId: ticket.id,
+          title: `Ticket ${ticket.ticket_id} Reassigned`,
+          message: `Complaint #${ticket.ticket_id} (${ticket.customer_name}) has been assigned to another technician. It has been removed from your active schedule.`,
+          customerName: ticket.customer_name,
+          targetRole: 'technician',
+          targetTechnicianId: prevTechId,
+          targetTechnicianName: prevTechName,
+          performedByName: currentUser?.name || 'Staff Supervisor',
+          performedByRole: currentUser?.role || 'staff'
+        });
+      }
+
+      // Trigger In-App Notification for the newly assigned technician (Tech B)
       if (assignedTech) {
         addNotification({
           type: 'assignment',

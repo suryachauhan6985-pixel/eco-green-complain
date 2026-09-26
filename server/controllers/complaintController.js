@@ -791,27 +791,79 @@ async function assignTechnician(req, res) {
       });
     }
 
-    // If reassigned from an existing technician, notify previous technician
+    // If reassigned from an existing technician, notify previous technician (Tech A) WITHOUT disclosing new technician details
     if (complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(technician_id)) {
       try {
         const prevTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
-        if (prevTech && prevTech.phone) {
-          notificationService.dispatchAsync({
-            complaintId: id,
-            templateKey: 'technician_reassigned',
-            channels: ['whatsapp'],
-            forceWhatsAppTo: prevTech.phone,
-            data: {
-              technician_name: prevTech.name,
-              ticket_id: complaint.ticket_id,
-              customer_name: complaint.customer_name,
-              notes: `Ticket #${complaint.ticket_id} has been reassigned to technician ${technician.name}.`
-            }
-          });
+        if (prevTech) {
+          if (prevTech.phone) {
+            notificationService.dispatchAsync({
+              complaintId: id,
+              templateKey: 'technician_reassigned',
+              channels: ['whatsapp'],
+              forceWhatsAppTo: prevTech.phone,
+              data: {
+                technician_name: prevTech.name,
+                ticket_id: complaint.ticket_id,
+                customer_name: complaint.customer_name,
+                notes: `Complaint #${complaint.ticket_id} has been assigned to another technician.`
+              }
+            });
+          }
+
+          // Persist in-app notification for Previous Technician (Tech A)
+          const reassignNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          db.prepare(`
+            INSERT INTO in_app_notifications (
+              id, type, ticket_id, complaint_id, title, message, customer_name,
+              target_role, target_technician_id, target_technician_name,
+              performed_by_name, performed_by_role, read_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', CURRENT_TIMESTAMP)
+          `).run(
+            reassignNotifId,
+            'reassigned',
+            complaint.ticket_id,
+            complaint.id,
+            `Ticket ${complaint.ticket_id} Reassigned`,
+            `Complaint #${complaint.ticket_id} (${complaint.customer_name}) has been assigned to another technician. It has been removed from your active schedule.`,
+            complaint.customer_name,
+            'technician',
+            prevTech.id,
+            prevTech.name,
+            performer,
+            role
+          );
         }
       } catch (reassignErr) {
         console.warn('Technician reassign notify note:', reassignErr.message);
       }
+    }
+
+    // Persist in-app notification for Newly Assigned Technician (Tech B)
+    try {
+      const newTechNotifId = `notif_${Date.now() + 1}_${Math.random().toString(36).slice(2, 7)}`;
+      db.prepare(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role, read_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', CURRENT_TIMESTAMP)
+      `).run(
+        newTechNotifId,
+        'assignment',
+        complaint.ticket_id,
+        complaint.id,
+        `New Ticket Assigned: ${complaint.ticket_id}`,
+        `You have been assigned to customer ${complaint.customer_name} (${complaint.product_type} - ${complaint.issue_category}). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`,
+        complaint.customer_name,
+        'technician',
+        technician.id,
+        technician.name,
+        performer,
+        role
+      );
+    } catch (newTechNotifErr) {
+      console.warn('New tech notification save note:', newTechNotifErr.message);
     }
 
     const updated = db.prepare(`

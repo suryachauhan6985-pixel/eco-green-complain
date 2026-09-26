@@ -5,6 +5,25 @@ import { api } from '../api/client';
 const NotificationContext = createContext();
 
 const STORAGE_KEY = 'egs_in_app_notifications';
+const PERMANENT_READ_KEY = 'egs_read_notification_ids';
+
+const getPermanentReadIds = () => {
+  try {
+    const raw = localStorage.getItem(PERMANENT_READ_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (_) {
+    return new Set();
+  }
+};
+
+const addPermanentReadId = (id) => {
+  if (!id) return;
+  try {
+    const set = getPermanentReadIds();
+    set.add(String(id));
+    localStorage.setItem(PERMANENT_READ_KEY, JSON.stringify(Array.from(set)));
+  } catch (_) {}
+};
 
 export const NotificationProvider = ({ children }) => {
   const { currentUser } = useAuth();
@@ -59,6 +78,8 @@ export const NotificationProvider = ({ children }) => {
           
           setNotifications(prev => {
             const localReadMap = new Map();
+            const permReads = getPermanentReadIds();
+
             prev.forEach(p => {
               if (Array.isArray(p.readBy)) localReadMap.set(p.id, p.readBy);
             });
@@ -66,6 +87,9 @@ export const NotificationProvider = ({ children }) => {
             const merged = cleanRemote.map(r => {
               const localReads = localReadMap.get(r.id) || [];
               const combinedReads = Array.from(new Set([...(r.readBy || []), ...localReads]));
+              if (permReads.has(String(r.id)) || (r.ticketId && permReads.has(String(r.ticketId)))) {
+                combinedReads.push('read');
+              }
               return { ...r, readBy: combinedReads };
             });
 
@@ -219,10 +243,20 @@ export const NotificationProvider = ({ children }) => {
 
   const isUnread = useCallback((notif, user) => {
     if (!user) return false;
+    // 1. Permanent read cache check
+    const permReads = getPermanentReadIds();
+    if (permReads.has(String(notif.id)) || (notif.ticketId && permReads.has(String(notif.ticketId)))) {
+      return false;
+    }
+
     if (!notif.readBy || !Array.isArray(notif.readBy) || notif.readBy.length === 0) return true;
     const userKeys = getUserKeys(user);
     const readByLower = notif.readBy.map(k => String(k).toLowerCase());
-    const hasRead = userKeys.some(k => readByLower.includes(k));
+    const hasRead = userKeys.some(k => readByLower.includes(k)) || readByLower.includes('read');
+    if (hasRead) {
+      addPermanentReadId(notif.id);
+      if (notif.ticketId) addPermanentReadId(notif.ticketId);
+    }
     return !hasRead;
   }, [getUserKeys]);
 
@@ -249,7 +283,7 @@ export const NotificationProvider = ({ children }) => {
   const addNotification = useCallback((data) => {
     const newNotif = {
       id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      type: data.type || 'info', // assignment | status_update | note | resolved | new_ticket
+      type: data.type || 'info', // assignment | reassigned | status_update | note | resolved | new_ticket
       ticketId: data.ticketId || '',
       complaintId: data.complaintId || null,
       title: data.title || 'System Notification',
@@ -293,16 +327,21 @@ export const NotificationProvider = ({ children }) => {
     return newNotif;
   }, [currentUser, isNotificationForUser]);
 
-  // Mark single notification as read
+  // Mark single notification as read (permanently across all reloads & sessions)
   const markAsRead = useCallback((notificationId) => {
     if (!currentUser || !notificationId) return;
     const userKeys = getUserKeys(currentUser);
 
+    // Save permanently in local storage read list immediately
+    addPermanentReadId(notificationId);
+
     setNotifications(prev => {
       const updated = prev.map(n => {
         if (n.id === notificationId || n.ticketId === notificationId) {
+          addPermanentReadId(n.id);
+          if (n.ticketId) addPermanentReadId(n.ticketId);
           const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
-          const combined = Array.from(new Set([...currentRead, ...userKeys]));
+          const combined = Array.from(new Set([...currentRead, ...userKeys, 'read']));
           return { ...n, readBy: combined };
         }
         return n;
@@ -316,7 +355,7 @@ export const NotificationProvider = ({ children }) => {
     // Dismiss active popup if it matches
     setActivePopup(prev => (prev?.id === notificationId || prev?.ticketId === notificationId) ? null : prev);
 
-    // Sync to backend
+    // Sync to backend SQLite database permanently
     try {
       if (api.markInAppNotificationRead) {
         api.markInAppNotificationRead(notificationId).catch(() => {});
@@ -332,8 +371,10 @@ export const NotificationProvider = ({ children }) => {
     setNotifications(prev => {
       const updated = prev.map(n => {
         if (isNotificationForUser(n, currentUser)) {
+          addPermanentReadId(n.id);
+          if (n.ticketId) addPermanentReadId(n.ticketId);
           const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
-          const combined = Array.from(new Set([...currentRead, ...userKeys]));
+          const combined = Array.from(new Set([...currentRead, ...userKeys, 'read']));
           return { ...n, readBy: combined };
         }
         return n;
@@ -365,14 +406,15 @@ export const NotificationProvider = ({ children }) => {
     } catch (_) {}
   }, [saveNotifications]);
 
-  // Dismiss popup banner (keeps unread badge on bell icon, temporarily suppresses this specific popup in session)
+  // Dismiss popup banner (permanently marks as read so it NEVER pops up again on reload)
   const dismissPopup = useCallback((notifId) => {
     const idToDismiss = notifId || activePopup?.id;
     if (idToDismiss) {
-      setDismissedPopupIds(prev => new Set([...prev, idToDismiss]));
+      markAsRead(idToDismiss);
+    } else {
+      setActivePopup(null);
     }
-    setActivePopup(null);
-  }, [activePopup]);
+  }, [activePopup, markAsRead]);
 
   return (
     <NotificationContext.Provider value={{

@@ -150,6 +150,24 @@ function initializeSchema() {
       FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS in_app_notifications (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL DEFAULT 'info',
+      ticket_id TEXT,
+      complaint_id INTEGER,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      customer_name TEXT,
+      target_role TEXT DEFAULT 'all',
+      target_technician_id INTEGER,
+      target_technician_name TEXT,
+      performed_by_name TEXT,
+      performed_by_role TEXT,
+      performed_by_user_id INTEGER,
+      read_by TEXT DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS installed_customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sr_no INTEGER,

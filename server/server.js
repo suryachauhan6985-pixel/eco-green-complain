@@ -9,7 +9,8 @@ const db = require('./config/database');
 const { seedDatabase } = require('./data/seed');
 
 // Middlewares
-const { authenticateToken, requireRole } = require('./middleware/auth');
+const jwt = require('jsonwebtoken');
+const { authenticateToken, requireRole, JWT_SECRET } = require('./middleware/auth');
 const upload = require('./middleware/upload');
 
 // Controllers
@@ -359,6 +360,24 @@ app.post('/api/notifications/logs/:id/resend', authenticateToken, requireRole('a
 app.get('/api/notifications/simulated', notificationController.getSimulatedMessages);
 app.delete('/api/notifications/simulated', notificationController.clearSimulated);
 app.get('/api/notifications/events', notificationController.subscribeSimulatedEvents);
+
+// ================= IN-APP NOTIFICATION ROUTES =================
+function optionalAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.split(' ')[1];
+      req.user = jwt.verify(token, JWT_SECRET);
+    } catch (_) {}
+  }
+  next();
+}
+
+app.get('/api/in-app-notifications', optionalAuth, notificationController.listInAppNotifications);
+app.post('/api/in-app-notifications', optionalAuth, notificationController.createInAppNotification);
+app.put('/api/in-app-notifications/read-all', optionalAuth, notificationController.markAllInAppNotificationsRead);
+app.put('/api/in-app-notifications/:id/read', optionalAuth, notificationController.markInAppNotificationRead);
+app.delete('/api/in-app-notifications', optionalAuth, notificationController.clearInAppNotifications);
 
 // ================= WHATSAPP MASTER RELAY (OFFICE PC ZERO-BAN QUEUE) =================
 // Table for outgoing WhatsApp messages & Master PC heartbeat

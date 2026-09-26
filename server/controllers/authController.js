@@ -5,24 +5,55 @@ const { JWT_SECRET } = require('../middleware/auth');
 
 async function login(req, res) {
   try {
-    const identifier = (req.body.identifier || req.body.email || req.body.username || '').trim();
+    const rawIdentifier = (req.body.identifier || req.body.email || req.body.username || '').trim();
     const { password } = req.body;
-    if (!identifier || !password) {
+    if (!rawIdentifier || !password) {
       return res.status(400).json({ error: 'User ID / Username and password are required' });
     }
 
-    const cleanPhone = identifier.replace(/[^0-9]/g, '');
-    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '';
+    const noAt = rawIdentifier.replace(/^@+/, '').trim().toLowerCase();
+    const prefix = noAt.split('@')[0].split('.')[0].trim();
+    const cleanDigits = rawIdentifier.replace(/\D/g, '');
+    const last10Phone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+    const numericMatch = rawIdentifier.match(/^(?:tech[-_ ]*|staff[-_ ]*|id[-_ ]*|#)?(\d+)$/i);
+    const numericId = numericMatch ? parseInt(numericMatch[1], 10) : null;
 
     const user = db.prepare(`
       SELECT * FROM users 
-      WHERE (
-        LOWER(email) = LOWER(?) 
-        OR LOWER(COALESCE(username, '')) = LOWER(?) 
-        OR (? != '' AND REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ?)
-      ) AND is_active = 1
+      WHERE is_active = 1 AND (
+        LOWER(username) = ?
+        OR LOWER(email) = ?
+        OR LOWER(username) = ?
+        OR LOWER(email) = ?
+        OR LOWER(name) = ?
+        OR (? != '' AND (LOWER(username) LIKE ? OR LOWER(username) LIKE ?))
+        OR (? != '' AND (LOWER(email) LIKE ? OR LOWER(email) LIKE ?))
+        OR (? != '' AND REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '+', '') LIKE ?)
+        OR (? IS NOT NULL AND id = ?)
+        OR (? IS NOT NULL AND id IN (SELECT user_id FROM technicians WHERE id = ?))
+        OR id IN (
+          SELECT user_id FROM technicians 
+          WHERE user_id IS NOT NULL AND (
+            LOWER(name) = ?
+            OR LOWER(email) = ?
+            OR (? != '' AND REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '+', '') LIKE ?)
+          )
+        )
+      )
       LIMIT 1
-    `).get(identifier, identifier, last10, `%${last10}%`);
+    `).get(
+      noAt, noAt,
+      rawIdentifier.toLowerCase(), rawIdentifier.toLowerCase(),
+      rawIdentifier.toLowerCase(),
+      prefix, `${prefix}@%`, `${prefix}.%`,
+      prefix, `${prefix}@%`, `${prefix}.%`,
+      last10Phone, `%${last10Phone}%`,
+      numericId, numericId,
+      numericId, numericId,
+      rawIdentifier.toLowerCase(),
+      noAt,
+      last10Phone, `%${last10Phone}%`
+    );
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid User ID or password' });
@@ -44,7 +75,7 @@ async function login(req, res) {
              OR (? != '' AND REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ?)
              OR LOWER(name) = LOWER(?)
           LIMIT 1
-        `).get(user.email || '', last10, `%${last10}%`, user.name || '');
+        `).get(user.email || '', last10Phone, `%${last10Phone}%`, user.name || '');
         if (tech) {
           try {
             db.prepare('UPDATE technicians SET user_id = ? WHERE id = ?').run(user.id, tech.id);
@@ -87,7 +118,7 @@ async function login(req, res) {
 
 function getMe(req, res) {
   try {
-    const user = db.prepare('SELECT id, name, email, role, phone, created_at FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, name, username, email, role, phone, created_at FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }

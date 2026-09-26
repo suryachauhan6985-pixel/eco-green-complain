@@ -57,6 +57,16 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
           accent: 'text-rose-400',
           buttonBg: 'bg-rose-500 hover:bg-rose-600 text-white font-bold'
         };
+      case 'reassigned':
+        return {
+          icon: RotateCcw,
+          bg: 'bg-amber-950/95',
+          border: 'border-amber-500/50',
+          badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+          badgeText: 'Job Reassigned',
+          accent: 'text-amber-400',
+          buttonBg: 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold'
+        };
       case 'status_update':
         return {
           icon: AlertCircle,
