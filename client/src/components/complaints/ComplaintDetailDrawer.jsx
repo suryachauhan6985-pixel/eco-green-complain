@@ -550,7 +550,9 @@ export const ComplaintDetailDrawer = ({
       const targetTech = reopenTechId || ticket.assigned_technician_id;
       await api.reopenComplaint(ticket.id, {
         reason: reopenReason.trim(),
-        technician_id: targetTech
+        technician_id: targetTech,
+        performer_name: currentUser?.name || 'Staff Support Desk',
+        performer_role: currentUser?.role || 'staff'
       });
       setReopenReason('');
       await fetchTicketDetails();

@@ -1225,33 +1225,35 @@ async function closeComplaint(req, res) {
 async function reopenComplaint(req, res) {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason, technician_id, performer_name, performer_role } = req.body || {};
 
-    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ? OR ticket_id = ?').get(id, id);
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    const performer = req.user ? req.user.name : complaint.customer_name + ' (Customer Portal)';
-    const role = req.user ? req.user.role : 'customer';
+    const newTechId = technician_id ? Number(technician_id) : complaint.assigned_technician_id;
+    const performer = performer_name || (req.user ? req.user.name : complaint.customer_name + ' (Customer Portal)');
+    const role = performer_role || (req.user ? req.user.role : 'customer');
 
     db.prepare(`
       UPDATE complaints 
       SET status = 'Reopened',
+          assigned_technician_id = ?,
           closed_at = null,
           status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(id);
+    `).run(newTechId, complaint.id);
 
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
       VALUES (?, 'Reopened', ?, ?, ?, 1)
-    `).run(id, reason ? `Ticket reopened: ${reason}` : 'Customer requested ticket reopening due to persistent issue.', performer, role);
+    `).run(complaint.id, reason ? `Ticket reopened: ${reason}` : 'Customer requested ticket reopening due to persistent issue.', performer, role);
 
     // Notify customer
     notificationService.dispatchAsync({
-      complaintId: id,
+      complaintId: complaint.id,
       templateKey: 'complaint_reopened',
       data: {
         customer_name: complaint.customer_name,
@@ -1259,8 +1261,14 @@ async function reopenComplaint(req, res) {
       }
     });
 
-    const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
-    realtimeService.notifyComplaintUpdate({ id, action: 'reopened', status: 'Reopened' });
+    const updated = db.prepare(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone 
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = ?
+    `).get(complaint.id);
+
+    realtimeService.notifyComplaintUpdate({ id: complaint.id, action: 'reopened', status: 'Reopened' });
     res.json({ message: 'Complaint reopened successfully', complaint: updated });
   } catch (err) {
     res.status(500).json({ error: 'Failed to reopen complaint' });

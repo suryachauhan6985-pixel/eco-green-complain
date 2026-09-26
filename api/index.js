@@ -2563,8 +2563,13 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
     const { id } = req.params;
     const { reason, technician_id } = req.body || {};
 
-    // 1. Fetch existing complaint record
-    const existingRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1', [id]);
+    // 1. Fetch existing complaint record with technician info joined
+    const existingRes = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id::text = $1 OR c.ticket_id = $1
+    `, [id]);
     if (existingRes.rows.length === 0) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
@@ -2576,7 +2581,7 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
 
     // 2. If new technician assigned, lookup tech details
     if (technician_id && String(technician_id) !== String(oldComp.assigned_technician_id)) {
-      const techRow = await query('SELECT id, name, phone, area_zone, specialization FROM technicians WHERE id = $1', [technician_id]);
+      const techRow = await query('SELECT id, name, phone, area_zone, specialization FROM technicians WHERE id::text = $1', [String(technician_id)]);
       if (techRow.rows.length > 0) {
         newTechId = techRow.rows[0].id;
         newTechName = techRow.rows[0].name;
@@ -2617,15 +2622,16 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
         status = 'Reopened',
         status_updated_at = CURRENT_TIMESTAMP,
         assigned_technician_id = $2,
-        technician_name = $3,
-        technician_phone = $4,
-        previous_resolution_history = $5,
+        closed_at = NULL,
+        previous_resolution_history = $3,
         updated_at = CURRENT_TIMESTAMP
       WHERE id::text = $1 OR ticket_id = $1
       RETURNING *
-    `, [id, newTechId, newTechName, newTechPhone, JSON.stringify(prevHistory)]);
+    `, [id, newTechId, JSON.stringify(prevHistory)]);
 
     const comp = compRes.rows[0];
+    comp.technician_name = newTechName;
+    comp.technician_phone = newTechPhone;
 
     const isReassigned = newTechId && String(newTechId) !== String(oldComp.assigned_technician_id);
     const actionText = isReassigned ? 'Reopened & Reassigned' : 'Reopened';
@@ -2633,9 +2639,12 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
       ? `Ticket reopened and reassigned to ${newTechName} (Previous: ${oldComp.technician_name || 'N/A'}). Reason: ${reason || 'Issue recurring'}`
       : `Ticket reopened. Reason: ${reason || 'Issue recurring / not resolved'}`;
 
+    const actorName = req.body?.performer_name || comp.customer_name;
+    const actorRole = req.body?.performer_role || 'customer';
+
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [comp.id, actionText, notesText, comp.customer_name, 'customer']
+      [comp.id, actionText, notesText, actorName, actorRole]
     );
 
     // In-app notification for Staff, Admin, and assigned Technician
