@@ -96,6 +96,53 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           }
         ]
       };
+    } else if (templateName === 'customer_technician_reassigned') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
+      const techName = cleanParam(variables.technician_name, 'Field Technician');
+      const techPhone = cleanParam(variables.technician_phone, '');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Within 24-48 Hours');
+
+      deliveredText = `☀️ *Eco Green Solar - Technician Reassigned*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been reassigned to a new technician.\n\n👷 *New Technician:* ${techName}${techPhone ? `\n📞 *Mobile:* ${techPhone}` : ''}\n📅 *Expected Visit:* ${visitDate}\n\nOur service engineer will contact you shortly to coordinate the visit.\n\n🔗 *Track Live:* ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
+
+      // If approved on Meta, send official customer_technician_reassigned; else fallback to approved technician_assigned
+      if (isMetaApproved) {
+        payload.type = 'template';
+        payload.template = {
+          name: 'customer_technician_reassigned',
+          language: { code: 'en_US' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: custName },
+                { type: 'text', text: ticketId },
+                { type: 'text', text: techName },
+                { type: 'text', text: techPhone || 'Customer Care' },
+                { type: 'text', text: cleanTrackingUrl }
+              ]
+            }
+          ]
+        };
+      } else {
+        // Graceful fallback to approved technician_assigned while Meta review is pending
+        payload.type = 'template';
+        payload.template = {
+          name: 'technician_assigned',
+          language: { code: 'en_US' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: custName },
+                { type: 'text', text: ticketId },
+                { type: 'text', text: techName },
+                { type: 'text', text: cleanTrackingUrl }
+              ]
+            }
+          ]
+        };
+      }
     } else if (templateName === 'complaint_resolved') {
       deliveredText = `Service Resolved - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nYour solar equipment complaint for Ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')} has been marked RESOLVED by technician ${cleanParam(variables.technician_name, 'Technician')}.\n\nResolution Notes: ${cleanParam(variables.notes, 'Service inspection completed successfully.')}\n\nPlease rate your service experience here: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 

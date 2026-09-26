@@ -637,6 +637,21 @@ function migrateNotificationTemplates() {
         email_body: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nExpected Visit Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
       },
       {
+        key: 'customer_technician_reassigned',
+        name: 'Customer Technician Reassigned Notice',
+        audience: 'customer',
+        trigger_event: 'customer_technician_reassigned',
+        meta_template_name: 'customer_technician_reassigned',
+        meta_language: 'en_US',
+        meta_category: 'UTILITY',
+        meta_status: 'PENDING',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `☀️ *Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n👷 *New Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n📅 *Estimated Visit:* {{expected_visit_date}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        email_subject: `[Eco Green Solar] Service Technician Update - Ticket {{complaint_id}}`,
+        email_body: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}} (Phone: {{technician_phone}}).\n\nScheduled Date: {{expected_visit_date}}\n\nOur team is working to resolve your issue as soon as possible.`
+      },
+      {
         key: 'status_update',
         name: 'Status & Follow-up Note Update',
         audience: 'customer',

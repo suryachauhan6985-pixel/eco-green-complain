@@ -52,11 +52,25 @@ export const INITIAL_TEMPLATES = [
   },
   {
     id: 3,
+    template_key: 'customer_technician_reassigned',
+    name: 'Customer Technician Reassigned Notice',
+    audience: 'customer',
+    trigger_event: 'customer_technician_reassigned',
+    meta_template_name: 'customer_technician_reassigned',
+    meta_status: 'PENDING',
+    is_active: 1,
+    channel: 'whatsapp',
+    whatsapp_body: `☀️ *Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n👷 *New Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n📅 *Estimated Visit:* {{expected_visit_date}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+    email_subject: `[Eco Green Solar] Service Technician Update - Ticket {{complaint_id}}`,
+    email_body: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}} (Phone: {{technician_phone}}).\n\nScheduled Date: {{expected_visit_date}}\n\nOur team is working to resolve your issue as soon as possible.`
+  },
+  {
+    id: 4,
     template_key: 'status_update',
     name: 'Status & Follow-up Note Update',
     audience: 'customer',
     trigger_event: 'status_update',
-    meta_template_name: 'status_followup_note_update',
+    meta_template_name: 'status__followup_note_update',
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
@@ -65,7 +79,7 @@ export const INITIAL_TEMPLATES = [
     email_body: `Dear {{customer_name}},\n\nAn update has been logged for your complaint ticket {{complaint_id}}.\n\nCurrent Status: {{status}}\nUpdate Details: {{notes}}\n\nWe remain committed to resolving your issue promptly.`
   },
   {
-    id: 4,
+    id: 5,
     template_key: 'complaint_resolved',
     name: 'Complaint Resolved Notification',
     audience: 'customer',
@@ -79,7 +93,7 @@ export const INITIAL_TEMPLATES = [
     email_body: `Dear {{customer_name}},\n\nOur field technician has addressed the issue on your {{product_type}} (Ticket ID: {{complaint_id}}).\n\nResolution Summary: {{notes}}\n\nOur support desk will verify the resolution and close the ticket.`
   },
   {
-    id: 5,
+    id: 6,
     template_key: 'complaint_closed',
     name: 'Complaint Closed & Feedback Request',
     audience: 'customer',
@@ -93,7 +107,7 @@ export const INITIAL_TEMPLATES = [
     email_body: `Dear {{customer_name}},\n\nYour service complaint under ticket ID {{complaint_id}} is now closed.\n\nWe hope our service technician resolved your issue to your satisfaction.\n\nPlease take 30 seconds to rate your service experience by clicking the link below.`
   },
   {
-    id: 6,
+    id: 7,
     template_key: 'complaint_reopened',
     name: 'Complaint Reopened Notification',
     audience: 'customer',
@@ -107,7 +121,7 @@ export const INITIAL_TEMPLATES = [
     email_body: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
   },
   {
-    id: 7,
+    id: 8,
     template_key: 'technician_work_order',
     name: 'Technician Work Order (Job Assignment)',
     audience: 'technician',
@@ -121,7 +135,7 @@ export const INITIAL_TEMPLATES = [
     email_body: `Dear {{technician_name}},\n\nYou have been dispatched for service complaint #{{complaint_id}}.\n\nCustomer: {{customer_name}} ({{customer_phone}})\nAddress: {{customer_address}}\nIssue: {{issue_category}}\nScheduled Date: {{expected_visit_date}}\n\nPlease visit your technician dashboard to update work order logs.`
   },
   {
-    id: 8,
+    id: 9,
     template_key: 'technician_reminder',
     name: 'Technician Pending Visit Reminder',
     audience: 'technician',
@@ -135,7 +149,7 @@ export const INITIAL_TEMPLATES = [
     email_body: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
   },
   {
-    id: 9,
+    id: 10,
     template_key: 'technician_reassigned',
     name: 'Technician Job Reassigned Notice',
     audience: 'technician',

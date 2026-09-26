@@ -11,7 +11,8 @@ import {
 
 export const TRIGGER_OPTIONS = [
   { id: 'complaint_registered', label: 'Ticket Lodged / Registered', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket' },
-  { id: 'technician_assigned', label: 'Technician Assigned / Reassigned (Customer)', audience: 'customer', desc: 'Fires to customer whenever technician is allocated or changed' },
+  { id: 'technician_assigned', label: 'Technician First Assigned (Customer)', audience: 'customer', desc: 'Fires to customer when technician is initially allocated' },
+  { id: 'customer_technician_reassigned', label: 'Technician Reassigned / Changed (Customer)', audience: 'customer', desc: 'Fires dedicated re-assignment template to customer when technician is changed' },
   { id: 'status_update', label: 'Status & Visit Note Update', audience: 'customer', desc: 'Fires when progress or note is recorded on ticket' },
   { id: 'complaint_resolved', label: 'Service Work Completed / Resolved', audience: 'customer', desc: 'Fires when technician marks job resolved on site' },
   { id: 'complaint_closed', label: 'Ticket Closed & Rating Request', audience: 'customer', desc: 'Fires when ticket is closed to collect 1-5 star review' },
@@ -25,8 +26,8 @@ export const TRIGGER_OPTIONS = [
 export const isTechnicianTemplate = (t) => {
   if (!t) return false;
   const key = (t.template_key || '').toLowerCase();
-  // Specifically: technician_assigned is ALWAYS a customer notification!
-  if (key === 'technician_assigned') return false;
+  // Specifically: technician_assigned and customer_technician_reassigned are ALWAYS customer notifications!
+  if (key === 'technician_assigned' || key === 'customer_technician_reassigned') return false;
 
   // Actual technician templates:
   if (
@@ -40,7 +41,7 @@ export const isTechnicianTemplate = (t) => {
   }
 
   const trig = (t.trigger_event || '').toLowerCase();
-  if (trig === 'technician_assigned') return false; // Explicitly Customer!
+  if (trig === 'technician_assigned' || trig === 'customer_technician_reassigned') return false; // Explicitly Customer!
   if (trig === 'technician_work_order' || trig === 'technician_reminder' || trig === 'technician_reassigned') {
     return true;
   }

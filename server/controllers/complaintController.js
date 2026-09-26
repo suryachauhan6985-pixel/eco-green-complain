@@ -381,6 +381,28 @@ async function createComplaint(req, res) {
       }
     });
 
+    // In-App Notification for Admin & Desk
+    try {
+      const regNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      db.prepare(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role, read_by, created_at
+        ) VALUES (?, 'new_ticket', ?, ?, ?, ?, ?, 'admin', ?, ?, '[]', CURRENT_TIMESTAMP)
+      `).run(
+        regNotifId,
+        ticketId,
+        complaintId,
+        `New Complaint Registered: ${ticketId}`,
+        `New ticket #${ticketId} registered for ${customer_name} (${product_type} - ${issue_category}). Priority: ${priority}`,
+        customer_name,
+        actorName,
+        actorRole
+      );
+    } catch (notifErr) {
+      console.warn('In-app notification on complaint registration error:', notifErr.message);
+    }
+
     const newTicket = db.prepare('SELECT * FROM complaints WHERE id = ?').get(complaintId);
     realtimeService.notifyComplaintUpdate({ id: complaintId, action: 'created', status: 'Unassigned' });
     res.status(201).json({
@@ -754,15 +776,19 @@ async function assignTechnician(req, res) {
       ? explicitNotifyCustomer
       : (!isSameTechnician || !alreadyNotifiedCustomer);
 
+    const isReassignment = complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(technician_id);
+
     if (shouldNotifyCustomer) {
       // 1. Notify Customer via WhatsApp & Email
+      const custTemplateKey = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
       notificationService.dispatchAsync({
         complaintId: id,
-        templateKey: 'technician_assigned',
+        templateKey: custTemplateKey,
         data: {
           customer_name: complaint.customer_name,
           ticket_id: complaint.ticket_id,
           technician_name: technician.name,
+          technician_phone: technician.phone || '',
           expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
         }
       });
@@ -864,6 +890,36 @@ async function assignTechnician(req, res) {
       );
     } catch (newTechNotifErr) {
       console.warn('New tech notification save note:', newTechNotifErr.message);
+    }
+
+    // Persist in-app notification for Admin & Help Desk
+    try {
+      const adminNotifId = `notif_${Date.now() + 2}_${Math.random().toString(36).slice(2, 7)}`;
+      const adminTitle = isReassignment ? `Ticket ${complaint.ticket_id} Reassigned` : `Ticket ${complaint.ticket_id} Assigned`;
+      const adminMessage = isReassignment
+        ? `Ticket #${complaint.ticket_id} (${complaint.customer_name}) was reassigned to ${technician.name} by ${performer}.`
+        : `Ticket #${complaint.ticket_id} (${complaint.customer_name}) was assigned to ${technician.name} by ${performer}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`;
+      db.prepare(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role, read_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?, ?, ?, '[]', CURRENT_TIMESTAMP)
+      `).run(
+        adminNotifId,
+        isReassignment ? 'reassigned' : 'assignment',
+        complaint.ticket_id,
+        complaint.id,
+        adminTitle,
+        adminMessage,
+        complaint.customer_name,
+        technician.id,
+        technician.name,
+        performer,
+        role
+      );
+    } catch (adminNotifErr) {
+      console.warn('Admin notification save note:', adminNotifErr.message);
     }
 
     const updated = db.prepare(`
@@ -1068,6 +1124,28 @@ async function resolveComplaint(req, res) {
       }
     });
 
+    // In-App Notification for Admin & Desk
+    try {
+      const resNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      db.prepare(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role, read_by, created_at
+        ) VALUES (?, 'resolved', ?, ?, ?, ?, ?, 'admin', ?, ?, '[]', CURRENT_TIMESTAMP)
+      `).run(
+        resNotifId,
+        complaint.ticket_id,
+        complaint.id,
+        `Ticket Marked Resolved: ${complaint.ticket_id}`,
+        `Technician ${performer} marked ticket #${complaint.ticket_id} (${complaint.customer_name}) as Resolved. Notes: ${resolution_notes}`,
+        complaint.customer_name,
+        performer,
+        role
+      );
+    } catch (notifErr) {
+      console.warn('In-app notification on resolve error:', notifErr.message);
+    }
+
     const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
     realtimeService.notifyComplaintUpdate({ id, action: 'resolved', status: 'Resolved' });
     res.json({ message: 'Complaint marked as resolved', complaint: updated });
@@ -1113,6 +1191,28 @@ async function closeComplaint(req, res) {
         ticket_id: complaint.ticket_id
       }
     });
+
+    // In-App Notification for Admin & Desk
+    try {
+      const closeNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      db.prepare(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role, read_by, created_at
+        ) VALUES (?, 'closed', ?, ?, ?, ?, ?, 'admin', ?, ?, '[]', CURRENT_TIMESTAMP)
+      `).run(
+        closeNotifId,
+        complaint.ticket_id,
+        complaint.id,
+        `Ticket Closed: ${complaint.ticket_id}`,
+        `Ticket #${complaint.ticket_id} for ${complaint.customer_name} closed by ${performer}. Remarks: ${closure_remarks || 'Reviewed and closed'}`,
+        complaint.customer_name,
+        performer,
+        role
+      );
+    } catch (notifErr) {
+      console.warn('In-app notification on close error:', notifErr.message);
+    }
 
     const updated = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
     realtimeService.notifyComplaintUpdate({ id, action: 'closed', status: 'Closed' });

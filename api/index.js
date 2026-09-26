@@ -360,6 +360,50 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           ]
         }]
       };
+    } else if (templateName === 'customer_technician_reassigned' || templateName === 'technician_reassigned_customer') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const techPhone = cleanParam(variables.technician_phone, '');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Within 24-48 Hours');
+      renderedBody = `☀️ *Eco Green Solar - Technician Reassigned*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been reassigned to a new technician.\n\n👷 *New Technician:* ${techName}${techPhone ? `\n📞 *Mobile:* ${techPhone}` : ''}\n📅 *Expected Visit:* ${visitDate}\n\nOur service engineer will contact you shortly to coordinate the visit.\n\n🔗 *Track Live:* ${trackingUrl}\n\nEco Green Solar Customer Care.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'customer_technician_reassigned',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: techName },
+            { type: 'text', text: techPhone || 'Helpdesk' },
+            { type: 'text', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (templateName === 'technician_reassigned' || templateName === 'technician_job_reassigned_notice') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const notes = cleanParam(variables.notes, 'Ticket reassigned to another technician. Removed from your schedule.');
+      renderedBody = `⚠️ *Eco Green Solar - Job Update*\n\nHello *${techName}*,\n\nPlease note that ticket *${ticketId}* (Customer: ${custName}) has been reassigned to another technician and removed from your active schedule.\n\n📝 *Notes:* ${notes}\n\nPlease check your Technician Portal for your updated schedule.\n- Eco Green Dispatch`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_job_reassigned_notice',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: techName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: custName },
+            { type: 'text', text: notes }
+          ]
+        }]
+      };
     } else if (mediaUrl) {
       renderedBody = message || (mediaType === 'image' ? '[Photo]' : '[Document]');
       if (mediaType === 'image') {
@@ -1419,6 +1463,30 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
       waResult = { success: false, error: waErr.message };
     }
 
+    // In-app notification for Admin & Staff
+    try {
+      await ensureInAppTable();
+      const notifId = `notif_${Date.now()}_staff_reg`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role
+        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'admin', $7, $8)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        notifId,
+        newComp.ticket_id,
+        newComp.id,
+        `New Ticket Registered: ${newComp.ticket_id}`,
+        `New complaint ticket #${newComp.ticket_id} registered for ${newComp.customer_name} (${newComp.product_type} - ${newComp.issue_category}) by ${req.user?.name || 'Helpdesk'}.`,
+        newComp.customer_name,
+        req.user?.name || 'Helpdesk',
+        req.user?.role || 'staff'
+      ]);
+    } catch (notifErr) {
+      console.warn('[Staff Reg In-App Notif Note]', notifErr.message);
+    }
+
     return res.status(201).json({ message: 'Complaint registered successfully', complaint: newComp, whatsapp: waResult });
   } catch (err) {
     console.error('Create complaint error:', err);
@@ -1690,6 +1758,11 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { technician_id, expected_visit_date, notes } = req.body;
 
+    const prevCompRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    const prevComp = prevCompRes.rows[0];
+    const prevTechId = prevComp?.assigned_technician_id;
+    const isReassignment = prevTechId && String(prevTechId) !== String(technician_id);
+
     const techRes = await query('SELECT * FROM technicians WHERE id = $1', [technician_id]);
     const tech = techRes.rows[0];
 
@@ -1702,25 +1775,83 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         status_updated_at = CURRENT_TIMESTAMP
       WHERE id = $3
       RETURNING *
-    `, [technician_id, expected_visit_date || null, id]);
+    `, [technician_id, expected_visit_date || null, prevComp?.id || id]);
 
     const comp = compRes.rows[0];
 
+    const performer = req.user?.name || 'Support Desk';
+    const performerRole = req.user?.role || 'staff';
+
+    const timelineAction = isReassignment ? 'Reassigned' : 'Assigned';
+    const timelineNote = isReassignment
+      ? `Reassigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`
+      : `Assigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`;
+
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [id, 'Assigned', `Assigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`, req.user.name, req.user.role]
+      [comp.id, timelineAction, timelineNote, performer, performerRole]
     );
 
-    // Send WhatsApp to customer
+    // 1. If Reassignment, notify previous technician (Tech A) via WhatsApp & In-App WITHOUT disclosing new technician details
+    if (isReassignment) {
+      try {
+        const prevTechRes = await query('SELECT * FROM technicians WHERE id = $1', [prevTechId]);
+        const prevTech = prevTechRes.rows[0];
+        if (prevTech?.phone) {
+          await sendWhatsApp({
+            to: prevTech.phone,
+            templateName: 'technician_reassigned',
+            variables: {
+              technician_name: prevTech.name,
+              complaint_id: comp.ticket_id,
+              ticket_id: comp.ticket_id,
+              customer_name: comp.customer_name,
+              notes: `Ticket #${comp.ticket_id} has been reassigned to another technician. It has been removed from your active schedule.`
+            }
+          }).catch(err => console.warn('[Prev Tech WhatsApp Warning]:', err.message));
+        }
+
+        // In-App Notification for Previous Technician (Tech A)
+        await ensureInAppTable();
+        const prevTechNotifId = `notif_${Date.now()}_reassign_prev_${prevTechId}`;
+        await query(`
+          INSERT INTO in_app_notifications (
+            id, type, ticket_id, complaint_id, title, message, customer_name,
+            target_role, target_technician_id, target_technician_name,
+            performed_by_name, performed_by_role
+          ) VALUES ($1, 'reassigned', $2, $3, $4, $5, $6, 'technician', $7, $8, $9, $10)
+          ON CONFLICT (id) DO NOTHING
+        `, [
+          prevTechNotifId,
+          comp.ticket_id,
+          comp.id,
+          `Ticket Reassigned: ${comp.ticket_id}`,
+          `Complaint #${comp.ticket_id} (${comp.customer_name}) has been reassigned to another technician. It has been removed from your active schedule.`,
+          comp.customer_name,
+          prevTechId,
+          prevTech?.name || 'Previous Technician',
+          performer,
+          performerRole
+        ]);
+      } catch (prevErr) {
+        console.warn('[Previous Tech Notice Note]:', prevErr.message);
+      }
+    }
+
+    // 2. Send WhatsApp to Customer:
+    // If reassignment, use dedicated customer_technician_reassigned template; else technician_assigned
     let waCustomerResult = null;
+    const custTemplateName = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
     try {
       waCustomerResult = await sendWhatsApp({
         to: comp.customer_phone,
-        templateName: 'technician_assigned',
+        templateName: custTemplateName,
         variables: {
           customer_name: comp.customer_name,
           ticket_id: comp.ticket_id,
           technician_name: tech?.name,
+          technician_phone: tech?.phone || '',
+          expected_visit_date: expected_visit_date || 'Within 24-48 Hours',
           db_complaint_id: comp.id
         }
       });
@@ -1729,7 +1860,7 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       waCustomerResult = { success: false, error: waErr.message };
     }
 
-    // Send WhatsApp to technician
+    // 3. Send WhatsApp to New Assigned Technician (Tech B)
     let waTechResult = null;
     if (tech?.phone) {
       try {
@@ -1739,6 +1870,7 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
           variables: {
             technician_name: tech.name,
             complaint_id: comp.ticket_id,
+            ticket_id: comp.ticket_id,
             customer_name: comp.customer_name,
             customer_phone: comp.customer_phone,
             customer_address: comp.customer_address || comp.city || 'Gujarat',
@@ -1756,10 +1888,10 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       }
     }
 
-    // Insert In-App Notification for Technician
+    // 4. Insert In-App Notification for New Assigned Technician (Tech B)
     try {
       await ensureInAppTable();
-      const notifId = `notif_${Date.now()}_assign`;
+      const notifId = `notif_${Date.now()}_assign_${technician_id}`;
       await query(`
         INSERT INTO in_app_notifications (
           id, type, ticket_id, complaint_id, title, message, customer_name,
@@ -1776,15 +1908,47 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         comp.customer_name,
         technician_id,
         tech?.name || 'Technician',
-        req.user?.name || 'Staff Supervisor',
-        req.user?.role || 'staff'
+        performer,
+        performerRole
       ]);
     } catch (notifErr) {
       console.warn('[Assign in-app notification error]', notifErr.message);
     }
 
+    // 5. Insert In-App Notification for Admin & Help Desk
+    try {
+      await ensureInAppTable();
+      const adminNotifId = `notif_${Date.now()}_admin_${isReassignment ? 'reassign' : 'assign'}`;
+      const adminTitle = isReassignment ? `Ticket Reassigned: ${comp.ticket_id}` : `Ticket Assigned: ${comp.ticket_id}`;
+      const adminMsg = isReassignment
+        ? `Ticket #${comp.ticket_id} for ${comp.customer_name} was reassigned to ${tech?.name || 'Technician'} by ${performer}.`
+        : `Ticket #${comp.ticket_id} for ${comp.customer_name} was assigned to ${tech?.name || 'Technician'} by ${performer}.`;
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, target_technician_id, target_technician_name,
+          performed_by_name, performed_by_role
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'admin', $8, $9, $10, $11)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        adminNotifId,
+        isReassignment ? 'reassigned' : 'assignment',
+        comp.ticket_id,
+        comp.id,
+        adminTitle,
+        adminMsg,
+        comp.customer_name,
+        technician_id,
+        tech?.name || 'Technician',
+        performer,
+        performerRole
+      ]);
+    } catch (adminNotifErr) {
+      console.warn('[Admin in-app notification error]', adminNotifErr.message);
+    }
+
     return res.json({
-      message: 'Technician assigned successfully',
+      message: isReassignment ? 'Technician reassigned successfully' : 'Technician assigned successfully',
       complaint: comp,
       whatsapp_customer: waCustomerResult,
       whatsapp_technician: waTechResult
@@ -2089,7 +2253,7 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
         INSERT INTO in_app_notifications (
           id, type, ticket_id, complaint_id, title, message, customer_name,
           target_role, performed_by_name, performed_by_role
-        ) VALUES ($1, 'resolved', $2, $3, $4, $5, $6, 'staff', $7, $8)
+        ) VALUES ($1, 'resolved', $2, $3, $4, $5, $6, 'admin', $7, $8)
         ON CONFLICT (id) DO NOTHING
       `, [
         notifId,
@@ -2675,6 +2839,7 @@ let metaTemplatesCache = {
 const META_TEMPLATE_MAPPING = {
   complaint_registered: { metaName: 'complaint_registered', language: 'en_US' },
   technician_assigned: { metaName: 'technician_assigned', language: 'en_US' },
+  customer_technician_reassigned: { metaName: 'customer_technician_reassigned', language: 'en_US' },
   status_update: { metaName: 'status_followup_note_update', language: 'en' },
   complaint_resolved: { metaName: 'complaint_resolved', language: 'en_US' },
   complaint_closed: { metaName: 'complaint_closed_feedback_request', language: 'en' },
@@ -2729,6 +2894,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'complaint_registered',
         metaName: 'complaint_registered',
+        metaStatus: 'APPROVED',
         wa: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
         sub: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}{{charges_line}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
@@ -2739,9 +2905,21 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'technician_assigned',
         metaName: 'technician_assigned',
+        metaStatus: 'APPROVED',
         wa: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Scheduled Date:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nScheduled Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
+      },
+      {
+        key: 'customer_technician_reassigned',
+        name: 'Customer Technician Reassigned Notice',
+        audience: 'customer',
+        trigger: 'customer_technician_reassigned',
+        metaName: 'customer_technician_reassigned',
+        metaStatus: 'PENDING',
+        wa: `☀️ *Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n👷 *New Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n📅 *Estimated Visit:* {{expected_visit_date}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        sub: `[Eco Green Solar] Service Technician Update - Ticket {{complaint_id}}`,
+        em: `Dear {{customer_name}},\n\nYour complaint ticket {{complaint_id}} has been reassigned to technician {{technician_name}} (Phone: {{technician_phone}}).\n\nScheduled Date: {{expected_visit_date}}\n\nOur team is working to resolve your issue as soon as possible.`
       },
       {
         key: 'status_update',
@@ -2749,6 +2927,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'status_update',
         metaName: 'status_followup_note_update',
+        metaStatus: 'APPROVED',
         wa: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n📝 *Notes:* {{notes}}\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Status Update - Ticket {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nAn update has been logged for your complaint ticket {{complaint_id}}.\n\nCurrent Status: {{status}}\nUpdate Details: {{notes}}\n\nWe remain committed to resolving your issue promptly.`
@@ -2759,6 +2938,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'complaint_resolved',
         metaName: 'complaint_resolved',
+        metaStatus: 'APPROVED',
         wa: `☀️ *Eco Green Solar Resolution*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been marked as *RESOLVED* by technician {{technician_name}}.\n\n✅ *Resolution Notes:* {{notes}}\n\nOur quality desk will verify and close the ticket shortly.\n\n🔗 *View Details:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Issue Resolved - Ticket {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nOur field technician has addressed the issue on your {{product_type}} (Ticket ID: {{complaint_id}}).\n\nResolution Summary: {{notes}}\n\nOur support desk will verify the resolution and close the ticket.`
@@ -2769,6 +2949,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'complaint_closed',
         metaName: 'complaint_closed_feedback_request',
+        metaStatus: 'APPROVED',
         wa: `☀️ *Eco Green Solar Closure*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
         sub: `[Eco Green Solar] Complaint Closed - {{complaint_id}} | Please Rate Us`,
         em: `Dear {{customer_name}},\n\nYour service complaint under ticket ID {{complaint_id}} is now closed.\n\nWe hope our service technician resolved your issue to your satisfaction.\n\nPlease take 30 seconds to rate your service experience by clicking the link below.`
@@ -2779,6 +2960,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'complaint_reopened',
         metaName: 'complaint_reopened_notification',
+        metaStatus: 'APPROVED',
         wa: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nOur senior operations lead will review the service history and arrange an immediate re-inspection.`
@@ -2789,6 +2971,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'technician',
         trigger: 'technician_work_order',
         metaName: 'technician_work_order',
+        metaStatus: 'APPROVED',
         wa: `⚡ *Eco Green Solar - New Work Order*\n\nHello {{technician_name}}, you have been assigned new ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n📅 *Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.`,
         sub: `[Eco Green Solar] New Work Order Assigned: Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nYou have been dispatched for service complaint #{{complaint_id}}.\n\nCustomer: {{customer_name}} ({{customer_phone}})\nAddress: {{customer_address}}\nIssue: {{issue_category}}\nScheduled Date: {{expected_visit_date}}\n\nPlease visit your technician dashboard to update work order logs.`
@@ -2799,6 +2982,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'technician',
         trigger: 'technician_reminder',
         metaName: 'technician_pending_visit_reminder',
+        metaStatus: 'APPROVED',
         wa: `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
         sub: `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
@@ -2809,6 +2993,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'technician',
         trigger: 'technician_reassigned',
         metaName: 'technician_job_reassigned_notice',
+        metaStatus: 'APPROVED',
         wa: `⚠️ *Eco Green Solar - Job Update*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been reassigned or updated.\n\n📝 *Notes:* {{notes}}\n\nPlease check your Eco Green technician portal for your latest schedule.\n- Eco Green Dispatch`,
         sub: `[Eco Green Solar] Job Update: Ticket #{{complaint_id}} - {{customer_name}}`,
         em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned or updated.\n\nNotes: {{notes}}\n\nPlease check your Technician Portal for your latest active dispatch schedule.`
@@ -2820,15 +3005,14 @@ async function ensureNotificationTemplatesTable() {
         INSERT INTO notification_templates (
           template_key, name, whatsapp_body, email_subject, email_body,
           audience, trigger_event, meta_template_name, meta_status, is_active, channel
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'APPROVED', 1, 'whatsapp')
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, 'whatsapp')
         ON CONFLICT (template_key) DO UPDATE SET
           name = EXCLUDED.name,
           audience = EXCLUDED.audience,
           trigger_event = EXCLUDED.trigger_event,
           meta_template_name = EXCLUDED.meta_template_name,
-          meta_status = 'APPROVED',
           is_active = COALESCE(notification_templates.is_active, 1)
-      `, [d.key, d.name, d.wa, d.sub, d.em, d.audience, d.trigger, d.metaName]).catch(() => {});
+      `, [d.key, d.name, d.wa, d.sub, d.em, d.audience, d.trigger, d.metaName, d.metaStatus || 'PENDING']).catch(() => {});
     }
 
     // Explicitly update technician audience and approval status for all known templates
@@ -2841,7 +3025,7 @@ async function ensureNotificationTemplatesTable() {
     await query(`
       UPDATE notification_templates 
       SET audience = 'customer' 
-      WHERE template_key = 'technician_assigned'
+      WHERE template_key IN ('technician_assigned', 'customer_technician_reassigned')
     `).catch(() => {});
 
     await query(`
