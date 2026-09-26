@@ -10,7 +10,7 @@ import {
   FileCheck, Shield, ChevronRight, Video, Mic, Pin, Compass,
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
-  Edit2, Trash2, ChevronDown, RotateCcw
+  Edit2, Trash2, ChevronDown, RotateCcw, Eye
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
@@ -889,30 +889,92 @@ export const WhatsAppWebInbox = ({
                   </div>
                 )}
 
-                {/* Media: PDF Document Card with Download Action */}
+                {/* Media: Video Player with Full View & Download */}
+                {msg.media_url && (msg.media_type === 'video' || msg.media_type?.includes('video')) && (
+                  <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs">
+                    <video
+                      src={msg.media_url}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="w-full max-h-72 rounded-t-lg object-contain bg-black"
+                    />
+                    <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
+                      <span className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300">
+                        <Video className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="truncate">{msg.media_caption || 'WhatsApp Video'}</span>
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewMedia({ url: msg.media_url, type: 'video', title: msg.media_caption || 'WhatsApp Video' })}
+                          className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
+                          title="Open Full Player"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadFile(msg.media_url, `whatsapp_${msg.id}.mp4`)}
+                          className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
+                          title="Download Video"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Media: Audio / Voice Note */}
+                {msg.media_url && (msg.media_type === 'audio' || msg.media_type?.includes('audio')) && (
+                  <div className="mb-2 p-2.5 rounded-lg bg-black/5 border border-black/5 max-w-sm">
+                    <div className="flex items-center gap-2 mb-1 text-xs text-[#008069] font-semibold">
+                      <Mic className="w-3.5 h-3.5" />
+                      <span>Voice Note</span>
+                    </div>
+                    <audio src={msg.media_url} controls className="w-full h-8" />
+                  </div>
+                )}
+
+                {/* Media: PDF / Document Card with In-App View & Download */}
                 {msg.media_url && (msg.media_type === 'document' || msg.media_type?.includes('pdf') || msg.media_type?.includes('document')) && (
-                  <div className="mb-2 p-3 bg-black/5 hover:bg-black/10 rounded-lg flex items-center justify-between gap-3 border border-black/5 transition-colors">
+                  <div 
+                    onClick={() => setPreviewMedia({ url: msg.media_url, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
+                    className="mb-2 p-3 bg-black/5 hover:bg-emerald-50/80 rounded-lg flex items-center justify-between gap-3 border border-black/5 hover:border-emerald-300 transition-all cursor-pointer group"
+                    title="Click to view PDF in app"
+                  >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded bg-[#d9fdd3] text-[#008069] flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs">
+                      <div className="w-10 h-10 rounded-lg bg-[#d9fdd3] text-[#008069] group-hover:bg-[#008069] group-hover:text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs transition-colors">
                         <FileText className="w-5 h-5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-xs text-[#111b21] truncate max-w-[200px]">
+                        <p className="font-semibold text-xs text-[#111b21] group-hover:text-[#008069] truncate max-w-[220px] transition-colors">
                           {msg.media_caption || 'Attached Document.pdf'}
                         </p>
-                        <span className="text-[10px] text-[#667781] uppercase font-mono">
-                          PDF • Click to open
+                        <span className="text-[10px] text-[#667781] uppercase font-mono flex items-center gap-1">
+                          <Eye className="w-3 h-3 text-emerald-600" /> Click to read inside app
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadFile(msg.media_url, msg.media_caption || 'document.pdf')}
-                      className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/60 rounded-full transition-colors cursor-pointer"
-                      title="Download PDF"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMedia({ url: msg.media_url, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
+                        className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer"
+                        title="View PDF In App"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(msg.media_url, msg.media_caption || 'document.pdf')}
+                        className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/80 rounded-full transition-colors cursor-pointer"
+                        title="Download PDF"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -2237,34 +2299,128 @@ export const WhatsAppWebInbox = ({
         </div>
       )}
 
-      {/* ================= MEDIA PREVIEW MODAL ================= */}
+      {/* ================= MEDIA & DOCUMENT PREVIEW MODAL ================= */}
       {previewMedia && (
         <div 
           onClick={() => setPreviewMedia(null)}
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
         >
-          <div className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-            <div className="absolute -top-10 right-0 flex items-center gap-2">
-              <button
-                onClick={() => handleDownloadFile(previewMedia.url, 'whatsapp_photo.jpg')}
-                className="px-3 py-1 bg-white/20 hover:bg-white/40 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download</span>
-              </button>
-              <button
-                onClick={() => setPreviewMedia(null)}
-                className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
-              >
-                <X className="w-6 h-6" />
-              </button>
+          {previewMedia.type === 'pdf' ? (
+            <div 
+              className="relative w-full max-w-5xl h-[92vh] bg-slate-900 rounded-2xl flex flex-col overflow-hidden shadow-2xl border border-slate-700/60"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* PDF Modal Header */}
+              <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between text-white shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0 pr-4">
+                  <div className="p-1.5 bg-rose-500/20 text-rose-400 rounded-lg">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-sm truncate text-white">
+                      {previewMedia.title || 'PDF Document'}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">In-App PDF Viewer • Eco Green Solar</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={previewMedia.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Open in new window"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">New Tab</span>
+                  </a>
+                  <button
+                    onClick={() => handleDownloadFile(previewMedia.url, previewMedia.title || 'document.pdf')}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download</span>
+                  </button>
+                  <button
+                    onClick={() => setPreviewMedia(null)}
+                    className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer ml-1"
+                    title="Close Viewer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* PDF Embed Body */}
+              <div className="w-full flex-1 bg-slate-800 relative">
+                <iframe
+                  src={`${previewMedia.url}#toolbar=1&navpanes=0`}
+                  className="w-full h-full border-0 bg-white"
+                  title={previewMedia.title || 'PDF Preview'}
+                />
+              </div>
             </div>
-            <img
-              src={previewMedia.url}
-              alt="Zoomed attachment"
-              className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl border border-white/10"
-            />
-          </div>
+          ) : previewMedia.type === 'video' ? (
+            <div 
+              className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center" 
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-full flex items-center justify-between pb-3 text-white">
+                <span className="font-semibold text-sm truncate max-w-md">
+                  {previewMedia.title || 'WhatsApp Video'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDownloadFile(previewMedia.url, 'whatsapp_video.mp4')}
+                    className="px-3 py-1.5 bg-white/20 hover:bg-white/40 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download</span>
+                  </button>
+                  <button
+                    onClick={() => setPreviewMedia(null)}
+                    className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <video
+                src={previewMedia.url}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[80vh] max-w-full rounded-xl bg-black shadow-2xl border border-white/10"
+              />
+            </div>
+          ) : (
+            <div 
+              className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center" 
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -top-10 right-0 flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadFile(previewMedia.url, 'whatsapp_photo.jpg')}
+                  className="px-3 py-1 bg-white/20 hover:bg-white/40 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download</span>
+                </button>
+                <button
+                  onClick={() => setPreviewMedia(null)}
+                  className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <img
+                src={previewMedia.url}
+                alt="Zoomed attachment"
+                className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl border border-white/10"
+              />
+            </div>
+          )}
         </div>
       )}
       {/* ================= MODAL: EDIT CONTACT NAME ================= */}
