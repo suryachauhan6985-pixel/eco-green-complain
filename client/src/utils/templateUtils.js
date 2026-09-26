@@ -163,26 +163,73 @@ Please call the customer before visiting and confirm site access.
 }
 
 /**
+ * Helper to get template synchronously from in-memory cache, localStorage, or INITIAL_TEMPLATES
+ */
+export function getTemplateSync(templateKey) {
+  let list = cachedTemplates;
+  if (!list || !Array.isArray(list) || list.length === 0) {
+    try {
+      const stored = localStorage.getItem('egs_mock_templates');
+      if (stored) {
+        list = JSON.parse(stored);
+        cachedTemplates = list;
+      }
+    } catch (_) {}
+  }
+  if (!list || !Array.isArray(list) || list.length === 0) {
+    list = INITIAL_TEMPLATES;
+  }
+  return list.find(t => t.template_key === templateKey);
+}
+
+/**
  * Standardized single template for Technician -> Customer WhatsApp greeting (ECO-13)
- * Free of expected date and mobile number placeholders.
- * Consistent across portal cards and ticket drawer.
+ * Dynamic and editable from Admin Panel (Template Manager > technician_reach_out_customer).
+ * Sends exactly one unified message.
  */
 export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
-  const cleanPhone = (ticket.customer_phone || '').replace(/[^0-9]/g, '');
+  const cleanPhone = (ticket?.customer_phone || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
   
-  const techGreeting = 
+  const tmpl = getTemplateSync('technician_reach_out_customer');
+
+  const defaultBody = 
     `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
-    `Namaste *${ticket.customer_name || 'Customer'}*,\n\n` +
-    `This is *${technicianName || ticket.technician_name || 'your assigned service technician'}* regarding complaint ticket *#${ticket.ticket_id || ticket.id}* (${ticket.product_type || 'Solar System'}).\n\n` +
+    `Namaste *{{customer_name}}*,\n\n` +
+    `This is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\n` +
     `I am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n` +
     `📞 Helpdesk: +91 78784 44414\n` +
     `- Eco Green Technical Services`;
 
-  const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(techGreeting)}`;
+  const rawBody = (tmpl && tmpl.whatsapp_body && tmpl.whatsapp_body.trim()) ? tmpl.whatsapp_body : defaultBody;
+
+  const trackingUrl = `${window.location.origin}/track/${ticket?.ticket_id || ticket?.id || ''}`;
+  const formattedDate = ticket?.expected_visit_date
+    ? new Date(ticket.expected_visit_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : 'Scheduled Visit';
+
+  const data = {
+    customer_name: ticket?.customer_name || 'Customer',
+    customer_phone: ticket?.customer_phone || '',
+    customer_address: ticket?.customer_address || '',
+    complaint_id: ticket?.ticket_id || ticket?.id || '',
+    product_type: ticket?.product_type || 'Solar System',
+    issue_category: ticket?.issue_category || '',
+    priority: ticket?.priority || 'Normal',
+    technician_name: technicianName || ticket?.technician_name || 'your assigned service technician',
+    technician_phone: ticket?.technician_phone || '',
+    expected_visit_date: formattedDate,
+    status: ticket?.status || 'Assigned',
+    notes: ticket?.notes || ticket?.issue_description || '',
+    feedback_url: trackingUrl,
+    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  };
+
+  const renderedText = renderTemplateText(rawBody, data);
+  const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(renderedText)}`;
 
   return {
-    rawText: techGreeting,
+    rawText: renderedText,
     sendUrl: waUrl,
     phone: formattedPhone
   };

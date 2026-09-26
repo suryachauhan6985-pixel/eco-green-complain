@@ -206,7 +206,7 @@ async function getMetaStatus(req, res) {
     const verifiedKeys = [
       'complaint_registered', 'technician_assigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-      'technician_work_order', 'technician_reminder'
+      'technician_work_order', 'technician_reminder', 'technician_reach_out_customer'
     ];
 
     const refreshed = db.prepare('SELECT id, template_key, meta_template_name, meta_status, meta_category, meta_language FROM notification_templates').all();
@@ -252,7 +252,8 @@ async function syncTemplateWithMeta(req, res) {
     const verifiedKeys = [
       'complaint_registered', 'technician_assigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-      'technician_work_order', 'technician_reminder', 'technician_reassigned'
+      'technician_work_order', 'technician_reminder', 'technician_reassigned',
+      'technician_reach_out_customer'
     ];
 
     if (metaRes.success && Array.isArray(metaRes.templates)) {

@@ -175,5 +175,19 @@ export const INITIAL_TEMPLATES = [
     whatsapp_body: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
     email_subject: `[Eco Green Solar] Job Transferred: Ticket #{{complaint_id}} - {{customer_name}}`,
     email_body: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) previously assigned to you has been reassigned to another technician.\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.`
+  },
+  {
+    id: 12,
+    template_key: 'technician_reach_out_customer',
+    name: 'Technician Direct Customer WhatsApp (Quick Chat)',
+    audience: 'customer',
+    trigger_event: 'technician_direct_reachout',
+    meta_template_name: 'technician_reach_out_customer',
+    meta_status: 'APPROVED',
+    is_active: 1,
+    channel: 'whatsapp',
+    whatsapp_body: `☀️ *Eco Green Solar - Field Service Desk*\n\nNamaste *{{customer_name}}*,\n\nThis is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\nI am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n📞 Helpdesk: +91 78784 44414\n- Eco Green Technical Services`,
+    email_subject: `[Eco Green Solar] Service Visit Inspection - Ticket #{{complaint_id}}`,
+    email_body: `Dear {{customer_name}},\n\nYour assigned service technician {{technician_name}} is preparing to visit your site regarding complaint ticket #{{complaint_id}} ({{product_type}}).\n\nPlease ensure premises and rooftop access are available upon arrival.\n\nHelpline: +91 78784 44414\n- Eco Green Solar Technical Services`
   }
 ];
