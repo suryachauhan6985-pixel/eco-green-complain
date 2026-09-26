@@ -284,6 +284,7 @@ app.post('/api/complaints/sync-backup', complaintController.syncBackupComplaints
 // Protected complaint endpoints
 app.get('/api/complaints', authenticateToken, complaintController.listComplaints);
 app.get('/api/complaints/customer-history', authenticateToken, complaintController.getCustomerHistory);
+app.get('/api/complaints/check-active', authenticateToken, complaintController.checkActiveComplaint);
 app.get('/api/complaints/:id', authenticateToken, complaintController.getComplaintById);
 app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), complaintController.createComplaint);
 app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('attachments', 5), complaintController.addAttachments);

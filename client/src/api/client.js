@@ -1089,6 +1089,8 @@ export const api = {
   },
   getComplaint: (id) => request(`/complaints/${id}`),
   getCustomerHistory: (phone) => request(`/complaints/customer-history?phone=${encodeURIComponent(phone)}`),
+  checkActiveComplaint: (phone, name) => 
+    request(`/complaints/check-active?phone=${encodeURIComponent(phone || '')}&name=${encodeURIComponent(name || '')}`),
   createComplaint: async (formData) => {
     const res = await request('/complaints', {
       method: 'POST',

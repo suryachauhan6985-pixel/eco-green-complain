@@ -144,9 +144,15 @@ export const ComplaintDetailDrawer = ({
 
   const handleUploadMoreAttachments = async (e) => {
     if (!e.target.files || e.target.files.length === 0 || !ticket) return;
+    const files = Array.from(e.target.files);
+    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
+    if (oversized.length > 0) {
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      e.target.value = '';
+      return;
+    }
     try {
       setUploadingAtt(true);
-      const files = Array.from(e.target.files);
       const fd = new FormData();
       files.forEach(f => fd.append('attachments', f));
       const res = await api.uploadComplaintAttachments(ticket.id, fd);
@@ -161,6 +167,17 @@ export const ComplaintDetailDrawer = ({
       setUploadingAtt(false);
       e.target.value = '';
     }
+  };
+
+  const handleResolutionPhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) {
+      showToast(`File "${file.name}" exceeds 50MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      e.target.value = '';
+      return;
+    }
+    setResolutionPhoto(file);
   };
 
   // WhatsApp Live Chat State
@@ -1836,7 +1853,7 @@ export const ComplaintDetailDrawer = ({
                                       type="file"
                                       accept="image/*"
                                       capture="environment"
-                                      onChange={(e) => setResolutionPhoto(e.target.files?.[0] || null)}
+                                      onChange={handleResolutionPhotoChange}
                                       className="hidden"
                                     />
                                   </label>
@@ -1846,7 +1863,7 @@ export const ComplaintDetailDrawer = ({
                                     <input
                                       type="file"
                                       accept="image/*,video/*"
-                                      onChange={(e) => setResolutionPhoto(e.target.files?.[0] || null)}
+                                      onChange={handleResolutionPhotoChange}
                                       className="hidden"
                                     />
                                   </label>

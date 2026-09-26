@@ -220,6 +220,39 @@ function getCustomerHistory(req, res) {
   }
 }
 
+function checkActiveComplaint(req, res) {
+  try {
+    const { phone, name } = req.query;
+    const cleanDigits = String(phone || '').replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+    const cleanName = String(name || '').trim().toLowerCase();
+
+    if (!last10 && cleanName.length < 3) {
+      return res.json({ hasActiveComplaint: false, complaint: null });
+    }
+
+    const complaint = db.prepare(`
+      SELECT id, ticket_id, customer_name, customer_phone, status, priority, issue_category, created_at
+      FROM complaints
+      WHERE (
+        (customer_phone LIKE ? AND length(?) >= 10)
+        OR (lower(trim(customer_name)) = ? AND length(?) >= 3)
+      )
+      AND lower(status) NOT IN ('closed', 'cancelled')
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(`%${last10}%`, last10, cleanName, cleanName);
+
+    if (complaint) {
+      return res.json({ hasActiveComplaint: true, complaint });
+    }
+    return res.json({ hasActiveComplaint: false, complaint: null });
+  } catch (err) {
+    console.error('Check active complaint error:', err);
+    res.status(500).json({ error: 'Failed to check active complaints' });
+  }
+}
+
 // Public tracking endpoint (no auth required)
 function trackTicket(req, res) {
   try {
@@ -283,6 +316,31 @@ async function createComplaint(req, res) {
 
     if (!customer_name || !customer_phone || !customer_address || !product_type || !issue_category || !issue_description) {
       return res.status(400).json({ error: 'Required fields missing' });
+    }
+
+    // Duplicate Prevention: Check if active/open complaint already exists for this customer
+    const cleanDigits = String(customer_phone || '').replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+    const cleanName = String(customer_name || '').trim().toLowerCase();
+
+    const existingActive = db.prepare(`
+      SELECT id, ticket_id, customer_name, customer_phone, status 
+      FROM complaints 
+      WHERE (
+        (customer_phone LIKE ? AND length(?) >= 10)
+        OR (lower(trim(customer_name)) = ? AND length(?) >= 3)
+      )
+      AND lower(status) NOT IN ('closed', 'cancelled')
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(`%${last10}%`, last10, cleanName, cleanName);
+
+    if (existingActive) {
+      return res.status(400).json({
+        error: `Active complaint #${existingActive.ticket_id} is already open for this customer (${existingActive.customer_name}, Status: ${existingActive.status}). A new complaint cannot be registered until the existing ticket is Closed.`,
+        duplicate: true,
+        existingTicket: existingActive
+      });
     }
 
     const ticketId = generateTicketId();
@@ -1575,6 +1633,7 @@ module.exports = {
   listComplaints,
   getComplaintById,
   getCustomerHistory,
+  checkActiveComplaint,
   trackTicket,
   createComplaint,
   addAttachments,

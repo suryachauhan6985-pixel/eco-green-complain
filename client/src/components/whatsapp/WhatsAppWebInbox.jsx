@@ -394,8 +394,8 @@ export const WhatsAppWebInbox = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 20 * 1024 * 1024) {
-      showToast('File size exceeds 20MB limit', 'error');
+    if (file.size > 50 * 1024 * 1024) {
+      showToast('File size exceeds 50MB limit', 'error');
       return;
     }
 

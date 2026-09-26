@@ -141,6 +141,8 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [previewItem, setPreviewItem] = useState(null);
   const [phoneVerification, setPhoneVerification] = useState(null);
   const [verifyingPhone, setVerifyingPhone] = useState(false);
+  const [activeComplaintWarning, setActiveComplaintWarning] = useState(null);
+  const [checkingActiveComplaint, setCheckingActiveComplaint] = useState(false);
 
   // Debounced real-time WhatsApp phone verification
   useEffect(() => {
@@ -165,6 +167,36 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
     return () => clearTimeout(timer);
   }, [formData.customer_phone]);
+
+  // Real-time active complaint duplicate detection
+  useEffect(() => {
+    const rawPhone = (formData.customer_phone || '').replace(/\D/g, '');
+    const rawName = (formData.customer_name || '').trim();
+
+    if (rawPhone.length < 10 && rawName.length < 3) {
+      setActiveComplaintWarning(null);
+      setCheckingActiveComplaint(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setCheckingActiveComplaint(true);
+      try {
+        const res = await api.checkActiveComplaint(formData.customer_phone, formData.customer_name);
+        if (res && res.hasActiveComplaint && res.complaint) {
+          setActiveComplaintWarning(res.complaint);
+        } else {
+          setActiveComplaintWarning(null);
+        }
+      } catch (e) {
+        setActiveComplaintWarning(null);
+      } finally {
+        setCheckingActiveComplaint(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [formData.customer_phone, formData.customer_name]);
 
   // Location & Postal Pincode state
   const [pincodeLoading, setPincodeLoading] = useState(false);
@@ -473,8 +505,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const handleFileChange = async (e) => {
     if (e.target.files) {
       const selected = Array.from(e.target.files);
+      const oversized = selected.filter(f => f.size > 50 * 1024 * 1024);
+      if (oversized.length > 0) {
+        showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      }
+      const validFiles = selected.filter(f => f.size <= 50 * 1024 * 1024);
+      if (validFiles.length === 0) return;
+
       const newItems = await Promise.all(
-        selected.map(async (file) => {
+        validFiles.map(async (file) => {
           const isImg = file.type.startsWith('image/');
           const isVid = file.type.startsWith('video/');
           const optimized = isImg ? await compressImageFile(file) : file;
@@ -509,6 +548,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     e.preventDefault();
     if (!formData.customer_name || !formData.customer_phone || !formData.customer_address || !formData.issue_description) {
       showToast('Please fill all required customer and issue details.', 'warning');
+      return;
+    }
+
+    if (activeComplaintWarning) {
+      showToast(`Cannot register: Active complaint #${activeComplaintWarning.ticket_id} is already open (${activeComplaintWarning.status}). Please resolve/close it first.`, 'error');
       return;
     }
 
@@ -859,6 +903,35 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   Change Product
                 </button>
               </div>
+
+              {/* Active Complaint Duplicate Warning Banner */}
+              {activeComplaintWarning && (
+                <div className="bg-rose-50 border-2 border-rose-400 rounded-2xl p-4 flex items-start gap-3 shadow-md animate-in fade-in slide-in-from-top-2">
+                  <div className="p-2 bg-rose-600 text-white rounded-xl shrink-0 mt-0.5 shadow-xs">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                      <h4 className="font-extrabold text-sm text-rose-900 flex items-center gap-1.5">
+                        <span>Active Complaint Already Open:</span>
+                        <span className="font-mono bg-rose-200/80 text-rose-950 px-2 py-0.5 rounded-lg text-xs">
+                          #{activeComplaintWarning.ticket_id}
+                        </span>
+                      </h4>
+                      <span className="px-2.5 py-0.5 bg-amber-500 text-white text-[10px] font-black uppercase rounded-full shadow-2xs tracking-wider">
+                        {activeComplaintWarning.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-rose-800 leading-relaxed">
+                      Customer <strong>{activeComplaintWarning.customer_name}</strong> ({activeComplaintWarning.customer_phone}) already has an active service ticket in progress.
+                    </p>
+                    <div className="mt-2 p-2 bg-white/80 rounded-xl border border-rose-200 text-[11px] text-rose-900 font-semibold flex items-center justify-between flex-wrap gap-2">
+                      <span>⚠️ Duplicate tickets cannot be registered for this customer until Ticket #{activeComplaintWarning.ticket_id} is marked <strong>Closed</strong>.</span>
+                      <span className="text-slate-500 font-normal">Created: {new Date(activeComplaintWarning.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Smart Customer Lookup Bar (Excel 6,100+ Database) */}
               <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/60 p-3.5 rounded-2xl border border-emerald-200 shadow-2xs relative">
@@ -1640,11 +1713,20 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                  disabled={submitting || !!activeComplaintWarning}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 transition-all ${
+                    activeComplaintWarning
+                      ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed opacity-90'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 disabled:opacity-50 cursor-pointer'
+                  }`}
+                  title={activeComplaintWarning ? `Cannot register: Ticket #${activeComplaintWarning.ticket_id} is still open (${activeComplaintWarning.status})` : ''}
                 >
                   <Send className="w-3.5 h-3.5" />
-                  {submitting ? 'Registering & Dispatching...' : 'Register Complaint & Send Alerts'}
+                  {submitting
+                    ? 'Registering & Dispatching...'
+                    : activeComplaintWarning
+                    ? `Cannot Register: Ticket #${activeComplaintWarning.ticket_id} Still Open`
+                    : 'Register Complaint & Send Alerts'}
                 </button>
               </div>
             </form>
