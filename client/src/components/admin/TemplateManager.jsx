@@ -12,14 +12,15 @@ import {
 export const TRIGGER_OPTIONS = [
   { id: 'complaint_registered', label: 'Ticket Lodged / Registered', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket' },
   { id: 'technician_assigned', label: 'Technician First Assigned', audience: 'all', desc: 'Fires to customer when technician is initially allocated' },
-  { id: 'technician_reassigned', label: 'Technician Reassigned / Job Transferred', audience: 'all', desc: 'Fires when assigned technician is changed (sends to Customer & Previous Technician)' },
+  { id: 'technician_reassigned', label: 'Technician Reassigned (In-Progress Job Transferred)', audience: 'all', desc: 'Fires when assigned technician is changed during active complaint (New Tech Work Order + Old Tech Notice)' },
   { id: 'status_update', label: 'Status & Visit Note Update', audience: 'customer', desc: 'Fires when progress or note is recorded on ticket' },
   { id: 'complaint_resolved', label: 'Service Work Completed / Resolved', audience: 'customer', desc: 'Fires when technician marks job resolved on site' },
   { id: 'complaint_closed', label: 'Ticket Closed & Rating Request', audience: 'customer', desc: 'Fires when ticket is closed to collect 1-5 star review' },
   { id: 'complaint_reopened', label: 'Ticket Reopened Alert', audience: 'customer', desc: 'Fires if customer or supervisor reopens an issue' },
   { id: 'technician_work_order', label: 'Work Order Dispatch (New Job)', audience: 'technician', desc: 'Fires to newly assigned technician with customer address' },
   { id: 'technician_reminder', label: 'Pending Visit Reminder', audience: 'technician', desc: 'Fires as schedule reminder for upcoming service visit' },
-  { id: 'technician_reopened_work_order', label: 'Technician Reopened Work Order (Reopened Case)', audience: 'technician', desc: 'Fires to technician when a closed complaint is reopened' },
+  { id: 'technician_reopened_work_order', label: 'Technician Reopened Work Order (Reopened Case)', audience: 'technician', desc: 'Fires to assigned technician when a closed complaint is reopened' },
+  { id: 'technician_reopen_job_transferred', label: 'Technician Reopened Job Transferred (Previous Tech Notice)', audience: 'technician', desc: 'Fires on reopen to notify previous technician that job was transferred to another specialist' },
   { id: 'technician_direct_reachout', label: 'Technician Direct Reach Out (Quick Chat)', audience: 'customer', desc: 'Pre-fills technician greeting message when clicking WhatsApp on complaint card' },
   { id: 'custom_trigger', label: 'Custom Outbound Trigger', audience: 'all', desc: 'Triggered via custom API or manual supervisor broadcast' }
 ];
@@ -35,7 +36,7 @@ export const isTechnicianTemplate = (t) => {
   // Specifically: technician_assigned and customer_technician_reassigned are ALWAYS customer notifications
   if (key === 'technician_assigned' || key === 'customer_technician_reassigned') return false;
 
-  // Actual technician templates:
+  // Actual technician templates (6 official technician templates):
   if (
     key === 'technician_work_order' ||
     key === 'technician_reassigned_work_order' ||
@@ -45,13 +46,20 @@ export const isTechnicianTemplate = (t) => {
     key === 'technician_job_transferred' ||
     key === 'technician_job_reassigned_notice' ||
     key === 'technician_reopened_work_order' ||
+    key === 'technician_reopen_job_transferred' ||
+    key === 'technician_reopened_job_transferred' ||
     key === 'technician_complaint_reopened'
   ) {
     return true;
   }
 
   const trig = (t.trigger_event || '').toLowerCase();
-  if (trig === 'technician_work_order' || trig === 'technician_reminder' || trig === 'technician_reopened_work_order') {
+  if (
+    trig === 'technician_work_order' || 
+    trig === 'technician_reminder' || 
+    trig === 'technician_reopened_work_order' ||
+    trig === 'technician_reopen_job_transferred'
+  ) {
     return true;
   }
 
@@ -152,7 +160,7 @@ export const TemplateManager = () => {
         'complaint_registered', 'technician_assigned', 'status_update', 
         'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
         'technician_work_order', 'technician_reminder', 'technician_reach_out_customer',
-        'technician_reopened_work_order'
+        'technician_reopened_work_order', 'technician_reopen_job_transferred'
       ];
 
       const list = rawList.map(t => {
@@ -199,7 +207,7 @@ export const TemplateManager = () => {
       'complaint_registered', 'technician_assigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
       'technician_work_order', 'technician_reminder', 'technician_reach_out_customer',
-      'technician_reopened_work_order'
+      'technician_reopened_work_order', 'technician_reopen_job_transferred'
     ];
     const isVerified = verifiedKeys.includes(tmpl.template_key);
     const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');

@@ -455,6 +455,29 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           ]
         }]
       };
+    } else if (templateName === 'technician_reopen_job_transferred' || templateName === 'technician_reopened_transferred') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const newTech = cleanParam(variables.new_technician_name, 'another specialist');
+      const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up inspection requested');
+
+      renderedBody = `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello *${techName}*,\n\nPlease note that complaint ticket *${ticketId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTech}*).\n\n⚠️ *Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to attend to this complaint as another technician has been dispatched for follow-up.\n- Eco Green Dispatch`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_job_transferred_notice',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: techName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: custName },
+            { type: 'text', text: `Reopened & reassigned to ${newTech}. Reason: ${reopenReason}` }
+          ]
+        }]
+      };
     } else if (mediaUrl) {
       renderedBody = message || (mediaType === 'image' ? '[Photo]' : '[Document]');
       if (mediaType === 'image') {
@@ -2774,19 +2797,21 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
             }
           });
 
-          // Also alert previous technician that job has been reassigned upon reopening
+          // Also alert previous technician that job has been reassigned upon reopening (reopen job transferred)
           if (oldComp.technician_phone && String(oldComp.technician_phone).trim() !== String(newTechPhone).trim()) {
-            const prevTechNotice = `⚠️ *Eco Green Solar - Job Transferred*\n\nHello *${oldComp.technician_name}*, please note that ticket *${comp.ticket_id}* (Customer: ${comp.customer_name}) previously assigned to you has been reopened and reassigned to another technician (*${newTechName}*).\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.\n- Eco Green Dispatch`;
+            const prevTechNotice = `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello *${oldComp.technician_name}*, please note that ticket *${comp.ticket_id}* (Customer: ${comp.customer_name}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTechName}*).\n\n⚠️ *Customer Reopen Reason:* ${reopenReasonText}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Dispatch`;
 
             await sendWhatsApp({
               to: oldComp.technician_phone,
-              templateName: 'technician_reassigned',
+              templateName: 'technician_reopen_job_transferred',
               message: prevTechNotice,
               variables: {
                 technician_name: oldComp.technician_name,
                 complaint_id: comp.ticket_id,
                 ticket_id: comp.ticket_id,
                 customer_name: comp.customer_name,
+                new_technician_name: newTechName,
+                reopen_reason: reopenReasonText,
                 notes: `Reopened & reassigned to ${newTechName}. Reason: ${reopenReasonText}`
               }
             }).catch(e => console.warn('[Reopen Prev Tech WA Error]', e.message));
@@ -3004,6 +3029,7 @@ const META_TEMPLATE_MAPPING = {
   technician_reassigned_work_order: { metaName: 'technician_reassigned_work_order', language: 'en_US' },
   technician_reminder: { metaName: 'technician_pending_visit_reminder', language: 'en' },
   technician_reopened_work_order: { metaName: 'technician_reopened_work_order', language: 'en' },
+  technician_reopen_job_transferred: { metaName: 'technician_job_transferred_notice', language: 'en' },
   technician_job_transferred: { metaName: 'technician_job_transferred_notice', language: 'en' },
   technician_reassigned: { metaName: 'technician_job_transferred_notice', language: 'en' }
 };
@@ -3159,14 +3185,14 @@ async function ensureNotificationTemplatesTable() {
       },
       {
         key: 'technician_reassigned',
-        name: 'Technician Job Transferred (Previous Tech Notice)',
+        name: 'Technician Job Transferred (In-Progress Ticket Notice)',
         audience: 'technician',
         trigger: 'technician_reassigned',
         metaName: 'technician_job_transferred_notice',
         metaStatus: 'PENDING',
-        wa: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
+        wa: `⚠️ *Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) currently assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Dispatch`,
         sub: `[Eco Green Solar] Job Transferred: Ticket #{{complaint_id}} - {{customer_name}}`,
-        em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) previously assigned to you has been reassigned to another technician.\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.`
+        em: `Dear {{technician_name}},\n\nThis is to notify you that complaint ticket #{{complaint_id}} (Customer: {{customer_name}}) currently assigned to you has been reassigned to another technician.\n\nYou are no longer required to attend to this complaint. Please check your Technician Portal for your latest active schedule.`
       },
       {
         key: 'technician_reopened_work_order',
@@ -3178,6 +3204,17 @@ async function ensureNotificationTemplatesTable() {
         wa: `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n⚠️ *Reason for Reopening:* {{reopen_reason}}\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
         sub: `[Eco Green Solar] Reopened Work Order: Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nComplaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been REOPENED for follow-up service.\n\nReason: {{reopen_reason}}\n\nPlease check your Technician Portal for site details and coordinate with the customer.`
+      },
+      {
+        key: 'technician_reopen_job_transferred',
+        name: 'Technician Reopened Job Transferred (Previous Tech Notice)',
+        audience: 'technician',
+        trigger: 'technician_reopened_work_order',
+        metaName: 'technician_job_transferred_notice',
+        metaStatus: 'PENDING',
+        wa: `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*{{new_technician_name}}*).\n\n⚠️ *Customer Reopen Reason:* {{reopen_reason}}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Dispatch`,
+        sub: `[Eco Green Solar] Reopened Ticket Transferred: Ticket #{{complaint_id}}`,
+        em: `Dear {{technician_name}},\n\nTicket #{{complaint_id}} (Customer: {{customer_name}}) previously resolved by you has been REOPENED and reassigned to another technician ({{new_technician_name}}).\n\nReopen Reason: {{reopen_reason}}\n\nYou are not required to revisit this site.`
       }
     ];
 

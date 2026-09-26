@@ -347,6 +347,31 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           }
         ]
       };
+    } else if (templateName === 'technician_reopen_job_transferred' || templateName === 'technician_reopened_transferred') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const newTech = cleanParam(variables.new_technician_name, 'another specialist');
+      const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up requested');
+
+      deliveredText = `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello *${techName}*,\n\nPlease note that ticket *${tktId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTech}*).\n\n⚠️ *Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to revisit this site as another technician has been assigned for follow-up.\n- Eco Green Dispatch`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_job_transferred_notice',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'notes', text: `Reopened & reassigned to ${newTech}. Reason: ${reopenReason}` }
+            ]
+          }
+        ]
+      };
     } else if (templateName === 'status_update' || templateName === 'status_followup_note_update' || templateName === 'status__followup_note_update') {
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar System');

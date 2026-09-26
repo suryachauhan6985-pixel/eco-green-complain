@@ -1302,6 +1302,22 @@ async function reopenComplaint(req, res) {
       }
     });
 
+    // If reopened and transferred to another technician, alert previous technician
+    if (complaint.assigned_technician_id && assigned_technician_id && String(complaint.assigned_technician_id) !== String(assigned_technician_id)) {
+      notificationService.dispatchAsync({
+        complaintId: complaint.id,
+        templateKey: 'technician_reopen_job_transferred',
+        data: {
+          technician_name: complaint.technician_name,
+          complaint_id: complaint.ticket_id,
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          new_technician_name: updated?.technician_name || 'another specialist',
+          reopen_reason: reason || 'Follow-up requested'
+        }
+      });
+    }
+
     realtimeService.notifyComplaintUpdate({ id: complaint.id, action: 'reopened', status: 'Reopened' });
     res.json({ message: 'Complaint reopened successfully', complaint: updated });
   } catch (err) {
