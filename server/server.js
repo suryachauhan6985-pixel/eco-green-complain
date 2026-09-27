@@ -1037,23 +1037,33 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
     });
 
     // Record outbound message in whatsapp_messages
-    const insertStmt = db.prepare(`
-      INSERT INTO whatsapp_messages (
-        complaint_id, phone, sender_type, sender_name,
-        message_body, media_url, media_type, media_caption, wam_id, status
-      ) VALUES (?, ?, 'company', ?, ?, ?, ?, ?, ?, 'sent')
-    `);
+    let insertRes = null;
+    if (sendRes.messageId) {
+      insertRes = db.prepare('SELECT * FROM whatsapp_messages WHERE wam_id = ? LIMIT 1').get(sendRes.messageId);
+    }
+    if (!insertRes) {
+      const insertStmt = db.prepare(`
+        INSERT INTO whatsapp_messages (
+          complaint_id, phone, sender_type, sender_name,
+          message_body, media_url, media_type, media_caption, wam_id, status
+        ) VALUES (?, ?, 'company', ?, ?, ?, ?, ?, ?, 'sent')
+        ON CONFLICT(wam_id) DO UPDATE SET
+          complaint_id = COALESCE(excluded.complaint_id, whatsapp_messages.complaint_id),
+          status = excluded.status,
+          updated_at = CURRENT_TIMESTAMP
+      `);
 
-    const insertRes = insertStmt.run(
-      complaint ? complaint.id : null,
-      formattedPhone,
-      req.user?.name || 'Eco Green Support',
-      (message || '').trim(),
-      mediaUrl,
-      mediaType,
-      mediaFileName,
-      sendRes.messageId || null
-    );
+      insertRes = insertStmt.run(
+        complaint ? complaint.id : null,
+        formattedPhone,
+        req.user?.name || 'Eco Green Support',
+        (message || '').trim(),
+        mediaUrl,
+        mediaType,
+        mediaFileName,
+        sendRes.messageId || null
+      );
+    }
 
     // If complaint exists, also log in complaint_timelines
     if (complaint) {

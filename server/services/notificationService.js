@@ -143,6 +143,10 @@ class NotificationService extends EventEmitter {
             INSERT INTO whatsapp_messages (
               complaint_id, phone, sender_type, sender_name, message_body, status, wam_id, template_name, failure_reason
             ) VALUES (?, ?, 'company', 'Eco Green Solar', ?, ?, ?, ?, ?)
+            ON CONFLICT(wam_id) DO UPDATE SET
+              status = excluded.status,
+              failure_reason = excluded.failure_reason,
+              updated_at = CURRENT_TIMESTAMP
           `).run(
             complaintId || null,
             canonicalTargetPhone,

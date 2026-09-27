@@ -1381,9 +1381,9 @@ export const api = {
         sender_type: 'company',
         sender_name: 'Eco Green Support',
         message_body: (message || '').trim(),
-        media_url: res.mediaUrl || null,
-        media_type: attachment ? (attachment.type?.startsWith('image/') ? 'image' : 'document') : null,
-        media_caption: attachment?.name || null,
+        media_url: res.mediaUrl || directMedia?.file_url || null,
+        media_type: attachment ? (attachment.type?.startsWith('image/') ? 'image' : (attachment.type?.startsWith('video/') ? 'video' : 'document')) : (directMedia ? (directMedia.file_type?.startsWith('image/') ? 'image' : (directMedia.file_type?.startsWith('video/') ? 'video' : 'document')) : null),
+        media_caption: attachment?.name || directMedia?.file_name || null,
         created_at: new Date().toISOString()
       }]);
     }

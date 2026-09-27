@@ -588,7 +588,11 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       await query(
         `INSERT INTO whatsapp_messages (
           complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, wam_id, status, failure_reason, template_name, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (wam_id) DO UPDATE SET
+          status = EXCLUDED.status,
+          failure_reason = EXCLUDED.failure_reason,
+          updated_at = CURRENT_TIMESTAMP`,
         [
           variables.db_complaint_id || null,
           formattedPhone,
@@ -4628,6 +4632,7 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, async (req, res) => {
         INSERT INTO whatsapp_messages (
           complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, status, wam_id, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+        ON CONFLICT (wam_id) DO NOTHING
       `, [
         m.complaint_id || null,
         m.phone,
@@ -4715,23 +4720,46 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachm
       }
     });
 
-    const insRes = await query(`
-      INSERT INTO whatsapp_messages (
-        complaint_id, phone, sender_type, sender_name,
-        message_body, media_url, media_type, media_caption, wam_id, status, created_at, updated_at
-      ) VALUES ($1, $2, 'company', $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      RETURNING *
-    `, [
-      complaint ? complaint.id : null,
-      formattedPhone,
-      req.user?.name || 'Eco Green Support',
-      (message || '').trim() || (finalMediaType === 'image' ? '[Photo]' : (finalMediaType === 'video' ? '[Video]' : (finalMediaCaption ? `[Document: ${finalMediaCaption}]` : '[Attachment]'))),
-      finalMediaUrl,
-      finalMediaType,
-      finalMediaCaption,
-      waRes?.wamid || null,
-      waRes?.success ? 'sent' : 'failed'
-    ]);
+    let messageRecord = null;
+    if (waRes?.wamid) {
+      try {
+        const existing = await query('SELECT * FROM whatsapp_messages WHERE wam_id = $1 LIMIT 1', [waRes.wamid]);
+        if (existing.rows && existing.rows.length > 0) {
+          messageRecord = existing.rows[0];
+          if (complaint && !messageRecord.complaint_id) {
+            await query('UPDATE whatsapp_messages SET complaint_id = $1 WHERE id = $2', [complaint.id, messageRecord.id]).catch(() => {});
+            messageRecord.complaint_id = complaint.id;
+          }
+        }
+      } catch (fErr) {
+        console.warn('[DirectReply Fetch Note]', fErr.message);
+      }
+    }
+
+    if (!messageRecord) {
+      const insRes = await query(`
+        INSERT INTO whatsapp_messages (
+          complaint_id, phone, sender_type, sender_name,
+          message_body, media_url, media_type, media_caption, wam_id, status, created_at, updated_at
+        ) VALUES ($1, $2, 'company', $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (wam_id) DO UPDATE SET
+          complaint_id = COALESCE(EXCLUDED.complaint_id, whatsapp_messages.complaint_id),
+          status = EXCLUDED.status,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING *
+      `, [
+        complaint ? complaint.id : null,
+        formattedPhone,
+        req.user?.name || 'Eco Green Support',
+        (message || '').trim() || (finalMediaType === 'image' ? '[Photo]' : (finalMediaType === 'video' ? '[Video]' : (finalMediaCaption ? `[Document: ${finalMediaCaption}]` : '[Attachment]'))),
+        finalMediaUrl,
+        finalMediaType,
+        finalMediaCaption,
+        waRes?.wamid || null,
+        waRes?.success ? 'sent' : 'failed'
+      ]);
+      messageRecord = insRes.rows?.[0] || null;
+    }
 
     if (complaint) {
       try {
@@ -4745,7 +4773,7 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachm
       }
     }
 
-    return res.json({ success: true, message: insRes.rows[0], messageId: waRes?.wamid, metaMessageId: waRes?.wamid, mediaUrl: finalMediaUrl, whatsapp: waRes });
+    return res.json({ success: true, message: messageRecord, messageId: waRes?.wamid, metaMessageId: waRes?.wamid, mediaUrl: finalMediaUrl, whatsapp: waRes });
   } catch (err) {
     console.error('Direct reply error:', err);
     return res.status(500).json({ error: err.message });
@@ -4906,7 +4934,10 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
               await query(
                 `INSERT INTO whatsapp_messages (
                   complaint_id, phone, sender_type, sender_name, message_body, media_id, media_type, media_url, media_caption, wam_id, status, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (wam_id) DO UPDATE SET
+                  status = EXCLUDED.status,
+                  updated_at = CURRENT_TIMESTAMP`,
                 [comp?.id || null, canonicalPhone, senderType, resolvedSenderName, messageBody, mediaId, mediaType, mediaUrl, mediaCaption, wamId]
               ).catch((e) => console.error('[Webhook Insert Error]:', e.message));
             }
