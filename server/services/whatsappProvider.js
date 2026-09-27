@@ -418,6 +418,9 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       if (mediaType === 'image') {
         payload.type = 'image';
         payload.image = { link: mediaUrl, caption: message || '' };
+      } else if (mediaType === 'video') {
+        payload.type = 'video';
+        payload.video = { link: mediaUrl, caption: message || '' };
       } else {
         payload.type = 'document';
         payload.document = { link: mediaUrl, caption: message || '', filename: mediaFileName || 'Document.pdf' };

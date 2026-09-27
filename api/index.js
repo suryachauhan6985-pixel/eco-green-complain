@@ -513,11 +513,15 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
         }]
       };
     } else if (mediaUrl) {
-      renderedBody = message || (mediaType === 'image' ? '[Photo]' : '[Document]');
+      renderedBody = message || (mediaType === 'image' ? '[Photo]' : (mediaType === 'video' ? '[Video]' : '[Document]'));
       if (mediaType === 'image') {
         payload.type = 'image';
         payload.image = { link: mediaUrl };
         if (message) payload.image.caption = message;
+      } else if (mediaType === 'video') {
+        payload.type = 'video';
+        payload.video = { link: mediaUrl };
+        if (message) payload.video.caption = message;
       } else {
         payload.type = 'document';
         payload.document = { link: mediaUrl, filename: mediaFileName || 'Document.pdf' };
@@ -2733,7 +2737,22 @@ app.post('/api/complaints/:id/feedback', async (req, res) => {
       return res.status(400).json({ error: 'Rating must be a valid integer between 1 and 5' });
     }
     const cleanComments = (feedback_comments || '').trim().slice(0, 500);
-    await query('UPDATE complaints SET rating = $1, feedback_comments = $2 WHERE id = $3 OR ticket_id = $3', [Math.round(numRating), cleanComments, id]);
+    const updateRes = await query(
+      'UPDATE complaints SET rating = $1, feedback_comments = $2, updated_at = CURRENT_TIMESTAMP WHERE id::text = $3 OR ticket_id = $3 RETURNING id, ticket_id, customer_name',
+      [Math.round(numRating), cleanComments, id]
+    );
+    if (updateRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    const comp = updateRes.rows[0];
+    try {
+      await query(
+        'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+        [comp.id, 'Feedback Received', `Customer submitted ${Math.round(numRating)}-Star rating: "${cleanComments || 'No comment'}"`, comp.customer_name || 'Customer', 'customer']
+      );
+    } catch (tErr) {
+      console.warn('[Feedback Timeline Note]', tErr.message);
+    }
     return res.json({ message: 'Thank you for your feedback!' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2827,8 +2846,8 @@ app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 's
   }
 });
 
-// Reopen Complaint (Customer / Staff / Admin)
-app.post('/api/complaints/:id/reopen', async (req, res) => {
+// Reopen Complaint (Only Staff / Admin can reopen, and strictly within 24 hours of resolution/closure)
+app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reason, technician_id } = req.body || {};
@@ -2844,6 +2863,20 @@ app.post('/api/complaints/:id/reopen', async (req, res) => {
       return res.status(404).json({ error: 'Complaint not found' });
     }
     const oldComp = existingRes.rows[0];
+
+    // Enforce 24-hour limit: Ticket can only be reopened if Resolved or Closed within 24 hours
+    if (oldComp.status !== 'Resolved' && oldComp.status !== 'Closed') {
+      return res.status(400).json({ error: 'Only resolved or closed complaints can be reopened.' });
+    }
+    const resolvedOrClosedAt = oldComp.closed_at || oldComp.resolved_at || oldComp.status_updated_at || oldComp.updated_at;
+    if (resolvedOrClosedAt) {
+      const elapsedHours = (Date.now() - new Date(resolvedOrClosedAt).getTime()) / (1000 * 60 * 60);
+      if (elapsedHours > 24) {
+        return res.status(400).json({ 
+          error: 'Tickets can only be reopened within 24 hours of resolution/closure. Since more than 24 hours have passed, please register a new complaint ticket.' 
+        });
+      }
+    }
 
     let newTechId = oldComp.assigned_technician_id;
     let newTechName = oldComp.technician_name;
@@ -4042,76 +4075,7 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, async (req, res) => {
   }
 });
 
-// Universal WhatsApp Web Inbox: Send Direct Reply (supports text and file attachments)
-app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachment'), async (req, res) => {
-  try {
-    const { phone, message } = req.body;
-    if (!phone || (!message && !req.file)) {
-      return res.status(400).json({ error: 'phone and message or attachment are required' });
-    }
-
-    const clean = phone.replace(/[^0-9]/g, '');
-    const last10 = clean.slice(-10);
-    const formattedPhone = `91${last10}`;
-
-    const compRes = await query(`
-      SELECT id, ticket_id, customer_name FROM complaints
-      WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1
-      ORDER BY id DESC LIMIT 1
-    `, [last10]);
-
-    const comp = compRes.rows[0];
-
-    let mediaUrl = null;
-    let mediaType = null;
-    let mediaFileName = null;
-
-    if (req.file) {
-      mediaType = req.file.mimetype?.startsWith('image/') ? 'image' : 'document';
-      mediaFileName = req.file.originalname;
-      const base64Data = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
-      const insRes = await query(`
-        INSERT INTO complaint_attachments (
-          complaint_id, file_name, file_url, file_type, file_data, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id
-      `, [comp?.id || null, mediaFileName, '/api/attachments/temp', req.file.mimetype, base64Data, req.user?.name || 'Staff']);
-      const attId = insRes.rows[0].id;
-      mediaUrl = `/api/attachments/${attId}`;
-      await query('UPDATE complaint_attachments SET file_url = $1 WHERE id = $2', [mediaUrl, attId]);
-    }
-
-    const result = await sendWhatsApp({
-      to: formattedPhone,
-      message: (message || '').trim(),
-      mediaUrl,
-      mediaType,
-      mediaFileName,
-      senderName: req.user?.name || 'Eco Green Support',
-      variables: {
-        db_complaint_id: comp?.id,
-        ticket_id: comp?.ticket_id,
-        customer_name: comp?.customer_name
-      }
-    });
-
-    if (comp) {
-      try {
-        const actionNote = mediaUrl ? `Staff sent ${mediaType}: ${mediaFileName} ${message ? '(' + message + ')' : ''}` : (message || '').trim();
-        await query(
-          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-          [comp.id, 'Staff WhatsApp Reply', actionNote, req.user?.name || 'Staff Specialist', req.user?.role || 'staff']
-        );
-      } catch (tErr) {
-        console.warn('[Timeline Note]', tErr.message);
-      }
-    }
-
-    return res.json({ success: true, messageId: result.wamid, metaMessageId: result.wamid, mediaUrl, ...result });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+// (Direct-reply endpoint is unified below)
 
 // Complaint Drawer: WhatsApp Messages
 app.get('/api/complaints/:id/whatsapp-messages', authenticateToken, async (req, res) => {
@@ -4705,7 +4669,7 @@ app.post('/api/whatsapp/send-manual', authenticateToken, async (req, res) => {
   }
 });
 
-// Universal WhatsApp Web Inbox: Direct reply to any phone number (with optional attachment)
+// Universal WhatsApp Web Inbox: Direct reply to any phone number (with text and direct/uploaded media)
 app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachment'), async (req, res) => {
   try {
     const { phone, message, media_url, media_type, media_caption } = req.body;
@@ -4741,7 +4705,14 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachm
       to: formattedPhone,
       message: (message || '').trim(),
       mediaUrl: finalMediaUrl,
-      mediaType: finalMediaType
+      mediaType: finalMediaType,
+      mediaFileName: finalMediaCaption,
+      senderName: req.user?.name || 'Eco Green Support',
+      variables: {
+        db_complaint_id: complaint?.id,
+        ticket_id: complaint?.ticket_id,
+        customer_name: complaint?.customer_name
+      }
     });
 
     const insRes = await query(`
@@ -4754,7 +4725,7 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachm
       complaint ? complaint.id : null,
       formattedPhone,
       req.user?.name || 'Eco Green Support',
-      (message || '').trim(),
+      (message || '').trim() || (finalMediaType === 'image' ? '[Photo]' : (finalMediaType === 'video' ? '[Video]' : (finalMediaCaption ? `[Document: ${finalMediaCaption}]` : '[Attachment]'))),
       finalMediaUrl,
       finalMediaType,
       finalMediaCaption,
@@ -4762,7 +4733,19 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, upload.single('attachm
       waRes?.success ? 'sent' : 'failed'
     ]);
 
-    return res.json({ success: true, message: insRes.rows[0], whatsapp: waRes });
+    if (complaint) {
+      try {
+        const actionNote = finalMediaUrl ? `Staff sent ${finalMediaType || 'file'}: ${finalMediaCaption || ''} ${message ? '(' + message + ')' : ''}` : (message || '').trim();
+        await query(
+          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+          [complaint.id, 'Staff WhatsApp Reply', actionNote, req.user?.name || 'Staff Specialist', req.user?.role || 'staff']
+        );
+      } catch (tErr) {
+        console.warn('[Timeline Note]', tErr.message);
+      }
+    }
+
+    return res.json({ success: true, message: insRes.rows[0], messageId: waRes?.wamid, metaMessageId: waRes?.wamid, mediaUrl: finalMediaUrl, whatsapp: waRes });
   } catch (err) {
     console.error('Direct reply error:', err);
     return res.status(500).json({ error: err.message });
@@ -4896,9 +4879,26 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
                 messageBody = mediaCaption || '[Video Received]';
               } else if (msg.type === 'location') {
                 mediaType = 'location';
-                messageBody = `📍 Location: ${msg.location?.latitude}, ${msg.location?.longitude} (${msg.location?.name || msg.location?.address || 'Site Pin'})`;
+                const loc = msg.location || {};
+                const locDesc = loc.name || loc.address || 'Shared Location Pin';
+                messageBody = `📍 ${locDesc}: https://maps.google.com/?q=${loc.latitude},${loc.longitude}`;
+              } else if (msg.type === 'sticker') {
+                mediaType = 'image';
+                mediaId = msg.sticker?.id || null;
+                mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?filename=sticker.webp` : null;
+                messageBody = '🎨 [Sticker Received]';
+              } else if (msg.type === 'reaction') {
+                messageBody = `Reacted: ${msg.reaction?.emoji || '👍'}`;
+              } else if (msg.type === 'contacts') {
+                const contactList = (msg.contacts || []).map(c => {
+                  const p = c.phones?.[0]?.phone || '';
+                  return `${c.name?.formatted_name || 'Contact'}${p ? ` (📞 ${p})` : ''}`;
+                }).join(', ');
+                messageBody = `👤 Shared Contact: ${contactList || 'Contact'}`;
+              } else if (msg.type === 'unsupported') {
+                messageBody = '📷 [WhatsApp Media / View-Once Item Received]';
               } else {
-                messageBody = `[${msg.type || 'Message'} Received]`;
+                messageBody = `[${msg.type || 'WhatsApp'} Message Received]`;
               }
 
               console.log(`[WHATSAPP-INCOMING] From: ${canonicalPhone} (${resolvedSenderName}) | Role: ${senderType} | Media: ${mediaType || 'none'} | Text: ${messageBody} | WAMID: ${wamId}`);

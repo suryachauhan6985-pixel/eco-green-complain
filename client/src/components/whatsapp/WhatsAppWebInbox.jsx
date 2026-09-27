@@ -11,7 +11,7 @@ import {
   FileCheck, Shield, ChevronRight, Video, Mic, Pin, Compass,
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
-  Edit2, Trash2, ChevronDown, RotateCcw, Eye
+  Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
@@ -163,6 +163,8 @@ export const WhatsAppWebInbox = ({
   const [loadingRecent, setLoadingRecent] = useState(false);
 
   const fileInputRef = useRef(null);
+  const docInputRef = useRef(null);
+  const mediaInputRef = useRef(null);
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
@@ -172,6 +174,7 @@ export const WhatsAppWebInbox = ({
   const previousMessageCountRef = useRef(0);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
 
   // Synthesize notification chime using Web Audio API
   const playNotificationChime = () => {
@@ -209,6 +212,9 @@ export const WhatsAppWebInbox = ({
       }
       if (!e.target.closest('#emoji-picker-container') && !e.target.closest('#emoji-picker-button')) {
         setShowEmojiPicker(false);
+      }
+      if (!e.target.closest('#attach-menu-container') && !e.target.closest('#attach-menu-button')) {
+        setShowAttachMenu(false);
       }
       if (!e.target.closest('.msg-action-menu-container') && !e.target.closest('.msg-action-trigger')) {
         setActionMessageMenuId(null);
@@ -390,7 +396,7 @@ export const WhatsAppWebInbox = ({
     }
   }, [messages, selectedPhone]);
 
-  // Handle file selection (Images & PDFs)
+  // Handle file selection (Images, Videos & Documents)
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -401,11 +407,14 @@ export const WhatsAppWebInbox = ({
     }
 
     setSelectedFile(file);
+    setShowAttachMenu(false);
 
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = () => setFilePreview(reader.result);
       reader.readAsDataURL(file);
+    } else if (file.type.startsWith('video/')) {
+      setFilePreview(URL.createObjectURL(file));
     } else {
       setFilePreview(null);
     }
@@ -415,6 +424,8 @@ export const WhatsAppWebInbox = ({
     setSelectedFile(null);
     setFilePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (docInputRef.current) docInputRef.current.value = '';
+    if (mediaInputRef.current) mediaInputRef.current.value = '';
   };
 
   // Download media/document helper
@@ -448,7 +459,7 @@ export const WhatsAppWebInbox = ({
       sender_name: 'Eco Green Desk',
       message_body: currentText,
       media_url: filePreview || null,
-      media_type: currentFile ? (currentFile.type.startsWith('image/') ? 'image' : 'document') : null,
+      media_type: currentFile ? (currentFile.type.startsWith('image/') ? 'image' : (currentFile.type.startsWith('video/') ? 'video' : 'document')) : null,
       media_caption: currentFile ? currentFile.name : null,
       created_at: new Date().toISOString(),
       status: 'sent'
@@ -1011,8 +1022,33 @@ export const WhatsAppWebInbox = ({
                   </div>
                 ) : null}
 
-                {/* Main Message Text or Inline Edit Mode */}
-                {editingMessageId === msg.id ? (
+                {/* View-Once / Interactive WhatsApp Item Card */}
+                {(msg.message_body?.toLowerCase().includes('unsupported') || msg.message_body?.includes('View-Once') || msg.message_body?.includes('Interactive Item')) ? (
+                  <div className="mb-1.5 p-2.5 rounded-xl bg-black/5 border border-black/10 flex items-start gap-2.5 max-w-sm">
+                    <div className="w-8 h-8 rounded-full bg-[#00a884]/20 text-[#008069] flex items-center justify-center shrink-0 mt-0.5">
+                      <Camera className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-xs text-[#111b21] flex items-center gap-1.5">
+                        <span>WhatsApp View-Once / Interactive Media</span>
+                      </p>
+                      <p className="text-[11px] text-[#54656f] mt-0.5 leading-snug">
+                        Customer sent a protected view-once media or interactive item from WhatsApp mobile.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenInWhatsAppWeb(msg);
+                        }}
+                        className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-[#008069] hover:underline cursor-pointer"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Open Chat in WhatsApp Web</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : editingMessageId === msg.id ? (
                   <div className="my-1 space-y-1.5">
                     <textarea
                       value={editingMessageText}
@@ -1375,7 +1411,11 @@ export const WhatsAppWebInbox = ({
                         {conv.last_sender_type === 'customer' && !conv.unread_count && (
                           <CheckCheck className="w-3.5 h-3.5 text-[#8696a0] shrink-0 inline" />
                         )}
-                        <span className="truncate">{conv.last_message || 'Media attachment'}</span>
+                        <span className="truncate">
+                          {conv.last_message?.toLowerCase().includes('unsupported')
+                            ? '📷 [Media / View-Once Item]'
+                            : (conv.last_message || 'Media attachment')}
+                        </span>
                       </p>
 
                       {/* Right indicators: Pinned icon OR Unread count badge */}
@@ -1669,8 +1709,10 @@ export const WhatsAppWebInbox = ({
             {selectedFile && (
               <div className="px-4 py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center justify-between shrink-0 animate-in fade-in">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  {filePreview ? (
+                  {filePreview && selectedFile.type.startsWith('image/') ? (
                     <img src={filePreview} alt="preview" className="w-10 h-10 rounded-lg object-cover border border-[#d1d7db] shrink-0" />
+                  ) : filePreview && selectedFile.type.startsWith('video/') ? (
+                    <video src={filePreview} className="w-10 h-10 rounded-lg object-cover border border-[#d1d7db] shrink-0 bg-black" />
                   ) : (
                     <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
                       <FileText className="w-5 h-5 text-emerald-700" />
@@ -1739,14 +1781,74 @@ export const WhatsAppWebInbox = ({
               </div>
             )}
 
+            {/* Interactive WhatsApp Attachment Popover Menu */}
+            {showAttachMenu && (
+              <div 
+                id="attach-menu-container"
+                className="absolute bottom-16 left-8 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 w-60 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150"
+              >
+                {/* Option 1: Document (All Files *.*) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttachMenu(false);
+                    docInputRef.current?.click();
+                  }}
+                  className="w-full p-2.5 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#7f66ff] to-[#9985ff] text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs text-[#111b21]">Document</p>
+                    <p className="text-[10px] text-[#667781] truncate">All files (*.*), PDF, CAD, Office</p>
+                  </div>
+                </button>
+
+                {/* Option 2: Photos & Videos */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttachMenu(false);
+                    mediaInputRef.current?.click();
+                  }}
+                  className="w-full p-2.5 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#007bfc] to-[#25a0fe] text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Image className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs text-[#111b21]">Photos &amp; Videos</p>
+                    <p className="text-[10px] text-[#667781] truncate">Photos, Videos (up to 50MB)</p>
+                  </div>
+                </button>
+              </div>
+            )}
+
             {/* Bottom Message Input Bar */}
             <form onSubmit={handleSendReply} className="px-2 py-2 sm:px-3 sm:py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-1 sm:gap-2 shrink-0">
-              {/* Hidden File Input */}
+              {/* Document Input (NO accept attribute so Windows File Dialog defaults to All Files *.*) */}
+              <input
+                ref={docInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+
+              {/* Photo & Video Input */}
+              <input
+                ref={mediaInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                accept="image/*,video/*"
+                className="hidden"
+              />
+
+              {/* Legacy File Input fallback */}
               <input
                 ref={fileInputRef}
                 type="file"
                 onChange={handleFileSelect}
-                accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="hidden"
               />
 
@@ -1763,13 +1865,16 @@ export const WhatsAppWebInbox = ({
                 <Smile className="w-5 h-5" />
               </button>
 
-              {/* Paperclip Attachment Button */}
+              {/* WhatsApp Attachment Button (Opens Document / Photo-Video Action Menu) */}
               <button
+                id="attach-menu-button"
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setShowAttachMenu(!showAttachMenu)}
                 disabled={sendingReply}
-                className="p-2 text-[#54656f] hover:text-[#111b21] rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-50"
-                title="Attach Document or Photo (PDF / JPG)"
+                className={`p-2 rounded-full transition-all cursor-pointer shrink-0 disabled:opacity-50 ${
+                  showAttachMenu ? 'bg-[#d9fdd3] text-[#008069] rotate-45' : 'text-[#54656f] hover:text-[#111b21]'
+                }`}
+                title="Attach Document or Photo / Video"
               >
                 <Paperclip className="w-5 h-5" />
               </button>

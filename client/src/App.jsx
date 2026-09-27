@@ -477,6 +477,11 @@ function AppContent() {
         onClose={() => handleSelectComplaint(null)}
         onComplaintUpdated={() => setRefreshKey(k => k + 1)}
         onViewCustomerHistory={(phone) => setHistoryPhone(phone)}
+        onNewComplaintWithData={(data) => {
+          setSelectedComplaintId(null);
+          setNewComplaintInitialData(data);
+          setIsNewComplaintOpen(true);
+        }}
       />
 
       {/* Floating Role-Based Notification Popup Toast */}

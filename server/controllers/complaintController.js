@@ -1319,9 +1319,23 @@ async function reopenComplaint(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
+    // Enforce 24-hour limit: Ticket can only be reopened if Resolved or Closed within 24 hours
+    if (complaint.status !== 'Resolved' && complaint.status !== 'Closed') {
+      return res.status(400).json({ error: 'Only resolved or closed complaints can be reopened.' });
+    }
+    const resolvedOrClosedAt = complaint.closed_at || complaint.resolved_at || complaint.status_updated_at || complaint.updated_at;
+    if (resolvedOrClosedAt) {
+      const elapsedHours = (Date.now() - new Date(resolvedOrClosedAt).getTime()) / (1000 * 60 * 60);
+      if (elapsedHours > 24) {
+        return res.status(400).json({ 
+          error: 'Tickets can only be reopened within 24 hours of resolution/closure. Since more than 24 hours have passed, please register a new complaint ticket.' 
+        });
+      }
+    }
+
     const newTechId = technician_id ? Number(technician_id) : complaint.assigned_technician_id;
-    const performer = performer_name || (req.user ? req.user.name : complaint.customer_name + ' (Customer Portal)');
-    const role = performer_role || (req.user ? req.user.role : 'customer');
+    const performer = performer_name || (req.user ? req.user.name : 'Support Specialist');
+    const role = performer_role || (req.user ? req.user.role : 'staff');
 
     // Ensure columns exist in SQLite if needed
     try {

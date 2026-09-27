@@ -308,8 +308,31 @@ async function processSingleMessage(msg, contact) {
     if (downloadedAttachment) {
       mediaUrl = downloadedAttachment.fileUrl;
     }
+  } else if (msgType === 'location') {
+    mediaType = 'location';
+    const loc = msg.location || {};
+    const locDesc = loc.name || loc.address || 'Shared Location Pin';
+    messageBody = `📍 ${locDesc}: https://maps.google.com/?q=${loc.latitude},${loc.longitude}`;
+  } else if (msgType === 'sticker') {
+    mediaType = 'image';
+    mediaId = msg.sticker?.id || null;
+    messageBody = '🎨 [Sticker Received]';
+    downloadedAttachment = await downloadMedia(mediaId, msg.sticker?.mime_type || 'image/webp', 'WhatsApp_Sticker.webp');
+    if (downloadedAttachment) {
+      mediaUrl = downloadedAttachment.fileUrl;
+    }
+  } else if (msgType === 'reaction') {
+    messageBody = `Reacted: ${msg.reaction?.emoji || '👍'}`;
+  } else if (msgType === 'contacts') {
+    const contactList = (msg.contacts || []).map(c => {
+      const p = c.phones?.[0]?.phone || '';
+      return `${c.name?.formatted_name || 'Contact'}${p ? ` (📞 ${p})` : ''}`;
+    }).join(', ');
+    messageBody = `👤 Shared Contact: ${contactList || 'Contact'}`;
+  } else if (msgType === 'unsupported') {
+    messageBody = '📷 [WhatsApp Media / View-Once Item Received]';
   } else {
-    messageBody = `[Received ${msgType} message]`;
+    messageBody = `[${msgType || 'WhatsApp'} Message Received]`;
   }
 
   // Save to whatsapp_messages

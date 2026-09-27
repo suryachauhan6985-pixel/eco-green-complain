@@ -32,10 +32,7 @@ export const CustomerPublicPortal = ({
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
-  // Reopen state
-  const [showReopenInput, setShowReopenInput] = useState(false);
-  const [reopenReason, setReopenReason] = useState('');
-  const [reopening, setReopening] = useState(false);
+
 
   const performSearch = async (queryToSearch, silent = false) => {
     const q = (queryToSearch || ticketQuery || '').trim();
@@ -98,21 +95,7 @@ export const CustomerPublicPortal = ({
     }
   };
 
-  const handleReopenSubmit = async (e) => {
-    e.preventDefault();
-    if (!trackingData?.complaint) return;
-    try {
-      setReopening(true);
-      await api.reopenComplaint(trackingData.complaint.id, reopenReason);
-      setShowReopenInput(false);
-      await handleSearch();
-      showToast('Ticket reopened. A service supervisor will contact you shortly.', 'success');
-    } catch (err) {
-      showToast('Failed to reopen ticket: ' + err.message, 'error');
-    } finally {
-      setReopening(false);
-    }
-  };
+
 
   const getStepIndex = (status) => {
     if (status === 'Closed') return 4;
@@ -327,45 +310,23 @@ export const CustomerPublicPortal = ({
             </div>
           )}
 
-          {/* Reopen Action Button (Only if Ticket is Closed) */}
-          {trackingData.complaint.status === 'Closed' && (
-            <div className="pt-2 border-t border-slate-100">
-              {!showReopenInput ? (
+          {/* Service Assistance Note for Resolved or Closed tickets */}
+          {(trackingData.complaint.status === 'Closed' || trackingData.complaint.status === 'Resolved') && (
+            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-600 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  This service ticket is finalized. If you require further maintenance or have a new issue, please register a new ticket.
+                </span>
+              </div>
+              {onOpenNewComplaint && (
                 <button
-                  onClick={() => setShowReopenInput(true)}
-                  className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1.5"
+                  type="button"
+                  onClick={onOpenNewComplaint}
+                  className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs shrink-0 transition-colors shadow-2xs cursor-pointer"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Is the issue recurring? Click here to Reopen this Ticket
+                  + New Service Ticket
                 </button>
-              ) : (
-                <form onSubmit={handleReopenSubmit} className="bg-rose-50 p-4 rounded-2xl border border-rose-200 space-y-2 text-xs">
-                  <span className="font-bold text-rose-900 block">Explain why ticket should be reopened:</span>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Inverter tripped again this afternoon..."
-                    value={reopenReason}
-                    onChange={(e) => setReopenReason(e.target.value)}
-                    className="w-full p-2 bg-white border border-rose-300 rounded-lg text-xs"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={reopening}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold"
-                    >
-                      {reopening ? 'Reopening...' : 'Confirm Reopen'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowReopenInput(false)}
-                      className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg font-semibold"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
               )}
             </div>
           )}

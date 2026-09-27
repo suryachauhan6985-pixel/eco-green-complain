@@ -297,7 +297,7 @@ app.post('/api/complaints/:id/resend-technician', authenticateToken, requireRole
 app.post('/api/complaints/:id/note', authenticateToken, complaintController.addTimelineNote);
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), complaintController.resolveComplaint);
 app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 'staff'), complaintController.closeComplaint);
-app.post('/api/complaints/:id/reopen', authenticateToken, complaintController.reopenComplaint);
+app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', 'staff'), complaintController.reopenComplaint);
 app.delete('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.deleteComplaint);
 
 // ================= TECHNICIAN ROUTES =================
@@ -992,8 +992,8 @@ app.post('/api/whatsapp/sync-backup', authenticateToken, (req, res) => {
 // 7. Universal WhatsApp Web Inbox: Direct reply to any phone number (with optional attachment)
 app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', 'staff'), upload.single('attachment'), async (req, res) => {
   try {
-    const { phone, message } = req.body;
-    if (!phone || (!message && !req.file)) {
+    const { phone, message, media_url, media_type, media_caption } = req.body;
+    if (!phone || (!message && !req.file && !media_url)) {
       return res.status(400).json({ error: 'phone and message or attachment are required' });
     }
 
@@ -1008,19 +1008,19 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
       ORDER BY id DESC LIMIT 1
     `).get(`%${last10}%`);
 
-    let mediaUrl = null;
-    let mediaType = null;
-    let mediaFileName = null;
+    let mediaUrl = media_url || null;
+    let mediaType = media_type || null;
+    let mediaFileName = media_caption || null;
 
     if (req.file) {
       mediaUrl = `/uploads/${req.file.filename}`;
       mediaFileName = req.file.originalname;
-      mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'document';
+      mediaType = req.file.mimetype.startsWith('image/') ? 'image' : (req.file.mimetype.startsWith('video/') ? 'video' : 'document');
     }
 
     // Public URL for Meta Cloud API if APP_URL or request origin is available
     let absoluteMediaUrl = mediaUrl;
-    if (mediaUrl) {
+    if (mediaUrl && !mediaUrl.startsWith('http')) {
       const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
       absoluteMediaUrl = `${baseUrl}${mediaUrl}`;
     }
