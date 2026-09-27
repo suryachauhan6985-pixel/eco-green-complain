@@ -53,6 +53,7 @@ export const ComplaintList = ({
     }
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
 
   // View Mode: 'list' (default) or 'card' - persisted in localStorage
   const [viewMode, setViewMode] = useState(() => {
@@ -389,14 +390,25 @@ export const ComplaintList = ({
             </button>
 
             {['admin', 'staff'].includes(currentUser?.role) && (
-              <a
-                href={api.getExportCsvUrl()}
-                download
-                className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors"
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setIsExportingCsv(true);
+                    await api.exportComplaintsCsv(complaints);
+                  } catch (err) {
+                    console.error('Export CSV error:', err);
+                    alert('Export CSV failed: ' + (err.message || 'Please try again'));
+                  } finally {
+                    setIsExportingCsv(false);
+                  }
+                }}
+                disabled={isExportingCsv}
+                className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
               >
-                <Download className="w-3.5 h-3.5 text-slate-500" />
-                Export CSV
-              </a>
+                <Download className={`w-3.5 h-3.5 ${isExportingCsv ? 'animate-bounce text-emerald-600' : 'text-slate-500'}`} />
+                {isExportingCsv ? 'Exporting...' : 'Export CSV'}
+              </button>
             )}
 
             <button

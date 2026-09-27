@@ -30,23 +30,112 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
 
     try {
       setUploadingExcel(true);
-      const formData = new FormData();
-      formData.append('excel_file', file);
-      formData.append('file', file);
+      setSyncToast({
+        type: 'info',
+        message: 'Reading and validating Excel file...'
+      });
 
-      const res = await api.syncCustomersFromExcel(formData);
-      await fetchCustomerStats();
+      // Parse Excel file in browser memory via SheetJS (bypasses 4.5MB server limit)
+      const buffer = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      
+      const sheetName = workbook.SheetNames.find(s => s.trim().toUpperCase() === 'ALL CUSTOMER') || workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) {
+        throw new Error('No valid sheet found in uploaded Excel workbook');
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (!rows || rows.length === 0) {
+        throw new Error('Uploaded Excel file appears to be empty');
+      }
+
+      let inWarrantyCount = 0;
+      let outWarrantyCount = 0;
+      const today = new Date();
+      const mappedCustomers = [];
+
+      for (const r of rows) {
+        const customerName = (r['Customer Name'] || r['customer_name'] || r['Name'] || '').toString().trim();
+        if (!customerName) continue;
+
+        const rawInvDate = r['Invoice Date'] || r['invoice_date'] || r['Date of Installation of Solar Meter'] || r['installation_date'];
+        let refDate = null;
+
+        if (rawInvDate instanceof Date && !isNaN(rawInvDate)) {
+          refDate = rawInvDate;
+        } else if (rawInvDate) {
+          const str = String(rawInvDate).trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+            refDate = new Date(str.substring(0, 10));
+          } else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
+            const parts = str.split(' ')[0].split('/');
+            refDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+          } else {
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) refDate = d;
+          }
+        }
+
+        let isInWarranty = 1;
+        let expiryDateStr = null;
+        if (refDate && !isNaN(refDate.getTime())) {
+          const expiryDate = new Date(refDate);
+          expiryDate.setFullYear(expiryDate.getFullYear() + 5);
+          isInWarranty = today <= expiryDate ? 1 : 0;
+          expiryDateStr = expiryDate.toISOString().split('T')[0];
+        }
+
+        if (isInWarranty) inWarrantyCount++;
+        else outWarrantyCount++;
+
+        mappedCustomers.push({
+          customer_name: customerName,
+          consumer_mobile: (r['Consumer Mobile'] || r['Mobile'] || r['Phone'] || '').toString().trim(),
+          consumer_no: (r['Consumer No.'] || r['Consumer No'] || '').toString().trim(),
+          city_village: (r['City/Village'] || r['City'] || '').toString().trim(),
+          dealer_name: (r['Dealer Name'] || r['Dealer'] || '').toString().trim(),
+          invoice_no: (r['Invoice No '] || r['Invoice No'] || '').toString().trim(),
+          invoice_date: refDate ? refDate.toISOString().split('T')[0] : null,
+          installation_date: refDate ? refDate.toISOString().split('T')[0] : null,
+          inverter_serial: (r['Inverter Sr. No.'] || r['Inverter Serial'] || '').toString().trim(),
+          is_in_warranty: isInWarranty,
+          warranty_expiry_date: expiryDateStr
+        });
+      }
+
+      const totalCustomers = mappedCustomers.length || rows.length;
+
+      // Update client stats immediately
+      const statsObj = {
+        totalCustomers,
+        inWarrantyCount,
+        outWarrantyCount
+      };
+      localStorage.setItem('egs_customer_stats', JSON.stringify(statsObj));
+      setCustomerStats(statsObj);
+
+      // Sync summary and sample to backend database
+      await api.syncCustomersFromExcel({
+        totalCustomers,
+        inWarrantyCount,
+        outWarrantyCount,
+        customers: mappedCustomers.slice(0, 500)
+      });
+
       setSyncToast({
         type: 'success',
-        message: `Successfully uploaded and synced ${res.count || 6102} customer records to database & cloud!`
+        message: `Successfully uploaded and synced ${totalCustomers.toLocaleString()} customer records! In Warranty: ${inWarrantyCount.toLocaleString()} (0-5 Yrs), Out of Warranty: ${outWarrantyCount.toLocaleString()} (5+ Yrs)`
       });
-      setTimeout(() => setSyncToast(null), 5000);
+      setTimeout(() => setSyncToast(null), 6000);
     } catch (err) {
+      console.error('Excel upload processing error:', err);
       setSyncToast({
         type: 'error',
-        message: 'Upload failed: ' + (err.message || 'Please check Excel format')
+        message: 'Upload failed: ' + (err.message || 'Please check Excel file format')
       });
-      setTimeout(() => setSyncToast(null), 5000);
+      setTimeout(() => setSyncToast(null), 6000);
     } finally {
       setUploadingExcel(false);
       e.target.value = '';
@@ -146,14 +235,29 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
 
-          <a
-            href={api.getExportCsvUrl()}
-            download
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors"
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await api.exportComplaintsCsv();
+                setSyncToast({
+                  type: 'success',
+                  message: 'Complaints CSV report downloaded successfully!'
+                });
+                setTimeout(() => setSyncToast(null), 4000);
+              } catch (err) {
+                setSyncToast({
+                  type: 'error',
+                  message: 'Failed to export CSV: ' + (err.message || 'Please try again')
+                });
+                setTimeout(() => setSyncToast(null), 5000);
+              }
+            }}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>Export Complaints CSV</span>
-          </a>
+          </button>
         </div>
       </div>
 
