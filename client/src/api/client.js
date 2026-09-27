@@ -784,6 +784,24 @@ function fallbackHandler(endpoint, options) {
         return { history: list };
       }
 
+      if (endpoint.includes('/check-active')) {
+        const sp = new URLSearchParams(endpoint.split('?')[1]);
+        const phone = (sp.get('phone') || '').replace(/\D/g, '').slice(-10);
+        const name = (sp.get('name') || '').trim().toLowerCase();
+        const product = (sp.get('product_type') || '').trim().toLowerCase();
+        const list = mockStore.getComplaints({});
+        const active = list.find(c => {
+          const cPhone = (c.customer_phone || '').replace(/\D/g, '').slice(-10);
+          const cName = (c.customer_name || '').trim().toLowerCase();
+          const cProd = (c.product_type || '').trim().toLowerCase();
+          const isSameCustomer = (phone && phone.length >= 10 && cPhone.includes(phone)) || (name && name.length >= 3 && cName === name);
+          const isSameProduct = !product || cProd === product;
+          const isOpen = !['closed', 'cancelled'].includes((c.status || '').toLowerCase());
+          return isSameCustomer && isSameProduct && isOpen;
+        });
+        return { hasActiveComplaint: !!active, complaint: active || null };
+      }
+
       const matchId = endpoint.match(/\/complaints\/([^\/?]+)/);
       if (matchId) {
         const detail = mockStore.getComplaint(matchId[1]);
@@ -1092,8 +1110,8 @@ export const api = {
   },
   getComplaint: (id) => request(`/complaints/${id}`),
   getCustomerHistory: (phone) => request(`/complaints/customer-history?phone=${encodeURIComponent(phone)}`),
-  checkActiveComplaint: (phone, name) => 
-    request(`/complaints/check-active?phone=${encodeURIComponent(phone || '')}&name=${encodeURIComponent(name || '')}`),
+  checkActiveComplaint: (phone, name, product_type) => 
+    request(`/complaints/check-active?phone=${encodeURIComponent(phone || '')}&name=${encodeURIComponent(name || '')}&product_type=${encodeURIComponent(product_type || '')}`),
   createComplaint: async (formData) => {
     const res = await request('/complaints', {
       method: 'POST',

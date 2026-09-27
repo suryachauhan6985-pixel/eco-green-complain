@@ -222,26 +222,35 @@ function getCustomerHistory(req, res) {
 
 function checkActiveComplaint(req, res) {
   try {
-    const { phone, name } = req.query;
+    const { phone, name, product_type } = req.query;
     const cleanDigits = String(phone || '').replace(/[^0-9]/g, '');
     const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
     const cleanName = String(name || '').trim().toLowerCase();
+    const cleanProduct = String(product_type || '').trim().toLowerCase();
 
     if (!last10 && cleanName.length < 3) {
       return res.json({ hasActiveComplaint: false, complaint: null });
     }
 
-    const complaint = db.prepare(`
-      SELECT id, ticket_id, customer_name, customer_phone, status, priority, issue_category, created_at
+    let queryStr = `
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status, priority, issue_category, created_at
       FROM complaints
       WHERE (
         (customer_phone LIKE ? AND length(?) >= 10)
         OR (lower(trim(customer_name)) = ? AND length(?) >= 3)
       )
       AND lower(status) NOT IN ('closed', 'cancelled')
-      ORDER BY id DESC
-      LIMIT 1
-    `).get(`%${last10}%`, last10, cleanName, cleanName);
+    `;
+    const params = [`%${last10}%`, last10, cleanName, cleanName];
+
+    if (cleanProduct) {
+      queryStr += ` AND lower(trim(product_type)) = ? `;
+      params.push(cleanProduct);
+    }
+
+    queryStr += ` ORDER BY id DESC LIMIT 1 `;
+
+    const complaint = db.prepare(queryStr).get(...params);
 
     if (complaint) {
       return res.json({ hasActiveComplaint: true, complaint });
@@ -318,26 +327,28 @@ async function createComplaint(req, res) {
       return res.status(400).json({ error: 'Required fields missing' });
     }
 
-    // Duplicate Prevention: Check if active/open complaint already exists for this customer
+    // Duplicate Prevention: Check if active/open complaint already exists for this customer FOR THE SAME PRODUCT
     const cleanDigits = String(customer_phone || '').replace(/[^0-9]/g, '');
     const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
     const cleanName = String(customer_name || '').trim().toLowerCase();
+    const cleanProduct = String(product_type || '').trim().toLowerCase();
 
     const existingActive = db.prepare(`
-      SELECT id, ticket_id, customer_name, customer_phone, status 
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status 
       FROM complaints 
       WHERE (
         (customer_phone LIKE ? AND length(?) >= 10)
         OR (lower(trim(customer_name)) = ? AND length(?) >= 3)
       )
+      AND lower(trim(product_type)) = ?
       AND lower(status) NOT IN ('closed', 'cancelled')
       ORDER BY id DESC
       LIMIT 1
-    `).get(`%${last10}%`, last10, cleanName, cleanName);
+    `).get(`%${last10}%`, last10, cleanName, cleanName, cleanProduct);
 
     if (existingActive) {
       return res.status(400).json({
-        error: `Active complaint #${existingActive.ticket_id} is already open for this customer (${existingActive.customer_name}, Status: ${existingActive.status}). A new complaint cannot be registered until the existing ticket is Closed.`,
+        error: `Active complaint #${existingActive.ticket_id} is already open for this customer for "${existingActive.product_type || product_type}" (${existingActive.customer_name}, Status: ${existingActive.status}). A new complaint for the same product cannot be registered until the existing ticket is Closed.`,
         duplicate: true,
         existingTicket: existingActive
       });

@@ -1460,27 +1460,29 @@ app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
 // Check if active/open complaint already exists for this customer (prevents duplicate tickets)
 app.get('/api/complaints/check-active', authenticateToken, async (req, res) => {
   try {
-    const { phone, name } = req.query;
+    const { phone, name, product_type } = req.query;
     const cleanDigits = (phone || '').replace(/[^0-9]/g, '');
     const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
     const cleanName = (name || '').trim();
+    const cleanProduct = (product_type || '').trim();
 
     if (!last10 && cleanName.length < 3) {
       return res.json({ hasActiveComplaint: false, complaint: null });
     }
 
     const checkSql = `
-      SELECT id, ticket_id, customer_name, customer_phone, status, priority, issue_category, created_at
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status, priority, issue_category, created_at
       FROM complaints
       WHERE (
         ($1 != '' AND RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1)
         OR ($2 != '' AND LOWER(TRIM(customer_name)) = LOWER(TRIM($2)))
       )
+      AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
       AND LOWER(status) NOT IN ('closed', 'cancelled')
       ORDER BY id DESC
       LIMIT 1
     `;
-    const r = await query(checkSql, [last10, cleanName]);
+    const r = await query(checkSql, [last10, cleanName, cleanProduct]);
     if (r.rows.length > 0) {
       return res.json({ hasActiveComplaint: true, complaint: r.rows[0] });
     }
@@ -1498,28 +1500,30 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
     const raw_phone = (body.customer_phone || '').trim();
     const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
     const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+    const product_type = (body.product_type || '').trim();
 
     if (!customer_name || !last10) {
       return res.status(400).json({ error: 'Customer name and a valid 10-digit mobile number are required' });
     }
 
-    // Duplicate Prevention: Check if an active/open complaint already exists for this customer
+    // Duplicate Prevention: Check if an active/open complaint already exists for this customer FOR THE SAME PRODUCT
     const activeCheckSql = `
-      SELECT id, ticket_id, customer_name, customer_phone, status, created_at
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status, created_at
       FROM complaints
       WHERE (
         (RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 AND LENGTH($1) >= 10)
         OR (LOWER(TRIM(customer_name)) = LOWER(TRIM($2)) AND LENGTH(TRIM($2)) >= 3)
       )
+      AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
       AND LOWER(status) NOT IN ('closed', 'cancelled')
       ORDER BY id DESC
       LIMIT 1
     `;
-    const activeRes = await query(activeCheckSql, [last10, customer_name]);
+    const activeRes = await query(activeCheckSql, [last10, customer_name, product_type]);
     if (activeRes.rows.length > 0) {
       const activeTicket = activeRes.rows[0];
       return res.status(400).json({
-        error: `Active complaint #${activeTicket.ticket_id} is already open for this customer (${activeTicket.customer_name}, Phone: ${activeTicket.customer_phone}, Status: ${activeTicket.status}). Duplicate complaints cannot be registered until the existing ticket is Closed.`,
+        error: `Active complaint #${activeTicket.ticket_id} is already open for this customer for "${activeTicket.product_type || product_type}" (${activeTicket.customer_name}, Phone: ${activeTicket.customer_phone}, Status: ${activeTicket.status}). Duplicate complaints for the same product cannot be registered until the existing ticket is Closed.`,
         duplicate: true,
         existingTicket: activeTicket
       });
@@ -1708,6 +1712,31 @@ app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array
 
     if (!customer_name || !last10) {
       return res.status(400).json({ error: 'Customer name and a valid 10-digit mobile number are required' });
+    }
+
+    const product_type = (body.product_type || '').trim();
+
+    // Duplicate Prevention: Check if active complaint exists for this customer FOR THE SAME PRODUCT
+    const activeCheckSql = `
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status, created_at
+      FROM complaints
+      WHERE (
+        (RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 AND LENGTH($1) >= 10)
+        OR (LOWER(TRIM(customer_name)) = LOWER(TRIM($2)) AND LENGTH(TRIM($2)) >= 3)
+      )
+      AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
+      AND LOWER(status) NOT IN ('closed', 'cancelled')
+      ORDER BY id DESC
+      LIMIT 1
+    `;
+    const activeRes = await query(activeCheckSql, [last10, customer_name, product_type]);
+    if (activeRes.rows.length > 0) {
+      const activeTicket = activeRes.rows[0];
+      return res.status(400).json({
+        error: `Active complaint #${activeTicket.ticket_id} is already open for this customer for "${activeTicket.product_type || product_type}". Duplicate complaints for the same product cannot be registered until the existing ticket is Closed.`,
+        duplicate: true,
+        existingTicket: activeTicket
+      });
     }
 
     const canonicalPhone = `+91${last10}`;

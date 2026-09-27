@@ -1,13 +1,13 @@
 {
-  "version": "2.4.5",
-  "buildTime": 1790518000000,
+  "version": "2.4.6",
+  "buildTime": 1790519500000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.4.5",
-  "summary": "Admin-Exclusive Tour Guide & Payment Collection Amount Mismatch Approval System",
+  "title": "Eco Green Solar CMS v2.4.6",
+  "summary": "Product-Specific Duplicate Complaint Check & Prevention",
   "features": [
-    "🔒 Admin-Only Tour Guide: App feature tour is now strictly restricted to Admin role and removed everywhere else from mobile & PC.",
-    "⚠️ Payment Mismatch Warning & Approval: Real-time warning alert when collecting less or extra payment compared to allocated charges.",
-    "✍️ Mandatory Approval Note: Collect button remains locked until technician enters who authorized the amount difference (Admin/Manager approval note)."
+    "⚡ Product-Specific Duplicate Check: Duplicate complaint detection now verifies both customer and product type.",
+    "🛡️ Multi-Product Support: Customers with an open ticket for one product (e.g. Solar Rooftop) can now register tickets for other products (e.g. Solar Water Heater) without being blocked.",
+    "🔄 Real-time Form Updates: Switching product in complaint modal automatically refreshes active ticket status."
   ]
 }

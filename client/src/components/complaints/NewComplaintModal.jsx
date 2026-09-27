@@ -183,7 +183,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     const timer = setTimeout(async () => {
       setCheckingActiveComplaint(true);
       try {
-        const res = await api.checkActiveComplaint(formData.customer_phone, formData.customer_name);
+        const res = await api.checkActiveComplaint(formData.customer_phone, formData.customer_name, formData.product_type);
         if (res && res.hasActiveComplaint && res.complaint) {
           setActiveComplaintWarning(res.complaint);
         } else {
@@ -197,7 +197,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [formData.customer_phone, formData.customer_name]);
+  }, [formData.customer_phone, formData.customer_name, formData.product_type]);
 
   // Location & Postal Pincode state
   const [pincodeLoading, setPincodeLoading] = useState(false);
@@ -553,7 +553,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     }
 
     if (activeComplaintWarning) {
-      showToast(`Cannot register: Active complaint #${activeComplaintWarning.ticket_id} is already open (${activeComplaintWarning.status}). Please resolve/close it first.`, 'error');
+      showToast(`Cannot register: Active complaint #${activeComplaintWarning.ticket_id} is already open for "${activeComplaintWarning.product_type || formData.product_type}" (${activeComplaintWarning.status}). Please resolve/close it first.`, 'error');
       return;
     }
 
@@ -929,7 +929,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
                       <h4 className="font-extrabold text-sm text-rose-900 flex items-center gap-1.5">
-                        <span>Active Complaint Already Open:</span>
+                        <span>Active Complaint Open for {activeComplaintWarning.product_type || formData.product_type}:</span>
                         <span className="font-mono bg-rose-200/80 text-rose-950 px-2 py-0.5 rounded-lg text-xs">
                           #{activeComplaintWarning.ticket_id}
                         </span>
@@ -939,10 +939,10 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       </span>
                     </div>
                     <p className="text-xs text-rose-800 leading-relaxed">
-                      Customer <strong>{activeComplaintWarning.customer_name}</strong> ({activeComplaintWarning.customer_phone}) already has an active service ticket in progress.
+                      Customer <strong>{activeComplaintWarning.customer_name}</strong> ({activeComplaintWarning.customer_phone}) already has an active service ticket in progress for <strong>{activeComplaintWarning.product_type || formData.product_type}</strong>.
                     </p>
                     <div className="mt-2 p-2 bg-white/80 rounded-xl border border-rose-200 text-[11px] text-rose-900 font-semibold flex items-center justify-between flex-wrap gap-2">
-                      <span>⚠️ Duplicate tickets cannot be registered for this customer until Ticket #{activeComplaintWarning.ticket_id} is marked <strong>Closed</strong>.</span>
+                      <span>⚠️ Duplicate tickets cannot be registered for the same product until Ticket #{activeComplaintWarning.ticket_id} is marked <strong>Closed</strong>.</span>
                       <span className="text-slate-500 font-normal">Created: {new Date(activeComplaintWarning.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>
@@ -1747,13 +1747,13 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed opacity-90'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 disabled:opacity-50 cursor-pointer'
                   }`}
-                  title={activeComplaintWarning ? `Cannot register: Ticket #${activeComplaintWarning.ticket_id} is still open (${activeComplaintWarning.status})` : ''}
+                  title={activeComplaintWarning ? `Cannot register: Ticket #${activeComplaintWarning.ticket_id} for "${activeComplaintWarning.product_type || formData.product_type}" is still open (${activeComplaintWarning.status})` : ''}
                 >
                   <Send className="w-3.5 h-3.5" />
                   {submitting
                     ? 'Registering & Dispatching...'
                     : activeComplaintWarning
-                    ? `Cannot Register: Ticket #${activeComplaintWarning.ticket_id} Still Open`
+                    ? `Cannot Register: Open Ticket for ${activeComplaintWarning.product_type || formData.product_type}`
                     : 'Register Complaint & Send Alerts'}
                 </button>
               </div>
