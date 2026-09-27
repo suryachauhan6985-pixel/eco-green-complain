@@ -770,7 +770,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             <div className="lg:col-span-2 bg-white p-12 text-center rounded-2xl border border-slate-200">
               <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
               <h4 className="font-bold text-sm text-slate-800">
-                {activeTab === 'active' ? 'No pending service jobs!' : 'No completed jobs yet.'}
+                {jobStatusFilter === 'all' ? 'No service jobs found!' : `No ${jobStatusFilter} tasks at this moment.`}
               </h4>
               <p className="text-xs text-slate-500 mt-1">
                 {searchTerm ? 'No tasks match your search filter.' : 'You are all caught up. Check back when support desk assigns a new complaint.'}
