@@ -1107,6 +1107,11 @@ export const api = {
       body: formData
     });
   },
+  deleteComplaintAttachment: async (id, complaintId) => {
+    return request(`/attachments/${id}`, {
+      method: 'DELETE'
+    });
+  },
   updateComplaint: async (id, data) => {
     const res = await request(`/complaints/${id}`, {
       method: 'PUT',

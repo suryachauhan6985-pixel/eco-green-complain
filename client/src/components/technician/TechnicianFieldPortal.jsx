@@ -11,16 +11,28 @@ import {
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 
-export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
+export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'field_ops', onSectionChange }) => {
   const { currentUser } = useAuth();
   const { showToast, confirm } = useDialog();
   const [complaints, setComplaints] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('active'); // active | resolved
+  const [section, setSection] = useState(activeSection || 'field_ops');
+  const [jobStatusFilter, setJobStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
   const [techProfile, setTechProfile] = useState(null);
+
+  useEffect(() => {
+    if (activeSection) {
+      setSection(activeSection);
+    }
+  }, [activeSection]);
+
+  const handleSectionSwitch = (newSec) => {
+    setSection(newSec);
+    if (onSectionChange) onSectionChange(newSec);
+  };
 
   // Cash Reconciliation UI States
   const [expandedTechId, setExpandedTechId] = useState(null);
@@ -188,10 +200,20 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
       )
     : complaints;
 
-  const activeComplaints = scopedComplaints.filter(c => ['Assigned', 'In Progress', 'On Hold', 'Reopened'].includes(c.status));
-  const resolvedComplaints = scopedComplaints.filter(c => ['Resolved', 'Closed'].includes(c.status));
+  const counts = {
+    all: scopedComplaints.length,
+    assigned: scopedComplaints.filter(c => c.status === 'Assigned').length,
+    in_progress: scopedComplaints.filter(c => c.status === 'In Progress').length,
+    on_hold: scopedComplaints.filter(c => c.status === 'On Hold').length,
+    reopened: scopedComplaints.filter(c => c.status === 'Reopened').length,
+    completed: scopedComplaints.filter(c => ['Resolved', 'Closed'].includes(c.status)).length
+  };
 
-  const currentTabList = activeTab === 'active' ? activeComplaints : resolvedComplaints;
+  const currentTabList = scopedComplaints.filter(job => {
+    if (jobStatusFilter === 'all') return true;
+    if (jobStatusFilter === 'Completed') return ['Resolved', 'Closed'].includes(job.status);
+    return job.status === jobStatusFilter;
+  });
 
   const displayList = currentTabList.filter(job => {
     if (productFilter !== 'all' && job.product_type !== productFilter) return false;
@@ -258,7 +280,41 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
         </div>
       </div>
 
+      {/* Section View Switcher: Field Tasks vs Cash Collection */}
+      <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 shadow-2xs">
+        <button
+          type="button"
+          onClick={() => handleSectionSwitch('field_ops')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            section === 'field_ops'
+              ? 'bg-emerald-800 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <Wrench className="w-4 h-4" />
+          <span>Field Tasks ({scopedComplaints.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSectionSwitch('collection')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            section === 'collection'
+              ? 'bg-emerald-800 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <IndianRupee className="w-4 h-4" />
+          <span>Collection Register</span>
+          {(myTechData?.cashInHandDue || 0) > 0 && (
+            <span className="bg-amber-400 text-amber-950 text-[10px] font-black px-1.5 py-0.5 rounded-full ml-1">
+              ₹{myTechData.cashInHandDue}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* ================= TECHNICIAN CASH RECONCILIATION & SETTLEMENT SECTION ================= */}
+      {section === 'collection' && (
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
           <div>
@@ -558,26 +614,115 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
           </div>
         </div>
       </div>
+      )}
 
       {/* ================= FIELD TASKS & WORK SECTION ================= */}
+      {section === 'field_ops' && (
       <div className="space-y-3">
-        {/* Tab Switcher */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Status Filter Tabs (Same as Staff Complaints Desk) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold scrollbar-none">
           <button
-            onClick={() => setActiveTab('active')}
-            className={`py-2.5 text-xs font-bold rounded-xl transition-all ${
-              activeTab === 'active' ? 'bg-emerald-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+            type="button"
+            onClick={() => setJobStatusFilter('all')}
+            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              jobStatusFilter === 'all'
+                ? 'bg-emerald-800 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            Active Field Tasks ({activeComplaints.length})
+            <span>All Tasks</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              jobStatusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {counts.all}
+            </span>
           </button>
+
           <button
-            onClick={() => setActiveTab('resolved')}
-            className={`py-2.5 text-xs font-bold rounded-xl transition-all ${
-              activeTab === 'resolved' ? 'bg-emerald-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+            type="button"
+            onClick={() => setJobStatusFilter('Assigned')}
+            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              jobStatusFilter === 'Assigned'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            Completed Work ({resolvedComplaints.length})
+            <span>Assigned</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              jobStatusFilter === 'Assigned' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {counts.assigned}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setJobStatusFilter('In Progress')}
+            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              jobStatusFilter === 'In Progress'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>In Progress</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              jobStatusFilter === 'In Progress' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {counts.in_progress}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setJobStatusFilter('On Hold')}
+            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              jobStatusFilter === 'On Hold'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>On Hold</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              jobStatusFilter === 'On Hold' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {counts.on_hold}
+            </span>
+          </button>
+
+          {counts.reopened > 0 && (
+            <button
+              type="button"
+              onClick={() => setJobStatusFilter('Reopened')}
+              className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                jobStatusFilter === 'Reopened'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
+              }`}
+            >
+              <span>Reopened</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                jobStatusFilter === 'Reopened' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {counts.reopened}
+              </span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setJobStatusFilter('Completed')}
+            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              jobStatusFilter === 'Completed'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>Completed</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              jobStatusFilter === 'Completed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {counts.completed}
+            </span>
           </button>
         </div>
 
@@ -809,6 +954,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint }) => {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

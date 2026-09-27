@@ -1944,6 +1944,34 @@ app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('att
   }
 });
 
+// Delete an uploaded attachment (Staff / Admin)
+app.delete(['/api/attachments/:id', '/api/complaints/:complaintId/attachments/:id'], authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const attRes = await query('SELECT * FROM complaint_attachments WHERE id = $1', [id]);
+    if (!attRes.rows.length) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    const att = attRes.rows[0];
+
+    await query('DELETE FROM complaint_attachments WHERE id = $1', [id]);
+
+    if (att.complaint_id) {
+      try {
+        await query(
+          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role) VALUES ($1, $2, $3, $4, $5)',
+          [att.complaint_id, 'Attachment Removed', `Attachment "${att.file_name || 'Document'}" removed by ${req.user?.name || 'Staff'}`, req.user?.name || 'Staff Specialist', req.user?.role || 'staff']
+        );
+      } catch (_) {}
+    }
+
+    return res.json({ success: true, message: 'Attachment deleted successfully', id });
+  } catch (err) {
+    console.error('Delete attachment error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve / Preview Attachment File directly (Images, PDFs, Docs)
 app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
   try {

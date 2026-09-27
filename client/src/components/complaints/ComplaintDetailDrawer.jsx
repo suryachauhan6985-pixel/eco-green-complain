@@ -89,6 +89,7 @@ export const ComplaintDetailDrawer = ({
   const [savingPayment, setSavingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
   const [uploadingAtt, setUploadingAtt] = useState(false);
+  const [deletingAttId, setDeletingAttId] = useState(null);
 
   // Previous resolution history extraction for reopened tickets
   const previousResolution = React.useMemo(() => {
@@ -186,6 +187,30 @@ export const ComplaintDetailDrawer = ({
     } finally {
       setUploadingAtt(false);
       e.target.value = '';
+    }
+  };
+
+  const handleDeleteAttachment = async (att) => {
+    if (!att || !att.id) return;
+    const ok = await confirm({
+      title: 'Delete Attachment?',
+      message: `Are you sure you want to permanently remove "${att.file_name || 'this attachment'}"? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: 'Delete Attachment',
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
+    try {
+      setDeletingAttId(att.id);
+      await api.deleteComplaintAttachment(att.id, ticket?.id);
+      setAttachments(prev => prev.filter(a => String(a.id) !== String(att.id)));
+      showToast('Attachment deleted successfully', 'success');
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err) {
+      showToast('Failed to delete attachment: ' + err.message, 'error');
+    } finally {
+      setDeletingAttId(null);
     }
   };
 
@@ -1387,6 +1412,21 @@ export const ComplaintDetailDrawer = ({
                                       >
                                         <ExternalLink className="w-3 h-3" />
                                       </a>
+                                      {['admin', 'staff'].includes(currentUser?.role) && (
+                                        <button
+                                          type="button"
+                                          disabled={deletingAttId === att.id}
+                                          onClick={() => handleDeleteAttachment(att)}
+                                          className="text-[10px] text-rose-600 hover:text-rose-800 hover:bg-rose-50 p-1 rounded ml-auto flex items-center gap-0.5 transition-colors cursor-pointer"
+                                          title="Delete / Remove Attachment"
+                                        >
+                                          {deletingAttId === att.id ? (
+                                            <Loader2 className="w-3 h-3 animate-spin text-rose-500" />
+                                          ) : (
+                                            <Trash2 className="w-3 h-3" />
+                                          )}
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2110,6 +2150,21 @@ export const ComplaintDetailDrawer = ({
                                       >
                                         <Download className="w-3.5 h-3.5" />
                                       </a>
+                                      {['admin', 'staff'].includes(currentUser?.role) && closingProof.id !== 'closing_photo' && (
+                                        <button
+                                          type="button"
+                                          disabled={deletingAttId === closingProof.id}
+                                          onClick={() => handleDeleteAttachment(closingProof)}
+                                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                          title="Delete / Remove Proof"
+                                        >
+                                          {deletingAttId === closingProof.id ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                                          ) : (
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          )}
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 );

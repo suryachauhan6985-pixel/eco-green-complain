@@ -123,6 +123,31 @@ app.get('/api/attachments/:id', (req, res) => {
   }
 });
 
+// Delete an attachment
+app.delete(['/api/attachments/:id', '/api/complaints/:complaintId/attachments/:id'], authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    const att = db.prepare('SELECT * FROM complaint_attachments WHERE id = ?').get(id);
+    if (!att) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    db.prepare('DELETE FROM complaint_attachments WHERE id = ?').run(id);
+
+    if (att.complaint_id) {
+      try {
+        db.prepare(
+          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role) VALUES (?, ?, ?, ?, ?)'
+        ).run(att.complaint_id, 'Attachment Removed', `Attachment "${att.file_name || 'Document'}" removed by ${req.user?.name || 'Staff'}`, req.user?.name || 'Staff Specialist', req.user?.role || 'staff');
+      } catch (_) {}
+    }
+
+    return res.json({ success: true, message: 'Attachment deleted successfully', id });
+  } catch (err) {
+    console.error('Delete attachment error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // API Welcome route
 app.get('/api', (req, res) => {
   res.json({

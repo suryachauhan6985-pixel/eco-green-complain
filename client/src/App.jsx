@@ -12,7 +12,7 @@ import { LoginPage } from './components/auth/LoginPage';
 import { api } from './api/client';
 import { 
   Sparkles, Compass, RotateCcw, CheckCircle2, 
-  Users, Wrench, Shield, BarChart3, Search, Plus, MessageCircle 
+  Users, Wrench, Shield, BarChart3, Search, Plus, MessageCircle, IndianRupee 
 } from 'lucide-react';
 
 // Code-split heavy secondary tabs and dialogs for lightning-fast initial load
@@ -129,6 +129,8 @@ function AppContent() {
     if (fromUrl) return fromUrl;
     return 'complaints';
   });
+
+  const [techSection, setTechSection] = useState('field_ops'); // 'field_ops' | 'collection'
 
   // Keep URL in sync with currentTab
   const handleTabChange = (tab) => {
@@ -311,6 +313,8 @@ function AppContent() {
           {currentTab === 'technician' && (
             <TechnicianFieldPortal
               key={`tech-${refreshKey}`}
+              activeSection={techSection}
+              onSectionChange={setTechSection}
               onSelectComplaint={handleSelectComplaint}
             />
           )}
@@ -372,16 +376,35 @@ function AppContent() {
           </button>
         )}
 
-        {/* Field Ops / Technician */}
+        {/* Field Ops / Technician Tasks */}
         {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
           <button
-            onClick={() => handleTabChange('technician')}
-            className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
-              currentTab === 'technician' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            onClick={() => {
+              setTechSection('field_ops');
+              handleTabChange('technician');
+            }}
+            className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+              currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
             }`}
           >
             <Wrench className="w-4 h-4 mb-0.5" />
             <span>Field Ops</span>
+          </button>
+        )}
+
+        {/* Cash Collection Tab */}
+        {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
+          <button
+            onClick={() => {
+              setTechSection('collection');
+              handleTabChange('technician');
+            }}
+            className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+              currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            }`}
+          >
+            <IndianRupee className="w-4 h-4 mb-0.5" />
+            <span>Collection</span>
           </button>
         )}
 
