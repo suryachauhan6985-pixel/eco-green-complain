@@ -1983,6 +1983,13 @@ app.delete(['/api/attachments/:id', '/api/complaints/:complaintId/attachments/:i
     }
     const att = attRes.rows[0];
 
+    if (att.complaint_id) {
+      const compRes = await query('SELECT status FROM complaints WHERE id = $1', [att.complaint_id]);
+      if (compRes.rows.length && ['Resolved', 'Closed'].includes(compRes.rows[0].status)) {
+        return res.status(400).json({ error: `Attachments cannot be deleted from a ${compRes.rows[0].status} complaint. Documents are preserved for record keeping.` });
+      }
+    }
+
     await query('DELETE FROM complaint_attachments WHERE id = $1', [id]);
 
     if (att.complaint_id) {
@@ -2050,6 +2057,13 @@ app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
 app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const existingComp = await query('SELECT status FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    if (!existingComp.rows.length) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    if (['Resolved', 'Closed'].includes(existingComp.rows[0].status)) {
+      return res.status(400).json({ error: `Complaint cannot be edited while in "${existingComp.rows[0].status}" status. Please reopen the complaint first to make changes.` });
+    }
     const b = req.body;
     await query(`
       UPDATE complaints SET
@@ -2498,6 +2512,13 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { notes, status, notify_customer } = req.body;
+    const compCheck = await query('SELECT status FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    if (!compCheck.rows.length) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    if (['Resolved', 'Closed'].includes(compCheck.rows[0].status)) {
+      return res.status(400).json({ error: `Site visit notes and stage updates are locked because this complaint is already marked as "${compCheck.rows[0].status}".` });
+    }
     if (status) {
       await query('UPDATE complaints SET status = $1, status_updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
     }
@@ -2550,6 +2571,10 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
     }
     const compRecord = findComp.rows[0];
     const compId = compRecord.id;
+
+    if (['Resolved', 'Closed'].includes(compRecord.status)) {
+      return res.status(400).json({ error: `Complaint is already marked as "${compRecord.status}". It cannot be resolved again.` });
+    }
 
     let closingPhotoUrl = compRecord.closing_photo_url || null;
 
@@ -2688,6 +2713,10 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
     }
     const comp = compRes.rows[0];
     const est = Number(comp.estimated_charges || 0);
+
+    if (['Resolved', 'Closed'].includes(comp.status)) {
+      return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${comp.status}".` });
+    }
 
     // If no service charges were allocated (est === 0) and payment is being collected (amt > 0),
     // require mandatory collection_reason as per ECO-18

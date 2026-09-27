@@ -1135,7 +1135,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       onClick={() => onSelectComplaint && onSelectComplaint(job.ticket_id || job.id)}
                       className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
                     >
-                      <span>Update Notes, Collect Payment & Mark Resolved</span>
+                      <span>{['Resolved', 'Closed'].includes(job.status) ? 'View Ticket & Resolution Details' : 'Update Notes, Collect Payment & Mark Resolved'}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>

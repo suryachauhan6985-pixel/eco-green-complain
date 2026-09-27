@@ -513,6 +513,10 @@ async function updateComplaint(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
+    if (['Resolved', 'Closed'].includes(existing.status)) {
+      return res.status(400).json({ error: `Complaint cannot be edited while in "${existing.status}" status. Please reopen the complaint first to make changes.` });
+    }
+
     const {
       customer_name,
       customer_phone,
@@ -619,6 +623,10 @@ async function recordPayment(req, res) {
     const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    if (['Resolved', 'Closed'].includes(complaint.status)) {
+      return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${complaint.status}".` });
     }
 
     const { 
@@ -1123,6 +1131,10 @@ async function addTimelineNote(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
+    if (['Resolved', 'Closed'].includes(complaint.status)) {
+      return res.status(400).json({ error: `Site visit notes and stage updates are locked because this complaint is already marked as "${complaint.status}".` });
+    }
+
     const performer = req.user ? req.user.name : 'Service Staff';
     const role = req.user ? req.user.role : 'staff';
 
@@ -1182,6 +1194,10 @@ async function resolveComplaint(req, res) {
     const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    if (['Resolved', 'Closed'].includes(complaint.status)) {
+      return res.status(400).json({ error: `Complaint is already marked as "${complaint.status}". It cannot be resolved again.` });
     }
 
     const performer = req.user ? req.user.name : 'Technician';

@@ -1,13 +1,13 @@
 {
-  "version": "2.4.8",
-  "buildTime": 1790521500000,
+  "version": "2.4.9",
+  "buildTime": 1790525200000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.4.8",
-  "summary": "Technician Multiple Document & Proof Uploads Support",
+  "title": "Eco Green Solar CMS v2.4.9",
+  "summary": "Resolved Complaint Workflow Freeze & Stage Lock Protection",
   "features": [
-    "📁 Multiple Document Uploads: Technicians can now upload multiple photos, videos, and documents when marking tickets resolved.",
-    "➕ Non-Replacing Append Flow: Adding subsequent photos or videos appends to the list instead of replacing the previous file.",
-    "🗑️ Individual File Management: Preview thumbnails, file size indicators, and individual remove buttons for attached proofs."
+    "🔒 Stage & Edit Lock: Once a complaint is marked Resolved, previous stages, re-resolving, editing details, follow-up visit logs, and payments are permanently frozen.",
+    "🛡️ Staff/Admin Reopen Control: Reopen flow is strictly accessible only to Admin and Staff; removed completely from technician views.",
+    "👁️ View-Only Documents: Attached documents and closing proofs cannot be deleted once tickets are resolved or closed."
   ]
 }

@@ -131,6 +131,14 @@ app.delete(['/api/attachments/:id', '/api/complaints/:complaintId/attachments/:i
     if (!att) {
       return res.status(404).json({ error: 'Attachment not found' });
     }
+
+    if (att.complaint_id) {
+      const parentComp = db.prepare('SELECT status FROM complaints WHERE id = ?').get(att.complaint_id);
+      if (parentComp && ['Resolved', 'Closed'].includes(parentComp.status)) {
+        return res.status(400).json({ error: `Attachments cannot be deleted from a ${parentComp.status} complaint. Documents are preserved for record keeping.` });
+      }
+    }
+
     db.prepare('DELETE FROM complaint_attachments WHERE id = ?').run(id);
 
     if (att.complaint_id) {
