@@ -2553,17 +2553,35 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
 
     let closingPhotoUrl = compRecord.closing_photo_url || null;
 
-    // If technician attached a closing proof photo/video via Direct Storage URL or Multipart
-    if (req.body.closing_photo_url) {
-      closingPhotoUrl = req.body.closing_photo_url;
+    // Handle multiple resolution attachments (images, videos, PDFs)
+    let attachmentUrls = [];
+    if (req.body.attachment_urls) {
       try {
-        await query(`
-          INSERT INTO complaint_attachments (
-            complaint_id, file_name, file_url, file_type, file_data, uploaded_by
-          ) VALUES ($1, $2, $3, $4, $5, $6)
-        `, [compId, req.body.closing_photo_name || 'Resolution Proof', closingPhotoUrl, req.body.closing_photo_type || 'image/jpeg', closingPhotoUrl, `${req.user?.name || 'Technician'} (Technician Resolution Proof)`]);
-      } catch (attErr) {
-        console.warn('[Resolve Attachment Note]', attErr.message);
+        attachmentUrls = JSON.parse(req.body.attachment_urls);
+      } catch (e) {
+        attachmentUrls = [];
+      }
+    }
+    if (req.body.closing_photo_url && (!attachmentUrls || attachmentUrls.length === 0)) {
+      attachmentUrls.push({
+        file_url: req.body.closing_photo_url,
+        file_name: req.body.closing_photo_name || 'Resolution Proof',
+        file_type: req.body.closing_photo_type || 'image/jpeg'
+      });
+    }
+
+    if (attachmentUrls && attachmentUrls.length > 0) {
+      if (!closingPhotoUrl) closingPhotoUrl = attachmentUrls[0].file_url;
+      for (const att of attachmentUrls) {
+        try {
+          await query(`
+            INSERT INTO complaint_attachments (
+              complaint_id, file_name, file_url, file_type, file_data, uploaded_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+          `, [compId, att.file_name || 'Resolution Proof', att.file_url, att.file_type || 'image/jpeg', att.file_url, `${req.user?.name || 'Technician'} (Technician Resolution Proof)`]);
+        } catch (attErr) {
+          console.warn('[Resolve Attachment Note]', attErr.message);
+        }
       }
     } else if (req.file) {
       try {

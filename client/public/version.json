@@ -1,13 +1,13 @@
 {
-  "version": "2.4.7",
-  "buildTime": 1790520500000,
+  "version": "2.4.8",
+  "buildTime": 1790521500000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.4.7",
-  "summary": "Technician Allocation Past Date Prevention & Visit Scheduling Validation",
+  "title": "Eco Green Solar CMS v2.4.8",
+  "summary": "Technician Multiple Document & Proof Uploads Support",
   "features": [
-    "📅 Past Date Prevention: Disabled selection of past dates when assigning or reassigning technicians.",
-    "🛡️ Dynamic Min Date Constraint: Expected visit date calendar now enforces today as minimum selectable date.",
-    "⚠️ Real-time Validation: Instant warning and button lock if past visit date is entered or preserved from older schedules."
+    "📁 Multiple Document Uploads: Technicians can now upload multiple photos, videos, and documents when marking tickets resolved.",
+    "➕ Non-Replacing Append Flow: Adding subsequent photos or videos appends to the list instead of replacing the previous file.",
+    "🗑️ Individual File Management: Preview thumbnails, file size indicators, and individual remove buttons for attached proofs."
   ]
 }

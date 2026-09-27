@@ -1188,6 +1188,34 @@ async function resolveComplaint(req, res) {
     const role = req.user ? req.user.role : 'technician';
 
     let photoUrl = closing_photo_url || null;
+
+    // Handle multiple resolution attachments (images, videos, PDFs)
+    let attachmentUrls = [];
+    if (req.body.attachment_urls) {
+      try {
+        attachmentUrls = JSON.parse(req.body.attachment_urls);
+      } catch (e) {
+        attachmentUrls = [];
+      }
+    }
+    if (closing_photo_url && (!attachmentUrls || attachmentUrls.length === 0)) {
+      attachmentUrls.push({
+        file_url: closing_photo_url,
+        file_name: req.body.closing_photo_name || 'Resolution Proof',
+        file_type: req.body.closing_photo_type || 'image/jpeg'
+      });
+    }
+
+    if (attachmentUrls && attachmentUrls.length > 0) {
+      if (!photoUrl) photoUrl = attachmentUrls[0].file_url;
+      for (const att of attachmentUrls) {
+        db.prepare(`
+          INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(id, att.file_name || 'Resolution Proof', att.file_url, att.file_type || 'image/jpeg', att.file_url, `${performer} (Technician Resolution Proof)`);
+      }
+    }
+
     if (req.file) {
       let base64Data = null;
       try {
@@ -1201,9 +1229,9 @@ async function resolveComplaint(req, res) {
       const attachRes = db.prepare(`
         INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, req.file.originalname || 'Closing_Photo.jpg', `/uploads/${req.file.filename}`, req.file.mimetype, base64Data, performer);
+      `).run(id, req.file.originalname || 'Closing_Photo.jpg', `/uploads/${req.file.filename}`, req.file.mimetype, base64Data, `${performer} (Technician Resolution Proof)`);
       const attId = attachRes.lastInsertRowid;
-      photoUrl = base64Data || `/api/attachments/${attId}`;
+      if (!photoUrl) photoUrl = base64Data || `/api/attachments/${attId}`;
       db.prepare('UPDATE complaint_attachments SET file_url = ? WHERE id = ?').run(`/api/attachments/${attId}`, attId);
     }
 

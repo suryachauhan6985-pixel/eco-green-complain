@@ -70,7 +70,7 @@ export const ComplaintDetailDrawer = ({
 
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [spareParts, setSpareParts] = useState('');
-  const [resolutionPhoto, setResolutionPhoto] = useState(null);
+  const [resolutionPhotos, setResolutionPhotos] = useState([]);
   const [resolving, setResolving] = useState(false);
 
   const [closureRemarks, setClosureRemarks] = useState('');
@@ -223,14 +223,48 @@ export const ComplaintDetailDrawer = ({
   };
 
   const handleResolutionPhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 50 * 1024 * 1024) {
-      showToast(`File "${file.name}" exceeds 50MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
+    if (oversized.length > 0) {
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+    }
+
+    const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
+    if (validFiles.length === 0) {
       e.target.value = '';
       return;
     }
-    setResolutionPhoto(file);
+
+    const newItems = validFiles.map((file) => {
+      const isImg = file.type.startsWith('image/');
+      const isVid = file.type.startsWith('video/');
+      return {
+        id: Math.random().toString(36).substring(2, 9),
+        file,
+        name: file.name,
+        size: file.size > 1024 * 1024
+          ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
+          : (file.size / 1024).toFixed(1) + ' KB',
+        isImage: isImg,
+        isVideo: isVid,
+        preview: (isImg || isVid) ? URL.createObjectURL(file) : null
+      };
+    });
+
+    setResolutionPhotos(prev => [...prev, ...newItems]);
+    e.target.value = '';
+  };
+
+  const removeResolutionPhoto = (id) => {
+    setResolutionPhotos(prev => {
+      const item = prev.find(p => p.id === id);
+      if (item && item.preview) {
+        URL.revokeObjectURL(item.preview);
+      }
+      return prev.filter(p => p.id !== id);
+    });
   };
 
   // WhatsApp Live Chat State
@@ -586,24 +620,56 @@ export const ComplaintDetailDrawer = ({
       const data = new FormData();
       data.append('resolution_notes', resolutionNotes);
       if (spareParts) data.append('spare_parts_used', spareParts);
-      if (resolutionPhoto) {
-        try {
-          showToast('Uploading resolution photo/video to cloud storage...', 'info');
-          const uploaded = await uploadFileToSupabase(resolutionPhoto);
-          if (uploaded && uploaded.file_url) {
-            data.append('closing_photo_url', uploaded.file_url);
-            data.append('closing_photo_name', uploaded.file_name);
-            data.append('closing_photo_type', uploaded.file_type);
+
+      let fallbackFiles = [];
+      if (resolutionPhotos.length > 0) {
+        showToast(`Uploading ${resolutionPhotos.length} resolution file(s) to cloud storage...`, 'info');
+        const uploadedAttachments = [];
+
+        for (const item of resolutionPhotos) {
+          try {
+            const uploaded = await uploadFileToSupabase(item.file);
+            if (uploaded && uploaded.file_url) {
+              uploadedAttachments.push(uploaded);
+            }
+          } catch (storageErr) {
+            console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
+            if (item.file.size <= 4 * 1024 * 1024) {
+              fallbackFiles.push(item.file);
+            }
           }
-        } catch (storageErr) {
-          console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
-          if (resolutionPhoto.size <= 4 * 1024 * 1024) {
-            data.append('closing_photo', resolutionPhoto);
-          }
+        }
+
+        if (uploadedAttachments.length > 0) {
+          data.append('attachment_urls', JSON.stringify(uploadedAttachments));
+          data.append('closing_photo_url', uploadedAttachments[0].file_url);
+          data.append('closing_photo_name', uploadedAttachments[0].file_name);
+          data.append('closing_photo_type', uploadedAttachments[0].file_type);
+        }
+
+        if (fallbackFiles.length > 0) {
+          data.append('closing_photo', fallbackFiles[0]);
         }
       }
 
       const res = await api.resolveComplaint(ticket.id, data);
+
+      // If multiple fallback files were needed
+      if (fallbackFiles.length > 1) {
+        try {
+          const extraFd = new FormData();
+          fallbackFiles.slice(1).forEach(f => extraFd.append('attachments', f));
+          await api.uploadComplaintAttachments(ticket.id, extraFd);
+        } catch (e) {
+          console.warn('Extra fallback upload note:', e);
+        }
+      }
+
+      // Cleanup preview URLs
+      resolutionPhotos.forEach(p => {
+        if (p.preview) URL.revokeObjectURL(p.preview);
+      });
+      setResolutionPhotos([]);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
 
@@ -1988,14 +2054,21 @@ export const ComplaintDetailDrawer = ({
                             </div>
 
                             <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                                Closing Proof Photo / Video (Optional)
-                              </label>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-[11px] font-semibold text-slate-700">
+                                  Closing Proof Photos / Videos / Documents (Multiple Allowed)
+                                </label>
+                                {resolutionPhotos.length > 0 && (
+                                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                                    {resolutionPhotos.length} File(s) Selected
+                                  </span>
+                                )}
+                              </div>
                               <div className="space-y-2">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors" title="Take photo with camera">
+                                  <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Take photo with camera">
                                     <Camera className="w-3.5 h-3.5 text-emerald-700" />
-                                    <span>Take Live Photo</span>
+                                    <span>Take Photo</span>
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -2004,7 +2077,7 @@ export const ComplaintDetailDrawer = ({
                                       className="hidden"
                                     />
                                   </label>
-                                  <label className="cursor-pointer px-2.5 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors" title="Record video with camera">
+                                  <label className="cursor-pointer px-2.5 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Record video with camera">
                                     <Video className="w-3.5 h-3.5 text-teal-700" />
                                     <span>Record Video</span>
                                     <input
@@ -2015,35 +2088,61 @@ export const ComplaintDetailDrawer = ({
                                       className="hidden"
                                     />
                                   </label>
-                                  <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors">
+                                  <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
                                     <Upload className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Browse Gallery / Files</span>
+                                    <span>Browse Files / Gallery</span>
                                     <input
                                       type="file"
-                                      accept="image/*,video/*"
+                                      accept="image/*,video/*,application/pdf"
+                                      multiple
                                       onChange={handleResolutionPhotoChange}
                                       className="hidden"
                                     />
                                   </label>
                                 </div>
-                                {resolutionPhoto && (
-                                  <div className="flex items-center justify-between p-2 bg-emerald-50/80 rounded-lg border border-emerald-300 text-xs">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <div className="w-8 h-8 rounded bg-emerald-200/60 flex items-center justify-center shrink-0 text-emerald-800 font-bold text-[10px]">
-                                        {resolutionPhoto.type?.startsWith('video/') ? <Video className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
-                                      </div>
-                                      <div className="truncate">
-                                        <p className="font-semibold text-slate-800 truncate text-[11px]">{resolutionPhoto.name}</p>
-                                        <p className="text-[10px] text-slate-500">{(resolutionPhoto.size / 1024).toFixed(1)} KB</p>
-                                      </div>
+
+                                {resolutionPhotos.length > 0 && (
+                                  <div className="space-y-1.5 pt-1">
+                                    <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900 px-1">
+                                      <span>Attached Proofs ({resolutionPhotos.length}):</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          resolutionPhotos.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
+                                          setResolutionPhotos([]);
+                                        }}
+                                        className="text-[10px] text-red-600 hover:text-red-700 hover:underline cursor-pointer"
+                                      >
+                                        Remove All
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setResolutionPhoto(null)}
-                                      className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 text-xs font-bold shrink-0"
-                                    >
-                                      Remove
-                                    </button>
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                      {resolutionPhotos.map((item) => (
+                                        <div key={item.id} className="flex items-center justify-between p-2 bg-emerald-50/90 rounded-lg border border-emerald-300 text-xs shadow-2xs hover:bg-emerald-100/60 transition-colors">
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            {item.preview && item.isImage ? (
+                                              <img src={item.preview} alt={item.name} className="w-8 h-8 rounded object-cover border border-emerald-300 shrink-0" />
+                                            ) : (
+                                              <div className="w-8 h-8 rounded bg-emerald-200/80 flex items-center justify-center shrink-0 text-emerald-900 font-bold text-[10px]">
+                                                {item.isVideo ? <Video className="w-4 h-4 text-emerald-800" /> : <Camera className="w-4 h-4 text-emerald-800" />}
+                                              </div>
+                                            )}
+                                            <div className="truncate">
+                                              <p className="font-semibold text-slate-800 truncate text-[11px]">{item.name}</p>
+                                              <p className="text-[10px] text-slate-500">{item.size} • {item.isVideo ? 'Video' : item.isImage ? 'Photo' : 'Document'}</p>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeResolutionPhoto(item.id)}
+                                            className="text-red-500 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100/60 text-xs font-bold shrink-0 transition-colors cursor-pointer"
+                                            title="Remove this document"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>
