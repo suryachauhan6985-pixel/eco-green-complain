@@ -160,7 +160,8 @@ export const TemplateManager = () => {
         'complaint_registered', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
         'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
         'technician_work_order', 'technician_reminder', 'technician_reach_out_customer',
-        'technician_reopened_work_order', 'technician_reopen_job_transferred'
+        'technician_reopened_work_order', 'technician_reopen_job_transferred',
+        'technician_reassigned_work_order', 'technician_reassigned'
       ];
 
       const list = rawList.map(t => {
@@ -207,7 +208,8 @@ export const TemplateManager = () => {
       'complaint_registered', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
       'technician_work_order', 'technician_reminder', 'technician_reach_out_customer',
-      'technician_reopened_work_order', 'technician_reopen_job_transferred'
+      'technician_reopened_work_order', 'technician_reopen_job_transferred',
+      'technician_reassigned_work_order', 'technician_reassigned'
     ];
     const isVerified = verifiedKeys.includes(tmpl.template_key);
     const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
@@ -520,19 +522,26 @@ export const TemplateManager = () => {
             type="button"
             onClick={async () => {
               try {
+                setSyncingMeta(true);
+                const syncRes = await api.syncAllTemplatesFromMeta();
                 await fetchMetaStatus(true);
                 await fetchTemplates();
-                showToast('Meta template status synchronized successfully', 'success');
+                const countMsg = syncRes?.syncedCount ? ` (${syncRes.syncedCount} templates updated)` : '';
+                showToast(`Meta approved templates successfully synced with software!${countMsg}`, 'success');
               } catch (err) {
-                showToast('Meta sync completed: ' + err.message, 'info');
+                console.error('Error during Meta template sync:', err);
+                showToast('Meta sync warning: ' + (err.message || 'Check connection'), 'info');
+                await fetchTemplates();
+              } finally {
+                setSyncingMeta(false);
               }
             }}
             disabled={syncingMeta}
-            title="Sync live template approval status directly with Meta Cloud API"
+            title="Sync live approved templates and format directly from Meta Cloud API"
             className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${syncingMeta ? 'animate-spin text-emerald-600' : 'text-emerald-700'}`} />
-            <span>{syncingMeta ? 'Checking Meta...' : 'Sync with Meta'}</span>
+            <span>{syncingMeta ? 'Syncing with Meta...' : 'Sync with Meta'}</span>
           </button>
 
           <button

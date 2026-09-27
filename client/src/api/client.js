@@ -1262,6 +1262,9 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ manual_status: manualStatus })
   }),
+  syncAllTemplatesFromMeta: () => request('/notifications/templates/sync-from-meta', {
+    method: 'POST'
+  }),
   getNotificationLogs: (complaintId) => {
     const q = complaintId ? `?complaint_id=${complaintId}` : '';
     return request(`/notifications/logs${q}`);

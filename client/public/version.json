@@ -1,13 +1,13 @@
 {
-  "version": "2.5.1",
-  "buildTime": 1790530000000,
+  "version": "2.5.2",
+  "buildTime": 1790533000000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.5.1",
-  "summary": "Fix Complaint Edit Type Error & Mobile-First Authentication with Admin-Only Password Management",
+  "title": "Eco Green Solar CMS v2.5.2",
+  "summary": "Full Meta WhatsApp Approved Template Synchronization & Message Format Alignment",
   "features": [
-    "🛠️ Ticket Edit Fix: Resolved integer type casting error when updating complaint warranty and charge notification flags.",
-    "📱 Mobile-First Authentication: Streamlined login and team management to strictly use Mobile Number and Password, removing redundant User ID / Username fields.",
-    "🔒 Admin-Only Password Control: Strictly restricted password change and reset permissions to Administrators only across both backend APIs and UI controls."
+    "⚡ Meta Approved Template Sync: Synchronized all 14 official WhatsApp message templates directly from Meta WhatsApp Manager into software database.",
+    "📋 Service Resolved Format Fix: Aligned complaint_resolved template text, parameters, header, and footer 100% with Meta's approved specification.",
+    "🔄 Dynamic Meta Sync Action: Added 1-click 'Sync with Meta' action to pull approved templates and immediately update active templates in real-time."
   ]
 }

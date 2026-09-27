@@ -32,7 +32,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+    whatsapp_body: `☀️ *Eco Green Solar Support*\n\nNamaste {{customer_name}},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}\nEstimated Service Charge: {{charges_line}}\n\nTrack ticket: {{feedback_url}}\n\nThank you for choosing Eco Green Solar.`,
     email_subject: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}{{charges_line}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
   },
@@ -46,7 +46,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Scheduled Date:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `☀️ *Technician Assigned*\n\nNamaste *{{customer_name}}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *{{complaint_id}}*.\n\nTechnician Name: *{{technician_name}}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: {{feedback_url}}\n\nEco Green Solar Customer Care.`,
     email_subject: `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nScheduled Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
   },
@@ -74,7 +74,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n📝 *Notes:* {{notes}}\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n*Notes:* {{notes}}\n\n*Track Live:* {{feedback_url}}\n- Eco Green Solar`,
     email_subject: `[Eco Green Solar] Status Update - Ticket {{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nAn update has been logged for your complaint ticket {{complaint_id}}.\n\nCurrent Status: {{status}}\nUpdate Details: {{notes}}\n\nWe remain committed to resolving your issue promptly.`
   },
@@ -88,7 +88,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Resolution*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been marked as *RESOLVED* by technician {{technician_name}}.\n\n✅ *Resolution Notes:* {{notes}}\n\nOur quality desk will verify and close the ticket shortly.\n\n🔗 *View Details:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `✅ *Service Resolved*\n\nNamaste *{{customer_name}}*,\n\nYour solar equipment complaint for Ticket No.: *{{complaint_id}}* has been marked *RESOLVED* by technician - *{{technician_name}}*.\n\nResolution Notes: *{{notes}}*\n\nOur quality desk will verify and close the ticket shortly. If you have any questions, please contact our helpline.\n\nPlease rate your service experience here: *{{feedback_url}}*\n\nThank you for choosing *Eco Green Solar*.`,
     email_subject: `[Eco Green Solar] Issue Resolved - Ticket {{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nOur field technician has addressed the issue on your {{product_type}} (Ticket ID: {{complaint_id}}).\n\nResolution Summary: {{notes}}\n\nOur support desk will verify the resolution and close the ticket.`
   },
@@ -98,11 +98,11 @@ export const INITIAL_TEMPLATES = [
     name: 'Complaint Closed & Feedback Request',
     audience: 'customer',
     trigger_event: 'complaint_closed',
-    meta_template_name: 'complaint_closed_feedback_request',
+    meta_template_name: 'complaint_closed__feedback_request',
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Closure*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
+    whatsapp_body: `☀️ *Eco Green Solar Closure*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
     email_subject: `[Eco Green Solar] Complaint Closed - {{complaint_id}} | Please Rate Us`,
     email_body: `Dear {{customer_name}},\n\nYour service complaint under ticket ID {{complaint_id}} is now closed.\n\nWe hope our service technician resolved your issue to your satisfaction.\n\nPlease take 30 seconds to rate your service experience by clicking the link below.`
   },
@@ -116,7 +116,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason:* {{reopen_reason}}\n\n👷 *Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+    whatsapp_body: `☀️ *Eco Green Solar Priority Alert*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n*Track:* {{feedback_url}}\n- Eco Green Solar`,
     email_subject: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
     email_body: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nTechnician: {{technician_name}} ({{technician_phone}})\nReason: {{reopen_reason}}\n\nOur operations team is working to arrange an immediate re-inspection.`
   },
@@ -130,7 +130,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `⚡ *Eco Green Solar - New Work Order*\n\nHello {{technician_name}}, you have been assigned new ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n📅 *Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.`,
+    whatsapp_body: `⚡ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n*Customer:* {{customer_name}}\n*Customer Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Product:* {{product_type}}\n*Category:* {{issue_category}}\n*issue:* {{notes}}\n*Priority:* {{priority}}\n*Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
     email_subject: `[Eco Green Solar] New Work Order Assigned: Ticket #{{complaint_id}}`,
     email_body: `Dear {{technician_name}},\n\nYou have been dispatched for service complaint #{{complaint_id}}.\n\nCustomer: {{customer_name}} ({{customer_phone}})\nAddress: {{customer_address}}\nIssue: {{issue_category}}\nScheduled Date: {{expected_visit_date}}\n\nPlease visit your technician dashboard to update work order logs.`
   },
@@ -144,7 +144,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
+    whatsapp_body: `*Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
     email_subject: `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
     email_body: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
   },
@@ -155,7 +155,7 @@ export const INITIAL_TEMPLATES = [
     audience: 'technician',
     trigger_event: 'technician_reassigned',
     meta_template_name: 'technician_work_order_reassigned',
-    meta_status: 'PENDING',
+    meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
     whatsapp_body: `*Eco Green Solar - Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Issue:* {{issue_category}}\n*Product:* {{product_type}}\n*Priority:* {{priority}}\n*Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* https://complain.ecogreensolar.co.in/technician\n\nPlease contact customer before reaching site.`,
@@ -200,7 +200,7 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n⚠️ *Reason for Reopening:* {{reopen_reason}}\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
+    whatsapp_body: `*Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Product:* {{product_type}}\n*Issue:* {{issue_category}}\n*Reason for Reopening:* {{reopen_reason}}\n*Priority:* {{priority}}\n\n*Technician Portal:* https://complain.ecogreensolar.co.in/technician\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
     email_subject: `[Eco Green Solar] Reopened Work Order: Ticket #{{complaint_id}}`,
     email_body: `Dear {{technician_name}},\n\nComplaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been REOPENED for follow-up service.\n\nReason: {{reopen_reason}}\n\nPlease check your Technician Portal for site details and coordinate with the customer.`
   },
@@ -210,11 +210,11 @@ export const INITIAL_TEMPLATES = [
     name: 'Technician Reopened Job Transferred (Previous Tech Notice)',
     audience: 'technician',
     trigger_event: 'technician_reopened_work_order',
-    meta_template_name: 'technician_job_transferred_notice',
+    meta_template_name: 'technician_re_job_transferred_notice',
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*{{new_technician_name}}*).\n\n⚠️ *Customer Reopen Reason:* {{reopen_reason}}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Solar`,
+    whatsapp_body: `*Eco Green Solar - Reopened Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*{{new_technician_name}}*).\n\n*Customer Reopen Reason:* {{reopen_reason}}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Dispatch`,
     email_subject: `[Eco Green Solar] Reopened Ticket Transferred: Ticket #{{complaint_id}}`,
     email_body: `Dear {{technician_name}},\n\nTicket #{{complaint_id}} (Customer: {{customer_name}}) previously resolved by you has been REOPENED and reassigned to another technician ({{new_technician_name}}).\n\nReopen Reason: {{reopen_reason}}\n\nYou are not required to revisit this site.`
   }

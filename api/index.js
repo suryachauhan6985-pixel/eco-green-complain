@@ -198,7 +198,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
       const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      renderedBody = `Dear ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
       
       payload.type = 'template';
       payload.template = {
@@ -220,7 +220,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Technician');
-      renderedBody = `Dear *${custName}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *${ticketId}*.\n\nTechnician Name: *${techName}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: ${trackingUrl}\n\nEco Green Solar Customer Care.`;
+      renderedBody = `Namaste *${custName}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *${ticketId}*.\n\nTechnician Name: *${techName}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: ${trackingUrl}\n\nEco Green Solar Customer Care.`;
 
       payload.type = 'template';
       payload.template = {
@@ -275,7 +275,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Technician');
       const resNotes = cleanParam(variables.resolution_notes || variables.closure_remarks, 'Service completed');
-      renderedBody = `Dear *${custName}*,\n\nYour solar equipment complaint for Ticket No.: *${ticketId}* has been marked *RESOLVED* by technician - *${techName}*.\n\nResolution Notes: *${resNotes}*\n\nPlease rate your service experience here: *${trackingUrl}*\n\nThank you for choosing *Eco Green Solar*.`;
+      renderedBody = `Namaste *${custName}*,\n\nYour solar equipment complaint for Ticket No.: *${ticketId}* has been marked *RESOLVED* by technician - *${techName}*.\n\nResolution Notes: *${resNotes}*\n\nOur quality desk will verify and close the ticket shortly. If you have any questions, please contact our helpline.\n\nPlease rate your service experience here: *${trackingUrl}*\n\nThank you for choosing *Eco Green Solar*.`;
 
       payload.type = 'template';
       payload.template = {
@@ -393,15 +393,15 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       payload.type = 'template';
       payload.template = {
         name: 'customer_technician_reassigned',
-        language: { code: 'en_US' },
+        language: { code: 'en' },
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: techName },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };
@@ -466,11 +466,12 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custPhone = cleanParam(variables.customer_phone, '-');
       const custAddress = cleanParam(variables.customer_address, 'Customer Site Address');
       const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up inspection required');
-      const prevTech = cleanParam(variables.previous_technician_name, '');
-      const prevTechLine = prevTech ? `\n👷 *Previous Specialist:* ${prevTech}` : '';
+      const issueCat = cleanParam(variables.issue_category || variables.notes, 'Inverter Fault / Error Code');
+      const prodType = cleanParam(variables.product_type, 'Solar Rooftop Systems');
+      const priority = cleanParam(variables.priority, 'High');
       const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(ticketId)}`;
 
-      renderedBody = `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello *${techName}*,\n\nTicket *${ticketId}* has been *REOPENED* for service follow-up.${prevTechLine}\n\n⚠️ *Reason for Reopening:* ${reopenReason}\n\n👤 *Customer:* ${custName}\n📞 *Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n\n🔗 *Open Ticket in Portal:* ${portalLink}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`;
+      renderedBody = `*Eco Green Solar - Reopened Work Order*\n\nHello ${techName}, ticket *${ticketId}* has been *REOPENED* for service follow-up.\n\n*Reason for Reopening:* ${reopenReason}\n\n*Customer:* ${custName}\n*Phone:* ${custPhone}\n*Address:* ${custAddress}\n*Issue:* ${issueCat}\n*Product:* ${prodType}\n*Priority:* ${priority}\n\n*Technician Portal:* ${portalLink}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`;
 
       payload.type = 'template';
       payload.template = {
@@ -481,10 +482,14 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           parameters: [
             { type: 'text', parameter_name: 'technician_name', text: techName },
             { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'reopen_reason', text: reopenReason },
             { type: 'text', parameter_name: 'customer_name', text: custName },
             { type: 'text', parameter_name: 'customer_phone', text: custPhone },
             { type: 'text', parameter_name: 'customer_address', text: custAddress },
-            { type: 'text', parameter_name: 'reopen_reason', text: reopenReason }
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'priority', text: priority },
+            { type: 'text', parameter_name: 'technician_portal_url', text: portalLink }
           ]
         }]
       };
@@ -3431,9 +3436,9 @@ const META_TEMPLATE_MAPPING = {
   complaint_registered: { metaName: 'complaint_registered', language: 'en_US' },
   technician_assigned: { metaName: 'technician_assigned', language: 'en_US' },
   customer_technician_reassigned: { metaName: 'customer_technician_reassigned', language: 'en' },
-  status_update: { metaName: 'status_followup_note_update', language: 'en' },
+  status_update: { metaName: 'status__followup_note_update', language: 'en' },
   complaint_resolved: { metaName: 'complaint_resolved', language: 'en_US' },
-  complaint_closed: { metaName: 'complaint_closed_feedback_request', language: 'en' },
+  complaint_closed: { metaName: 'complaint_closed__feedback_request', language: 'en' },
   complaint_reopened: { metaName: 'complaint_reopened_notification', language: 'en' },
   technician_work_order: { metaName: 'technician_work_order', language: 'en_US' },
   technician_reassigned_work_order: { metaName: 'technician_work_order_reassigned', language: 'en_US' },
@@ -3490,7 +3495,7 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'complaint_registered',
         metaName: 'complaint_registered',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+        wa: `☀️ *Eco Green Solar Support*\n\nNamaste {{customer_name}},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}\nEstimated Service Charge: {{charges_line}}\n\nTrack ticket: {{feedback_url}}\n\nThank you for choosing Eco Green Solar.`,
         sub: `[Eco Green Solar] Service Complaint Registered - {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nThank you for contacting Eco Green Solar Care. Your service complaint has been successfully registered.\n\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}{{charges_line}}\n\nOur technical support team is reviewing your ticket and will assign a specialist technician shortly.`
       },
@@ -3501,7 +3506,7 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'technician_assigned',
         metaName: 'technician_assigned',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Scheduled Date:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`,
+        wa: `☀️ *Technician Assigned*\n\nNamaste *{{customer_name}}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *{{complaint_id}}*.\n\nTechnician Name: *{{technician_name}}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: {{feedback_url}}\n\nEco Green Solar Customer Care.`,
         sub: `[Eco Green Solar] Technician Assigned - {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nA certified technician has been assigned to resolve your complaint.\n\nTechnician Name: {{technician_name}}\nScheduled Date: {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.`
       },
@@ -3521,20 +3526,20 @@ async function ensureNotificationTemplatesTable() {
         name: 'Status & Follow-up Note Update',
         audience: 'customer',
         trigger: 'status_update',
-        metaName: 'status_followup_note_update',
+        metaName: 'status__followup_note_update',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n📝 *Notes:* {{notes}}\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        wa: `☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n*Notes:* {{notes}}\n\n*Track Live:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Status Update - Ticket {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nAn update has been logged for your complaint ticket {{complaint_id}}.\n\nCurrent Status: {{status}}\nUpdate Details: {{notes}}\n\nWe remain committed to resolving your issue promptly.`
       },
       {
         key: 'complaint_resolved',
-        name: 'Complaint Resolved Notification',
+        name: 'Service Work Completed / Resolved',
         audience: 'customer',
         trigger: 'complaint_resolved',
         metaName: 'complaint_resolved',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Resolution*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been marked as *RESOLVED* by technician {{technician_name}}.\n\n✅ *Resolution Notes:* {{notes}}\n\nOur quality desk will verify and close the ticket shortly.\n\n🔗 *View Details:* {{feedback_url}}\n- Eco Green Solar`,
+        wa: `✅ *Service Resolved*\n\nNamaste *{{customer_name}}*,\n\nYour solar equipment complaint for Ticket No.: *{{complaint_id}}* has been marked *RESOLVED* by technician - *{{technician_name}}*.\n\nResolution Notes: *{{notes}}*\n\nOur quality desk will verify and close the ticket shortly. If you have any questions, please contact our helpline.\n\nPlease rate your service experience here: *{{feedback_url}}*\n\nThank you for choosing *Eco Green Solar*.`,
         sub: `[Eco Green Solar] Issue Resolved - Ticket {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nOur field technician has addressed the issue on your {{product_type}} (Ticket ID: {{complaint_id}}).\n\nResolution Summary: {{notes}}\n\nOur support desk will verify the resolution and close the ticket.`
       },
@@ -3543,20 +3548,20 @@ async function ensureNotificationTemplatesTable() {
         name: 'Complaint Closed & Feedback Request',
         audience: 'customer',
         trigger: 'complaint_closed',
-        metaName: 'complaint_closed_feedback_request',
+        metaName: 'complaint_closed__feedback_request',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Closure*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n⭐ *Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
+        wa: `☀️ *Eco Green Solar Closure*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care`,
         sub: `[Eco Green Solar] Complaint Closed - {{complaint_id}} | Please Rate Us`,
         em: `Dear {{customer_name}},\n\nYour service complaint under ticket ID {{complaint_id}} is now closed.\n\nWe hope our service technician resolved your issue to your satisfaction.\n\nPlease take 30 seconds to rate your service experience by clicking the link below.`
       },
       {
         key: 'complaint_reopened',
-        name: 'Complaint Reopened Notification',
+        name: 'Complaint Reopened Priority Alert',
         audience: 'customer',
         trigger: 'complaint_reopened',
         metaName: 'complaint_reopened_notification',
         metaStatus: 'APPROVED',
-        wa: `☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason:* {{reopen_reason}}\n\n👷 *Technician:* {{technician_name}}\n📞 *Mobile:* {{technician_phone}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar`,
+        wa: `☀️ *Eco Green Solar Priority Alert*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n*Track:* {{feedback_url}}\n- Eco Green Solar`,
         sub: `[Eco Green Solar] Complaint Reopened - {{complaint_id}}`,
         em: `Dear {{customer_name}},\n\nWe have received your request to reopen complaint ticket {{complaint_id}}.\n\nTechnician: {{technician_name}} ({{technician_phone}})\nReason: {{reopen_reason}}\n\nOur team is working to arrange an immediate re-inspection.`
       },
@@ -3567,7 +3572,7 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'technician_work_order',
         metaName: 'technician_work_order',
         metaStatus: 'APPROVED',
-        wa: `⚡ *Eco Green Solar - New Work Order*\n\nHello {{technician_name}}, you have been assigned new ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n📅 *Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.`,
+        wa: `⚡ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n*Customer:* {{customer_name}}\n*Customer Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Product:* {{product_type}}\n*Category:* {{issue_category}}\n*issue:* {{notes}}\n*Priority:* {{priority}}\n*Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
         sub: `[Eco Green Solar] New Work Order Assigned: Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nYou have been dispatched for service complaint #{{complaint_id}}.\n\nCustomer: {{customer_name}} ({{customer_phone}})\nAddress: {{customer_address}}\nIssue: {{issue_category}}\nScheduled Date: {{expected_visit_date}}\n\nPlease visit your technician dashboard to update work order logs.`
       },
@@ -3578,7 +3583,7 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'technician_reminder',
         metaName: 'technician_pending_visit_reminder',
         metaStatus: 'APPROVED',
-        wa: `⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
+        wa: `*Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.`,
         sub: `[Eco Green Solar] Reminder: Scheduled Visit for Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nReminder: You have a scheduled service visit for ticket #{{complaint_id}} (Customer: {{customer_name}}, Address: {{customer_address}}).\n\nPlease ensure your visit is completed on schedule.`
       },
@@ -3588,8 +3593,8 @@ async function ensureNotificationTemplatesTable() {
         audience: 'technician',
         trigger: 'technician_reassigned',
         metaName: 'technician_work_order_reassigned',
-        metaStatus: 'PENDING',
-        wa: `*Eco Green Solar - Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Issue:* {{issue_category}}\n*Product:* {{product_type}}\n*Priority:* {{priority}}\n*Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* https://complain.ecogreensolar.co.in/technician\n\nPlease contact customer before reaching site.`,
+        metaStatus: 'APPROVED',
+        wa: `*Eco Green Solar - Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Issue:* {{issue_category}}\n*Product:* {{product_type}}\n*Priority:* {{priority}}\n*Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.`,
         sub: `[Eco Green Solar] Reassigned Work Order: Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nTicket #{{complaint_id}} (Customer: {{customer_name}}) has been reassigned to you.\n\nPlease check your Technician Portal for complete site details.`
       },
@@ -3611,7 +3616,7 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'technician_reopened_work_order',
         metaName: 'technician_reopened_work_order',
         metaStatus: 'APPROVED',
-        wa: `🔄 *Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n⚠️ *Reason for Reopening:* {{reopen_reason}}\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Issue:* {{issue_category}}\n⚡ *Product:* {{product_type}}\n🚨 *Priority:* {{priority}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
+        wa: `*Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n*Reason for Reopening:* {{reopen_reason}}\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Issue:* {{issue_category}}\n*Product:* {{product_type}}\n*Priority:* {{priority}}\n\n*Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`,
         sub: `[Eco Green Solar] Reopened Work Order: Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nComplaint ticket #{{complaint_id}} (Customer: {{customer_name}}) has been REOPENED for follow-up service.\n\nReason: {{reopen_reason}}\n\nPlease check your Technician Portal for site details and coordinate with the customer.`
       },
@@ -3620,9 +3625,9 @@ async function ensureNotificationTemplatesTable() {
         name: 'Technician Reopened Job Transferred (Previous Tech Notice)',
         audience: 'technician',
         trigger: 'technician_reopened_work_order',
-        metaName: 'technician_job_transferred_notice',
+        metaName: 'technician_re_job_transferred_notice',
         metaStatus: 'APPROVED',
-        wa: `⚠️ *Eco Green Solar - Reopened Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*{{new_technician_name}}*).\n\n⚠️ *Customer Reopen Reason:* {{reopen_reason}}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Solar`,
+        wa: `*Eco Green Solar - Reopened Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*{{new_technician_name}}*).\n\n*Customer Reopen Reason:* {{reopen_reason}}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Dispatch`,
         sub: `[Eco Green Solar] Reopened Ticket Transferred: Ticket #{{complaint_id}}`,
         em: `Dear {{technician_name}},\n\nTicket #{{complaint_id}} (Customer: {{customer_name}}) previously resolved by you has been REOPENED and reassigned to another technician ({{new_technician_name}}).\n\nReopen Reason: {{reopen_reason}}\n\nYou are not required to revisit this site.`
       }
@@ -3949,6 +3954,122 @@ app.post('/api/notifications/templates/:id/toggle-active', authenticateToken, as
     await query('UPDATE notification_templates SET is_active = $1, updated_at = NOW() WHERE id = $2', [newActive, id]);
     return res.json({ success: true, is_active: newActive, message: `Rule ${newActive ? 'activated' : 'paused'} successfully` });
   } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Global Sync: Fetch all approved templates directly from Meta Graph API into software
+app.post('/api/notifications/templates/sync-from-meta', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const url = `https://graph.facebook.com/v21.0/${META_WABA_ID}/message_templates?fields=name,status,category,language,id,components&limit=100`;
+    const metaRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${getMetaAccessToken()}` }
+    });
+    if (!metaRes.ok) {
+      const errData = await metaRes.json().catch(() => ({}));
+      return res.status(400).json({ error: errData?.error?.message || `Meta API error ${metaRes.status}` });
+    }
+    const data = await metaRes.json();
+    const metaList = Array.isArray(data?.data) ? data.data : [];
+    const approved = metaList.filter(t => t.status === 'APPROVED');
+
+    metaTemplatesCache = {
+      data: metaList,
+      timestamp: Date.now(),
+      ttl: 5 * 60 * 1000
+    };
+
+    const META_TO_LOCAL = {
+      complaint_registered: {
+        key: 'complaint_registered',
+        body: '☀️ *Eco Green Solar Support*\n\nNamaste {{customer_name}},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: {{complaint_id}}\nProduct: {{product_type}}\nIssue: {{issue_category}}\nEstimated Service Charge: {{charges_line}}\n\nTrack ticket: {{feedback_url}}\n\nThank you for choosing Eco Green Solar.'
+      },
+      technician_assigned: {
+        key: 'technician_assigned',
+        body: '☀️ *Technician Assigned*\n\nNamaste *{{customer_name}}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *{{complaint_id}}*.\n\nTechnician Name: *{{technician_name}}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: {{feedback_url}}\n\nEco Green Solar Customer Care.'
+      },
+      customer_technician_reassigned: {
+        key: 'customer_technician_reassigned',
+        body: '*Eco Green Solar - Technician Reassigned*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* ({{product_type}}) has been reassigned to a new technician.\n\n*New Technician:* {{technician_name}}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      status__followup_note_update: {
+        key: 'status_update',
+        body: '☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n*Notes:* {{notes}}\n\n*Track Live:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      status_followup_note_update: {
+        key: 'status_update',
+        body: '☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n*Notes:* {{notes}}\n\n*Track Live:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      complaint_resolved: {
+        key: 'complaint_resolved',
+        body: '✅ *Service Resolved*\n\nNamaste *{{customer_name}}*,\n\nYour solar equipment complaint for Ticket No.: *{{complaint_id}}* has been marked *RESOLVED* by technician - *{{technician_name}}*.\n\nResolution Notes: *{{notes}}*\n\nOur quality desk will verify and close the ticket shortly. If you have any questions, please contact our helpline.\n\nPlease rate your service experience here: *{{feedback_url}}*\n\nThank you for choosing *Eco Green Solar*.'
+      },
+      complaint_closed__feedback_request: {
+        key: 'complaint_closed',
+        body: '☀️ *Eco Green Solar Closure*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care'
+      },
+      complaint_closed_feedback_request: {
+        key: 'complaint_closed',
+        body: '☀️ *Eco Green Solar Closure*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nYour feedback helps us continuously improve!\n- Eco Green Solar Care'
+      },
+      complaint_reopened_notification: {
+        key: 'complaint_reopened',
+        body: '☀️ *Eco Green Solar Priority Alert*\n\nNamaste, {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n*Track:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      technician_work_order: {
+        key: 'technician_work_order',
+        body: '⚡ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n*Customer:* {{customer_name}}\n*Customer Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Product:* {{product_type}}\n*Category:* {{issue_category}}\n*issue:* {{notes}}\n*Priority:* {{priority}}\n*Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.'
+      },
+      technician_work_order_reassigned: {
+        key: 'technician_reassigned_work_order',
+        body: '*Eco Green Solar - Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Issue:* {{issue_category}}\n*Product:* {{product_type}}\n*Priority:* {{priority}}\n*Visit By:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease contact customer before reaching site.'
+      },
+      technician_pending_visit_reminder: {
+        key: 'technician_reminder',
+        body: '*Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.'
+      },
+      technician_reopened_work_order: {
+        key: 'technician_reopened_work_order',
+        body: '*Eco Green Solar - Reopened Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been *REOPENED* for service follow-up.\n\n*Reason for Reopening:* {{reopen_reason}}\n\n*Customer:* {{customer_name}}\n*Phone:* {{customer_phone}}\n*Address:* {{customer_address}}\n*Issue:* {{issue_category}}\n*Product:* {{product_type}}\n*Priority:* {{priority}}\n\n*Technician Portal:* {{technician_portal_url}}\n\nPlease review previous site visit notes and coordinate with the customer immediately.'
+      },
+      technician_re_job_transferred_notice: {
+        key: 'technician_reopen_job_transferred',
+        body: '*Eco Green Solar - Reopened Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*{{new_technician_name}}*).\n\n*Customer Reopen Reason:* {{reopen_reason}}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Dispatch'
+      },
+      technician_job_transferred_notice: {
+        key: 'technician_reassigned',
+        body: '*Eco Green Solar - Job Transferred*\n\nHello {{technician_name}}, please note that ticket *{{complaint_id}}* (Customer: {{customer_name}}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Solar'
+      }
+    };
+
+    let syncedCount = 0;
+    for (const mt of approved) {
+      const mapping = META_TO_LOCAL[mt.name];
+      if (!mapping) continue;
+
+      await query(
+        `UPDATE notification_templates 
+         SET meta_template_name = $1, 
+             meta_language = $2, 
+             meta_status = 'APPROVED', 
+             whatsapp_body = COALESCE($3, whatsapp_body), 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE template_key = $4`,
+        [mt.name, mt.language || 'en_US', mapping.body, mapping.key]
+      );
+      syncedCount++;
+    }
+
+    const updated = await query('SELECT * FROM notification_templates ORDER BY id ASC');
+    return res.json({ 
+      success: true, 
+      message: `Successfully updated ${syncedCount} approved templates directly from Meta!`, 
+      syncedCount,
+      templates: updated.rows 
+    });
+  } catch (err) {
+    console.error('Error syncing from Meta:', err);
     return res.status(500).json({ error: err.message });
   }
 });
