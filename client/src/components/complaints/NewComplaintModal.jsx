@@ -1632,10 +1632,10 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                   Upload Photo/Video Proof (Optional, Max 5)
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:bg-emerald-50/30 transition-colors">
                     <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                    <span className="text-xs text-slate-700 font-semibold">Browse Files / Gallery</span>
+                    <span className="text-xs text-slate-700 font-semibold">Browse Gallery / Files</span>
                     <span className="text-[10px] text-slate-400">Photos, videos, PDFs (Max 5)</span>
                     <input
                       type="file"
@@ -1648,10 +1648,22 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   <label className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
                     <Camera className="w-5 h-5 text-emerald-600 mb-1" />
                     <span className="text-xs text-emerald-800 font-bold">Take Live Photo</span>
-                    <span className="text-[10px] text-emerald-600/80">Direct camera capture</span>
+                    <span className="text-[10px] text-emerald-600/80">Direct camera photo</span>
                     <input
                       type="file"
                       accept="image/*"
+                      capture="environment"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                  <label className="border-2 border-dashed border-teal-300 hover:border-teal-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-teal-50/40 hover:bg-teal-50/70 transition-colors">
+                    <Video className="w-5 h-5 text-teal-600 mb-1" />
+                    <span className="text-xs text-teal-800 font-bold">Record Live Video</span>
+                    <span className="text-[10px] text-teal-600/80">Direct camera recording</span>
+                    <input
+                      type="file"
+                      accept="video/*"
                       capture="environment"
                       onChange={handleFileChange}
                       className="hidden"

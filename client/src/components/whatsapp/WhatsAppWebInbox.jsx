@@ -165,6 +165,8 @@ export const WhatsAppWebInbox = ({
   const fileInputRef = useRef(null);
   const docInputRef = useRef(null);
   const mediaInputRef = useRef(null);
+  const cameraPhotoInputRef = useRef(null);
+  const cameraVideoInputRef = useRef(null);
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
@@ -1819,7 +1821,43 @@ export const WhatsAppWebInbox = ({
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold text-xs text-[#111b21]">Photos &amp; Videos</p>
-                    <p className="text-[10px] text-[#667781] truncate">Photos, Videos (up to 50MB)</p>
+                    <p className="text-[10px] text-[#667781] truncate">Photos, Videos from Gallery</p>
+                  </div>
+                </button>
+
+                {/* Option 3: Camera Photo */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttachMenu(false);
+                    cameraPhotoInputRef.current?.click();
+                  }}
+                  className="w-full p-2.5 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#d33a65] to-[#f24c7c] text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs text-[#111b21]">Take Photo</p>
+                    <p className="text-[10px] text-[#667781] truncate">Live photo with device camera</p>
+                  </div>
+                </button>
+
+                {/* Option 4: Record Video */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttachMenu(false);
+                    cameraVideoInputRef.current?.click();
+                  }}
+                  className="w-full p-2.5 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#e05206] to-[#ff7a29] text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Video className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs text-[#111b21]">Record Video</p>
+                    <p className="text-[10px] text-[#667781] truncate">Live video with device camera</p>
                   </div>
                 </button>
               </div>
@@ -1841,6 +1879,26 @@ export const WhatsAppWebInbox = ({
                 type="file"
                 onChange={handleFileSelect}
                 accept="image/*,video/*"
+                className="hidden"
+              />
+
+              {/* Live Camera Photo Input */}
+              <input
+                ref={cameraPhotoInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+
+              {/* Live Camera Video Input */}
+              <input
+                ref={cameraVideoInputRef}
+                type="file"
+                accept="video/*"
+                capture="environment"
+                onChange={handleFileSelect}
                 className="hidden"
               />
 

@@ -406,18 +406,19 @@ function optionalAuth(req, res, next) {
 
 app.get('/api/version', (req, res) => {
   res.json({
-    version: '2.4.2',
-    buildTime: 1790512000000,
+    version: '2.4.3',
+    buildTime: 1790513000000,
     releaseDate: '2026-09-27',
     mandatory: true,
-    title: 'Eco Green Solar CMS v2.4.2',
-    summary: 'Mobile Tour Guide, In-App Notifications Reliability, Field Collection & WhatsApp System Enhancements',
+    title: 'Eco Green Solar CMS v2.4.3',
+    summary: 'Direct Camera Video Recording, Mobile Tour Guide, Notifications & Field Portal Upgrades',
     features: [
+      '📹 Direct Camera Video Recording: You can now directly record live video from camera alongside photos when attaching complaint proofs and documents.',
       '📱 Mobile View Tour: Interactive guided step-by-step tour restored for phone screens and mobile browsers.',
       '🔔 In-App Notifications: Fixed intermittent delivery, resolved ticket ID deduplication suppression, and added instant chime alerts.',
       '💼 Dedicated Field Ops & Collection Tabs: Dedicated segregation for technicians to track financial collections and complaint work orders independently.',
       '🗑️ Ticket Query Document Deletion: Added direct trash/delete action for uploaded complaint query files.',
-      '💬 WhatsApp Web Messenger: Fixed delivery errors and expanded multi-format document/photo support.'
+      '💬 WhatsApp Web Messenger: Fixed delivery errors and added Camera Photo & Live Video recording directly in chat attachments.'
     ]
   });
 });
