@@ -810,7 +810,13 @@ export const ComplaintDetailDrawer = ({
     }
     try {
       setSavingEdit(true);
-      await api.updateComplaint(ticket.id, editFormData);
+      const payload = {
+        ...editFormData,
+        is_in_warranty: (editFormData.is_in_warranty === 1 || editFormData.is_in_warranty === true || editFormData.is_in_warranty === '1') ? 1 : 0,
+        notify_charges: (editFormData.notify_charges === 1 || editFormData.notify_charges === true || editFormData.notify_charges === '1') ? 1 : 0,
+        estimated_charges: Number(editFormData.estimated_charges) || 0
+      };
+      await api.updateComplaint(ticket.id, payload);
       await fetchTicketDetails();
       setIsEditing(false);
       if (onComplaintUpdated) onComplaintUpdated();

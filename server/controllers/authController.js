@@ -253,6 +253,10 @@ async function updateUser(req, res) {
       }
     }
 
+    if (password && password.trim() && req.user && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators are authorized to modify passwords' });
+    }
+
     let passwordHash = user.password_hash;
     if (password && password.trim()) {
       passwordHash = await bcrypt.hash(password.trim(), 10);
@@ -288,6 +292,9 @@ async function updateUser(req, res) {
 
 async function adminResetPassword(req, res) {
   try {
+    if (req.user && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators are authorized to reset passwords' });
+    }
     const { userId, technicianId, newPassword } = req.body;
     if (!newPassword || newPassword.trim().length < 4) {
       return res.status(400).json({ error: 'Password must be at least 4 characters long' });
@@ -355,6 +362,9 @@ async function adminResetPassword(req, res) {
 
 async function changeMyPassword(req, res) {
   try {
+    if (req.user && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators are authorized to update or change passwords. Staff and technicians cannot modify passwords.' });
+    }
     const { currentPassword, newPassword } = req.body;
     if (!newPassword || newPassword.trim().length < 4) {
       return res.status(400).json({ error: 'New password must be at least 4 characters long' });

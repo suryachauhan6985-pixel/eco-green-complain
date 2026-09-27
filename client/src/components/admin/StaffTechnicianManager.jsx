@@ -6,10 +6,14 @@ import {
   Layers, Tag, Key, Lock, Eye, EyeOff, Copy, Check, Sparkles
 } from 'lucide-react';
 import { useDialog } from '../../context/DialogContext';
+import { useAuth } from '../../context/AuthContext';
 import { StaffTeamSkeleton } from '../common/SkeletonLoader';
 
 export const StaffTechnicianManager = () => {
   const { confirm, alert, showToast: showGlobalToast } = useDialog();
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
+
   const [activeTab, setActiveTab] = useState('technicians'); // 'technicians' | 'staff' | 'catalog'
   const [technicians, setTechnicians] = useState([]);
   const [users, setUsers] = useState([]);
@@ -32,7 +36,6 @@ export const StaffTechnicianManager = () => {
   const [editingMember, setEditingMember] = useState(null);
   const [editFormData, setEditFormData] = useState({
     name: '',
-    username: '',
     phone: '',
     email: '',
     role: 'staff'
@@ -50,7 +53,6 @@ export const StaffTechnicianManager = () => {
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    username: '',
     email: '',
     phone: '',
     password: '',
@@ -67,7 +69,6 @@ export const StaffTechnicianManager = () => {
     const cleanEmail = member.email && member.email.endsWith('.internal') ? '' : (member.email || '');
     setEditFormData({
       name: member.name || '',
-      username: member.username || (member.email ? member.email.split('@')[0] : ''),
       phone: member.phone || '',
       email: cleanEmail,
       role: member.role || 'staff'
@@ -89,6 +90,10 @@ export const StaffTechnicianManager = () => {
   };
 
   const handleOpenPasswordReset = (member, isTech = false) => {
+    if (!isAdmin) {
+      showGlobalToast('Only administrators are authorized to reset passwords.', 'error');
+      return;
+    }
     setResetMember({ ...member, isTech });
     generateRandomPassword();
     setShowPassword(true);
@@ -97,9 +102,9 @@ export const StaffTechnicianManager = () => {
   };
 
   const handleCopyCredentials = () => {
-    const username = resetMember?.username || (resetMember?.email ? resetMember.email.split('@')[0] : 'user');
+    const mobileNo = resetMember?.phone || 'No phone set';
     const roleName = resetMember?.isTech ? 'Field Technician' : (resetMember?.role === 'admin' ? 'Admin Supervisor' : 'Support Staff');
-    const text = `🌿 *Eco Green Solar CMS Login Credentials*\n👤 *Member:* ${resetMember?.name}\n🏷️ *Role:* ${roleName}\n🔑 *User ID / Username:* ${username}\n🔒 *New Password:* ${resetNewPassword}\n🌐 *Login Portal:* https://complain.ecogreensolar.co.in/login\n\nPlease keep your credentials safe and do not share them.`;
+    const text = `🌿 *Eco Green Solar CMS Login Credentials*\n👤 *Member:* ${resetMember?.name}\n🏷️ *Role:* ${roleName}\n📱 *Mobile Number / Login:* ${mobileNo}\n🔒 *New Password:* ${resetNewPassword}\n🌐 *Login Portal:* https://complain.ecogreensolar.co.in/login\n\nPlease keep your credentials safe and do not share them.`;
     navigator.clipboard.writeText(text);
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 2500);
@@ -108,6 +113,10 @@ export const StaffTechnicianManager = () => {
 
   const handleConfirmPasswordReset = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      showGlobalToast('Only administrators are authorized to reset passwords', 'error');
+      return;
+    }
     if (!resetNewPassword || resetNewPassword.trim().length < 4) {
       showGlobalToast('Password must be at least 4 characters long', 'error');
       return;
@@ -137,10 +146,6 @@ export const StaffTechnicianManager = () => {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    if (!editFormData.username?.trim()) {
-      showGlobalToast('User ID / Username is required', 'error');
-      return;
-    }
     const cleanPhone = (editFormData.phone || '').replace(/\D/g, '');
     if (!cleanPhone || cleanPhone.length !== 10) {
       showGlobalToast('Mobile / WhatsApp number must be exactly 10 digits', 'error');
@@ -149,7 +154,7 @@ export const StaffTechnicianManager = () => {
     try {
       const payload = {
         name: editFormData.name,
-        username: editFormData.username.trim().toLowerCase(),
+        username: cleanPhone,
         phone: cleanPhone,
         email: editFormData.email?.trim() || undefined
       };
@@ -334,10 +339,6 @@ export const StaffTechnicianManager = () => {
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.username?.trim()) {
-      showGlobalToast('User ID / Username is required', 'error');
-      return;
-    }
     const cleanPhone = (formData.phone || '').replace(/\D/g, '');
     if (!cleanPhone || cleanPhone.length !== 10) {
       showGlobalToast('Mobile / WhatsApp number must be exactly 10 digits', 'error');
@@ -348,10 +349,10 @@ export const StaffTechnicianManager = () => {
       return;
     }
     try {
-      const safeUsername = formData.username.trim().toLowerCase();
+      const safeUsername = cleanPhone;
       const safeEmail = formData.email?.trim() 
         ? formData.email.trim() 
-        : `${safeUsername.replace(/[^a-z0-9._-]/g, '.')}@ecogreensolar.internal`;
+        : `${cleanPhone}@ecogreensolar.internal`;
 
       await api.createUser({
         ...formData,
@@ -364,7 +365,6 @@ export const StaffTechnicianManager = () => {
       setShowAddPassword(false);
       setFormData({
         name: '',
-        username: '',
         email: '',
         phone: '',
         password: '',
@@ -538,8 +538,8 @@ export const StaffTechnicianManager = () => {
                           </span>
                         )}
                       </h4>
-                      <p className="text-[11px] font-mono text-emerald-700 font-semibold">
-                        ID: @{t.username || t.email?.split('@')[0]}
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {t.specialization || 'Field Technician'}
                       </p>
                     </div>
                   </div>
@@ -557,12 +557,8 @@ export const StaffTechnicianManager = () => {
                 {/* Details */}
                 <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50/90 px-2 py-1 rounded-md border border-emerald-200/60">
-                    <Key className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>User ID: <span className="font-bold text-slate-900">{t.username || t.email?.split('@')[0]}</span></span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>{t.phone || 'No phone set'}</span>
+                    <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Login Mobile: <span className="font-bold text-slate-900 font-mono">{t.phone || 'No phone set'}</span></span>
                   </div>
                   {t.email && !t.email.endsWith('.internal') && (
                     <div className="flex items-center gap-1.5 text-[11px]">
@@ -635,15 +631,17 @@ export const StaffTechnicianManager = () => {
                 </button>
 
                 <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPasswordReset(t, true)}
-                    className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold"
-                    title="Reset Login Password"
-                  >
-                    <Key className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Reset Key</span>
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPasswordReset(t, true)}
+                      className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold"
+                      title="Reset Login Password"
+                    >
+                      <Key className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Reset Key</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => handleOpenEdit(t, 'technician')}
@@ -709,8 +707,8 @@ export const StaffTechnicianManager = () => {
                         <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                           <span>{u.name}</span>
                         </h4>
-                        <p className="text-[11px] font-mono text-blue-700 font-semibold">
-                          ID: @{u.username || u.email?.split('@')[0]}
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Support Staff
                         </p>
                       </div>
                     </div>
@@ -723,12 +721,8 @@ export const StaffTechnicianManager = () => {
                   {/* Details */}
                   <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
                     <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-800 bg-blue-50/90 px-2 py-1 rounded-md border border-blue-200/60">
-                      <Key className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <span>User ID: <span className="font-bold text-slate-900">{u.username || u.email?.split('@')[0]}</span></span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{u.phone || 'No phone set'}</span>
+                      <Phone className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>Login Mobile: <span className="font-bold text-slate-900 font-mono">{u.phone || 'No phone set'}</span></span>
                     </div>
                     {u.email && !u.email.endsWith('.internal') && (
                       <div className="flex items-center gap-1.5 text-[11px]">
@@ -741,15 +735,17 @@ export const StaffTechnicianManager = () => {
 
                 {/* Actions */}
                 <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPasswordReset(u, false)}
-                    className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
-                    title="Reset Login Password"
-                  >
-                    <Key className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Reset Key</span>
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPasswordReset(u, false)}
+                      className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+                      title="Reset Login Password"
+                    >
+                      <Key className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Reset Key</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => handleOpenEdit(u, 'staff')}
@@ -818,8 +814,8 @@ export const StaffTechnicianManager = () => {
                             Admin Supervisor
                           </span>
                         </h4>
-                        <p className="text-[11px] font-mono text-purple-700 font-semibold">
-                          ID: @{u.username || u.email?.split('@')[0]}
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Administrator
                         </p>
                       </div>
                     </div>
@@ -833,12 +829,8 @@ export const StaffTechnicianManager = () => {
                   {/* Details */}
                   <div className="mt-3 space-y-1.5 text-xs text-slate-600 bg-purple-50/40 p-2.5 rounded-lg border border-purple-100/60">
                     <div className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-900 bg-white px-2 py-1 rounded-md border border-purple-200/60">
-                      <Key className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                      <span>User ID: <span className="font-bold text-slate-900">{u.username || u.email?.split('@')[0]}</span></span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{u.phone || 'No phone set'}</span>
+                      <Phone className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                      <span>Login Mobile: <span className="font-bold text-slate-900 font-mono">{u.phone || 'No phone set'}</span></span>
                     </div>
                     {u.email && !u.email.endsWith('.internal') && (
                       <div className="flex items-center gap-1.5 text-[11px]">
@@ -855,15 +847,17 @@ export const StaffTechnicianManager = () => {
                     Primary Administrator
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenPasswordReset(u, false)}
-                      className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
-                      title="Reset Login Password"
-                    >
-                      <Key className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Reset Key</span>
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPasswordReset(u, false)}
+                        className="text-amber-800 hover:text-amber-900 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+                        title="Reset Login Password"
+                      >
+                        <Key className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Reset Key</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => handleOpenEdit(u, 'admin')}
@@ -1083,35 +1077,23 @@ export const StaffTechnicianManager = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">User ID / Username *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ramesh, tech01"
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Mobile / WhatsApp *</label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="6352454247"
-                    value={formData.phone}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setFormData({ ...formData, phone: digits });
-                    }}
-                    maxLength={10}
-                    pattern="[0-9]{10}"
-                    title="Please enter a 10-digit mobile number"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-mono"
-                  />
-                </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Mobile / WhatsApp Number (Login ID) *</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. 9876543210"
+                  value={formData.phone}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    setFormData({ ...formData, phone: digits });
+                  }}
+                  maxLength={10}
+                  pattern="[0-9]{10}"
+                  title="Please enter a 10-digit mobile number"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-mono text-sm"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">This mobile number is used as the login ID.</p>
               </div>
 
               <div>
@@ -1198,34 +1180,23 @@ export const StaffTechnicianManager = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">User ID / Username *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ramesh, tech01"
-                    value={editFormData.username}
-                    onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Mobile / WhatsApp *</label>
-                  <input
-                    type="tel"
-                    required
-                    value={editFormData.phone}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setEditFormData({ ...editFormData, phone: digits });
-                    }}
-                    maxLength={10}
-                    pattern="[0-9]{10}"
-                    title="Please enter a 10-digit mobile number"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-mono"
-                  />
-                </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Mobile / WhatsApp Number (Login ID) *</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. 9876543210"
+                  value={editFormData.phone}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    setEditFormData({ ...editFormData, phone: digits });
+                  }}
+                  maxLength={10}
+                  pattern="[0-9]{10}"
+                  title="Please enter a 10-digit mobile number"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 font-mono text-sm"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">This mobile number is used as the login ID.</p>
               </div>
 
               <div>
@@ -1265,7 +1236,7 @@ export const StaffTechnicianManager = () => {
                     <div>
                       <h5 className="text-xs font-bold text-slate-900">Account Access & Security</h5>
                       <p className="text-[10px] text-slate-500">
-                        Login User ID: <span className="font-mono font-bold text-slate-800">@{editFormData.username}</span>
+                        Login Mobile: <span className="font-mono font-bold text-slate-800">{editFormData.phone}</span>
                       </p>
                     </div>
                   </div>
@@ -1277,19 +1248,21 @@ export const StaffTechnicianManager = () => {
                 <p className="text-[11px] text-slate-500 leading-normal">
                   Passwords are encrypted with bcrypt for high enterprise security. To change or reset credentials, use the dedicated professional reset tool.
                 </p>
-                <div className="pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditModalOpen(false);
-                      handleOpenPasswordReset(editingMember, editingMember?.isTech);
-                    }}
-                    className="w-full px-3 py-2 bg-white hover:bg-amber-50/70 border border-amber-300 text-amber-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-98"
-                  >
-                    <Key className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Reset Account Password</span>
-                  </button>
-                </div>
+                {isAdmin && (
+                  <div className="pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditModalOpen(false);
+                        handleOpenPasswordReset(editingMember, editingMember?.isTech);
+                      }}
+                      className="w-full px-3 py-2 bg-white hover:bg-amber-50/70 border border-amber-300 text-amber-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-98"
+                    >
+                      <Key className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Reset Account Password</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -1357,7 +1330,7 @@ export const StaffTechnicianManager = () => {
                     {resetMember.name}
                   </h4>
                   <p className="text-[11px] text-slate-500 font-mono">
-                    User ID: <span className="font-bold text-emerald-700">@{resetMember.username || resetMember.email?.split('@')[0]}</span>
+                    Login Mobile: <span className="font-bold text-emerald-700">{resetMember.phone || 'No phone set'}</span>
                   </p>
                 </div>
               </div>

@@ -31,7 +31,7 @@ const TOUR_STEPS = [
     badgeColor: 'bg-indigo-100 text-indigo-800',
     title: 'Role-Based Authentication & Portals',
     subtitle: 'Dedicated workspaces for Admin, Helpdesk Staff, and Field Technicians',
-    description: 'Eco Green Solar enforces strict role-based access. Staff and technicians log in with their assigned User ID or Mobile number and password:',
+    description: 'Eco Green Solar enforces strict role-based access. Staff and technicians log in with their registered Mobile number and password:',
     highlights: [
       { icon: Shield, label: 'Admin Supervisor', desc: 'Full access to system operations, user/staff management, analytics reports, and CSV data export.' },
       { icon: Users, label: 'Support Staff / Helpdesk', desc: 'Register complaints, assign certified technicians, manage WhatsApp chats, and follow up.' },

@@ -926,7 +926,7 @@ app.post('/api/auth/create-user', authenticateToken, requireRole('admin'), async
 
     const safeUsername = (username && username.trim())
       ? username.trim().toLowerCase()
-      : ((name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + Math.floor(100 + Math.random() * 900)).replace(/\.+/g, '.');
+      : (cleanPhone || ((name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + Math.floor(100 + Math.random() * 900)).replace(/\.+/g, '.'));
 
     // Email is optional in form, but PostgreSQL 'users' table has a NOT NULL constraint on email.
     // Ensure email is always populated with either real email or clean internal system email.
@@ -973,12 +973,12 @@ app.put('/api/auth/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { name, email, role, phone, is_active, username, password } = req.body;
 
-    // RBAC: Non-admins can only modify their own profile and cannot promote themselves or alter status
+    // RBAC: Non-admins can only modify their own profile and cannot promote themselves, alter status, or change passwords
     if (req.user.role !== 'admin' && String(req.user.id) !== String(id)) {
       return res.status(403).json({ error: 'Unauthorized to modify other user accounts' });
     }
-    if (req.user.role !== 'admin' && (role || is_active !== undefined)) {
-      return res.status(403).json({ error: 'Only administrators can modify roles or activation status' });
+    if (req.user.role !== 'admin' && (role || is_active !== undefined || password)) {
+      return res.status(403).json({ error: 'Only administrators are authorized to modify roles, activation status, or passwords' });
     }
 
     let passwordHash = undefined;
@@ -1005,8 +1005,8 @@ app.put('/api/auth/users/:id', authenticateToken, async (req, res) => {
 
 app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) => {
   try {
-    if (!['admin', 'staff'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only administrators or staff supervisors can reset passwords' });
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators are authorized to reset passwords' });
     }
 
     const { userId, technicianId, newPassword } = req.body;
@@ -1070,6 +1070,9 @@ app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) =
 
 app.post('/api/auth/change-my-password', authenticateToken, async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators are authorized to update or change passwords. Staff and technicians cannot modify passwords.' });
+    }
     const { currentPassword, newPassword } = req.body;
     if (!newPassword || newPassword.trim().length < 4) {
       return res.status(400).json({ error: 'New password must be at least 4 characters long' });
@@ -2057,14 +2060,28 @@ app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
 app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const existingComp = await query('SELECT status FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    const existingComp = await query('SELECT id, status, is_in_warranty, estimated_charges, notify_charges FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (!existingComp.rows.length) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
-    if (['Resolved', 'Closed'].includes(existingComp.rows[0].status)) {
-      return res.status(400).json({ error: `Complaint cannot be edited while in "${existingComp.rows[0].status}" status. Please reopen the complaint first to make changes.` });
+    const current = existingComp.rows[0];
+    if (['Resolved', 'Closed'].includes(current.status)) {
+      return res.status(400).json({ error: `Complaint cannot be edited while in "${current.status}" status. Please reopen the complaint first to make changes.` });
     }
     const b = req.body;
+
+    const cleanIsInWarranty = b.is_in_warranty !== undefined
+      ? ((b.is_in_warranty === 'true' || b.is_in_warranty === 1 || b.is_in_warranty === true || b.is_in_warranty === '1') ? 1 : 0)
+      : current.is_in_warranty;
+
+    const cleanEstimatedCharges = b.estimated_charges !== undefined
+      ? (parseFloat(b.estimated_charges) || 0)
+      : current.estimated_charges;
+
+    const cleanNotifyCharges = b.notify_charges !== undefined
+      ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
+      : current.notify_charges;
+
     await query(`
       UPDATE complaints SET
         customer_name = COALESCE($1, customer_name),
@@ -2080,12 +2097,38 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
         issue_description = COALESCE($11, issue_description),
         priority = COALESCE($12, priority),
         status = COALESCE($13, status),
-        is_in_warranty = COALESCE($14, is_in_warranty),
-        estimated_charges = COALESCE($15, estimated_charges),
-        notify_charges = COALESCE($16, notify_charges),
+        is_in_warranty = $14,
+        estimated_charges = $15,
+        notify_charges = $16,
+        invoice_no = COALESCE($17, invoice_no),
+        invoice_date = COALESCE($18, invoice_date),
+        location_url = COALESCE($19, location_url),
+        installation_id = COALESCE($20, installation_id),
         status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $17
-    `, [b.customer_name, b.customer_phone, b.customer_email, b.customer_address, b.city, b.consumer_no, b.order_no, b.product_type, b.product_serial, b.issue_category, b.issue_description, b.priority, b.status, b.is_in_warranty, b.estimated_charges, b.notify_charges, id]);
+      WHERE id = $21
+    `, [
+      b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
+      b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
+      b.customer_email !== undefined ? (b.customer_email ? b.customer_email.trim() : null) : null,
+      b.customer_address !== undefined ? (b.customer_address ? b.customer_address.trim() : null) : null,
+      b.city !== undefined ? (b.city ? b.city.trim() : null) : null,
+      b.consumer_no !== undefined ? (b.consumer_no ? b.consumer_no.trim() : null) : null,
+      b.order_no !== undefined ? (b.order_no ? b.order_no.trim() : null) : null,
+      b.product_type !== undefined ? (b.product_type ? b.product_type.trim() : null) : null,
+      b.product_serial !== undefined ? (b.product_serial ? b.product_serial.trim() : null) : null,
+      b.issue_category !== undefined ? (b.issue_category ? b.issue_category.trim() : null) : null,
+      b.issue_description !== undefined ? (b.issue_description ? b.issue_description.trim() : null) : null,
+      b.priority !== undefined ? (b.priority ? b.priority.trim() : null) : null,
+      b.status !== undefined ? (b.status ? b.status.trim() : null) : null,
+      cleanIsInWarranty,
+      cleanEstimatedCharges,
+      cleanNotifyCharges,
+      b.invoice_no !== undefined ? (b.invoice_no ? b.invoice_no.trim() : null) : null,
+      b.invoice_date !== undefined ? (b.invoice_date ? b.invoice_date.trim() : null) : null,
+      b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
+      b.installation_id !== undefined ? (b.installation_id ? b.installation_id.trim() : null) : null,
+      current.id
+    ]);
 
     return res.json({ message: 'Complaint updated successfully' });
   } catch (err) {

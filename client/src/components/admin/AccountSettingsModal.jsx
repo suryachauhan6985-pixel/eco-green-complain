@@ -8,7 +8,8 @@ import { useAuth } from '../../context/AuthContext';
 
 export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   const { currentUser, setCurrentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('password'); // 'password' | 'profile'
+  const isAdmin = currentUser?.role === 'admin';
+  const [activeTab, setActiveTab] = useState(isAdmin ? 'password' : 'profile'); // 'password' | 'profile'
 
   // Role info
   const roleTitle = currentUser?.role 
@@ -17,7 +18,6 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
 
   // Profile Form State
   const [name, setName] = useState(currentUser?.name || '');
-  const [username, setUsername] = useState(currentUser?.username || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [profileLoading, setProfileLoading] = useState(false);
@@ -27,11 +27,13 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   useEffect(() => {
     if (currentUser && isOpen) {
       setName(currentUser.name || '');
-      setUsername(currentUser.username || '');
       setPhone(currentUser.phone || '');
       setEmail(currentUser.email || '');
       setProfileError('');
       setPasswordError('');
+      if (currentUser?.role !== 'admin') {
+        setActiveTab('profile');
+      }
     }
   }, [currentUser, isOpen]);
 
@@ -58,9 +60,9 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   };
 
   const handleCopyCredentials = () => {
-    const idToCopy = username || phone || email || 'user';
+    const idToCopy = phone || 'user';
     const passToCopy = newPassword || '••••••••';
-    const text = `🌿 *Eco Green Solar CMS ${roleTitle} Credentials*\n👤 *Name:* ${name}\n🔑 *User ID / Phone:* ${idToCopy}\n🔒 *Password:* ${passToCopy}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
+    const text = `🌿 *Eco Green Solar CMS ${roleTitle} Credentials*\n👤 *Name:* ${name}\n📱 *Mobile Number / Login:* ${idToCopy}\n🔒 *Password:* ${passToCopy}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -74,10 +76,6 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
       setProfileError('Full Name is required');
       return;
     }
-    if (!username.trim()) {
-      setProfileError('User ID / Username is required');
-      return;
-    }
     const cleanPhone = phone.replace(/\D/g, '');
     if (!cleanPhone || cleanPhone.length !== 10) {
       setProfileError('Mobile Phone must be exactly 10 digits');
@@ -88,7 +86,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
       setProfileLoading(true);
       const res = await api.updateProfile({
         name: name.trim(),
-        username: username.trim().toLowerCase(),
+        username: cleanPhone,
         phone: cleanPhone,
         email: email.trim() || undefined
       });
@@ -97,7 +95,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
         ...currentUser,
         ...(res?.user || {}),
         name: name.trim(),
-        username: username.trim().toLowerCase(),
+        username: cleanPhone,
         phone: cleanPhone,
         email: email.trim()
       };
@@ -179,18 +177,20 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
 
         {/* Tab Switcher */}
         <div className="flex border-b border-slate-200 px-6 pt-3 bg-slate-50 gap-4">
-          <button
-            type="button"
-            onClick={() => setActiveTab('password')}
-            className={`pb-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
-              activeTab === 'password'
-                ? 'border-emerald-600 text-emerald-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Key className="w-3.5 h-3.5" />
-            <span>Change Password</span>
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('password')}
+              className={`pb-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                activeTab === 'password'
+                  ? 'border-emerald-600 text-emerald-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Change Password</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -202,7 +202,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>Profile & Username</span>
+            <span>Profile & Contact Details</span>
           </button>
         </div>
 
@@ -338,6 +338,18 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
           ) : (
             /* Profile Info Form */
             <form onSubmit={handleUpdateProfile} className="space-y-4">
+              {!isAdmin && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200/90 rounded-2xl flex items-center gap-3 text-amber-900 text-xs">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold">Password Management Restricted</p>
+                    <p className="text-[11px] text-amber-800/80 mt-0.5">Account passwords can only be updated or reset by the System Administrator.</p>
+                  </div>
+                </div>
+              )}
+
               {profileError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -362,42 +374,23 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    User ID / Username *
-                  </label>
-                  <div className="relative">
-                    <span className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs">@</span>
-                    <input
-                      type="text"
-                      required
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="username"
-                      className="w-full text-xs pl-8 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Mobile Phone *
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="tel"
-                      required
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      maxLength={10}
-                      pattern="[0-9]{10}"
-                      title="Please enter a 10-digit mobile number"
-                      placeholder="10-digit mobile number"
-                      className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
-                    />
-                  </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Registered Mobile Phone (Login ID) *
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    title="Please enter a 10-digit mobile number"
+                    placeholder="10-digit mobile number"
+                    className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
+                  />
                 </div>
               </div>
 

@@ -95,7 +95,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
         }
       } catch (_) {}
     } catch (err) {
-      setError(err.message || 'Invalid User ID or password. Please verify and try again.');
+      setError(err.message || 'Invalid Mobile Number or password. Please verify and try again.');
     } finally {
       setLoading(false);
     }
@@ -214,7 +214,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                 <Lock className="w-4 h-4" />
               </div>
               <p className="text-xs leading-relaxed">
-                Enter your authorized <strong>User ID / Mobile</strong> and <strong>Password</strong> to access operations.
+                Enter your authorized <strong>Mobile Number</strong> and <strong>Password</strong> to access operations.
               </p>
             </div>
 
@@ -238,18 +238,18 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  User ID / Username / Mobile
+                  Mobile Number
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="text"
+                    type="tel"
                     id="login-username"
                     name="username"
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Enter User ID or registered mobile"
+                    placeholder="Enter 10-digit registered mobile number"
                     autoComplete="username"
                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-900"
                   />

@@ -1,13 +1,13 @@
 {
-  "version": "2.5.0",
-  "buildTime": 1790526000000,
+  "version": "2.5.1",
+  "buildTime": 1790530000000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.5.0",
-  "summary": "Standardized Official English Language Across All Workflows & Notifications",
+  "title": "Eco Green Solar CMS v2.5.1",
+  "summary": "Fix Complaint Edit Type Error & Mobile-First Authentication with Admin-Only Password Management",
   "features": [
-    "🌐 Complete English Localization: Converted all instructions, modal alerts, tooltips, and system dialogs to standard official English.",
-    "✉️ Professional Notification Templates: Standardized WhatsApp and email communications with formal English greetings and copy.",
-    "🛡️ Clean Codebase: Eliminated all hardcoded regional language strings across client, server, and relay extensions."
+    "🛠️ Ticket Edit Fix: Resolved integer type casting error when updating complaint warranty and charge notification flags.",
+    "📱 Mobile-First Authentication: Streamlined login and team management to strictly use Mobile Number and Password, removing redundant User ID / Username fields.",
+    "🔒 Admin-Only Password Control: Strictly restricted password change and reset permissions to Administrators only across both backend APIs and UI controls."
   ]
 }
