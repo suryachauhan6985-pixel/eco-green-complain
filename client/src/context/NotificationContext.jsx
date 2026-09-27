@@ -10,18 +10,46 @@ const PERMANENT_READ_KEY = 'egs_read_notification_ids';
 const getPermanentReadIds = () => {
   try {
     const raw = localStorage.getItem(PERMANENT_READ_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Filter out ticket IDs (e.g. 'EGS-2026-...') that were previously mistakenly saved as read IDs
+      const validNotifIds = parsed.filter(id => typeof id === 'string' && !id.startsWith('EGS-'));
+      if (validNotifIds.length !== parsed.length) {
+        localStorage.setItem(PERMANENT_READ_KEY, JSON.stringify(validNotifIds));
+      }
+      return new Set(validNotifIds);
+    }
+    return new Set();
   } catch (_) {
     return new Set();
   }
 };
 
 const addPermanentReadId = (id) => {
-  if (!id) return;
+  if (!id || String(id).startsWith('EGS-')) return;
   try {
     const set = getPermanentReadIds();
     set.add(String(id));
     localStorage.setItem(PERMANENT_READ_KEY, JSON.stringify(Array.from(set)));
+  } catch (_) {}
+};
+
+const playNotificationChime = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.35);
   } catch (_) {}
 };
 
@@ -50,9 +78,137 @@ export const NotificationProvider = ({ children }) => {
   const [activePopup, setActivePopup] = useState(null);
   const [dismissedPopupIds, setDismissedPopupIds] = useState(new Set());
 
+  // Check if a notification targets the active user (Role-Based Filtering)
+  const isNotificationForUser = useCallback((notif, user) => {
+    if (!user || user.role === 'customer') return false;
+
+    // Suppress self-notifications only if specifically performed by me
+    const performedName = (notif.performedByName || '').trim().toLowerCase();
+    const myName = (user.name || '').trim().toLowerCase();
+    const performedByMe = (
+      (performedName && myName && performedName === myName && !['system', 'staff support', 'admin', 'automated'].includes(performedName)) ||
+      (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
+      (notif.performedByUsername && user.username && notif.performedByUsername.toLowerCase() === user.username.toLowerCase())
+    );
+    if (performedByMe && notif.type !== 'system') return false;
+
+    // 1. Admin sees everything across the entire organization
+    if (user.role === 'admin') return true;
+
+    // 2. Staff sees technician updates, status changes, resolutions, notes, reopens
+    if (user.role === 'staff') {
+      if (notif.type === 'new_ticket') return false; // new ticket creation notifications to Admin only
+
+      return (
+        notif.targetRole === 'staff' ||
+        notif.targetRole === 'all' ||
+        notif.targetRole === 'admin' ||
+        ['status_update', 'resolved', 'note', 'reopened', 'payment', 'feedback'].includes(notif.type)
+      );
+    }
+
+    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them
+    if (user.role === 'technician') {
+      if (['staff', 'admin'].includes(notif.targetRole)) return false;
+
+      const currentTechId = String(user.technicianId || user.technician_id || user.id || '');
+      const currentTechName = (user.name || '').trim().toLowerCase();
+      const currentTechPhone = (user.phone || '').replace(/[^0-9]/g, '').slice(-10);
+
+      const targetTechId = String(notif.targetTechnicianId || '');
+      const targetTechName = (notif.targetTechnicianName || '').trim().toLowerCase();
+      const targetTechPhone = (notif.targetTechnicianPhone || '').replace(/[^0-9]/g, '').slice(-10);
+
+      const idMatches = targetTechId && currentTechId && targetTechId === currentTechId;
+      const nameMatches = targetTechName && currentTechName && (
+        currentTechName.includes(targetTechName) || targetTechName.includes(currentTechName)
+      );
+      const phoneMatches = targetTechPhone && currentTechPhone && targetTechPhone === currentTechPhone;
+
+      if (idMatches || nameMatches || phoneMatches) return true;
+
+      if (['assignment', 'reassigned'].includes(notif.type) || notif.targetRole === 'technician') {
+        if (!targetTechId && !targetTechName) return true;
+        return idMatches || nameMatches || phoneMatches;
+      }
+
+      if (['reopened', 'note'].includes(notif.type) && notif.targetRole === 'all') {
+        return idMatches || nameMatches || phoneMatches;
+      }
+
+      return false;
+    }
+
+    return false;
+  }, []);
+
+  // Compute primary identifier key for a user (backward compatibility)
+  const getUserKey = useCallback((user) => {
+    if (!user) return '';
+    return user.username || user.email || user.name || user.role || '';
+  }, []);
+
+  // Compute all valid identifier keys for a user (id, username, email, name, phone, role)
+  const getUserKeys = useCallback((user) => {
+    if (!user) return [];
+    const keys = [
+      user.id !== undefined && user.id !== null ? String(user.id).toLowerCase() : null,
+      user.username ? String(user.username).toLowerCase() : null,
+      user.email ? String(user.email).toLowerCase() : null,
+      user.name ? String(user.name).toLowerCase() : null,
+      user.phone ? String(user.phone).replace(/[^0-9]/g, '').slice(-10) : null,
+      user.technician_id ? String(user.technician_id).toLowerCase() : null,
+      user.technicianId ? String(user.technicianId).toLowerCase() : null,
+      user.role ? String(user.role).toLowerCase() : null
+    ].filter(Boolean);
+    return Array.from(new Set(keys));
+  }, []);
+
+  const isUnread = useCallback((notif, user) => {
+    if (!user) return false;
+    // 1. Permanent read cache check for this specific notification ID
+    const permReads = getPermanentReadIds();
+    if (permReads.has(String(notif.id))) {
+      return false;
+    }
+
+    if (!notif.readBy || !Array.isArray(notif.readBy) || notif.readBy.length === 0) return true;
+    const userKeys = getUserKeys(user);
+    const readByLower = notif.readBy.map(k => String(k).toLowerCase());
+    const hasRead = userKeys.some(k => readByLower.includes(k)) || readByLower.includes('read');
+    if (hasRead) {
+      addPermanentReadId(notif.id);
+    }
+    return !hasRead;
+  }, [getUserKeys]);
+
+  // Compute user-relevant notifications
+  const userNotifications = useMemo(() => {
+    if (!currentUser) return [];
+    return notifications.filter(n => isNotificationForUser(n, currentUser));
+  }, [notifications, currentUser, isNotificationForUser]);
+
+  const unreadNotifications = useMemo(() => {
+    if (!currentUser) return [];
+    return userNotifications.filter(n => isUnread(n, currentUser));
+  }, [userNotifications, currentUser, isUnread]);
+
+  const unreadCount = unreadNotifications.length;
+
+  // POPUP LOGIC: Automatically surface unread notifications until read
+  useEffect(() => {
+    if (!currentUser || currentUser.role === 'customer') {
+      setActivePopup(null);
+      return;
+    }
+
+    // Find the latest unread notification that hasn't been temporarily dismissed
+    const nextUnread = unreadNotifications.find(n => !dismissedPopupIds.has(n.id));
+    setActivePopup(nextUnread || null);
+  }, [currentUser, unreadNotifications, dismissedPopupIds]);
+
   // Helper: Persist notifications
   const saveNotifications = useCallback((newNotifs) => {
-    // Ensure no dummy notifications sneak in
     const cleaned = (newNotifs || []).filter(n => 
       !n.id?.startsWith('notif_init_') && 
       !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
@@ -79,18 +235,28 @@ export const NotificationProvider = ({ children }) => {
           setNotifications(prev => {
             const localReadMap = new Map();
             const permReads = getPermanentReadIds();
+            const prevIds = new Set(prev.map(p => p.id));
 
             prev.forEach(p => {
               if (Array.isArray(p.readBy)) localReadMap.set(p.id, p.readBy);
             });
 
+            let hasNewUnreadForMe = false;
+
             const merged = cleanRemote.map(r => {
               const localReads = localReadMap.get(r.id) || [];
               const combinedReads = Array.from(new Set([...(r.readBy || []), ...localReads]));
-              if (permReads.has(String(r.id)) || (r.ticketId && permReads.has(String(r.ticketId)))) {
+              if (permReads.has(String(r.id))) {
                 combinedReads.push('read');
               }
-              return { ...r, readBy: combinedReads };
+              const notifObj = { ...r, readBy: combinedReads };
+
+              // Check if brand new unread notification for currentUser
+              if (!prevIds.has(r.id) && currentUser && isNotificationForUser(notifObj, currentUser) && isUnread(notifObj, currentUser)) {
+                hasNewUnreadForMe = true;
+              }
+
+              return notifObj;
             });
 
             // Keep any recent unsynced local creations
@@ -100,6 +266,10 @@ export const NotificationProvider = ({ children }) => {
               }
             });
 
+            if (hasNewUnreadForMe) {
+              playNotificationChime();
+            }
+
             try {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
             } catch (_) {}
@@ -108,9 +278,9 @@ export const NotificationProvider = ({ children }) => {
         }
       }
     } catch (_) {}
-  }, []);
+  }, [currentUser, isNotificationForUser, isUnread]);
 
-  // Periodic poll and multi-tab sync
+  // Periodic poll and multi-tab / window sync
   useEffect(() => {
     fetchFromBackend();
 
@@ -135,149 +305,31 @@ export const NotificationProvider = ({ children }) => {
       }
     };
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchFromBackend();
+      }
+    };
+
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('egs_in_app_notification_created', handleCustomNotify);
+    window.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
 
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchFromBackend();
       }
-    }, 8000);
+    }, 7000);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('egs_in_app_notification_created', handleCustomNotify);
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
       clearInterval(interval);
     };
   }, [fetchFromBackend]);
-
-  // Check if a notification targets the active user (Role-Based Filtering)
-  const isNotificationForUser = useCallback((notif, user) => {
-    if (!user || user.role === 'customer') return false;
-
-    // Suppress self-notifications for ANY role (technician, staff, admin)
-    const performedByMe = (
-      (notif.performedByName && user.name && notif.performedByName.toLowerCase() === user.name.toLowerCase()) ||
-      (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
-      (notif.performedByUsername && user.username && notif.performedByUsername.toLowerCase() === user.username.toLowerCase())
-    );
-    if (performedByMe && notif.type !== 'system') return false;
-
-    // 1. Admin sees everything across the entire organization
-    if (user.role === 'admin') return true;
-
-    // 2. Staff sees technician updates, status changes, resolutions, notes, reopens
-    if (user.role === 'staff') {
-      // ECO-5: Restrict new ticket creation notifications to Admin role ONLY
-      if (notif.type === 'new_ticket') return false;
-
-      return (
-        notif.targetRole === 'staff' ||
-        notif.targetRole === 'all' ||
-        notif.targetRole === 'admin' ||
-        ['status_update', 'resolved', 'note', 'reopened', 'payment', 'feedback'].includes(notif.type)
-      );
-    }
-
-    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them (and NEVER receives staff-targeted notifications)
-    if (user.role === 'technician') {
-      // Explicitly reject staff-targeted notifications
-      if (['staff', 'admin'].includes(notif.targetRole)) return false;
-
-      const currentTechId = String(user.technicianId || user.technician_id || user.id || '');
-      const currentTechName = (user.name || '').trim().toLowerCase();
-
-      const targetTechId = String(notif.targetTechnicianId || '');
-      const targetTechName = (notif.targetTechnicianName || '').trim().toLowerCase();
-
-      const idMatches = targetTechId && currentTechId && targetTechId === currentTechId;
-      const nameMatches = targetTechName && currentTechName && (
-        currentTechName.includes(targetTechName) || targetTechName.includes(currentTechName)
-      );
-
-      if (idMatches || nameMatches) return true;
-
-      // Assignment or job notices targeted specifically to technicians
-      if (['assignment', 'reassigned'].includes(notif.type) || notif.targetRole === 'technician') {
-        if (!targetTechId && !targetTechName) return true;
-        return idMatches || nameMatches;
-      }
-
-      if (['reopened', 'note'].includes(notif.type) && notif.targetRole === 'all') {
-        return idMatches || nameMatches;
-      }
-
-      return false;
-    }
-
-    return false;
-  }, []);
-
-  // Compute user-relevant notifications
-  const userNotifications = useMemo(() => {
-    if (!currentUser) return [];
-    return notifications.filter(n => isNotificationForUser(n, currentUser));
-  }, [notifications, currentUser, isNotificationForUser]);
-
-  // Compute primary identifier key for a user (backward compatibility)
-  const getUserKey = useCallback((user) => {
-    if (!user) return '';
-    return user.username || user.email || user.name || user.role || '';
-  }, []);
-
-  // Compute all valid identifier keys for a user (id, username, email, name, phone, role)
-  const getUserKeys = useCallback((user) => {
-    if (!user) return [];
-    const keys = [
-      user.id !== undefined && user.id !== null ? String(user.id).toLowerCase() : null,
-      user.username ? String(user.username).toLowerCase() : null,
-      user.email ? String(user.email).toLowerCase() : null,
-      user.name ? String(user.name).toLowerCase() : null,
-      user.phone ? String(user.phone).replace(/[^0-9]/g, '').slice(-10) : null,
-      user.technician_id ? String(user.technician_id).toLowerCase() : null,
-      user.technicianId ? String(user.technicianId).toLowerCase() : null,
-      user.role ? String(user.role).toLowerCase() : null
-    ].filter(Boolean);
-    return Array.from(new Set(keys));
-  }, []);
-
-  const isUnread = useCallback((notif, user) => {
-    if (!user) return false;
-    // 1. Permanent read cache check
-    const permReads = getPermanentReadIds();
-    if (permReads.has(String(notif.id)) || (notif.ticketId && permReads.has(String(notif.ticketId)))) {
-      return false;
-    }
-
-    if (!notif.readBy || !Array.isArray(notif.readBy) || notif.readBy.length === 0) return true;
-    const userKeys = getUserKeys(user);
-    const readByLower = notif.readBy.map(k => String(k).toLowerCase());
-    const hasRead = userKeys.some(k => readByLower.includes(k)) || readByLower.includes('read');
-    if (hasRead) {
-      addPermanentReadId(notif.id);
-      if (notif.ticketId) addPermanentReadId(notif.ticketId);
-    }
-    return !hasRead;
-  }, [getUserKeys]);
-
-  const unreadNotifications = useMemo(() => {
-    if (!currentUser) return [];
-    return userNotifications.filter(n => isUnread(n, currentUser));
-  }, [userNotifications, currentUser, isUnread]);
-
-  const unreadCount = unreadNotifications.length;
-
-  // POPUP LOGIC: Automatically surface unread notifications until read
-  useEffect(() => {
-    if (!currentUser || currentUser.role === 'customer') {
-      setActivePopup(null);
-      return;
-    }
-
-    // Find the latest unread notification that hasn't been temporarily dismissed
-    const nextUnread = unreadNotifications.find(n => !dismissedPopupIds.has(n.id));
-    setActivePopup(nextUnread || null);
-  }, [currentUser, unreadNotifications, dismissedPopupIds]);
 
   // Add a new in-app notification
   const addNotification = useCallback((data) => {
@@ -312,12 +364,13 @@ export const NotificationProvider = ({ children }) => {
       window.dispatchEvent(new CustomEvent('egs_in_app_notification_created', { detail: newNotif }));
     } catch (_) {}
 
-    // If targeted to active user, trigger popup immediately
+    // If targeted to active user, trigger popup and audio chime immediately
     if (currentUser && isNotificationForUser(newNotif, currentUser)) {
       setActivePopup(newNotif);
+      playNotificationChime();
     }
 
-    // Try posting to backend
+    // Post to backend
     try {
       if (api.createInAppNotification) {
         api.createInAppNotification(newNotif).catch(() => {});
@@ -337,9 +390,8 @@ export const NotificationProvider = ({ children }) => {
 
     setNotifications(prev => {
       const updated = prev.map(n => {
-        if (n.id === notificationId || n.ticketId === notificationId) {
+        if (n.id === notificationId) {
           addPermanentReadId(n.id);
-          if (n.ticketId) addPermanentReadId(n.ticketId);
           const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
           const combined = Array.from(new Set([...currentRead, ...userKeys, 'read']));
           return { ...n, readBy: combined };
@@ -353,9 +405,9 @@ export const NotificationProvider = ({ children }) => {
     });
 
     // Dismiss active popup if it matches
-    setActivePopup(prev => (prev?.id === notificationId || prev?.ticketId === notificationId) ? null : prev);
+    setActivePopup(prev => prev?.id === notificationId ? null : prev);
 
-    // Sync to backend SQLite database permanently
+    // Sync to backend database permanently
     try {
       if (api.markInAppNotificationRead) {
         api.markInAppNotificationRead(notificationId).catch(() => {});
@@ -372,7 +424,6 @@ export const NotificationProvider = ({ children }) => {
       const updated = prev.map(n => {
         if (isNotificationForUser(n, currentUser)) {
           addPermanentReadId(n.id);
-          if (n.ticketId) addPermanentReadId(n.ticketId);
           const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
           const combined = Array.from(new Set([...currentRead, ...userKeys, 'read']));
           return { ...n, readBy: combined };
@@ -396,40 +447,49 @@ export const NotificationProvider = ({ children }) => {
   }, [currentUser, getUserKeys, isNotificationForUser]);
 
   // Clear all notifications
-  const clearNotifications = useCallback(() => {
-    saveNotifications([]);
+  const clearAllNotifications = useCallback(() => {
+    setNotifications([]);
     setActivePopup(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (_) {}
+
     try {
       if (api.clearInAppNotifications) {
         api.clearInAppNotifications().catch(() => {});
       }
     } catch (_) {}
-  }, [saveNotifications]);
+  }, []);
 
-  // Dismiss popup banner (permanently marks as read so it NEVER pops up again on reload)
+  // Temporarily dismiss popup without marking read (it will stay in drawer badge)
   const dismissPopup = useCallback((notifId) => {
     const idToDismiss = notifId || activePopup?.id;
     if (idToDismiss) {
-      markAsRead(idToDismiss);
-    } else {
+      setDismissedPopupIds(prev => new Set([...prev, idToDismiss]));
+      // Advance to next unread popup if any
       setActivePopup(null);
     }
-  }, [activePopup, markAsRead]);
+  }, [activePopup]);
+
+  const value = {
+    notifications,
+    userNotifications,
+    unreadNotifications,
+    unreadCount,
+    activePopup,
+    addNotification,
+    markAsRead,
+    markAllAsRead,
+    clearAllNotifications,
+    dismissPopup,
+    fetchFromBackend,
+    saveNotifications,
+    playNotificationChime,
+    isUnread
+  };
 
   return (
-    <NotificationContext.Provider value={{
-      notifications: userNotifications,
-      allNotifications: notifications,
-      unreadCount,
-      unreadNotifications,
-      activePopup,
-      addNotification,
-      markAsRead,
-      markAllAsRead,
-      clearNotifications,
-      dismissPopup,
-      isUnread
-    }}>
+    <NotificationContext.Provider value={value}>
       {children}
     </NotificationContext.Provider>
   );

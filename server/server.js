@@ -404,6 +404,24 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: '2.4.2',
+    buildTime: 1790512000000,
+    releaseDate: '2026-09-27',
+    mandatory: true,
+    title: 'Eco Green Solar CMS v2.4.2',
+    summary: 'Mobile Tour Guide, In-App Notifications Reliability, Field Collection & WhatsApp System Enhancements',
+    features: [
+      '📱 Mobile View Tour: Interactive guided step-by-step tour restored for phone screens and mobile browsers.',
+      '🔔 In-App Notifications: Fixed intermittent delivery, resolved ticket ID deduplication suppression, and added instant chime alerts.',
+      '💼 Dedicated Field Ops & Collection Tabs: Dedicated segregation for technicians to track financial collections and complaint work orders independently.',
+      '🗑️ Ticket Query Document Deletion: Added direct trash/delete action for uploaded complaint query files.',
+      '💬 WhatsApp Web Messenger: Fixed delivery errors and expanded multi-format document/photo support.'
+    ]
+  });
+});
+
 app.get('/api/in-app-notifications', optionalAuth, notificationController.listInAppNotifications);
 app.post('/api/in-app-notifications', optionalAuth, notificationController.createInAppNotification);
 app.put('/api/in-app-notifications/read-all', optionalAuth, notificationController.markAllInAppNotificationsRead);

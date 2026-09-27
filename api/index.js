@@ -4229,45 +4229,28 @@ async function ensureInAppTable() {
   }
 }
 
-app.get('/api/in-app-notifications', authenticateToken, async (req, res) => {
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: '2.4.2',
+    buildTime: 1790512000000,
+    releaseDate: '2026-09-27',
+    mandatory: true,
+    title: 'Eco Green Solar CMS v2.4.2',
+    summary: 'Mobile Tour Guide, In-App Notifications Reliability, Field Collection & WhatsApp System Enhancements',
+    features: [
+      '📱 Mobile View Tour: Interactive guided step-by-step tour restored for phone screens and mobile browsers.',
+      '🔔 In-App Notifications: Fixed intermittent delivery, resolved ticket ID deduplication suppression, and added instant chime alerts.',
+      '💼 Dedicated Field Ops & Collection Tabs: Dedicated segregation for technicians to track financial collections and complaint work orders independently.',
+      '🗑️ Ticket Query Document Deletion: Added direct trash/delete action for uploaded complaint query files.',
+      '💬 WhatsApp Web Messenger: Fixed delivery errors and expanded multi-format document/photo support.'
+    ]
+  });
+});
+
+app.get('/api/in-app-notifications', optionalAuth, async (req, res) => {
   try {
     await ensureInAppTable();
-    const userRole = req.user?.role;
-    const userId = req.user?.id;
-    const userName = req.user?.name || '';
-    const userPhone = (req.user?.phone || req.user?.username || '').replace(/[^0-9]/g, '').slice(-10);
-
-    let sql = 'SELECT * FROM in_app_notifications WHERE 1=1';
-    const params = [];
-
-    if (userRole === 'admin') {
-      // Admin supervisor sees everything
-      sql += ' ORDER BY created_at DESC LIMIT 150';
-    } else if (userRole === 'staff') {
-      // Staff sees technician updates, resolutions, customer registrations, reopens, and notes
-      sql += ` AND (
-        target_role IN ('staff', 'all', 'admin') 
-        OR type IN ('status_update', 'resolved', 'note', 'new_ticket', 'reopened', 'payment', 'feedback')
-      ) ORDER BY created_at DESC LIMIT 150`;
-    } else if (userRole === 'technician') {
-      // Technician only sees tickets and alerts explicitly assigned to them, suppressing self actions and staff alerts
-      params.push(userId || -1, `%${userName}%`, `%${userPhone}%`, userName);
-      sql += ` AND (
-        target_role NOT IN ('staff', 'admin')
-        AND performed_by_name != $4
-        AND (target_role = 'technician' OR type IN ('assignment', 'reassigned', 'reopened'))
-        AND (
-          target_technician_id = $1 
-          OR (target_technician_name IS NOT NULL AND target_technician_name ILIKE $2)
-          OR (target_technician_name IS NOT NULL AND target_technician_name ILIKE $3)
-          OR target_role = 'all'
-        )
-      ) ORDER BY created_at DESC LIMIT 100`;
-    } else {
-      sql += ' AND 1=0';
-    }
-
-    const r = await query(sql, params);
+    const r = await query('SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 200');
     const mapped = (r.rows || []).map(row => ({
       id: row.id,
       type: row.type,
@@ -4276,7 +4259,7 @@ app.get('/api/in-app-notifications', authenticateToken, async (req, res) => {
       title: row.title,
       message: row.message,
       customerName: row.customer_name,
-      targetRole: row.target_role,
+      targetRole: row.target_role || 'all',
       targetTechnicianId: row.target_technician_id,
       targetTechnicianName: row.target_technician_name,
       performedByName: row.performed_by_name,
@@ -4291,7 +4274,7 @@ app.get('/api/in-app-notifications', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/in-app-notifications', authenticateToken, async (req, res) => {
+app.post('/api/in-app-notifications', optionalAuth, async (req, res) => {
   try {
     await ensureInAppTable();
     const b = req.body || {};
@@ -4314,8 +4297,8 @@ app.post('/api/in-app-notifications', authenticateToken, async (req, res) => {
       b.targetRole || 'all',
       b.targetTechnicianId || null,
       b.targetTechnicianName || '',
-      b.performedByName || 'Staff',
-      b.performedByRole || 'staff',
+      b.performedByName || req.user?.name || 'Staff',
+      b.performedByRole || req.user?.role || 'staff',
       JSON.stringify(b.readBy || []),
       JSON.stringify(b.acknowledgedBy || [])
     ]);
@@ -4325,16 +4308,17 @@ app.post('/api/in-app-notifications', authenticateToken, async (req, res) => {
   }
 });
 
-app.put('/api/in-app-notifications/:id/read', authenticateToken, async (req, res) => {
+app.put('/api/in-app-notifications/:id/read', optionalAuth, async (req, res) => {
   try {
     await ensureInAppTable();
     const { id } = req.params;
     const userKeys = [
-      req.user.id ? String(req.user.id) : null,
-      req.user.username || null,
-      req.user.email || null,
-      req.user.name || null,
-      req.user.role || null
+      req.user?.id ? String(req.user.id) : null,
+      req.user?.username || null,
+      req.user?.email || null,
+      req.user?.name || null,
+      req.user?.role || null,
+      'read'
     ].filter(Boolean);
 
     await query(`
@@ -4351,15 +4335,16 @@ app.put('/api/in-app-notifications/:id/read', authenticateToken, async (req, res
   }
 });
 
-app.put('/api/in-app-notifications/read-all', authenticateToken, async (req, res) => {
+app.put('/api/in-app-notifications/read-all', optionalAuth, async (req, res) => {
   try {
     await ensureInAppTable();
     const userKeys = [
-      req.user.id ? String(req.user.id) : null,
-      req.user.username || null,
-      req.user.email || null,
-      req.user.name || null,
-      req.user.role || null
+      req.user?.id ? String(req.user.id) : null,
+      req.user?.username || null,
+      req.user?.email || null,
+      req.user?.name || null,
+      req.user?.role || null,
+      'read'
     ].filter(Boolean);
 
     await query(`
@@ -4375,7 +4360,7 @@ app.put('/api/in-app-notifications/read-all', authenticateToken, async (req, res
   }
 });
 
-app.delete('/api/in-app-notifications', authenticateToken, async (req, res) => {
+app.delete('/api/in-app-notifications', optionalAuth, async (req, res) => {
   try {
     await ensureInAppTable();
     await query('DELETE FROM in_app_notifications');

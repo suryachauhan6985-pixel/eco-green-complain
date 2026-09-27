@@ -5,6 +5,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { Navbar } from './components/layout/Navbar';
 import { NotificationDrawer } from './components/layout/NotificationDrawer';
 import { NotificationPopup } from './components/common/NotificationPopup';
+import { AppUpdateModal } from './components/common/AppUpdateModal';
 import { ComplaintList } from './components/complaints/ComplaintList';
 import { NewComplaintModal } from './components/complaints/NewComplaintModal';
 import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDrawer';
@@ -537,6 +538,9 @@ function AppContent() {
             onSwitchTab={(targetTab) => handleTabChange(targetTab)}
           />
         )}
+
+        {/* Native App-Style Mandatory Update Modal */}
+        <AppUpdateModal />
       </React.Suspense>
     </div>
   );

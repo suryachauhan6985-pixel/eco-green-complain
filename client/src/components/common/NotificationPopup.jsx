@@ -12,9 +12,6 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
     if (activePopup.id) {
       markAsRead(activePopup.id);
     }
-    if (activePopup.ticketId) {
-      markAsRead(activePopup.ticketId);
-    }
     if (onSelectComplaint && (activePopup.ticketId || activePopup.complaintId)) {
       onSelectComplaint(activePopup.ticketId || activePopup.complaintId);
     }
