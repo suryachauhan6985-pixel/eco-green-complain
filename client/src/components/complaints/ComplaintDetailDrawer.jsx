@@ -17,6 +17,14 @@ import { uploadFileToSupabase } from '../../utils/storageUpload';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
+const getTodayDateStr = () => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  } catch (e) {
+    return new Date().toISOString().split('T')[0];
+  }
+};
+
 export const ComplaintDetailDrawer = ({ 
   complaintId, 
   isOpen, 
@@ -326,6 +334,12 @@ export const ComplaintDetailDrawer = ({
   const handleAssign = async (e) => {
     e.preventDefault();
     if (!selectedTechId) return showToast('Please select a technician to assign', 'error');
+
+    const todayStr = getTodayDateStr();
+    if (expectedDate && expectedDate < todayStr) {
+      return showToast('Expected visit date cannot be in the past. Please select today or a future date.', 'error');
+    }
+
     const prevTechId = ticket.assigned_technician_id;
     const prevTechName = ticket.technician_name;
 
@@ -1491,7 +1505,16 @@ export const ComplaintDetailDrawer = ({
                           {(ticket.assigned_technician_id || ticket.technician_name) && ['admin', 'staff'].includes(currentUser?.role) && (
                             <button
                               type="button"
-                              onClick={() => setIsReassignOpen(!isReassignOpen)}
+                              onClick={() => {
+                                const nextState = !isReassignOpen;
+                                setIsReassignOpen(nextState);
+                                if (nextState) {
+                                  const today = getTodayDateStr();
+                                  if (!expectedDate || expectedDate < today) {
+                                    setExpectedDate(today);
+                                  }
+                                }
+                              }}
                               className="text-xs text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
                             >
                               <RotateCcw className="w-3 h-3" />
@@ -1700,13 +1723,37 @@ export const ComplaintDetailDrawer = ({
                               </div>
 
                               <div>
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Expected Visit Date</label>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                  <span>Expected Visit Date *</span>
+                                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                    Min: Today ({formatIndianDateOnly(getTodayDateStr())})
+                                  </span>
+                                </label>
                                 <input
                                   type="date"
+                                  min={getTodayDateStr()}
                                   value={expectedDate}
-                                  onChange={(e) => setExpectedDate(e.target.value)}
-                                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const today = getTodayDateStr();
+                                    if (val && val < today) {
+                                      showToast('Past dates cannot be selected for technician visits. Setting to today.', 'warning');
+                                      setExpectedDate(today);
+                                    } else {
+                                      setExpectedDate(val);
+                                    }
+                                  }}
+                                  className={`w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:outline-none focus:ring-2 font-medium ${
+                                    expectedDate && expectedDate < getTodayDateStr()
+                                      ? 'border-rose-400 ring-2 ring-rose-200 text-rose-700 bg-rose-50'
+                                      : 'border-slate-300 focus:ring-emerald-500'
+                                  }`}
                                 />
+                                {expectedDate && expectedDate < getTodayDateStr() && (
+                                  <p className="text-[11px] text-rose-600 font-bold mt-1 flex items-center gap-1">
+                                    ⚠️ Past date not allowed. Expected visit date must be today or a future date.
+                                  </p>
+                                )}
                               </div>
                             </div>
 
@@ -1726,7 +1773,7 @@ export const ComplaintDetailDrawer = ({
                                 )}
                                 <button
                                   type="submit"
-                                  disabled={assigning || !selectedTechId}
+                                  disabled={assigning || !selectedTechId || (expectedDate && expectedDate < getTodayDateStr())}
                                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
                                 >
                                   <Wrench className="w-3.5 h-3.5" />

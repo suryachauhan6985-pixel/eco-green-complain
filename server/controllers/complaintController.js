@@ -834,6 +834,14 @@ async function assignTechnician(req, res) {
       return res.status(400).json({ error: 'Technician selection is required' });
     }
 
+    if (expected_visit_date) {
+      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      const visitDateStr = String(expected_visit_date).split('T')[0];
+      if (visitDateStr < todayStr) {
+        return res.status(400).json({ error: 'Expected visit date cannot be in the past. Please select today or a future date.' });
+      }
+    }
+
     const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });

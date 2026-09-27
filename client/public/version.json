@@ -1,13 +1,13 @@
 {
-  "version": "2.4.6",
-  "buildTime": 1790519500000,
+  "version": "2.4.7",
+  "buildTime": 1790520500000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.4.6",
-  "summary": "Product-Specific Duplicate Complaint Check & Prevention",
+  "title": "Eco Green Solar CMS v2.4.7",
+  "summary": "Technician Allocation Past Date Prevention & Visit Scheduling Validation",
   "features": [
-    "⚡ Product-Specific Duplicate Check: Duplicate complaint detection now verifies both customer and product type.",
-    "🛡️ Multi-Product Support: Customers with an open ticket for one product (e.g. Solar Rooftop) can now register tickets for other products (e.g. Solar Water Heater) without being blocked.",
-    "🔄 Real-time Form Updates: Switching product in complaint modal automatically refreshes active ticket status."
+    "📅 Past Date Prevention: Disabled selection of past dates when assigning or reassigning technicians.",
+    "🛡️ Dynamic Min Date Constraint: Expected visit date calendar now enforces today as minimum selectable date.",
+    "⚠️ Real-time Validation: Instant warning and button lock if past visit date is entered or preserved from older schedules."
   ]
 }

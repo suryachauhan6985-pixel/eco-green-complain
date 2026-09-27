@@ -524,6 +524,12 @@ class LocalMockStore {
     const tech = techs.find(t => String(t.id) === String(techId));
     const comp = list.find(c => String(c.id) === String(id));
     if (comp) {
+      if (expectedDate) {
+        const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        if (expectedDate < todayStr) {
+          throw new Error('Expected visit date cannot be in the past. Please select today or a future date.');
+        }
+      }
       comp.status = 'Assigned';
       comp.assigned_technician_id = techId;
       comp.technician_name = tech?.name;

@@ -2085,6 +2085,18 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { technician_id, expected_visit_date, notes } = req.body;
 
+    if (!technician_id) {
+      return res.status(400).json({ error: 'Technician selection is required' });
+    }
+
+    if (expected_visit_date) {
+      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      const visitDateStr = String(expected_visit_date).split('T')[0];
+      if (visitDateStr < todayStr) {
+        return res.status(400).json({ error: 'Expected visit date cannot be in the past. Please select today or a future date.' });
+      }
+    }
+
     const prevCompRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (!prevCompRes.rows || prevCompRes.rows.length === 0) {
       return res.status(404).json({ error: 'Complaint not found' });
