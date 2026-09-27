@@ -220,15 +220,17 @@ export const Navbar = ({
 
           {/* Right Action Controls - Guaranteed No Overflow */}
           <div className="shrink-0 flex items-center gap-1 sm:gap-2">
-            {/* Feature Tour Guide Button (Visible on both Mobile & Desktop) */}
-            <button
-              onClick={onOpenTour}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer"
-              title="Interactive Step-by-Step Feature Guide"
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span>Tour</span>
-            </button>
+            {/* Feature Tour Guide Button (Visible ONLY for Admin on Desktop & Mobile) */}
+            {currentUser?.role === 'admin' && (
+              <button
+                onClick={onOpenTour}
+                className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer"
+                title="Interactive Step-by-Step Feature Guide"
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>Tour</span>
+              </button>
+            )}
 
             {/* Quick Register Complaint Button (For Admin & Staff - Desktop Only, mobile has it in bottom nav) */}
             {['admin', 'staff'].includes(currentUser?.role) && (
@@ -342,16 +344,18 @@ export const Navbar = ({
 
                     {/* Desktop Manage Credentials & Sign Out */}
                     <div className="px-3 pt-2 space-y-1.5">
-                      <button
-                        onClick={() => {
-                          setRoleMenuOpen(false);
-                          if (onOpenTour) onOpenTour();
-                        }}
-                        className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <Compass className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Take Feature Tour Guide</span>
-                      </button>
+                      {currentUser?.role === 'admin' && (
+                        <button
+                          onClick={() => {
+                            setRoleMenuOpen(false);
+                            if (onOpenTour) onOpenTour();
+                          }}
+                          className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <Compass className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Take Feature Tour Guide</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => {
@@ -433,16 +437,18 @@ export const Navbar = ({
                       </div>
 
                       <div className="space-y-2">
-                        <button
-                          onClick={() => {
-                            setRoleMenuOpen(false);
-                            if (onOpenTour) onOpenTour();
-                          }}
-                          className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
-                        >
-                          <Compass className="w-4 h-4" />
-                          <span>App Feature Tour (गाइड देखें)</span>
-                        </button>
+                        {currentUser?.role === 'admin' && (
+                          <button
+                            onClick={() => {
+                              setRoleMenuOpen(false);
+                              if (onOpenTour) onOpenTour();
+                            }}
+                            className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
+                          >
+                            <Compass className="w-4 h-4" />
+                            <span>App Feature Tour (गाइड देखें)</span>
+                          </button>
+                        )}
 
                         <button
                           onClick={() => {

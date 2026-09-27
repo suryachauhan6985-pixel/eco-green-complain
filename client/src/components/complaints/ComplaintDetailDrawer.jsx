@@ -745,7 +745,7 @@ export const ComplaintDetailDrawer = ({
     setIsRecordingPayment(true);
   };
 
-  const handleRecordPaymentSubmit = async (forceSubmit = false) => {
+  const handleRecordPaymentSubmit = async () => {
     if (!ticket.assigned_technician_id) {
       setIsRecordingPayment(false);
       scrollToTechnicianAssignment();
@@ -755,14 +755,18 @@ export const ComplaintDetailDrawer = ({
     const entered = Number(paymentData.payment_collected || 0);
     const expected = Number(ticket.estimated_charges || 0);
 
-    // Mandatory reason check for unallocated tickets as per ECO-18
-    if (expected === 0 && entered > 0 && (!paymentData.collection_reason || !paymentData.collection_reason.trim())) {
-      showToast('Reason for on-site collection is mandatory when no service charges were allocated.', 'warning');
-      return;
-    }
+    const isUnalloc = expected === 0;
+    const isMismatch = expected > 0 && entered > 0 && entered !== expected;
 
-    if (!forceSubmit && expected > 0 && entered < expected) {
-      setShowUnderpaidWarning(true);
+    // Mandatory reason / approval check
+    if ((isUnalloc || isMismatch) && (!paymentData.collection_reason || !paymentData.collection_reason.trim())) {
+      if (isUnalloc) {
+        showToast('Reason for on-site collection is mandatory when no service charges were allocated.', 'warning');
+      } else if (entered < expected) {
+        showToast(`Approval note is mandatory for collecting ₹${expected - entered} less than quoted ₹${expected}.`, 'warning');
+      } else {
+        showToast(`Approval note is mandatory for collecting ₹${entered - expected} extra above quoted ₹${expected}.`, 'warning');
+      }
       return;
     }
 
@@ -2930,130 +2934,195 @@ export const ComplaintDetailDrawer = ({
                 </div>
               </div>
 
-              {/* Warning box if entered amount is less than estimated */}
-              {showUnderpaidWarning && (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs space-y-2 animate-in fade-in">
-                  <div className="flex items-center gap-2 font-bold text-amber-800">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    Warning: Partial Payment Amount
-                  </div>
-                  <p className="text-[11px] leading-relaxed">
-                    The entered amount of <strong>₹{paymentData.payment_collected || 0}</strong> is lower than the quoted service charge of <strong>₹{ticket.estimated_charges || 0}</strong>.
-                  </p>
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowUnderpaidWarning(false)}
-                      className="px-2.5 py-1 bg-white border border-amber-300 rounded text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Change Amount
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRecordPaymentSubmit(true)}
-                      disabled={savingPayment || !ticket.assigned_technician_id}
-                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold disabled:opacity-50"
-                    >
-                      {savingPayment ? 'Saving...' : 'Confirm & Save Partial'}
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Real-time Dynamic Mismatch & Approval Validation Scope */}
+              {(() => {
+                const enteredAmount = Number(paymentData.payment_collected || 0);
+                const allocatedAmount = Number(ticket.estimated_charges || 0);
+                const isUnallocated = allocatedAmount === 0;
+                const isUnderpaid = allocatedAmount > 0 && enteredAmount > 0 && enteredAmount < allocatedAmount;
+                const isOverpaid = allocatedAmount > 0 && enteredAmount > 0 && enteredAmount > allocatedAmount;
+                const isAmountMismatch = isUnderpaid || isOverpaid;
+                const isReasonRequired = (isUnallocated && enteredAmount > 0) || isAmountMismatch;
+                const hasValidReason = Boolean(paymentData.collection_reason && paymentData.collection_reason.trim().length >= 3);
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Payment Amount Collected (₹) *
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-500">₹</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="10"
-                    required
-                    placeholder="Enter amount collected from customer"
-                    value={paymentData.payment_collected}
-                    onChange={(e) => setPaymentData({ ...paymentData, payment_collected: e.target.value })}
-                    className="w-full text-xs pl-7 pr-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
+                return (
+                  <>
+                    {/* Amount Input */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Payment Amount Collected (₹) *</span>
+                        {allocatedAmount > 0 && (
+                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                            Allocated Quoted: ₹{allocatedAmount}
+                          </span>
+                        )}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="10"
+                          required
+                          placeholder="Enter amount collected from customer"
+                          value={paymentData.payment_collected}
+                          onChange={(e) => setPaymentData({ ...paymentData, payment_collected: e.target.value })}
+                          className={`w-full text-xs pl-7 pr-3 py-2.5 border rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 ${
+                            isAmountMismatch 
+                              ? 'border-amber-400 bg-amber-50/20 focus:ring-amber-500' 
+                              : 'border-slate-300 focus:ring-emerald-500'
+                          }`}
+                        />
+                      </div>
+                    </div>
 
-              {/* Mandatory Reason for Unallocated Tickets */}
-              {Number(ticket.estimated_charges || 0) === 0 && (
-                <div>
-                  <label className="block text-[11px] font-bold text-amber-900 mb-1 flex items-center justify-between">
-                    <span>Reason for On-Site Collection *</span>
-                    <span className="text-[10px] text-amber-700 font-semibold">(Mandatory for ₹0 initial tickets)</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g., Spare parts replacement, extra wiring, non-warranty service fee"
-                    value={paymentData.collection_reason}
-                    onChange={(e) => setPaymentData({ ...paymentData, collection_reason: e.target.value })}
-                    className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/30 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Please provide an exact explanation of why payment was collected on site for auditing.
-                  </p>
-                </div>
-              )}
+                    {/* Warning Alert Banner (Appears ONLY when underpaid or overpaid) */}
+                    {isUnderpaid && (
+                      <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 text-xs space-y-1 animate-in fade-in">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Warning: Quoted Charge se Kam Payment Liya Ja Raha Hai!</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Allocated amount <strong>₹{allocatedAmount}</strong> hai par aap <strong>₹{enteredAmount}</strong> (₹{allocatedAmount - enteredAmount} kam) collect kar rahe hain. Kiske approval se kam liya hai uska reason likhna <strong>anivarya (mandatory)</strong> hai.
+                        </p>
+                      </div>
+                    )}
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Payment Method *
-                </label>
-                <select
-                  value={paymentData.payment_method}
-                  onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium"
-                >
-                  <option value="Cash">Cash to Technician</option>
-                  <option value="UPI">UPI / QR Code</option>
-                  <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
-                  <option value="Cheque">Cheque</option>
-                </select>
-              </div>
+                    {isOverpaid && (
+                      <div className="p-3 bg-blue-50 border border-blue-300 rounded-xl text-blue-950 text-xs space-y-1 animate-in fade-in">
+                        <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                          <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span>Warning: Quoted Charge se Extra / Jyada Payment Liya Ja Raha Hai!</span>
+                        </div>
+                        <p className="text-[11px] text-blue-800 leading-relaxed">
+                          Allocated amount <strong>₹{allocatedAmount}</strong> hai par aap <strong>₹{enteredAmount}</strong> (₹{enteredAmount - allocatedAmount} extra) collect kar rahe hain. Kiske approval se extra liya hai uska reason likhna <strong>anivarya (mandatory)</strong> hai.
+                        </p>
+                      </div>
+                    )}
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Payment Notes / Reference No. (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., UTR / UPI transaction ID, Receipt #104"
-                  value={paymentData.payment_notes}
-                  onChange={(e) => setPaymentData({ ...paymentData, payment_notes: e.target.value })}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
-                />
-              </div>
+                    {/* Dynamic Reason Field: Normally hidden, opens ONLY when unallocated OR amount mismatch */}
+                    {isAmountMismatch && (
+                      <div className="space-y-1 animate-in fade-in">
+                        <label className="block text-[11px] font-bold text-slate-800 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            {isUnderpaid ? 'Approval Note (Kiske Approval Se Kam Liya Hai) *' : 'Approval Note (Kiske Approval Se Jyada Liya Hai) *'}
+                          </span>
+                          <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                            Required to Unlock
+                          </span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={
+                            isUnderpaid
+                              ? 'e.g. Approved by Admin (Rohit Bhai) due to customer discount / pending visit'
+                              : 'e.g. Approved by Admin / Customer agreed for extra 10m cable & connector replacement'
+                          }
+                          value={paymentData.collection_reason}
+                          onChange={(e) => setPaymentData({ ...paymentData, collection_reason: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/40 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          Ye reason likhne ke baad hi niche ka collect payment button active hoga.
+                        </p>
+                      </div>
+                    )}
 
-              {!showUnderpaidWarning && (
-                <div className="pt-2 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsRecordingPayment(false)}
-                    className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRecordPaymentSubmit(false)}
-                    disabled={
-                      savingPayment || 
-                      !paymentData.payment_collected || 
-                      Number(paymentData.payment_collected) <= 0 ||
-                      !ticket.assigned_technician_id ||
-                      (Number(ticket.estimated_charges || 0) === 0 && (!paymentData.collection_reason || !paymentData.collection_reason.trim()))
-                    }
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {savingPayment ? 'Saving...' : 'Record Payment'}
-                  </button>
-                </div>
-              )}
+                    {isUnallocated && enteredAmount > 0 && (
+                      <div className="space-y-1 animate-in fade-in">
+                        <label className="block text-[11px] font-bold text-amber-900 flex items-center justify-between">
+                          <span>Reason for On-Site Collection *</span>
+                          <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                            Mandatory for ₹0 initial tickets
+                          </span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Spare parts replacement, extra wiring, non-warranty service fee"
+                          value={paymentData.collection_reason}
+                          onChange={(e) => setPaymentData({ ...paymentData, collection_reason: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/30 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          Kripya on-site payment collect karne ka karan aur approval likhein.
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Payment Method *
+                      </label>
+                      <select
+                        value={paymentData.payment_method}
+                        onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium"
+                      >
+                        <option value="Cash">Cash to Technician</option>
+                        <option value="UPI">UPI / QR Code</option>
+                        <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                        <option value="Cheque">Cheque</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Payment Notes / Reference No. (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. UTR / UPI transaction ID, Receipt #104"
+                        value={paymentData.payment_notes}
+                        onChange={(e) => setPaymentData({ ...paymentData, payment_notes: e.target.value })}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+
+                    {/* Action Controls */}
+                    <div className="pt-2 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsRecordingPayment(false)}
+                        className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRecordPaymentSubmit}
+                        disabled={
+                          savingPayment || 
+                          !enteredAmount || 
+                          enteredAmount <= 0 ||
+                          !ticket.assigned_technician_id ||
+                          (isReasonRequired && !hasValidReason)
+                        }
+                        className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          isReasonRequired && !hasValidReason
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-700/20 active:scale-95 cursor-pointer'
+                        }`}
+                        title={isReasonRequired && !hasValidReason ? 'Kripya approval reason likhein tabhi button unlock hoga' : 'Record Payment'}
+                      >
+                        {savingPayment ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Saving...</span>
+                          </>
+                        ) : (isReasonRequired && !hasValidReason) ? (
+                          <span>Approval Reason Required</span>
+                        ) : (
+                          <span>Record Payment (₹{enteredAmount || 0})</span>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -610,14 +610,24 @@ async function recordPayment(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    const { payment_collected, payment_mode = 'Cash', notes = '' } = req.body;
+    const { 
+      payment_collected, 
+      payment_mode = 'Cash', 
+      payment_method, 
+      notes = '', 
+      payment_notes = '', 
+      collection_reason = '' 
+    } = req.body;
+    const finalPaymentMode = payment_method || payment_mode || 'Cash';
+    const finalReason = (collection_reason || '').trim();
+    const finalNotes = (notes || payment_notes || '').trim();
     const amount = parseFloat(payment_collected) || 0;
     const estimated = parseFloat(complaint.estimated_charges) || 0;
 
-    const isDirectPayment = payment_mode && (
-      payment_mode.toLowerCase().includes('online') || 
-      payment_mode.toLowerCase().includes('bank') ||
-      payment_mode.toLowerCase().includes('upi')
+    const isDirectPayment = finalPaymentMode && (
+      finalPaymentMode.toLowerCase().includes('online') || 
+      finalPaymentMode.toLowerCase().includes('bank') ||
+      finalPaymentMode.toLowerCase().includes('upi')
     );
 
     // Enforce: ALL payment collection strictly requires an assigned technician!
@@ -657,11 +667,17 @@ async function recordPayment(req, res) {
         company_settlement_status = ?,
         company_settled_at = ?,
         company_settled_by = ?,
+        collection_reason = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(amount, payment_mode, paymentStatus, settlementStatus, settledAt, settledBy, id);
+    `).run(amount, finalPaymentMode, paymentStatus, settlementStatus, settledAt, settledBy, finalReason || complaint.collection_reason || null, id);
 
-    const noteText = `Payment of ₹${amount} recorded via ${payment_mode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''} ${notes ? `• ${notes}` : ''}`;
+    const noteTextParts = [
+      `Payment of ₹${amount} recorded via ${finalPaymentMode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''}`,
+      finalReason ? `Reason / Approval: ${finalReason}` : null,
+      finalNotes ? `Note: ${finalNotes}` : null
+    ].filter(Boolean);
+    const noteText = noteTextParts.join(' • ');
 
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)

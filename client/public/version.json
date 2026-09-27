@@ -1,15 +1,13 @@
 {
-  "version": "2.4.4",
-  "buildTime": 1790515000000,
+  "version": "2.4.5",
+  "buildTime": 1790518000000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.4.4",
-  "summary": "Mobile Field Cards Unclipped Names, Navigation Pin Icon, Card/List View Toggle & Tour Fixes",
+  "title": "Eco Green Solar CMS v2.4.5",
+  "summary": "Admin-Exclusive Tour Guide & Payment Collection Amount Mismatch Approval System",
   "features": [
-    "📱 Unclipped Customer Names: Full customer names now display cleanly without awkward truncation or breaking on phone cards.",
-    "📍 Google Maps Location Pin: Replaced text links with a dedicated Google Maps navigation pin button that never breaks lines.",
-    "🗂️ Card vs List View Toggle: Added mobile & desktop switcher for Cards view (default) and high-density Compact List view.",
-    "🧭 Tour Modal Mobile Fix: Fixed button clipping and horizontal overflowing in guided tour on mobile screens.",
-    "📹 Direct Camera Video Recording: Direct video and photo recording from device camera for complaint attachments."
+    "🔒 Admin-Only Tour Guide: App feature tour is now strictly restricted to Admin role and removed everywhere else from mobile & PC.",
+    "⚠️ Payment Mismatch Warning & Approval: Real-time warning alert when collecting less or extra payment compared to allocated charges.",
+    "✍️ Mandatory Approval Note: Collect button remains locked until technician enters who authorized the amount difference (Admin/Manager approval note)."
   ]
 }

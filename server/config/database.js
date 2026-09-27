@@ -517,6 +517,7 @@ function migrateComplaintsTable() {
         { name: 'payment_collected_at', type: 'DATETIME' },
         { name: 'payment_mode', type: "TEXT DEFAULT 'Cash'" },
         { name: 'payment_status', type: "TEXT DEFAULT 'Unpaid'" },
+        { name: 'collection_reason', type: 'TEXT' },
         { name: 'status_updated_at', type: 'DATETIME' }
       ];
 

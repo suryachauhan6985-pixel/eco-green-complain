@@ -497,11 +497,14 @@ class LocalMockStore {
     return comp;
   }
 
-  recordPayment(id, { payment_collected, payment_notes, payment_method }) {
+  recordPayment(id, { payment_collected, payment_notes, payment_method, collection_reason }) {
     const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
     const comp = list.find(c => String(c.id) === String(id));
     if (comp) {
       comp.payment_collected = Number(payment_collected || 0);
+      if (collection_reason) comp.collection_reason = collection_reason;
+      if (payment_method) comp.payment_mode = payment_method;
+      if (payment_notes) comp.payment_notes = payment_notes;
       const est = Number(comp.estimated_charges || 0);
       if (comp.payment_collected >= est && est > 0) {
         comp.payment_status = 'Collected';

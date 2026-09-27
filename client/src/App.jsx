@@ -289,7 +289,7 @@ function AppContent() {
           setCurrentTab={handleTabChange}
           onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
           onToggleNotificationDrawer={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
-          onOpenTour={() => setIsTourOpen(true)}
+          onOpenTour={currentUser?.role === 'admin' ? () => setIsTourOpen(true) : undefined}
         />
       </div>
 
@@ -530,8 +530,8 @@ function AppContent() {
           />
         )}
 
-        {/* Interactive Feature Walkthrough Tour */}
-        {isTourOpen && (
+        {/* Interactive Feature Walkthrough Tour (Admin Only) */}
+        {isTourOpen && currentUser?.role === 'admin' && (
           <OnboardingTour
             isOpen={isTourOpen}
             onClose={() => setIsTourOpen(false)}
