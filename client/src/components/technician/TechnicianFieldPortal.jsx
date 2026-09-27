@@ -6,7 +6,8 @@ import {
   Wrench, Phone, MessageCircle, MapPin, CheckCircle, Clock, 
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
   Search, X, IndianRupee, ChevronDown, ChevronUp, CheckCheck,
-  UserCheck, ShieldCheck, Layers, ExternalLink, RotateCcw
+  UserCheck, ShieldCheck, Layers, ExternalLink, RotateCcw,
+  LayoutGrid, List, Navigation
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
@@ -22,6 +23,24 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
   const [techProfile, setTechProfile] = useState(null);
+
+  // Mobile & Desktop view mode: default 'card'
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem('egs_tech_view_mode') || 'card';
+    } catch {
+      return 'card';
+    }
+  });
+
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('egs_tech_view_mode', mode);
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     if (activeSection) {
@@ -747,11 +766,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
             <select
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700"
+              className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700 flex-1 sm:flex-initial"
             >
               <option value="all">All Solar Products</option>
               <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
@@ -759,25 +778,167 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               <option value="Heat Pumps">Heat Pumps</option>
               <option value="Pressure Pumps">Pressure Pumps</option>
             </select>
+
+            {/* Mobile & PC View Mode Toggle: Cards (Default) vs Compact List */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleViewModeChange('card')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  viewMode === 'card'
+                    ? 'bg-white text-emerald-700 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Card View (Default)"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="text-[11px]">Cards</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleViewModeChange('list')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  viewMode === 'list'
+                    ? 'bg-white text-emerald-700 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Compact List View"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="text-[11px]">List</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Jobs Cards Feed — 2 Cards Horizontally Side-by-Side on PC */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {loading ? (
-            <div className="lg:col-span-2 py-16 text-center text-slate-400 text-xs">Loading technician jobs...</div>
-          ) : displayList.length === 0 ? (
-            <div className="lg:col-span-2 bg-white p-12 text-center rounded-2xl border border-slate-200">
-              <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-              <h4 className="font-bold text-sm text-slate-800">
-                {jobStatusFilter === 'all' ? 'No service jobs found!' : `No ${jobStatusFilter} tasks at this moment.`}
-              </h4>
-              <p className="text-xs text-slate-500 mt-1">
-                {searchTerm ? 'No tasks match your search filter.' : 'You are all caught up. Check back when support desk assigns a new complaint.'}
-              </p>
-            </div>
-          ) : (
-            displayList.map((job) => {
+        {/* Jobs Feed — Compact List or 2-Card Grid */}
+        {loading ? (
+          <div className="py-16 text-center text-slate-400 text-xs">Loading technician jobs...</div>
+        ) : displayList.length === 0 ? (
+          <div className="bg-white p-12 text-center rounded-2xl border border-slate-200">
+            <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+            <h4 className="font-bold text-sm text-slate-800">
+              {jobStatusFilter === 'all' ? 'No service jobs found!' : `No ${jobStatusFilter} tasks at this moment.`}
+            </h4>
+            <p className="text-xs text-slate-500 mt-1">
+              {searchTerm ? 'No tasks match your search filter.' : 'You are all caught up. Check back when support desk assigns a new complaint.'}
+            </p>
+          </div>
+        ) : viewMode === 'list' ? (
+          /* High-Density Compact List View for Mobile & PC */
+          <div className="space-y-2.5">
+            {displayList.map((job) => {
+              const ageInfo = getTicketAgeInfo(job);
+              return (
+                <div
+                  key={job.id}
+                  onClick={() => onSelectComplaint && onSelectComplaint(job.ticket_id || job.id)}
+                  className={`bg-white rounded-2xl border p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                    ageInfo.isOverdue
+                      ? 'border-rose-300 ring-1 ring-rose-200 border-l-4 border-l-rose-500'
+                      : 'border-slate-200 hover:border-emerald-500'
+                  }`}
+                >
+                  {/* Left: Info */}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                        {job.ticket_id}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        job.status === 'In Progress' ? 'bg-blue-600 text-white' :
+                        job.status === 'Resolved' ? 'bg-emerald-600 text-white' :
+                        job.status === 'Closed' ? 'bg-slate-700 text-white' :
+                        'bg-amber-500 text-slate-900'
+                      }`}>
+                        {job.status}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        job.priority === 'High' ? 'bg-amber-100 text-amber-800' :
+                        job.priority === 'Medium' ? 'bg-blue-100 text-blue-800' :
+                        'bg-slate-200 text-slate-700'
+                      }`}>
+                        {job.priority}
+                      </span>
+                      <TicketAgeBadge complaint={job} compact={true} />
+                      {job.payment_collected > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
+                          <IndianRupee className="w-2.5 h-2.5" /> ₹{job.payment_collected}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
+                      <h4 className="text-slate-900 font-bold text-xs sm:text-sm">
+                        {job.customer_name}
+                      </h4>
+                      {job.customer_phone && (
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          +91 {String(job.customer_phone).slice(-10)}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded uppercase">
+                        {job.product_type}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-600 line-clamp-1 leading-normal">
+                      <strong className="text-slate-800 font-semibold">{job.issue_category}: </strong>
+                      {job.issue_description}
+                    </p>
+
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 pt-0.5">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span className="truncate">{job.city ? `${job.city} • ` : ''}{job.customer_address}</span>
+                    </div>
+                  </div>
+
+                  {/* Right: Quick Action Buttons */}
+                  <div className="flex items-center gap-1.5 shrink-0 justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-100" onClick={(e) => e.stopPropagation()}>
+                    <a
+                      href={`tel:${job.customer_phone}`}
+                      className="p-2 sm:px-3 sm:py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-2xs active:scale-95 transition-transform"
+                      title="Call Customer"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline text-[11px]">Call</span>
+                    </a>
+                    <a
+                      href={buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name).sendUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-2 sm:px-3 sm:py-1.5 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1 active:scale-95 transition-transform"
+                      title="WhatsApp Customer"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline text-[11px]">WhatsApp</span>
+                    </a>
+                    <a
+                      href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent(job.customer_address || job.city || '')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-2 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center shadow-2xs border border-slate-200 active:scale-95"
+                      title="Open in Google Maps"
+                    >
+                      <Navigation className="w-3.5 h-3.5 text-emerald-700 fill-emerald-600/30" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => onSelectComplaint && onSelectComplaint(job.ticket_id || job.id)}
+                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                    >
+                      <span>Update</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Cards Feed — 2 Cards Horizontally Side-by-Side on PC */
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {displayList.map((job) => {
               const ageInfo = getTicketAgeInfo(job);
               return (
                 <div
@@ -853,56 +1014,86 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                     </div>
 
                     {/* Customer Details & One-Tap Actions */}
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <span className="text-slate-400 block text-[10px]">Customer:</span>
-                          <strong className="text-slate-900 truncate block">{job.customer_name}</strong>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5 text-xs">
+                      {/* Customer Info Header Row - Unclipped Full Width */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 font-bold text-xs border border-emerald-200">
+                            {job.customer_name ? job.customer_name.charAt(0).toUpperCase() : 'C'}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-slate-400 block text-[9px] uppercase tracking-wider font-bold">Customer</span>
+                            <h5 className="text-slate-900 font-bold text-xs sm:text-sm break-words leading-snug">
+                              {job.customer_name}
+                            </h5>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                          <a
-                            href={`tel:${job.customer_phone}`}
-                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-xs"
-                          >
-                            <Phone className="w-3 h-3" /> Call
-                          </a>
-                          <a
-                            href={buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name).sendUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2.5 py-1.5 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-lg font-bold text-[11px] flex items-center gap-1"
-                          >
-                            <MessageCircle className="w-3 h-3" /> WhatsApp
-                          </a>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectComplaint && onSelectComplaint(job.ticket_id || job.id);
-                            }}
-                            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer ${
-                              job.payment_collected > 0
-                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                : 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-300'
-                            }`}
-                            title={job.payment_collected > 0 ? `Collected: ₹${job.payment_collected}` : 'Collect On-Site Payment'}
-                          >
-                            <IndianRupee className="w-3 h-3 text-amber-700" />
-                            <span>{job.payment_collected > 0 ? `Paid: ₹${job.payment_collected}` : 'Collect Payment'}</span>
-                          </button>
-                        </div>
+
+                        {/* Payment Status Pill */}
+                        {job.payment_collected > 0 ? (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                            <IndianRupee className="w-2.5 h-2.5" /> Paid: ₹{job.payment_collected}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shrink-0">
+                            +91 {job.customer_phone ? String(job.customer_phone).slice(-10) : ''}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-start gap-1 text-slate-600 pt-1 border-t border-slate-200/60">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                        <span className="flex-1 text-[11px] line-clamp-1">{job.city ? `${job.city} • ` : ''}{job.customer_address}</span>
+                      {/* Quick Action Buttons Row - 3 Balanced Columns */}
+                      <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-200/60">
                         <a
-                          href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent(job.customer_address)}`}
+                          href={`tel:${job.customer_phone}`}
+                          className="py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-transform"
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>Call</span>
+                        </a>
+                        <a
+                          href={buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name).sendUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-[11px] text-emerald-700 font-semibold hover:underline shrink-0"
+                          className="py-1.5 px-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-transform"
                         >
-                          {job.location_url ? '📍 Site Map' : 'Map'}
+                          <MessageCircle className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectComplaint && onSelectComplaint(job.ticket_id || job.id);
+                          }}
+                          className={`py-1.5 px-2 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95 ${
+                            job.payment_collected > 0
+                              ? 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
+                              : 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-300'
+                          }`}
+                          title={job.payment_collected > 0 ? `Collected: ₹${job.payment_collected}` : 'Collect On-Site Payment'}
+                        >
+                          <IndianRupee className="w-3 h-3 text-amber-700" />
+                          <span className="truncate">{job.payment_collected > 0 ? 'Edit Pay' : 'Collect'}</span>
+                        </button>
+                      </div>
+
+                      {/* Address & Google Maps Location Pin Icon Button */}
+                      <div className="flex items-center justify-between gap-2 text-slate-600 pt-1.5 border-t border-slate-200/60">
+                        <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                          <span className="text-[11px] text-slate-700 leading-snug line-clamp-2">
+                            {job.city ? <strong className="text-slate-900 font-semibold">{job.city} • </strong> : null}
+                            {job.customer_address}
+                          </span>
+                        </div>
+                        <a
+                          href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent(job.customer_address || job.city || '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg shrink-0 flex items-center justify-center transition-colors shadow-2xs border border-emerald-200 active:scale-95"
+                          title="Open Google Maps Location"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-emerald-700 fill-emerald-600/30" />
                         </a>
                       </div>
                     </div>
@@ -950,9 +1141,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                   </div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
       )}
     </div>

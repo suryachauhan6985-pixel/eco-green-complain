@@ -291,29 +291,41 @@ export const OnboardingTour = ({ isOpen, onClose, onSwitchTab }) => {
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
-          {/* Step Dots indicator */}
-          <div className="flex items-center gap-1.5">
-            {TOUR_STEPS.map((s, idx) => (
-              <button
-                key={s.id}
-                onClick={() => handleJumpToStep(idx)}
-                title={`Jump to ${s.title}`}
-                className={`h-2 rounded-full transition-all ${
-                  idx === currentStepIndex 
-                    ? 'w-6 bg-emerald-600' 
-                    : 'w-2 bg-slate-300 hover:bg-slate-400'
-                }`}
-              />
-            ))}
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center sm:justify-between gap-3">
+          {/* Step Dots indicator & Step counter */}
+          <div className="flex items-center justify-between sm:justify-start w-full sm:w-auto gap-2">
+            <span className="text-[11px] font-bold text-slate-400 font-mono sm:hidden">
+              {currentStepIndex + 1}/{TOUR_STEPS.length}
+            </span>
+            <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto py-0.5">
+              {TOUR_STEPS.map((s, idx) => (
+                <button
+                  key={s.id}
+                  onClick={() => handleJumpToStep(idx)}
+                  title={`Jump to ${s.title}`}
+                  className={`h-1.5 sm:h-2 rounded-full transition-all ${
+                    idx === currentStepIndex 
+                      ? 'w-5 sm:w-6 bg-emerald-600' 
+                      : 'w-1.5 sm:w-2 bg-slate-300 hover:bg-slate-400'
+                  }`}
+                />
+              ))}
+            </div>
+            {/* Mobile skip link on the right of dots */}
+            <button
+              onClick={handleFinish}
+              className="text-xs font-semibold text-slate-400 hover:text-slate-700 sm:hidden px-1.5 py-0.5"
+            >
+              Skip
+            </button>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             {!isFirst && (
               <button
                 onClick={handleBack}
-                className="px-3.5 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1 transition-colors"
+                className="flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 transition-colors"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Back
@@ -322,23 +334,23 @@ export const OnboardingTour = ({ isOpen, onClose, onSwitchTab }) => {
 
             <button
               onClick={handleFinish}
-              className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+              className="hidden sm:inline-flex px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
             >
               Skip
             </button>
 
             <button
               onClick={handleNext}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center gap-1.5 transition-all"
+              className="flex-1 sm:flex-initial px-4 sm:px-5 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center justify-center gap-1.5 transition-all shrink-0"
             >
               {isLast ? (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  Finish Tour & Explore!
+                  <span>Finish Tour</span>
                 </>
               ) : (
                 <>
-                  Next Feature
+                  <span>Next Feature</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}
