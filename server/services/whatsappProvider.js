@@ -79,7 +79,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
       const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      deliveredText = `Eco Green Solar Support\nNamaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      deliveredText = `Eco Green Solar Support\nDear ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -100,7 +100,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
         ]
       };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
-      deliveredText = `Namaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician of Eco Green Solar has been assigned to your ticket No: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician Name: *${cleanParam(variables.technician_name, 'Field Technician')}*\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
+      deliveredText = `Dear ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician of Eco Green Solar has been assigned to your ticket No: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician Name: *${cleanParam(variables.technician_name, 'Field Technician')}*\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
 
       payload.type = 'template';
       payload.template = {
@@ -145,7 +145,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
         ]
       };
     } else if (templateName === 'complaint_resolved') {
-      deliveredText = `Service Resolved - Eco Green Solar\nNamaste ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nYour solar equipment complaint for Ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')} has been marked RESOLVED by technician ${cleanParam(variables.technician_name, 'Technician')}.\n\nResolution Notes: ${cleanParam(variables.notes, 'Service inspection completed successfully.')}\n\nPlease rate your service experience here: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      deliveredText = `Service Resolved - Eco Green Solar\nDear ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nYour solar equipment complaint for Ticket ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')} has been marked RESOLVED by technician ${cleanParam(variables.technician_name, 'Technician')}.\n\nResolution Notes: ${cleanParam(variables.notes, 'Service inspection completed successfully.')}\n\nPlease rate your service experience here: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -291,7 +291,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
 
-      deliveredText = `*Eco Green Solar Closure*\n\nNamaste, ${custName}, your complaint *${tktId}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience:*\n${cleanTrackingUrl}\n\n- Eco Green Solar Care`;
+      deliveredText = `*Eco Green Solar Closure*\n\nDear ${custName}, your complaint *${tktId}* has been resolved and closed. Thank you for choosing clean energy!\n\n*Please rate your service experience:*\n${cleanTrackingUrl}\n\n- Eco Green Solar Care`;
 
       payload.type = 'template';
       payload.template = {
@@ -316,7 +316,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const reason = cleanParam(variables.reason || variables.notes, 'Issue recurring / follow-up requested');
       const techInfo = techName ? `\n\n👷 *Assigned Technician:* ${techName}${techPhone ? ` (${techPhone})` : ''}` : '';
 
-      deliveredText = `☀️ *Eco Green Solar Priority Alert*\n\nNamaste, ${custName}, your complaint *${tktId}* has been *REOPENED* upon your request.\n\n⚠️ *Reason:* ${reason}${techInfo}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n*Track:* ${cleanTrackingUrl}\n- Eco Green Solar`;
+      deliveredText = `☀️ *Eco Green Solar Priority Alert*\n\nDear ${custName}, your complaint *${tktId}* has been *REOPENED* upon your request.\n\n⚠️ *Reason:* ${reason}${techInfo}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n*Track:* ${cleanTrackingUrl}\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {

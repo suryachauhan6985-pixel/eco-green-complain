@@ -3244,7 +3244,7 @@ export const ComplaintDetailDrawer = ({
                           className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/40 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
                         />
                         <p className="text-[10px] text-slate-500">
-                          Ye reason likhne ke baad hi niche ka collect payment button active hoga.
+                          Providing this reason is mandatory to unlock the payment collection button.
                         </p>
                       </div>
                     )}
@@ -3266,7 +3266,7 @@ export const ComplaintDetailDrawer = ({
                           className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/30 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
                         />
                         <p className="text-[10px] text-slate-500">
-                          Kripya on-site payment collect karne ka karan aur approval likhein.
+                          Please state the reason and authorization for collecting on-site payment.
                         </p>
                       </div>
                     )}
@@ -3324,7 +3324,7 @@ export const ComplaintDetailDrawer = ({
                             ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
                             : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-700/20 active:scale-95 cursor-pointer'
                         }`}
-                        title={isReasonRequired && !hasValidReason ? 'Kripya approval reason likhein tabhi button unlock hoga' : 'Record Payment'}
+                        title={isReasonRequired && !hasValidReason ? 'Please provide the approval reason to unlock payment submission' : 'Record Payment'}
                       >
                         {savingPayment ? (
                           <>

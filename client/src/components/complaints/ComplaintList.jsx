@@ -216,7 +216,7 @@ export const ComplaintList = ({
     if (currentUser?.role === 'technician') {
       const displayStatus = getDisplayStatus(c.status);
       const waMessage = encodeURIComponent(
-        `Namaste ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${displayStatus}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
+        `Dear ${c.customer_name},\nRegarding your Eco Green Solar complaint (${c.ticket_id}) for ${c.product_type}.\nStatus: ${displayStatus}\nAssigned Technician: ${c.technician_name || 'Assigned shortly'}.\nEco Green Solar Helpdesk.`
       );
       window.open(`https://wa.me/${cleanPhone}?text=${waMessage}`, '_blank');
       return;
@@ -568,7 +568,7 @@ export const ComplaintList = ({
                     const displayStatus = getDisplayStatus(c.status);
                     const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
                     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
-                      `Namaste ${c.customer_name},\nRegarding your Eco Green Solar ticket (${c.ticket_id}).\nStatus: ${displayStatus}.\nEco Green Solar Support.`
+                      `Dear ${c.customer_name},\nRegarding your Eco Green Solar ticket (${c.ticket_id}).\nStatus: ${displayStatus}.\nEco Green Solar Support.`
                     )}`;
 
                   return (

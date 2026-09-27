@@ -446,7 +446,7 @@ export const Navbar = ({
                             className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
                           >
                             <Compass className="w-4 h-4" />
-                            <span>App Feature Tour (गाइड देखें)</span>
+                            <span>App Feature Tour (Quick Guide)</span>
                           </button>
                         )}
 

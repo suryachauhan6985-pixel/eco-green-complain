@@ -233,7 +233,7 @@ export const AppUpdateModal = () => {
                 ) : (
                   <>
                     <Download className="w-4 h-4" />
-                    <span>Update Now / अभी अपडेट करें</span>
+                    <span>Update Now</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </>
                 )}

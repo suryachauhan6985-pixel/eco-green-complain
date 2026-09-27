@@ -813,7 +813,7 @@ function migrateNotificationTemplates() {
         meta_status: 'APPROVED',
         is_active: 1,
         channel: 'whatsapp',
-        whatsapp_body: `☀️ *Eco Green Solar - Field Service Desk*\n\nNamaste *{{customer_name}}*,\n\nThis is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\nI am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n📞 Helpdesk: +91 78784 44414\n- Eco Green Technical Services`,
+        whatsapp_body: `☀️ *Eco Green Solar - Field Service Desk*\n\nDear *{{customer_name}}*,\n\nThis is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\nI am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n📞 Helpdesk: +91 78784 44414\n- Eco Green Technical Services`,
         email_subject: `[Eco Green Solar] Service Visit Inspection - Ticket #{{complaint_id}}`,
         email_body: `Dear {{customer_name}},\n\nYour assigned service technician {{technician_name}} is preparing to visit your site regarding complaint ticket #{{complaint_id}} ({{product_type}}).\n\nPlease ensure premises and rooftop access are available upon arrival.\n\nHelpline: +91 78784 44414\n- Eco Green Solar Technical Services`
       }

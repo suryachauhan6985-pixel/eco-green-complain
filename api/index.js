@@ -198,7 +198,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
       const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      renderedBody = `Dear ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
       
       payload.type = 'template';
       payload.template = {
@@ -220,7 +220,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Technician');
-      renderedBody = `Namaste *${custName}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *${ticketId}*.\n\nTechnician Name: *${techName}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: ${trackingUrl}\n\nEco Green Solar Customer Care.`;
+      renderedBody = `Dear *${custName}*,\n\nA certified technician of Eco Green Solar has been assigned to your Ticket No.: *${ticketId}*.\n\nTechnician Name: *${techName}*\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\nTrack visit live: ${trackingUrl}\n\nEco Green Solar Customer Care.`;
 
       payload.type = 'template';
       payload.template = {
@@ -275,7 +275,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Technician');
       const resNotes = cleanParam(variables.resolution_notes || variables.closure_remarks, 'Service completed');
-      renderedBody = `Namaste *${custName}*,\n\nYour solar equipment complaint for Ticket No.: *${ticketId}* has been marked *RESOLVED* by technician - *${techName}*.\n\nResolution Notes: *${resNotes}*\n\nPlease rate your service experience here: *${trackingUrl}*\n\nThank you for choosing *Eco Green Solar*.`;
+      renderedBody = `Dear *${custName}*,\n\nYour solar equipment complaint for Ticket No.: *${ticketId}* has been marked *RESOLVED* by technician - *${techName}*.\n\nResolution Notes: *${resNotes}*\n\nPlease rate your service experience here: *${trackingUrl}*\n\nThank you for choosing *Eco Green Solar*.`;
 
       payload.type = 'template';
       payload.template = {
@@ -296,7 +296,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const remarks = cleanParam(variables.closure_remarks || variables.notes, 'Issue resolved and verified.');
-      renderedBody = `☀️ *Eco Green Solar - Ticket Closed*\n\nNamaste *${custName}*,\n\nYour service complaint *${ticketId}* has been verified and successfully *CLOSED*.\n\n📝 *Closure Remarks:* ${remarks}\n\n🔗 *View Ticket Summary & Rate Service:* ${trackingUrl}\n\nIf you have any further questions, please reach our helpline at +91 78784 44414.\n\nThank you for choosing *Eco Green Solar Care*.`;
+      renderedBody = `☀️ *Eco Green Solar - Ticket Closed*\n\nDear *${custName}*,\n\nYour service complaint *${ticketId}* has been verified and successfully *CLOSED*.\n\n📝 *Closure Remarks:* ${remarks}\n\n🔗 *View Ticket Summary & Rate Service:* ${trackingUrl}\n\nIf you have any further questions, please reach our helpline at +91 78784 44414.\n\nThank you for choosing *Eco Green Solar Care*.`;
 
       payload.type = 'template';
       payload.template = {
@@ -319,7 +319,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const techPhone = cleanParam(variables.technician_phone, '');
       const techInfo = techName ? `\n\n👷 *Assigned Technician:* ${techName}${techPhone ? ` (${techPhone})` : ''}` : '';
 
-      renderedBody = `☀️ *Eco Green Solar Priority Alert*\n\nNamaste *${custName}*,\n\nYour complaint ticket *${ticketId}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reason}${techInfo}\n\nOur service technician will coordinate with you shortly to inspect and resolve your system.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+      renderedBody = `☀️ *Eco Green Solar Priority Alert*\n\nDear *${custName}*,\n\nYour complaint ticket *${ticketId}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reason}${techInfo}\n\nOur service technician will coordinate with you shortly to inspect and resolve your system.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
 
       payload.type = 'template';
       payload.template = {
@@ -2944,7 +2944,7 @@ app.post('/api/complaints/:id/close', authenticateToken, requireRole('admin', 's
         waResult = await sendWhatsApp({
           to: comp.customer_phone,
           templateName: 'complaint_closed',
-          message: `☀️ *Eco Green Solar - Ticket Closed*\n\nNamaste *${comp.customer_name}*,\n\nYour service complaint *${comp.ticket_id}* has been verified and successfully *CLOSED*.\n\n📝 *Closure Remarks:* ${remarks}\n\n🔗 *View Ticket Summary & Rate Service:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
+          message: `☀️ *Eco Green Solar - Ticket Closed*\n\nDear *${comp.customer_name}*,\n\nYour service complaint *${comp.ticket_id}* has been verified and successfully *CLOSED*.\n\n📝 *Closure Remarks:* ${remarks}\n\n🔗 *View Ticket Summary & Rate Service:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`,
           variables: {
             customer_name: comp.customer_name,
             ticket_id: comp.ticket_id,
@@ -3113,7 +3113,7 @@ app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', '
         ? `\n\n👷 *Assigned Technician:* ${comp.technician_name}${comp.technician_phone ? `\n📞 *Mobile:* ${comp.technician_phone}` : ''}`
         : '';
 
-      const custMessage = `☀️ *Eco Green Solar Priority Alert*\n\nNamaste *${comp.customer_name}*,\n\nYour complaint ticket *${comp.ticket_id}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reopenReasonText}${techInfoText}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live Status:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+      const custMessage = `☀️ *Eco Green Solar Priority Alert*\n\nDear *${comp.customer_name}*,\n\nYour complaint ticket *${comp.ticket_id}* has been *REOPENED* for further inspection and service follow-up.\n\n⚠️ *Reason for Reopening:* ${reopenReasonText}${techInfoText}\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live Status:* ${APP_URL}/track/${comp.ticket_id}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
 
       try {
         customerWaResult = await sendWhatsApp({

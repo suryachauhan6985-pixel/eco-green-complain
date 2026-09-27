@@ -38,7 +38,7 @@ function checkForAutoSend(force = false) {
                           document.querySelector('div[role="dialog"]');
     if (invalidDialog) {
       const dialogText = invalidDialog.innerText || "";
-      if (dialogText.toLowerCase().includes("invalid") || dialogText.toLowerCase().includes("not on whatsapp") || dialogText.toLowerCase().includes("अमान्य")) {
+      if (dialogText.toLowerCase().includes("invalid") || dialogText.toLowerCase().includes("not on whatsapp")) {
         console.warn("[MasterRelay Content] Invalid number dialog detected.");
         clearInterval(checkInterval);
         const okBtn = invalidDialog.querySelector("button");
@@ -106,7 +106,7 @@ function findSendButton() {
   }
 
   // Method B: aria-label
-  const ariaSend = document.querySelector('button[aria-label="Send"], button[aria-label="भेजें"]');
+  const ariaSend = document.querySelector('button[aria-label="Send"]');
   if (ariaSend && !ariaSend.disabled) return ariaSend;
 
   // Method C: data-tab="11" (standard send button in WhatsApp Web)

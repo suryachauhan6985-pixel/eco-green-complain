@@ -1,13 +1,13 @@
 {
-  "version": "2.4.9",
-  "buildTime": 1790525200000,
+  "version": "2.5.0",
+  "buildTime": 1790526000000,
   "releaseDate": "2026-09-27",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.4.9",
-  "summary": "Resolved Complaint Workflow Freeze & Stage Lock Protection",
+  "title": "Eco Green Solar CMS v2.5.0",
+  "summary": "Standardized Official English Language Across All Workflows & Notifications",
   "features": [
-    "🔒 Stage & Edit Lock: Once a complaint is marked Resolved, previous stages, re-resolving, editing details, follow-up visit logs, and payments are permanently frozen.",
-    "🛡️ Staff/Admin Reopen Control: Reopen flow is strictly accessible only to Admin and Staff; removed completely from technician views.",
-    "👁️ View-Only Documents: Attached documents and closing proofs cannot be deleted once tickets are resolved or closed."
+    "🌐 Complete English Localization: Converted all instructions, modal alerts, tooltips, and system dialogs to standard official English.",
+    "✉️ Professional Notification Templates: Standardized WhatsApp and email communications with formal English greetings and copy.",
+    "🛡️ Clean Codebase: Eliminated all hardcoded regional language strings across client, server, and relay extensions."
   ]
 }

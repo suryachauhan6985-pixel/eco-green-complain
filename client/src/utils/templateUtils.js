@@ -195,7 +195,7 @@ export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
 
   const defaultBody = 
     `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
-    `Namaste *{{customer_name}}*,\n\n` +
+    `Dear *{{customer_name}}*,\n\n` +
     `This is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\n` +
     `I am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n` +
     `📞 Helpdesk: +91 78784 44414\n` +

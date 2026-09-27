@@ -155,7 +155,7 @@ export const WhatsAppWebInbox = ({
   // New Chat Modal state
   const [newChatPhone, setNewChatPhone] = useState('');
   const [newChatName, setNewChatName] = useState('');
-  const [newChatMessage, setNewChatMessage] = useState('Namaste, greetings from Eco Green Solar! How can we assist you today?');
+  const [newChatMessage, setNewChatMessage] = useState('Hello, greetings from Eco Green Solar! How can we assist you today?');
   const [newChatVerifying, setNewChatVerifying] = useState(false);
   const [newChatVerification, setNewChatVerification] = useState(null);
   const [startingChat, setStartingChat] = useState(false);
