@@ -446,6 +446,72 @@ export const NotificationProvider = ({ children }) => {
     } catch (_) {}
   }, [currentUser, getUserKeys, isNotificationForUser]);
 
+  // Mark all notifications for a specific ticket/complaint as read
+  const markTicketAsRead = useCallback((ticketOrComplaintId) => {
+    if (!ticketOrComplaintId || !currentUser) return;
+    const userKeys = getUserKeys(currentUser);
+    const targetKey = String(ticketOrComplaintId).trim().toLowerCase();
+
+    setNotifications(prev => {
+      const updated = prev.map(n => {
+        const notifTicket = String(n.ticketId || '').trim().toLowerCase();
+        const notifComp = String(n.complaintId || '').trim().toLowerCase();
+        if (notifTicket === targetKey || notifComp === targetKey) {
+          addPermanentReadId(n.id);
+          const currentRead = Array.isArray(n.readBy) ? n.readBy : [];
+          const combined = Array.from(new Set([...currentRead, ...userKeys, 'read']));
+          return { ...n, readBy: combined };
+        }
+        return n;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+
+    setActivePopup(prev => {
+      const prevTicket = String(prev?.ticketId || '').trim().toLowerCase();
+      const prevComp = String(prev?.complaintId || '').trim().toLowerCase();
+      return (prevTicket === targetKey || prevComp === targetKey) ? null : prev;
+    });
+  }, [currentUser, getUserKeys]);
+
+  // Delete a single notification completely
+  const deleteNotification = useCallback((notificationId) => {
+    if (!notificationId) return;
+    setNotifications(prev => {
+      const updated = prev.filter(n => n.id !== notificationId);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+    setActivePopup(prev => prev?.id === notificationId ? null : prev);
+  }, []);
+
+  // Delete all notifications belonging to a specific ticket
+  const deleteNotificationsForTicket = useCallback((ticketOrComplaintId) => {
+    if (!ticketOrComplaintId) return;
+    const targetKey = String(ticketOrComplaintId).trim().toLowerCase();
+    setNotifications(prev => {
+      const updated = prev.filter(n => {
+        const notifTicket = String(n.ticketId || '').trim().toLowerCase();
+        const notifComp = String(n.complaintId || '').trim().toLowerCase();
+        return notifTicket !== targetKey && notifComp !== targetKey;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+    setActivePopup(prev => {
+      const prevTicket = String(prev?.ticketId || '').trim().toLowerCase();
+      const prevComp = String(prev?.complaintId || '').trim().toLowerCase();
+      return (prevTicket === targetKey || prevComp === targetKey) ? null : prev;
+    });
+  }, []);
+
   // Clear all notifications
   const clearAllNotifications = useCallback(() => {
     setNotifications([]);
@@ -487,8 +553,12 @@ export const NotificationProvider = ({ children }) => {
     activePopup,
     addNotification,
     markAsRead,
+    markTicketAsRead,
     markAllAsRead,
+    deleteNotification,
+    deleteNotificationsForTicket,
     clearAllNotifications,
+    clearNotifications: clearAllNotifications,
     dismissPopup,
     dismissAllPopups,
     fetchFromBackend,

@@ -10,13 +10,125 @@ import {
   ChevronDown, ChevronUp, Layers, RotateCcw, Check
 } from 'lucide-react';
 
+// SwipeableCard Component (Swipe left or right to dismiss / clear)
+const SwipeableCard = ({ children, onDismiss, disabled = false, className = '' }) => {
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDismissing, setIsDismissing] = useState(false);
+  const [direction, setDirection] = useState('right');
+  const startCoordRef = React.useRef({ x: 0, y: 0 });
+
+  const handleTouchStart = (e) => {
+    if (disabled) return;
+    const t = e.touches[0];
+    startCoordRef.current = { x: t.clientX, y: t.clientY };
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDragging || disabled) return;
+    const t = e.touches[0];
+    const diffX = t.clientX - startCoordRef.current.x;
+    const diffY = t.clientY - startCoordRef.current.y;
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      setDragX(diffX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging || disabled) return;
+    setIsDragging(false);
+    if (Math.abs(dragX) > 75) {
+      const dir = dragX > 0 ? 'right' : 'left';
+      setDirection(dir);
+      setIsDismissing(true);
+      setTimeout(() => {
+        if (onDismiss) onDismiss();
+      }, 180);
+    } else {
+      setDragX(0);
+    }
+  };
+
+  const handleMouseDown = (e) => {
+    if (disabled || e.button !== 0) return;
+    if (e.target.closest('button') || e.target.closest('a')) return;
+    startCoordRef.current = { x: e.clientX, y: e.clientY };
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || disabled) return;
+    const diffX = e.clientX - startCoordRef.current.x;
+    setDragX(diffX);
+  };
+
+  const handleMouseUp = () => {
+    if (!isDragging || disabled) return;
+    setIsDragging(false);
+    if (Math.abs(dragX) > 75) {
+      const dir = dragX > 0 ? 'right' : 'left';
+      setDirection(dir);
+      setIsDismissing(true);
+      setTimeout(() => {
+        if (onDismiss) onDismiss();
+      }, 180);
+    } else {
+      setDragX(0);
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl group/swipe select-none">
+      {dragX !== 0 && (
+        <div 
+          className={`absolute inset-0 flex items-center px-4 rounded-2xl transition-colors ${
+            dragX > 0 
+              ? 'justify-start bg-rose-500 text-white' 
+              : 'justify-end bg-rose-500 text-white'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider animate-pulse">
+            <Trash2 className="w-4 h-4" />
+            <span>Dismiss</span>
+          </div>
+        </div>
+      )}
+
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{
+          transform: isDismissing 
+            ? (direction === 'right' ? 'translateX(105%)' : 'translateX(-105%)') 
+            : `translateX(${dragX}px)`,
+          opacity: isDismissing ? 0 : Math.max(0.4, 1 - Math.abs(dragX) / 280),
+          transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.2s ease'
+        }}
+        className={className}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
   const { currentUser, unreadSimulatedCount, setUnreadSimulatedCount } = useAuth();
   const { 
     notifications, 
     unreadCount, 
     markAsRead, 
+    markTicketAsRead,
     markAllAsRead, 
+    deleteNotification,
+    deleteNotificationsForTicket,
     clearNotifications,
     isUnread 
   } = useNotifications();
@@ -339,18 +451,23 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={markAllAsRead}
-                      title="Mark all as read"
-                      className="flex items-center gap-1 px-2.5 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md font-bold transition-colors cursor-pointer text-xs"
-                    >
-                      <CheckCheck className="w-3.5 h-3.5" />
-                      <span>Mark all read</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      markAllAsRead();
+                      showToast('All notifications marked as read', 'success');
+                    }}
+                    disabled={unreadCount === 0}
+                    title="Mark all notifications as read"
+                    className="flex items-center gap-1 px-2.5 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40 disabled:pointer-events-none rounded-md font-bold transition-colors cursor-pointer text-xs"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>Mark all read</span>
+                  </button>
+
                   {notifications.length > 0 && (
                     <button
+                      type="button"
                       onClick={handleClearInApp}
                       title="Clear all alerts"
                       className="flex items-center gap-1 px-2.5 py-1 text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md font-bold transition-colors cursor-pointer text-xs"
@@ -388,247 +505,352 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                       const BadgeIcon = badge.icon;
 
                       return (
-                        <div
+                        <SwipeableCard
                           key={notif.id}
-                          onClick={() => handleOpenTicket(notif)}
-                          className={`group relative p-3.5 rounded-2xl border transition-all cursor-pointer shadow-2xs ${
-                            unread 
-                              ? 'bg-emerald-50/70 border-emerald-300 hover:border-emerald-400 hover:shadow-xs' 
-                              : 'bg-white border-slate-200 hover:border-slate-300'
-                          }`}
+                          onDismiss={() => {
+                            deleteNotification(notif.id);
+                            showToast('Alert dismissed', 'info');
+                          }}
                         >
-                          {/* Unread indicator beacon */}
-                          {unread && (
-                            <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Unread</span>
+                          <div
+                            onClick={() => handleOpenTicket(notif)}
+                            className={`group relative p-3.5 rounded-2xl border transition-all cursor-pointer shadow-2xs ${
+                              unread 
+                                ? 'bg-emerald-50/70 border-emerald-300 hover:border-emerald-400 hover:shadow-xs' 
+                                : 'bg-white border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            {/* Top Right Actions: Unread Beacon, Mark as Read, Dismiss (X) */}
+                            <div className="absolute top-3 right-3 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              {unread && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    markAsRead(notif.id);
+                                    showToast('Alert marked as read', 'success');
+                                  }}
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="Mark as read"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>Mark read</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  deleteNotification(notif.id);
+                                  showToast('Alert dismissed', 'info');
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Dismiss notification (or swipe left/right)"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                          )}
 
-                          <div className="flex items-start gap-3">
-                            <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${badge.bg}`}>
-                              <BadgeIcon className="w-4 h-4" />
-                            </div>
-
-                            <div className="flex-1 min-w-0 pr-12">
-                              {/* Type tag & Ticket ID */}
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg}`}>
-                                  {badge.label}
-                                </span>
-                                {notif.ticketId && (
-                                  <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                                    {notif.ticketId}
-                                  </span>
-                                )}
+                            <div className="flex items-start gap-3">
+                              <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${badge.bg}`}>
+                                <BadgeIcon className="w-4 h-4" />
                               </div>
 
-                              <h5 className="font-bold text-xs text-slate-900 leading-snug">
-                                {notif.title}
-                              </h5>
-
-                              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                                {notif.message}
-                              </p>
-
-                              {/* Meta footer: Actor, Timestamp, View CTA */}
-                              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                                <div className="flex items-center gap-1.5">
-                                  <Clock className="w-3 h-3 text-slate-400" />
-                                  <span>{formatRelativeTime(notif.createdAt)}</span>
-                                  {notif.performedByName && (
-                                    <>
-                                      <span>•</span>
-                                      <span className="text-slate-600 font-medium">By {notif.performedByName}</span>
-                                    </>
+                              <div className="flex-1 min-w-0 pr-16 sm:pr-24">
+                                {/* Type tag & Ticket ID */}
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg}`}>
+                                    {badge.label}
+                                  </span>
+                                  {notif.ticketId && (
+                                    <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                      {notif.ticketId}
+                                    </span>
+                                  )}
+                                  {unread && (
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                                   )}
                                 </div>
 
-                                <span className="text-emerald-700 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[11px]">
-                                  <span>Open Ticket</span>
-                                  <ArrowRight className="w-3 h-3" />
-                                </span>
+                                <h5 className="font-bold text-xs text-slate-900 leading-snug">
+                                  {notif.title}
+                                </h5>
+
+                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                  {notif.message}
+                                </p>
+
+                                {/* Meta footer: Actor, Timestamp, View CTA */}
+                                <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                  <div className="flex items-center gap-1.5">
+                                    <Clock className="w-3 h-3 text-slate-400" />
+                                    <span>{formatRelativeTime(notif.createdAt)}</span>
+                                    {notif.performedByName && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-slate-600 font-medium">By {notif.performedByName}</span>
+                                      </>
+                                    )}
+                                  </div>
+
+                                  <span className="text-emerald-700 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[11px]">
+                                    <span>Open Ticket</span>
+                                    <ArrowRight className="w-3 h-3" />
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
+                        </SwipeableCard>
                       );
                     }
 
-                    // CASE 2: Group of Multiple Notifications for the Same Ticket (Mobile-Style Accordion Stack)
+                    // CASE 2: Group of Multiple Notifications for the Same Ticket (Windows / Mobile Stack with Exterior Actions)
                     const isExpanded = !!expandedGroups[group.key];
                     const hasUnread = group.unreadCount > 0;
                     const latestBadge = getNotificationBadge(group.latestNotif.type);
                     const LatestIcon = latestBadge.icon;
 
                     return (
-                      <div
+                      <SwipeableCard
                         key={group.key}
-                        className={`group relative rounded-2xl border transition-all shadow-xs ${
-                          hasUnread 
-                            ? 'bg-gradient-to-br from-emerald-50/90 to-teal-50/60 border-emerald-300' 
-                            : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
+                        onDismiss={() => {
+                          deleteNotificationsForTicket(group.key);
+                          showToast(`Dismissed ${group.ticketId || 'ticket'} updates`, 'info');
+                        }}
                       >
-                        {/* Mobile stacked visual shadow layer beneath card when collapsed */}
-                        {!isExpanded && (
-                          <>
-                            <div className="absolute -bottom-1 left-2.5 right-2.5 h-2 bg-slate-200/60 border border-slate-300/60 rounded-b-xl -z-10" />
-                            <div className="absolute -bottom-2 left-5 right-5 h-2 bg-slate-100/40 border border-slate-200/40 rounded-b-xl -z-20" />
-                          </>
-                        )}
-
-                        {/* Stack Header / Clickable Summary */}
                         <div
-                          onClick={(e) => toggleGroup(group.key, e)}
-                          className="p-3.5 cursor-pointer flex flex-col gap-2"
+                          className={`group relative rounded-2xl border transition-all shadow-xs ${
+                            hasUnread 
+                              ? 'bg-gradient-to-br from-emerald-50/90 to-teal-50/60 border-emerald-300' 
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-800 text-white text-[11px] font-mono font-bold shadow-2xs">
-                                <Layers className="w-3.5 h-3.5 text-emerald-200" />
-                                <span>{group.ticketId || 'Complaint Updates'}</span>
-                              </div>
-                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                                {group.items.length} Updates
-                              </span>
-                              {hasUnread && (
-                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 animate-pulse shadow-2xs">
-                                  {group.unreadCount} Unread
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Expand / Collapse Button */}
-                            <button
-                              type="button"
-                              onClick={(e) => toggleGroup(group.key, e)}
-                              className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors flex items-center gap-1 text-xs font-bold shrink-0 cursor-pointer"
-                            >
-                              <span className="text-[11px]">{isExpanded ? 'Collapse' : `View all (${group.items.length})`}</span>
-                              {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-700" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
-                            </button>
-                          </div>
-
-                          {/* Customer Name */}
-                          {group.customerName && (
-                            <div className="text-xs font-bold text-slate-800">
-                              <span>Customer: {group.customerName}</span>
-                            </div>
+                          {/* Mobile stacked visual shadow layer beneath card when collapsed */}
+                          {!isExpanded && (
+                            <>
+                              <div className="absolute -bottom-1 left-2.5 right-2.5 h-2 bg-slate-200/60 border border-slate-300/60 rounded-b-xl -z-10" />
+                              <div className="absolute -bottom-2 left-5 right-5 h-2 bg-slate-100/40 border border-slate-200/40 rounded-b-xl -z-20" />
+                            </>
                           )}
 
-                          {/* Preview of latest action */}
-                          <div className="text-xs text-slate-600 flex items-start gap-2 bg-white/80 p-2 rounded-xl border border-slate-100/80 shadow-2xs">
-                            <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${latestBadge.bg}`}>
-                              <LatestIcon className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-slate-900 truncate text-xs">{group.latestNotif.title}</p>
-                              <p className="text-[11px] text-slate-500 line-clamp-1">{group.latestNotif.message}</p>
-                            </div>
-                            <span className="text-[10px] text-slate-400 shrink-0">{formatRelativeTime(group.latestNotif.createdAt)}</span>
-                          </div>
+                          {/* Stack Header / Clickable Summary */}
+                          <div
+                            onClick={(e) => toggleGroup(group.key, e)}
+                            className="p-3.5 cursor-pointer flex flex-col gap-2"
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-800 text-white text-[11px] font-mono font-bold shadow-2xs">
+                                  <Layers className="w-3.5 h-3.5 text-emerald-200" />
+                                  <span>{group.ticketId || 'Complaint Updates'}</span>
+                                </div>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                  {group.items.length} Updates
+                                </span>
+                                {hasUnread && (
+                                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 animate-pulse shadow-2xs">
+                                    {group.unreadCount} Unread
+                                  </span>
+                                )}
+                              </div>
 
-                          {/* Footer Action Bar */}
-                          <div className="flex items-center justify-between pt-1 border-t border-slate-100/80 text-[11px]">
-                            <span className="text-slate-400 font-medium text-[10px]">
-                              {isExpanded ? 'Click box to collapse' : `Tap to expand all ${group.items.length} ticket updates`}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenTicket(group.latestNotif);
-                              }}
-                              className="text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
-                            >
-                              <span>Open Ticket</span>
-                              <ArrowRight className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
+                              {/* EXTERIOR ACTIONS: Mark As Read directly on ticket header + Dismiss + Expand */}
+                              <div className="flex items-center gap-1.5 shrink-0 ml-auto" onClick={(e) => e.stopPropagation()}>
+                                {hasUnread && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      markTicketAsRead(group.key);
+                                      showToast(`Marked ${group.ticketId || 'ticket'} updates as read`, 'success');
+                                    }}
+                                    className="px-2 py-0.8 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                    title="Mark all updates for this ticket as read without opening"
+                                  >
+                                    <CheckCheck className="w-3.5 h-3.5" />
+                                    <span>Mark as read</span>
+                                  </button>
+                                )}
 
-                        {/* EXPANDED INNER LIST (Mobile Notification Drawer Accordion Style) */}
-                        {isExpanded && (
-                          <div className="p-3 pt-0 border-t border-slate-100 bg-slate-50/70 rounded-b-2xl animate-in fade-in slide-in-from-top-2 duration-200">
-                            <div className="py-2 flex items-center justify-between text-[11px] text-slate-500 font-semibold border-b border-slate-200/60 mb-2.5">
-                              <span>Complaint Timeline Updates ({group.items.length}):</span>
-                              {hasUnread && (
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    group.items.forEach(item => markAsRead(item.id));
+                                  onClick={() => {
+                                    deleteNotificationsForTicket(group.key);
+                                    showToast(`Dismissed ${group.ticketId || 'ticket'} updates`, 'info');
                                   }}
-                                  className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Dismiss this ticket group (or swipe left/right)"
                                 >
-                                  <CheckCheck className="w-3 h-3" />
-                                  <span>Mark ticket updates read</span>
+                                  <X className="w-4 h-4" />
                                 </button>
-                              )}
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => toggleGroup(group.key, e)}
+                                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
+                                  title={isExpanded ? 'Collapse updates' : `View all ${group.items.length} updates`}
+                                >
+                                  <span className="text-[11px] hidden sm:inline">{isExpanded ? 'Collapse' : `View all (${group.items.length})`}</span>
+                                  {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-700" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
+                                </button>
+                              </div>
                             </div>
 
-                            <div className="space-y-2 relative before:absolute before:top-2 before:bottom-2 before:left-3 before:w-0.5 before:bg-emerald-300 pl-0.5">
-                              {group.items.map((notif, idx) => {
-                                const itemUnread = isUnread(notif, currentUser);
-                                const badge = getNotificationBadge(notif.type);
-                                const ItemIcon = badge.icon;
+                            {/* Customer Name */}
+                            {group.customerName && (
+                              <div className="text-xs font-bold text-slate-800">
+                                <span>Customer: {group.customerName}</span>
+                              </div>
+                            )}
 
-                                return (
-                                  <div
-                                    key={notif.id || idx}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenTicket(notif);
-                                    }}
-                                    className={`relative pl-7 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                                      itemUnread
-                                        ? 'bg-emerald-50/90 border-emerald-300 hover:bg-emerald-100/70'
-                                        : 'bg-white border-slate-200 hover:border-slate-300'
-                                    }`}
-                                  >
-                                    {/* Dot on vertical timeline line */}
-                                    <div className={`absolute left-2.5 top-3.5 w-3 h-3 rounded-full border-2 border-white -translate-x-1/2 flex items-center justify-center ${badge.bg}`}>
-                                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-700" />
-                                    </div>
+                            {/* Preview of latest action */}
+                            <div className="text-xs text-slate-600 flex items-start gap-2 bg-white/80 p-2 rounded-xl border border-slate-100/80 shadow-2xs">
+                              <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${latestBadge.bg}`}>
+                                <LatestIcon className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-slate-900 truncate text-xs">{group.latestNotif.title}</p>
+                                <p className="text-[11px] text-slate-500 line-clamp-1">{group.latestNotif.message}</p>
+                              </div>
+                              <span className="text-[10px] text-slate-400 shrink-0">{formatRelativeTime(group.latestNotif.createdAt)}</span>
+                            </div>
 
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${badge.bg}`}>
-                                          {badge.label}
-                                        </span>
-                                        {itemUnread && (
-                                          <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.2 rounded">
-                                            NEW
-                                          </span>
-                                        )}
-                                      </div>
-                                      <span className="text-[10px] text-slate-400 shrink-0">
-                                        {formatRelativeTime(notif.createdAt)}
-                                      </span>
-                                    </div>
-
-                                    <h6 className="font-bold text-xs text-slate-900 mt-1 leading-snug">
-                                      {notif.title}
-                                    </h6>
-                                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                                      {notif.message}
-                                    </p>
-
-                                    <div className="mt-1.5 pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                                      <span>By {notif.performedByName || 'System'}</span>
-                                      <span className="text-emerald-700 font-bold flex items-center gap-0.5 hover:underline">
-                                        <span>Open</span>
-                                        <ArrowRight className="w-2.5 h-2.5" />
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                            {/* Footer Action Bar */}
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-100/80 text-[11px]">
+                              <span className="text-slate-400 font-medium text-[10px]">
+                                {isExpanded ? 'Click box to collapse' : `Tap to expand all ${group.items.length} ticket updates`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenTicket(group.latestNotif);
+                                }}
+                                className="text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                              >
+                                <span>Open Ticket</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
                             </div>
                           </div>
-                        )}
-                      </div>
+
+                          {/* EXPANDED INNER LIST (Windows Action Center Single Updates List) */}
+                          {isExpanded && (
+                            <div className="p-3 pt-0 border-t border-slate-100 bg-slate-50/70 rounded-b-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="py-2 flex items-center justify-between text-[11px] text-slate-500 font-semibold border-b border-slate-200/60 mb-2.5">
+                                <span>Complaint Timeline Updates ({group.items.length}):</span>
+                                {hasUnread && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      markTicketAsRead(group.key);
+                                      showToast(`Marked ${group.ticketId || 'ticket'} updates read`, 'success');
+                                    }}
+                                    className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <CheckCheck className="w-3 h-3" />
+                                    <span>Mark all read</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="space-y-2 relative before:absolute before:top-2 before:bottom-2 before:left-3 before:w-0.5 before:bg-emerald-300 pl-0.5">
+                                {group.items.map((notif, idx) => {
+                                  const itemUnread = isUnread(notif, currentUser);
+                                  const badge = getNotificationBadge(notif.type);
+                                  const ItemIcon = badge.icon;
+
+                                  return (
+                                    <SwipeableCard
+                                      key={notif.id || idx}
+                                      onDismiss={() => {
+                                        deleteNotification(notif.id);
+                                        showToast('Dismissed update', 'info');
+                                      }}
+                                    >
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenTicket(notif);
+                                        }}
+                                        className={`relative pl-7 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                          itemUnread
+                                            ? 'bg-emerald-50/90 border-emerald-300 hover:bg-emerald-100/70'
+                                            : 'bg-white border-slate-200 hover:border-slate-300'
+                                        }`}
+                                      >
+                                        {/* Dot on vertical timeline line */}
+                                        <div className={`absolute left-2.5 top-3.5 w-3 h-3 rounded-full border-2 border-white -translate-x-1/2 flex items-center justify-center ${badge.bg}`}>
+                                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-700" />
+                                        </div>
+
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${badge.bg}`}>
+                                              {badge.label}
+                                            </span>
+                                            {itemUnread && (
+                                              <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.2 rounded">
+                                                NEW
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* Individual Item Actions: Mark read & Dismiss */}
+                                          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                            {itemUnread && (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  markAsRead(notif.id);
+                                                  showToast('Update marked as read', 'success');
+                                                }}
+                                                className="px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded flex items-center gap-0.5 cursor-pointer"
+                                                title="Mark this update as read"
+                                              >
+                                                <Check className="w-2.5 h-2.5" />
+                                                <span>Mark read</span>
+                                              </button>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                deleteNotification(notif.id);
+                                                showToast('Dismissed update', 'info');
+                                              }}
+                                              className="p-0.8 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                              title="Dismiss update (or swipe)"
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                            <span className="text-[10px] text-slate-400 ml-1">
+                                              {formatRelativeTime(notif.createdAt)}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <h6 className="font-bold text-xs text-slate-900 mt-1 leading-snug">
+                                          {notif.title}
+                                        </h6>
+                                        <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                          {notif.message}
+                                        </p>
+
+                                        <div className="mt-1.5 pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                                          <span>By {notif.performedByName || 'System'}</span>
+                                          <span className="text-emerald-700 font-bold flex items-center gap-0.5 hover:underline">
+                                            <span>Open</span>
+                                            <ArrowRight className="w-2.5 h-2.5" />
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </SwipeableCard>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </SwipeableCard>
                     );
                   })
                 )}
