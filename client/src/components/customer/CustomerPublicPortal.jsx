@@ -6,6 +6,7 @@ import {
   Wrench, Phone, Star, RotateCcw, AlertTriangle, Send, ArrowRight
 } from 'lucide-react';
 import { formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
+import { GlobalLoadingOverlay } from '../common/GlobalLoadingOverlay';
 
 const STEPS = [
   { key: 'Registered', label: 'Registered' },
@@ -109,6 +110,9 @@ export const CustomerPublicPortal = ({
 
   const portalBody = (
     <div className="max-w-2xl mx-auto space-y-6">
+      {/* Global 3-Dots Bouncing Loading Overlay */}
+      <GlobalLoadingOverlay isVisible={loading} />
+
       {/* Customer Header Banner */}
       <div className="text-center py-6 px-4 bg-gradient-to-b from-emerald-800 to-teal-900 text-white rounded-3xl shadow-lg">
         {/* Transparent & Enlarged Logo matching login screen */}
@@ -166,7 +170,29 @@ export const CustomerPublicPortal = ({
       </div>
 
       {/* Tracking Result View */}
-      {trackingData?.complaint ? (
+      {loading ? (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-10 text-center space-y-4 animate-in fade-in">
+          {/* 3 Static Green Bouncing Dots matching GlobalLoadingOverlay */}
+          <div className="flex items-center justify-center gap-3 py-4">
+            <div 
+              className="w-4 h-4 rounded-full bg-[#16a34a] animate-bounce" 
+              style={{ animationDelay: '0ms', animationDuration: '0.65s' }} 
+            />
+            <div 
+              className="w-4 h-4 rounded-full bg-[#16a34a] animate-bounce" 
+              style={{ animationDelay: '150ms', animationDuration: '0.65s' }} 
+            />
+            <div 
+              className="w-4 h-4 rounded-full bg-[#16a34a] animate-bounce" 
+              style={{ animationDelay: '300ms', animationDuration: '0.65s' }} 
+            />
+          </div>
+          <h4 className="text-sm font-bold text-slate-800">Searching Service Ticket...</h4>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Checking live database for "{ticketQuery.trim()}". Please wait a moment...
+          </p>
+        </div>
+      ) : trackingData?.complaint ? (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-6 animate-in fade-in">
           {/* Header info */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -331,7 +357,7 @@ export const CustomerPublicPortal = ({
             </div>
           )}
         </div>
-      ) : searched && (
+      ) : searched && !loading && (
         <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-3">
           <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
           <h4 className="font-bold text-slate-800">No complaint found</h4>

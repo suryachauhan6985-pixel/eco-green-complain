@@ -862,17 +862,16 @@ app.get(['/api/location/search', '/api/location/postoffice/:query'], async (req,
 app.get('/version.json', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.json({
-    version: '2.5.7',
-    buildTime: 1790602000000,
+    version: '2.5.8',
+    buildTime: 1790604000000,
     releaseDate: '2026-09-28',
     mandatory: true,
-    title: 'Eco Green Support v2.5.7',
-    summary: 'Eco Green Support Rebranding, Technician WhatsApp Template Control & Mobile Nav Enhancements',
+    title: 'Eco Green Support v2.5.8',
+    summary: 'PWA Service Worker Update, Persistent Notification Clearing & Customer Portal Search Loader',
     features: [
-      '🌿 Official Eco Green Support Rebranding: Upgraded all portal headers, manifests, badges and footers to Eco Green Support.',
-      '📱 Balanced Mobile Bottom Navbar: Seamlessly centered and spaced navigation buttons on mobile viewports.',
-      '💬 Dynamic Technician WhatsApp Message: Fully customizable technician reach-out message in Template Manager.',
-      '💰 Cash Settlement Amount Sync: Real-time collection and settlement figures accurately mapped across all technicians.'
+      '📱 PWA Service Worker & Manifest Refresh: Updated sw.js cache name to ecogreen-support-v258 with network-first manifest checking to refresh installed apps.',
+      '🔔 Permanent In-App Alert Clearing: Clearing all alerts now permanently clears notifications across tabs and prevents them from returning upon refresh or polling.',
+      '⚡ Customer Portal Search Bouncing Loader: Live searching now immediately displays the 3 green animated bouncing dots overlay and feedback card.'
     ]
   });
 });
@@ -1550,14 +1549,18 @@ app.get('/api/complaints/customer-history', authenticateToken, async (req, res) 
 // Customer Public Tracking (Sanitized: No PII, No internal notes, No payment amounts leaked)
 app.get('/api/complaints/track/:query', async (req, res) => {
   try {
-    const q = req.params.query.trim();
+    const rawQ = (req.params.query || '').trim();
+    const cleanPhone = rawQ.replace(/\D/g, '').slice(-10);
+    const upperTicket = rawQ.toUpperCase();
     const compRes = await query(`
       SELECT c.*, t.name as technician_name
       FROM complaints c
       LEFT JOIN technicians t ON t.id = c.assigned_technician_id
-      WHERE c.ticket_id = $1 OR c.customer_phone = $1
+      WHERE UPPER(c.ticket_id) = $1 
+         OR c.ticket_id ILIKE $2
+         OR ($3 != '' AND RIGHT(REGEXP_REPLACE(COALESCE(c.customer_phone, ''), '\\D', '', 'g'), 10) = $3)
       ORDER BY c.created_at DESC LIMIT 1
-    `, [q]);
+    `, [upperTicket, `%${upperTicket}%`, cleanPhone]);
 
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint ticket not found' });
     const complaint = compRes.rows[0];

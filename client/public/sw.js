@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-cms-v5';
+const CACHE_NAME = 'ecogreen-support-v258';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
@@ -21,11 +21,21 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
       );
     })
   );
   self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -36,7 +46,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 1. Navigation requests (HTML page): NETWORK-FIRST
+  // 1. Manifest & Version check: ALWAYS NETWORK-FIRST so app name and updates apply immediately
+  if (url.includes('/manifest.json') || url.includes('/version.json')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // 2. Navigation requests (HTML page): NETWORK-FIRST
   // Guarantees user always gets fresh HTML with latest JS bundle hashes on deploy
   if (event.request.mode === 'navigate') {
     event.respondWith(
@@ -56,7 +82,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Static icons & images: Cache-first with background revalidation
+  // 3. Static icons & images: Cache-first with background revalidation
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {

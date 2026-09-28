@@ -6,6 +6,39 @@ const NotificationContext = createContext();
 
 const STORAGE_KEY = 'egs_in_app_notifications';
 const PERMANENT_READ_KEY = 'egs_read_notification_ids';
+const CLEARED_TIMESTAMP_KEY = 'egs_notifications_cleared_at';
+
+const getClearedTimestamp = () => {
+  try {
+    const raw = localStorage.getItem(CLEARED_TIMESTAMP_KEY);
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch (_) {
+    return 0;
+  }
+};
+
+const isNotificationCleared = (notif) => {
+  if (!notif) return true;
+  const clearedAt = getClearedTimestamp();
+  if (clearedAt <= 0) return false;
+
+  // Check createdAt ISO string
+  if (notif.createdAt) {
+    const time = new Date(notif.createdAt).getTime();
+    if (!isNaN(time) && time <= clearedAt) return true;
+  }
+
+  // Check timestamp embedded in id (e.g. notif_179058..._xxx)
+  if (typeof notif.id === 'string' && notif.id.startsWith('notif_')) {
+    const parts = notif.id.split('_');
+    if (parts[1]) {
+      const idTime = parseInt(parts[1], 10);
+      if (!isNaN(idTime) && idTime <= clearedAt) return true;
+    }
+  }
+
+  return false;
+};
 
 const getPermanentReadIds = () => {
   try {
@@ -62,9 +95,10 @@ export const NotificationProvider = ({ children }) => {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          // Prune legacy dummy notifications immediately
+          // Prune legacy dummy notifications and cleared alerts immediately
           const cleaned = parsed.filter(n => 
             !n.id?.startsWith('notif_init_') && 
+            !isNotificationCleared(n) &&
             !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
           );
           localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
@@ -211,6 +245,7 @@ export const NotificationProvider = ({ children }) => {
   const saveNotifications = useCallback((newNotifs) => {
     const cleaned = (newNotifs || []).filter(n => 
       !n.id?.startsWith('notif_init_') && 
+      !isNotificationCleared(n) &&
       !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
     );
     setNotifications(cleaned);
@@ -229,6 +264,7 @@ export const NotificationProvider = ({ children }) => {
         if (data && Array.isArray(data.notifications)) {
           const cleanRemote = data.notifications.filter(n => 
             !n.id?.startsWith('notif_init_') && 
+            !isNotificationCleared(n) &&
             !['EGS-2026-000114', 'EGS-2026-000106', 'EGS-2026-000116'].includes(n.ticketId)
           );
           
@@ -259,9 +295,9 @@ export const NotificationProvider = ({ children }) => {
               return notifObj;
             });
 
-            // Keep any recent unsynced local creations
+            // Keep any recent unsynced local creations that have not been cleared
             prev.forEach(p => {
-              if (!p.id?.startsWith('notif_init_') && !merged.some(m => m.id === p.id)) {
+              if (!p.id?.startsWith('notif_init_') && !isNotificationCleared(p) && !merged.some(m => m.id === p.id)) {
                 merged.push(p);
               }
             });
@@ -285,11 +321,16 @@ export const NotificationProvider = ({ children }) => {
     fetchFromBackend();
 
     const handleStorageChange = (e) => {
+      if (e.key === CLEARED_TIMESTAMP_KEY || (e.key === STORAGE_KEY && (e.newValue === '[]' || !e.newValue))) {
+        setNotifications([]);
+        setActivePopup(null);
+        return;
+      }
       if (e.key === STORAGE_KEY && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) {
-            const cleaned = parsed.filter(n => !n.id?.startsWith('notif_init_'));
+            const cleaned = parsed.filter(n => !n.id?.startsWith('notif_init_') && !isNotificationCleared(n));
             setNotifications(cleaned);
           }
         } catch (_) {}
@@ -297,12 +338,17 @@ export const NotificationProvider = ({ children }) => {
     };
 
     const handleCustomNotify = (e) => {
-      if (e.detail && !e.detail.id?.startsWith('notif_init_')) {
+      if (e.detail && !e.detail.id?.startsWith('notif_init_') && !isNotificationCleared(e.detail)) {
         setNotifications(prev => {
           const exists = prev.some(n => n.id === e.detail.id);
           return exists ? prev : [e.detail, ...prev];
         });
       }
+    };
+
+    const handleClearedEvent = () => {
+      setNotifications([]);
+      setActivePopup(null);
     };
 
     const handleVisibility = () => {
@@ -312,6 +358,7 @@ export const NotificationProvider = ({ children }) => {
     };
 
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('egs_in_app_notifications_cleared', handleClearedEvent);
     window.addEventListener('egs_in_app_notification_created', handleCustomNotify);
     window.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
@@ -324,6 +371,7 @@ export const NotificationProvider = ({ children }) => {
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('egs_in_app_notifications_cleared', handleClearedEvent);
       window.removeEventListener('egs_in_app_notification_created', handleCustomNotify);
       window.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
@@ -514,10 +562,24 @@ export const NotificationProvider = ({ children }) => {
 
   // Clear all notifications
   const clearAllNotifications = useCallback(() => {
-    setNotifications([]);
-    setActivePopup(null);
+    const now = Date.now();
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(CLEARED_TIMESTAMP_KEY, String(now));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+    } catch (_) {}
+
+    // Mark existing IDs as permanently read as extra safeguard
+    setNotifications(prev => {
+      prev.forEach(n => {
+        if (n.id) addPermanentReadId(n.id);
+      });
+      return [];
+    });
+    setActivePopup(null);
+
+    // Broadcast across windows / tabs
+    try {
+      window.dispatchEvent(new CustomEvent('egs_in_app_notifications_cleared', { detail: { clearedAt: now } }));
     } catch (_) {}
 
     try {

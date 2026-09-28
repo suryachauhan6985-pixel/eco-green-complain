@@ -1263,7 +1263,7 @@ export const api = {
     body: JSON.stringify({ rating, feedback_comments })
   }),
   syncBackupComplaints: () => Promise.resolve({ success: true }),
-  trackTicket: (query) => request(`/complaints/track/${encodeURIComponent(query)}`),
+  trackTicket: (query) => request(`/complaints/track/${encodeURIComponent(query)}`, { showOverlay: true }),
 
   // Technicians
   getTechnicians: () => request('/technicians'),

@@ -1,14 +1,13 @@
 {
-  "version": "2.5.7",
-  "buildTime": 1790602000000,
+  "version": "2.5.8",
+  "buildTime": 1790604000000,
   "releaseDate": "2026-09-28",
   "mandatory": true,
-  "title": "Eco Green Support v2.5.7",
-  "summary": "Eco Green Support Rebranding, Technician WhatsApp Template Control & Mobile Nav Enhancements",
+  "title": "Eco Green Support v2.5.8",
+  "summary": "PWA Service Worker Update, Persistent Notification Clearing & Customer Portal Search Loader",
   "features": [
-    "🌿 Official Eco Green Support Rebranding: Upgraded all portal headers, manifests, badges and footers to Eco Green Support.",
-    "📱 Balanced Mobile Bottom Navbar: Seamlessly centered and spaced navigation buttons on mobile viewports.",
-    "💬 Dynamic Technician WhatsApp Message: Fully customizable technician reach-out message in Template Manager.",
-    "💰 Cash Settlement Amount Sync: Real-time collection and settlement figures accurately mapped across all technicians."
+    "📱 PWA Service Worker & Manifest Refresh: Updated sw.js cache name to ecogreen-support-v258 with network-first manifest checking to refresh installed apps.",
+    "🔔 Permanent In-App Alert Clearing: Clearing all alerts now permanently clears notifications across tabs and prevents them from returning upon refresh or polling.",
+    "⚡ Customer Portal Search Bouncing Loader: Live searching now immediately displays the 3 green animated bouncing dots overlay and feedback card."
   ]
 }
