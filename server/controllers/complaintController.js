@@ -1304,13 +1304,24 @@ async function resolveComplaint(req, res) {
     );
 
     // Notify customer that work is complete
+    let resolvedTechName = null;
+    if (complaint.assigned_technician_id) {
+      try {
+        const assignedTech = db.prepare('SELECT name FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
+        if (assignedTech?.name) resolvedTechName = assignedTech.name;
+      } catch (_) {}
+    }
+    if (!resolvedTechName && role === 'technician') resolvedTechName = performer;
+    if (!resolvedTechName && complaint.technician_name) resolvedTechName = complaint.technician_name;
+    resolvedTechName = resolvedTechName || performer || 'Service Engineer';
+
     notificationService.dispatchAsync({
       complaintId: id,
       templateKey: 'complaint_resolved',
       data: {
         customer_name: complaint.customer_name,
         ticket_id: complaint.ticket_id,
-        technician_name: performer,
+        technician_name: resolvedTechName,
         notes: resolution_notes
       }
     });

@@ -643,6 +643,11 @@ export const ComplaintDetailDrawer = ({
       data.append('resolution_notes', resolutionNotes);
       if (spareParts) data.append('spare_parts_used', spareParts);
 
+      const activeTechName = ticket.technician_name || ticket.assigned_tech_name || (currentUser?.role === 'technician' ? currentUser?.name : '');
+      if (activeTechName) {
+        data.append('technician_name', activeTechName);
+      }
+
       let fallbackFiles = [];
       if (resolutionPhotos.length > 0) {
         showToast(`Uploading ${resolutionPhotos.length} resolution file(s) to cloud storage...`, 'info');

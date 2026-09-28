@@ -862,16 +862,16 @@ app.get(['/api/location/search', '/api/location/postoffice/:query'], async (req,
 app.get('/version.json', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.json({
-    version: '2.5.5',
-    buildTime: 1790595600000,
+    version: '2.5.6',
+    buildTime: 1790596300000,
     releaseDate: '2026-09-28',
     mandatory: true,
-    title: 'Eco Green Solar CMS v2.5.5',
-    summary: 'Mobile Bottom Navbar Viewport Fix & Touch Responsive Navigation',
+    title: 'Eco Green Solar CMS v2.5.6',
+    summary: 'Resolved Complaint WhatsApp Technician Name Fix & Mobile Navigation Enhancements',
     features: [
-      '📱 Responsive Mobile Bottom Navbar: All 7 tabs (Complaints, Field Ops, Collection, WhatsApp, Team, Analytics, + Ticket) fit cleanly without being cut off on any mobile viewport.',
-      '⚡ Adaptive Multi-Viewport Layout: Proportional flex distribution and min-width boundaries eliminate horizontal overflow on Samsung, Redmi, iPhone, and Pixel devices.',
-      '💬 Mobile WhatsApp Templates Access: Quick direct shortcut to WhatsApp message templates added to the mobile user profile menu.'
+      '👨‍🔧 Real Technician Name in Resolution WhatsApp: Fixed customer resolution template so actual assigned technician name is populated instead of default Service Engineer.',
+      '📱 Responsive Mobile Bottom Navbar: All 7 navigation tabs fit seamlessly across all mobile viewports without any horizontal cutoff.',
+      '💬 Meta Approved WhatsApp Delivery: Complete parameter sync for complaint_resolved official templates.'
     ]
   });
 });
@@ -2830,6 +2830,39 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
       ]);
     } catch (_) {}
 
+    // Determine actual technician name for resolution template
+    let resolvedTechName = (req.body.technician_name || '').trim();
+
+    // 1. If assigned_technician_id exists, look up technician name in technicians table
+    const targetTechId = comp?.assigned_technician_id || findComp.rows[0]?.assigned_technician_id;
+    if (!resolvedTechName && targetTechId) {
+      try {
+        const techLookup = await query('SELECT name FROM technicians WHERE id::text = $1 LIMIT 1', [String(targetTechId)]);
+        if (techLookup.rows.length > 0 && techLookup.rows[0].name) {
+          resolvedTechName = techLookup.rows[0].name.trim();
+        }
+      } catch (_) {}
+    }
+
+    // 2. If logged in user is a technician, use their name
+    if (!resolvedTechName && req.user?.role === 'technician' && req.user?.name) {
+      resolvedTechName = req.user.name.trim();
+    }
+
+    // 3. Check complaint columns or join
+    if (!resolvedTechName && comp?.technician_name) {
+      resolvedTechName = comp.technician_name.trim();
+    }
+    if (!resolvedTechName && findComp.rows[0]?.technician_name) {
+      resolvedTechName = findComp.rows[0].technician_name.trim();
+    }
+
+    // 4. Fallback to logged in user name or Service Engineer
+    if (!resolvedTechName && req.user?.name) {
+      resolvedTechName = req.user.name.trim();
+    }
+    resolvedTechName = resolvedTechName || 'Service Engineer';
+
     // Send Feedback Request WhatsApp
     let waResult = null;
     try {
@@ -2839,7 +2872,7 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
         variables: {
           customer_name: comp.customer_name,
           ticket_id: comp.ticket_id,
-          technician_name: comp.technician_name || 'Service Engineer',
+          technician_name: resolvedTechName,
           resolution_notes: resolution_notes || 'All checks passed',
           db_complaint_id: comp.id
         }
