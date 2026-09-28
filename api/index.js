@@ -1550,7 +1550,7 @@ app.get('/api/complaints/customer-history', authenticateToken, async (req, res) 
 app.get('/api/complaints/track/:query', async (req, res) => {
   try {
     const rawQ = (req.params.query || '').trim();
-    const cleanPhone = rawQ.replace(/\D/g, '').slice(-10);
+    const searchPhone = rawQ.replace(/\D/g, '').slice(-10);
     const upperTicket = rawQ.toUpperCase();
     const compRes = await query(`
       SELECT c.*, t.name as technician_name
@@ -1560,7 +1560,7 @@ app.get('/api/complaints/track/:query', async (req, res) => {
          OR c.ticket_id ILIKE $2
          OR ($3 != '' AND RIGHT(REGEXP_REPLACE(COALESCE(c.customer_phone, ''), '\\D', '', 'g'), 10) = $3)
       ORDER BY c.created_at DESC LIMIT 1
-    `, [upperTicket, `%${upperTicket}%`, cleanPhone]);
+    `, [upperTicket, `%${upperTicket}%`, searchPhone]);
 
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint ticket not found' });
     const complaint = compRes.rows[0];
