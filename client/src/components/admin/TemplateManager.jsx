@@ -156,18 +156,9 @@ export const TemplateManager = () => {
         ? res.templates 
         : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
 
-      const verifiedKeys = [
-        'complaint_registered', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
-        'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-        'technician_work_order', 'technician_reminder', 'technician_reach_out_customer',
-        'technician_reopened_work_order', 'technician_reopen_job_transferred',
-        'technician_reassigned_work_order', 'technician_reassigned'
-      ];
-
       const list = rawList.map(t => {
         const isTech = isTechnicianTemplate(t);
-        const isVerified = verifiedKeys.includes(t.template_key);
-        const resolvedMetaStatus = t.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
+        const resolvedMetaStatus = t.meta_status || (t.sync_status === 'SYNCED' ? 'APPROVED' : 'PENDING');
 
         return {
           ...t,
@@ -922,14 +913,48 @@ export const TemplateManager = () => {
 
                         {/* WhatsApp Message Card Bubble */}
                         <div className="bg-white rounded-lg rounded-tl-none p-3 shadow-xs max-w-full text-xs text-[#111b21] space-y-2 relative border border-[#e2e8f0]">
+                          {/* Dynamic Header if present */}
+                          {selectedTemplate?.header_text && (
+                            <div className="font-bold text-slate-900 border-b border-slate-100 pb-1 text-[11px]">
+                              {selectedTemplate.header_text}
+                            </div>
+                          )}
                           <div className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-800">
                             {simulatedWhatsAppPreview || 'Message preview will appear here as you type...'}
                           </div>
+                          {/* Dynamic Footer if present */}
+                          {selectedTemplate?.footer_text && (
+                            <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-1">
+                              {selectedTemplate.footer_text}
+                            </div>
+                          )}
                           <div className="flex items-center justify-end gap-1 text-[10px] text-[#667781] pt-1 border-t border-slate-100">
                             <span>10:45 AM</span>
                             <span className="text-[#53bdeb] font-bold">✓✓</span>
                           </div>
                         </div>
+
+                        {/* Dynamic Action Buttons if present */}
+                        {selectedTemplate?.buttons_json && (() => {
+                          try {
+                            const btns = typeof selectedTemplate.buttons_json === 'string'
+                              ? JSON.parse(selectedTemplate.buttons_json)
+                              : selectedTemplate.buttons_json;
+                            if (Array.isArray(btns) && btns.length > 0) {
+                              return (
+                                <div className="mt-1 space-y-1">
+                                  {btns.map((b, bIdx) => (
+                                    <div key={bIdx} className="bg-white text-[#00a884] py-1.5 px-3 rounded-lg text-center text-xs font-semibold shadow-xs border border-slate-100 flex items-center justify-center gap-1.5">
+                                      {b.type === 'URL' ? <ExternalLink className="w-3 h-3" /> : null}
+                                      <span>{b.text || b.phone_number || 'Action'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            }
+                          } catch (_) {}
+                          return null;
+                        })()}
                       </div>
 
                       <div className="text-[10px] text-slate-600 italic text-center pt-2">

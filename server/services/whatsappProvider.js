@@ -4,6 +4,7 @@
  */
 
 const db = require('../config/database');
+const { buildDynamicPayload } = require('./whatsappTemplateService');
 
 // Official Eco Green Solar Meta Cloud API Credentials (+91 78784 44414)
 const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '1387211441132836';
@@ -68,8 +69,38 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
 
     const isMetaApproved = metaStatus === 'APPROVED' || !metaStatus || META_OFFICIAL_TEMPLATES.has(templateName);
 
-    // If template matches Meta registered templates and is approved, send as official template message
-    if (isMetaApproved && (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer')) {
+    // Primary: Check if template exists in DB with dynamic components synced from Meta
+    let dynamicPayloadBuilt = false;
+    try {
+      const tmplRes = await db.query(
+        'SELECT * FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1',
+        [templateName]
+      );
+      if (tmplRes?.rows?.[0]?.components_json) {
+        const dynamicTmpl = tmplRes.rows[0];
+        const dynamicPayload = buildDynamicPayload(dynamicTmpl, formattedPhone, {
+          ...variables,
+          customer_name: cleanParam(variables.customer_name, 'Valued Customer'),
+          complaint_id: cleanParam(variables.complaint_id || ticket_id, 'Ticket'),
+          product_type: cleanParam(variables.product_type, 'Solar System'),
+          issue_category: cleanParam(variables.issue_category, 'Solar Service'),
+          technician_name: cleanParam(variables.technician_name, 'Field Technician'),
+          feedback_url: cleanTrackingUrl,
+          technician_portal_url: `${defaultLiveUrl}/technician`
+        });
+
+        if (dynamicPayload && dynamicPayload.template) {
+          payload = dynamicPayload;
+          deliveredText = dynamicTmpl.whatsapp_body || deliveredText;
+          dynamicPayloadBuilt = true;
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[WhatsApp] Dynamic template lookup failed, using fallback:', dbErr.message);
+    }
+
+    // If dynamic payload was not built from DB, fallback to registered templates
+    if (!dynamicPayloadBuilt && isMetaApproved && (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer')) {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
