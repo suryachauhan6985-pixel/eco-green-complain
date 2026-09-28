@@ -6,7 +6,6 @@ import { Navbar } from './components/layout/Navbar';
 import { NotificationDrawer } from './components/layout/NotificationDrawer';
 import { NotificationPopup } from './components/common/NotificationPopup';
 import { AppUpdateModal } from './components/common/AppUpdateModal';
-import { AppSplashScreen } from './components/common/AppSplashScreen';
 import { ComplaintList } from './components/complaints/ComplaintList';
 import { NewComplaintModal } from './components/complaints/NewComplaintModal';
 import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDrawer';
@@ -588,11 +587,8 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
-
   return (
     <ErrorBoundary>
-      {showSplash && <AppSplashScreen onFinish={() => setShowSplash(false)} />}
       <AuthProvider>
         <DialogProvider>
           <NotificationProvider>

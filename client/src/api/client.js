@@ -721,24 +721,19 @@ function notifyLoading(isLoading, message = 'Processing...') {
 
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
-  const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) || options.showOverlay;
+  const isBackground = 
+    endpoint.includes('/unread-count') || 
+    endpoint.includes('/meta-status') || 
+    endpoint.startsWith('/auth/me');
+
+  const shouldTrack = !isBackground && options.noOverlay !== true;
   let timerId = null;
 
-  if (isMutation && options.noOverlay !== true) {
+  if (shouldTrack) {
     activeMutationCount++;
     timerId = setTimeout(() => {
-      let msg = 'Processing...';
-      if (endpoint.includes('/reopen')) msg = 'Reopening ticket & dispatching alerts...';
-      else if (endpoint.includes('/assign')) msg = 'Assigning technician & dispatching work order...';
-      else if (endpoint.includes('/close')) msg = 'Finalizing and closing ticket...';
-      else if (endpoint.includes('/resolve')) msg = 'Marking ticket resolved on site...';
-      else if (endpoint.includes('/payment')) msg = 'Recording payment collection...';
-      else if (endpoint.includes('/sync')) msg = 'Synchronizing database...';
-      else if (method === 'POST') msg = 'Processing request...';
-      else if (method === 'PUT') msg = 'Saving updates...';
-      else if (method === 'DELETE') msg = 'Deleting record...';
-      notifyLoading(true, msg);
-    }, 180);
+      notifyLoading(true);
+    }, 90);
   }
 
   const token = getAuthToken();
@@ -803,7 +798,7 @@ async function request(endpoint, options = {}) {
     throw err;
   } finally {
     if (timerId) clearTimeout(timerId);
-    if (isMutation && options.noOverlay !== true) {
+    if (shouldTrack) {
       activeMutationCount = Math.max(0, activeMutationCount - 1);
       if (activeMutationCount === 0) {
         notifyLoading(false);

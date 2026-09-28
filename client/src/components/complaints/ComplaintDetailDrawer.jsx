@@ -1135,26 +1135,6 @@ export const ComplaintDetailDrawer = ({
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
             {loading && !ticket ? (
               <div className="space-y-4 animate-in fade-in duration-200">
-                {/* Modern Pulse Status Bar */}
-                <div className="p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between shadow-2xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-emerald-950 block">
-                        Fetching live ticket details...
-                      </span>
-                      <span className="text-[10px] text-emerald-700 block font-medium">
-                        Loading customer contacts, service location, and field work order
-                      </span>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-emerald-800 bg-white border border-emerald-200 shadow-2xs">
-                    Syncing...
-                  </span>
-                </div>
-
                 {/* Skeleton Card 1: Customer Details */}
                 <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 space-y-3 animate-pulse">
                   <div className="flex items-center justify-between">
