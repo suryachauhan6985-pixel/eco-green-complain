@@ -62,6 +62,63 @@ function parseToLocalDate(dateInput) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function getTemplateHeader(msg) {
+  if (msg.header_text) return msg.header_text;
+  const tName = (msg.template_name || '').toLowerCase();
+  const body = (msg.message_body || '').toLowerCase();
+  if (tName.includes('complaint_registered') || body.includes('complaint has been registered')) return 'Eco Green Solar Support';
+  if (tName.includes('technician_assigned') || body.includes('certified technician of eco green solar has been assigned')) return 'Technician Assigned';
+  if (tName.includes('technician_work_order') || body.includes('new job assignment')) return 'Eco Green Solar - New Job Assignment';
+  if (tName.includes('technician_reassigned') || tName.includes('job_transferred') || body.includes('job transferred')) return 'Eco Green Solar - Job Transferred';
+  if (tName.includes('status') || body.includes('service complaint update')) return 'Eco Green Solar Alert';
+  if (tName.includes('complaint_resolved') || body.includes('work completed')) return 'Service Resolved';
+  if (tName.includes('complaint_closed') || body.includes('rating request')) return 'Eco Green Solar Closure';
+  if (tName.includes('complaint_reopened') || body.includes('reopened')) return 'Eco Green Solar Priority Alert';
+  if (tName.includes('technician_reminder') || body.includes('visit reminder')) return 'Eco Green Solar - Job Reminder';
+  return null;
+}
+
+function getTemplateFooter(msg) {
+  if (msg.footer_text) return msg.footer_text;
+  const tName = (msg.template_name || '').toLowerCase();
+  const body = (msg.message_body || '').toLowerCase();
+  if (tName.includes('technician_assigned') || tName.includes('status') || tName.includes('resolved') || tName.includes('closed') || tName.includes('reopened') || tName.includes('reminder') || body.includes('customer care') || body.includes('reach us')) {
+    return 'Reach us for any Queries';
+  }
+  if (tName.includes('work_order')) {
+    return 'Eco Green Solar Dispatch';
+  }
+  return null;
+}
+
+function renderFormattedWhatsAppText(rawText) {
+  if (!rawText) return null;
+  // Replace old domain if present
+  const text = rawText.replace(/https?:\/\/eco-green-complain\.vprotech\.online/g, 'https://complain.ecogreensolar.co.in');
+  
+  // URL regex to find links and make them clickable
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (urlRegex.test(part)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-[#027eb5] hover:underline font-medium break-all"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 function formatWhatsAppTime(dateInput) {
   if (!dateInput) return '';
   const d = parseToLocalDate(dateInput);
@@ -1104,28 +1161,17 @@ export const WhatsAppWebInbox = ({
                   })()
                 )}
 
-                {/* Link Preview Card */}
-                {msg.link_url || (msg.message_body && msg.message_body.includes('http')) ? (
-                  <div className="mb-2 p-2 rounded-lg bg-black/5 border border-black/5 text-xs">
-                    <div className="flex items-center gap-1.5 text-[#008069] font-semibold text-[11px] mb-0.5">
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>{msg.link_title || 'Eco Green Customer Portal'}</span>
+                {/* WhatsApp Template Official Header */}
+                {(() => {
+                  const header = getTemplateHeader(msg);
+                  if (!header) return null;
+                  return (
+                    <div className="font-bold text-[#111b21] border-b border-black/10 pb-1 mb-2 text-[12px] flex items-center gap-1.5 select-none">
+                      <span className="text-amber-500">☀️</span>
+                      <span>{header}</span>
                     </div>
-                    {msg.link_description && (
-                      <p className="text-[#54656f] text-[11px] line-clamp-2">
-                        {msg.link_description}
-                      </p>
-                    )}
-                    <a
-                      href={msg.link_url || 'https://eco-green-complain.vprotech.online/'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#027eb5] hover:underline break-all text-[11px] block mt-0.5"
-                    >
-                      {msg.link_url || 'https://eco-green-complain.vprotech.online/'}
-                    </a>
-                  </div>
-                ) : null}
+                  );
+                })()}
 
                 {/* View-Once / Interactive WhatsApp Item Card */}
                 {(msg.message_body?.toLowerCase().includes('unsupported') || msg.message_body?.includes('View-Once') || msg.message_body?.includes('Interactive Item')) ? (
@@ -1183,9 +1229,21 @@ export const WhatsAppWebInbox = ({
                   </div>
                 ) : (
                   msg.message_body && (
-                    <p className="whitespace-pre-wrap break-words leading-relaxed select-text font-normal text-[13px] pr-3">
-                      {msg.message_body}
-                    </p>
+                    <div>
+                      <div className="whitespace-pre-wrap break-words leading-relaxed select-text font-normal text-[13px] pr-2 text-[#111b21]">
+                        {renderFormattedWhatsAppText(msg.message_body)}
+                      </div>
+                      {/* WhatsApp Template Official Footer */}
+                      {(() => {
+                        const footer = getTemplateFooter(msg);
+                        if (!footer) return null;
+                        return (
+                          <div className="text-[10px] text-[#667781] border-t border-black/10 pt-1 mt-1.5 select-none font-medium">
+                            {footer}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   )
                 )}
 

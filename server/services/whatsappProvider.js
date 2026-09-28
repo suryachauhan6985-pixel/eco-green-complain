@@ -43,6 +43,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
 
     const META_OFFICIAL_TEMPLATES = new Set([
       'complaint_registered',
+      'complaint_registered_no_charges',
       'complaint_registered_customer',
       'technician_assigned',
       'technician_assigned_customer',
@@ -100,7 +101,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
     }
 
     // If dynamic payload was not built from DB, fallback to registered templates
-    if (!dynamicPayloadBuilt && isMetaApproved && (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer')) {
+    if (!dynamicPayloadBuilt && isMetaApproved && (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer' || templateName === 'complaint_registered_no_charges')) {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
@@ -109,28 +110,50 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const estCharges = Number(variables.estimated_charges || 0);
       const isNotifyActive = (variables.notify_charges === 1 || variables.notify_charges === '1' || variables.notify_charges === true || variables.notify_charges === 'true');
       const shouldNotifyCharges = isNotifyActive && estCharges > 0;
-      const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      deliveredText = `Eco Green Solar Support\nDear ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+      if (shouldNotifyCharges) {
+        deliveredText = `Eco Green Solar Support\nDear ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ₹${estCharges}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
-      payload.type = 'template';
-      payload.template = {
-        name: 'complaint_registered',
-        language: { code: 'en_US' },
-        components: [
-          {
-            type: 'body',
-            parameters: [
-              { type: 'text', text: custName },
-              { type: 'text', text: ticketId },
-              { type: 'text', text: prodType },
-              { type: 'text', text: issueCat },
-              { type: 'text', text: cleanTrackingUrl },
-              { type: 'text', text: chargesParam }
-            ]
-          }
-        ]
-      };
+        payload.type = 'template';
+        payload.template = {
+          name: 'complaint_registered',
+          language: { code: 'en_US' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: custName },
+                { type: 'text', text: ticketId },
+                { type: 'text', text: prodType },
+                { type: 'text', text: issueCat },
+                { type: 'text', text: cleanTrackingUrl },
+                { type: 'text', text: `₹${estCharges}` }
+              ]
+            }
+          ]
+        };
+      } else {
+        // Without charges line
+        deliveredText = `Eco Green Solar Support\nDear ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\n\nTrack ticket: ${cleanTrackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+
+        payload.type = 'template';
+        payload.template = {
+          name: 'complaint_registered_no_charges',
+          language: { code: 'en_US' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: custName },
+                { type: 'text', text: ticketId },
+                { type: 'text', text: prodType },
+                { type: 'text', text: issueCat },
+                { type: 'text', text: cleanTrackingUrl }
+              ]
+            }
+          ]
+        };
+      }
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
       deliveredText = `Dear ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician of Eco Green Solar has been assigned to your ticket No: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician Name: *${cleanParam(variables.technician_name, 'Field Technician')}*\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
 

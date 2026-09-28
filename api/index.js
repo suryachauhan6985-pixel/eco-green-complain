@@ -188,7 +188,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
 
     let renderedBody = message || '';
 
-    if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer') {
+    if (templateName === 'complaint_registered' || templateName === 'complaint_registered_customer' || templateName === 'complaint_registered_no_charges') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'Solar Equipment');
@@ -197,26 +197,46 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const estCharges = Number(variables.estimated_charges || 0);
       const isNotifyActive = (variables.notify_charges === 1 || variables.notify_charges === '1' || variables.notify_charges === true || variables.notify_charges === 'true');
       const shouldNotifyCharges = isNotifyActive && estCharges > 0;
-      const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
-      renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
-      
-      payload.type = 'template';
-      payload.template = {
-        name: 'complaint_registered',
-        language: { code: 'en_US' },
-        components: [{
-          type: 'body',
-          parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: trackingUrl },
-            { type: 'text', text: chargesParam }
-          ]
-        }]
-      };
+      if (shouldNotifyCharges) {
+        renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ₹${estCharges}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+        
+        payload.type = 'template';
+        payload.template = {
+          name: 'complaint_registered',
+          language: { code: 'en_US' },
+          components: [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: custName },
+              { type: 'text', text: ticketId },
+              { type: 'text', text: prodType },
+              { type: 'text', text: issueCat },
+              { type: 'text', text: trackingUrl },
+              { type: 'text', text: `₹${estCharges}` }
+            ]
+          }]
+        };
+      } else {
+        // Without charges line
+        renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
+        
+        payload.type = 'template';
+        payload.template = {
+          name: 'complaint_registered_no_charges',
+          language: { code: 'en_US' },
+          components: [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: custName },
+              { type: 'text', text: ticketId },
+              { type: 'text', text: prodType },
+              { type: 'text', text: issueCat },
+              { type: 'text', text: trackingUrl }
+            ]
+          }]
+        };
+      }
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
@@ -3452,6 +3472,7 @@ let metaTemplatesCache = {
 
 const META_TEMPLATE_MAPPING = {
   complaint_registered: { metaName: 'complaint_registered', language: 'en_US' },
+  complaint_registered_no_charges: { metaName: 'complaint_registered_no_charges', language: 'en_US' },
   technician_assigned: { metaName: 'technician_assigned', language: 'en_US' },
   customer_technician_reassigned: { metaName: 'customer_technician_reassigned', language: 'en' },
   status_update: { metaName: 'status__followup_note_update', language: 'en' },

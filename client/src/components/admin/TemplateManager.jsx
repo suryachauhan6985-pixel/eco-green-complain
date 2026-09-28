@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 
 export const TRIGGER_OPTIONS = [
-  { id: 'complaint_registered', label: 'Ticket Lodged / Registered', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket' },
+  { id: 'complaint_registered', label: 'Ticket Lodged (With Quoted Charges)', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket with service charge quote' },
+  { id: 'complaint_registered_no_charges', label: 'Ticket Lodged (Standard / No Charges)', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket without charges' },
   { id: 'technician_assigned', label: 'Technician First Assigned', audience: 'all', desc: 'Fires to customer when technician is initially allocated' },
   { id: 'technician_reassigned', label: 'Technician Reassigned (In-Progress Job Transferred)', audience: 'all', desc: 'Fires when assigned technician is changed during active complaint (New Tech Work Order + Old Tech Notice)' },
   { id: 'status_update', label: 'Status & Visit Note Update', audience: 'customer', desc: 'Fires when progress or note is recorded on ticket' },
