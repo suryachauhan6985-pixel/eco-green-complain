@@ -3528,7 +3528,7 @@ async function ensureNotificationTemplatesTable() {
       )
     `).catch(() => {});
 
-    await query(UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL).catch(() => {});
+    await query('UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL').catch(() => {});
     templatesTableInitialized = true;
   } catch (err) {
     console.error('ensureNotificationTemplatesTable error:', err.message);
@@ -3811,20 +3811,146 @@ app.post('/api/notifications/templates/:id/toggle-active', authenticateToken, as
   }
 });
 
+function parseMetaComponentsForApi(components = []) {
+  let headerText = '';
+  let bodyText = '';
+  let footerText = '';
+  let buttons = [];
+  const variables = [];
+
+  if (!Array.isArray(components)) return { headerText, bodyText, footerText, buttons, variables };
+
+  for (const comp of components) {
+    if (comp.type === 'HEADER') {
+      if (comp.format === 'TEXT') headerText = comp.text || '';
+    } else if (comp.type === 'BODY') {
+      bodyText = comp.text || '';
+      if (comp.example?.body_text_named_params) {
+        comp.example.body_text_named_params.forEach(p => {
+          variables.push({ name: p.param_name, example: p.example || '', type: 'named' });
+        });
+      } else if (comp.example?.body_text?.[0]) {
+        comp.example.body_text[0].forEach((ex, idx) => {
+          variables.push({ index: idx + 1, placeholder: `{{${idx + 1}}}`, example: ex || '', type: 'positional' });
+        });
+      } else {
+        const matches = bodyText.match(/\{\{([^{}]+)\}\}/g) || [];
+        matches.forEach(m => {
+          const raw = m.replace(/[{}]/g, '').trim();
+          const isNum = /^\d+$/.test(raw);
+          variables.push({
+            name: isNum ? undefined : raw,
+            index: isNum ? parseInt(raw, 10) : undefined,
+            placeholder: m,
+            type: isNum ? 'positional' : 'named'
+          });
+        });
+      }
+    } else if (comp.type === 'FOOTER') {
+      footerText = comp.text || '';
+    } else if (comp.type === 'BUTTONS') {
+      buttons = Array.isArray(comp.buttons) ? comp.buttons : [];
+    }
+  }
+
+  return { headerText, bodyText, footerText, buttons, variables };
+}
+
 // Global Sync: Fetch all approved templates directly from Meta Graph API into software
 app.post('/api/notifications/templates/sync-from-meta', authenticateToken, async (req, res) => {
   try {
     await ensureNotificationTemplatesTable();
-    const { syncTemplatesFromMeta } = require('../server/services/whatsappTemplateService');
-    const result = await syncTemplatesFromMeta();
+    const token = getMetaAccessToken();
+    const url = `https://graph.facebook.com/v21.0/${META_WABA_ID}/message_templates?fields=id,name,status,category,language,components,parameter_format&limit=100`;
+    const metaRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!metaRes.ok) {
+      const errData = await metaRes.json().catch(() => ({}));
+      return res.status(400).json({ error: errData?.error?.message || `Meta API error ${metaRes.status}` });
+    }
+    const data = await metaRes.json();
+    const metaTemplates = Array.isArray(data?.data) ? data.data : [];
 
-    const updated = await query('SELECT * FROM notification_templates ORDER BY id ASC');
+    let added = 0;
+    let updated = 0;
+
+    for (const mt of metaTemplates) {
+      const { headerText, bodyText, footerText, buttons, variables } = parseMetaComponentsForApi(mt.components);
+      const paramFormat = mt.parameter_format || (/\{\{[a-zA-Z_]/.test(bodyText) ? 'NAMED' : 'POSITIONAL');
+      const autoAudience = (mt.name.toLowerCase().includes('technician') || mt.name.toLowerCase().includes('tech')) 
+        ? 'technician' 
+        : 'customer';
+      const formattedName = mt.name.replace(/[_-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+      const existing = await query(
+        "SELECT id FROM notification_templates WHERE meta_template_id = $1 OR meta_template_name = $2 LIMIT 1",
+        [String(mt.id), mt.name]
+      );
+
+      if (existing.rows.length > 0) {
+        await query(
+          `UPDATE notification_templates SET
+            meta_template_id = $1,
+            meta_template_name = $2,
+            meta_language = $3,
+            meta_category = $4,
+            meta_status = $5,
+            parameter_format = $6,
+            whatsapp_body = $7,
+            header_text = $8,
+            footer_text = $9,
+            buttons_json = $10,
+            components_json = $11,
+            variables_json = $12,
+            sync_status = 'SYNCED',
+            is_active = 1,
+            last_synced_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $13`,
+          [
+            String(mt.id), mt.name, mt.language || 'en_US', mt.category || 'UTILITY',
+            mt.status || 'APPROVED', paramFormat, bodyText, headerText, footerText,
+            JSON.stringify(buttons), JSON.stringify(mt.components || []), JSON.stringify(variables),
+            existing.rows[0].id
+          ]
+        );
+        updated++;
+      } else {
+        const cleanKey = mt.name.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 50);
+        await query(
+          `INSERT INTO notification_templates (
+            meta_template_id, template_key, name, meta_template_name,
+            meta_language, meta_category, meta_status, parameter_format,
+            whatsapp_body, header_text, footer_text, buttons_json,
+            components_json, variables_json, audience, trigger_event,
+            channel, is_active, sync_status, last_synced_at, email_subject, email_body,
+            created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8,
+            $9, $10, $11, $12,
+            $13, $14, $15, $16,
+            'whatsapp', 1, 'SYNCED', CURRENT_TIMESTAMP, $17, $18,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )`,
+          [
+            String(mt.id), cleanKey, formattedName, mt.name,
+            mt.language || 'en_US', mt.category || 'UTILITY', mt.status || 'APPROVED', paramFormat,
+            bodyText, headerText, footerText, JSON.stringify(buttons),
+            JSON.stringify(mt.components || []), JSON.stringify(variables), autoAudience, cleanKey,
+            `[Eco Green Solar] ${formattedName}`, bodyText
+          ]
+        );
+        added++;
+      }
+    }
+
+    const allTemplates = await query('SELECT * FROM notification_templates ORDER BY id ASC');
     return res.json({ 
       success: true, 
-      message: `Successfully synchronized ${result.totalSynced || updated.rows.length} templates from Meta WhatsApp Business Platform!`, 
-      syncedCount: result.totalSynced || updated.rows.length,
-      stats: result,
-      templates: updated.rows 
+      message: `Successfully synchronized ${metaTemplates.length} templates from Meta WhatsApp Business Platform! (${added} added, ${updated} updated)`, 
+      syncedCount: metaTemplates.length,
+      stats: { totalFetched: metaTemplates.length, added, updated },
+      templates: allTemplates.rows 
     });
   } catch (err) {
     console.error('Error syncing from Meta:', err);
