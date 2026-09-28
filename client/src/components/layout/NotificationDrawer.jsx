@@ -338,12 +338,12 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   {unreadCount > 0 && (
                     <button
                       onClick={markAllAsRead}
                       title="Mark all as read"
-                      className="flex items-center gap-1 px-2 py-1 text-emerald-700 hover:bg-emerald-50 rounded font-semibold transition-colors"
+                      className="flex items-center gap-1 px-2.5 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md font-bold transition-colors cursor-pointer text-xs"
                     >
                       <CheckCheck className="w-3.5 h-3.5" />
                       <span>Mark all read</span>
@@ -352,10 +352,11 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                   {notifications.length > 0 && (
                     <button
                       onClick={handleClearInApp}
-                      title="Clear alerts"
-                      className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded transition-colors"
+                      title="Clear all alerts"
+                      className="flex items-center gap-1 px-2.5 py-1 text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md font-bold transition-colors cursor-pointer text-xs"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear All</span>
                     </button>
                   )}
                 </div>

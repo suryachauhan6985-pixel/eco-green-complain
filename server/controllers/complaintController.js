@@ -1462,27 +1462,36 @@ async function reopenComplaint(req, res) {
     });
 
     // Notify technician of reopened ticket
-    notificationService.dispatchAsync({
-      complaintId: complaint.id,
-      templateKey: 'technician_reopened_work_order',
-      data: {
-        technician_name: updated?.technician_name || 'Technician',
-        complaint_id: complaint.ticket_id,
-        ticket_id: complaint.ticket_id,
-        customer_name: complaint.customer_name,
-        customer_phone: complaint.customer_phone,
-        customer_address: complaint.customer_address || complaint.city || '',
-        reopen_reason: reason || 'Issue recurring / follow-up requested',
-        previous_technician_name: complaint.technician_name || ''
-      }
-    });
+    if (updated?.technician_phone) {
+      notificationService.dispatchAsync({
+        complaintId: complaint.id,
+        templateKey: 'technician_reopened_work_order',
+        forceWhatsAppTo: updated.technician_phone,
+        data: {
+          phone: updated.technician_phone,
+          technician_name: updated?.technician_name || 'Technician',
+          complaint_id: complaint.ticket_id,
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          customer_phone: complaint.customer_phone,
+          customer_address: complaint.customer_address || complaint.city || '',
+          product_type: complaint.product_type || 'Solar System',
+          issue_category: complaint.issue_category || 'Service Request',
+          priority: complaint.priority || 'High',
+          reopen_reason: reason || 'Issue recurring / follow-up requested',
+          previous_technician_name: complaint.technician_name || ''
+        }
+      });
+    }
 
     // If reopened and transferred to another technician, alert previous technician
-    if (complaint.assigned_technician_id && assigned_technician_id && String(complaint.assigned_technician_id) !== String(assigned_technician_id)) {
+    if (complaint.assigned_technician_id && newTechId && String(complaint.assigned_technician_id) !== String(newTechId) && complaint.technician_phone) {
       notificationService.dispatchAsync({
         complaintId: complaint.id,
         templateKey: 'technician_reopen_job_transferred',
+        forceWhatsAppTo: complaint.technician_phone,
         data: {
+          phone: complaint.technician_phone,
           technician_name: complaint.technician_name,
           complaint_id: complaint.ticket_id,
           ticket_id: complaint.ticket_id,

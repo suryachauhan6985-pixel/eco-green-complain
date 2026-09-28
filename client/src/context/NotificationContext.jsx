@@ -471,6 +471,14 @@ export const NotificationProvider = ({ children }) => {
     }
   }, [activePopup]);
 
+  // Dismiss all pending popups at once
+  const dismissAllPopups = useCallback(() => {
+    const allIds = unreadNotifications.map(n => n.id);
+    if (activePopup?.id) allIds.push(activePopup.id);
+    setDismissedPopupIds(prev => new Set([...prev, ...allIds]));
+    setActivePopup(null);
+  }, [unreadNotifications, activePopup]);
+
   const value = {
     notifications,
     userNotifications,
@@ -482,6 +490,7 @@ export const NotificationProvider = ({ children }) => {
     markAllAsRead,
     clearAllNotifications,
     dismissPopup,
+    dismissAllPopups,
     fetchFromBackend,
     saveNotifications,
     playNotificationChime,

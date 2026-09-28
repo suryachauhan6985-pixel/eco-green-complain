@@ -1,14 +1,39 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { 
   AlertTriangle, AlertCircle, CheckCircle, Info, 
   IndianRupee, X, Trash2, ShieldCheck 
 } from 'lucide-react';
+import { GlobalLoadingOverlay } from '../components/common/GlobalLoadingOverlay';
+import { subscribeToLoading } from '../api/client';
 
 const DialogContext = createContext(null);
 
 export function DialogProvider({ children }) {
   const [dialog, setDialog] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const [loadingState, setLoadingState] = useState({ isVisible: false, message: 'Processing...' });
+
+  const showLoading = useCallback((message = 'Processing...') => {
+    setLoadingState({ isVisible: true, message });
+  }, []);
+
+  const hideLoading = useCallback(() => {
+    setLoadingState({ isVisible: false, message: 'Processing...' });
+  }, []);
+
+  // Listen to API client mutation loading events (e.g. Save, Reopen, Assign, Delete, Close, etc.)
+  useEffect(() => {
+    if (subscribeToLoading) {
+      const unsubscribe = subscribeToLoading((isLoading, message) => {
+        if (isLoading) {
+          setLoadingState({ isVisible: true, message: message || 'Processing...' });
+        } else {
+          setLoadingState({ isVisible: false, message: 'Processing...' });
+        }
+      });
+      return unsubscribe;
+    }
+  }, []);
 
   // Trigger custom confirmation modal (Returns Promise<boolean>)
   const confirm = useCallback(({ 
@@ -74,8 +99,14 @@ export function DialogProvider({ children }) {
   };
 
   return (
-    <DialogContext.Provider value={{ confirm, alert, showToast }}>
+    <DialogContext.Provider value={{ confirm, alert, showToast, showLoading, hideLoading }}>
       {children}
+
+      {/* GLOBAL SCREEN LOADING OVERLAY (3 GREEN BOUNCING DOTS) */}
+      <GlobalLoadingOverlay 
+        isVisible={loadingState.isVisible} 
+        message={loadingState.message} 
+      />
 
       {/* CUSTOM IN-APP DIALOG MODAL */}
       {dialog && dialog.isOpen && (

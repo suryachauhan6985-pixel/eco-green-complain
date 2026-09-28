@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { 
-  Search, Sun, Droplets, Wind, CheckCircle2, Clock, 
+  Search, Sun, Droplets, Wind, CheckCircle, CheckCircle2, Clock, 
   Wrench, Phone, Star, RotateCcw, AlertTriangle, Send, ArrowRight
 } from 'lucide-react';
 import { formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';

@@ -3050,13 +3050,25 @@ app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', '
     let newTechName = oldComp.technician_name;
     let newTechPhone = oldComp.technician_phone;
 
-    // 2. If new technician assigned, lookup tech details
-    if (technician_id && String(technician_id) !== String(oldComp.assigned_technician_id)) {
-      const techRow = await query('SELECT id, name, phone, area_zone, specialization FROM technicians WHERE id::text = $1', [String(technician_id)]);
+    // 2. Lookup technician details for target technician
+    const targetTechId = technician_id || oldComp.assigned_technician_id;
+    if (targetTechId) {
+      const techRow = await query('SELECT id, name, phone, area_zone, specialization FROM technicians WHERE id::text = $1', [String(targetTechId)]);
       if (techRow.rows.length > 0) {
         newTechId = techRow.rows[0].id;
         newTechName = techRow.rows[0].name;
         newTechPhone = techRow.rows[0].phone;
+      }
+    }
+
+    // Secondary fallback: If phone is still missing, lookup by name
+    if (!newTechPhone && (newTechName || oldComp.technician_name)) {
+      const searchName = newTechName || oldComp.technician_name;
+      const techByName = await query('SELECT id, name, phone FROM technicians WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1', [searchName]);
+      if (techByName.rows.length > 0) {
+        newTechId = techByName.rows[0].id;
+        newTechName = techByName.rows[0].name;
+        newTechPhone = techByName.rows[0].phone;
       }
     }
 
@@ -3208,7 +3220,9 @@ app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', '
               issue_category: comp.issue_category || 'Service Follow-up',
               product_type: comp.product_type || 'Solar System',
               priority: comp.priority || 'Medium',
-              technician_portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`
+              technician_portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`,
+              portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`,
+              db_complaint_id: comp.id
             }
           });
 
@@ -3227,7 +3241,8 @@ app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', '
                 customer_name: comp.customer_name,
                 new_technician_name: newTechName,
                 reopen_reason: reopenReasonText,
-                notes: `Reopened & reassigned to ${newTechName}. Reason: ${reopenReasonText}`
+                notes: `Reopened & reassigned to ${newTechName}. Reason: ${reopenReasonText}`,
+                db_complaint_id: comp.id
               }
             }).catch(e => console.warn('[Reopen Prev Tech WA Error]', e.message));
           }
@@ -3251,7 +3266,9 @@ app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', '
               issue_category: comp.issue_category || 'Service Follow-up',
               product_type: comp.product_type || 'Solar System',
               priority: comp.priority || 'Medium',
-              technician_portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`
+              technician_portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`,
+              portal_url: `${APP_URL}/technician?ticket=${encodeURIComponent(comp.ticket_id)}`,
+              db_complaint_id: comp.id
             }
           });
         }
