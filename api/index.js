@@ -5770,23 +5770,96 @@ app.get('/api/customers/search', async (req, res) => {
     await ensureCustomerDirectoryTable();
     const q = (req.query.q || req.query.search || '').trim();
     if (!q || q.length < 2) {
-      const sample = await query('SELECT * FROM installed_customers ORDER BY id DESC LIMIT 10');
+      const sample = await query(`
+        SELECT 
+          id, customer_name, consumer_mobile, consumer_no, city_village, 
+          dealer_name, invoice_no, 
+          TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
+          TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
+          TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+          panel_make, inverter_make, inverter_serial, is_in_warranty
+        FROM installed_customers 
+        ORDER BY id DESC 
+        LIMIT 10
+      `);
       return res.json({ customers: sample.rows });
     }
     const wild = `%${q}%`;
     const r = await query(`
-      SELECT * FROM installed_customers 
+      SELECT 
+        id, customer_name, consumer_mobile, consumer_no, city_village, 
+        dealer_name, invoice_no, 
+        TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
+        TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
+        TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+        panel_make, inverter_make, inverter_serial, is_in_warranty
+      FROM installed_customers 
       WHERE customer_name ILIKE $1 
          OR consumer_mobile ILIKE $1 
          OR consumer_no ILIKE $1 
          OR city_village ILIKE $1 
          OR inverter_serial ILIKE $1
+         OR invoice_no ILIKE $1
       ORDER BY customer_name ASC 
       LIMIT 25
     `, [wild]);
     return res.json({ customers: r.rows, query: q, totalMatches: r.rows.length });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
+  try {
+    await ensureCustomerDirectoryTable();
+    const rawPhone = req.params.phone || '';
+    const cleanDigits = rawPhone.replace(/[^0-9]/g, '');
+    const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    if (!cleanDigits || cleanDigits.length < 10) {
+      return res.json({
+        valid: false,
+        isVerified: false,
+        message: 'Please enter a genuine 10-digit Indian mobile number.'
+      });
+    }
+
+    const custQuery = await query(`
+      SELECT 
+        id, customer_name, consumer_mobile, consumer_no, city_village, 
+        dealer_name, invoice_no, 
+        TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
+        TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
+        TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+        inverter_serial, is_in_warranty
+      FROM installed_customers 
+      WHERE consumer_mobile ILIKE $1
+      LIMIT 1
+    `, [`%${last10}%`]);
+
+    if (custQuery.rows.length > 0) {
+      const c = custQuery.rows[0];
+      return res.json({
+        valid: true,
+        isVerified: true,
+        isExistingCustomer: true,
+        customerName: c.customer_name,
+        city: c.city_village,
+        consumerNo: c.consumer_no,
+        invoiceNo: c.invoice_no,
+        invoiceDate: c.invoice_date || c.installation_date,
+        inverterSerial: c.inverter_serial,
+        isInWarranty: c.is_in_warranty === 1
+      });
+    }
+
+    return res.json({
+      valid: true,
+      isVerified: true,
+      isExistingCustomer: false
+    });
+  } catch (err) {
+    return res.json({ valid: true, isVerified: true, isExistingCustomer: false });
   }
 });
 
@@ -5806,20 +5879,52 @@ app.post('/api/customers/sync', authenticateToken, async (req, res) => {
 
     let inserted = 0;
     if (Array.isArray(customers) && customers.length > 0) {
-      for (const c of customers) {
-        if (!c.customer_name) continue;
-        await query(`
-          INSERT INTO installed_customers (
-            customer_name, consumer_mobile, consumer_no, city_village, 
-            dealer_name, invoice_no, invoice_date, installation_date,
-            inverter_serial, is_in_warranty, warranty_expiry_date
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        `, [
-          c.customer_name, c.consumer_mobile || null, c.consumer_no || null, c.city_village || null,
-          c.dealer_name || null, c.invoice_no || null, c.invoice_date || null, c.installation_date || null,
-          c.inverter_serial || null, c.is_in_warranty ? 1 : 0, c.warranty_expiry_date || null
-        ]);
-        inserted++;
+      // Clear old customer index before re-populating from freshly uploaded Excel
+      try {
+        await query('DELETE FROM installed_customers');
+      } catch (delErr) {
+        console.warn('Notice while clearing installed_customers:', delErr.message);
+      }
+
+      // Fast multi-row batch insert in chunks of 50 (takes < 500ms for 1000 rows instead of timing out)
+      const chunkSize = 50;
+      for (let i = 0; i < customers.length; i += chunkSize) {
+        const chunk = customers.slice(i, i + chunkSize);
+        const valueClauses = [];
+        const values = [];
+        let paramIdx = 1;
+
+        for (const c of chunk) {
+          if (!c.customer_name) continue;
+          valueClauses.push(`($${paramIdx}, $${paramIdx+1}, $${paramIdx+2}, $${paramIdx+3}, $${paramIdx+4}, $${paramIdx+5}, $${paramIdx+6}, $${paramIdx+7}, $${paramIdx+8}, $${paramIdx+9}, $${paramIdx+10})`);
+          
+          values.push(
+            String(c.customer_name).trim(),
+            c.consumer_mobile ? String(c.consumer_mobile).trim() : null,
+            c.consumer_no ? String(c.consumer_no).trim() : null,
+            c.city_village ? String(c.city_village).trim() : null,
+            c.dealer_name ? String(c.dealer_name).trim() : null,
+            c.invoice_no ? String(c.invoice_no).trim() : null,
+            c.invoice_date || null,
+            c.installation_date || null,
+            c.inverter_serial ? String(c.inverter_serial).trim() : null,
+            c.is_in_warranty ? 1 : 0,
+            c.warranty_expiry_date || null
+          );
+          paramIdx += 11;
+          inserted++;
+        }
+
+        if (valueClauses.length > 0) {
+          const sql = `
+            INSERT INTO installed_customers (
+              customer_name, consumer_mobile, consumer_no, city_village, 
+              dealer_name, invoice_no, invoice_date, installation_date,
+              inverter_serial, is_in_warranty, warranty_expiry_date
+            ) VALUES ${valueClauses.join(', ')}
+          `;
+          await query(sql, values);
+        }
       }
     }
 

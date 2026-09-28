@@ -425,7 +425,38 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   };
 
   const handleSelectCustomer = (c) => {
-    setSelectedCustomer(c);
+    // Extract and format clean YYYY-MM-DD date for <input type="date">
+    const rawDate = c.invoice_date || c.installation_date || '';
+    let cleanDate = '';
+    if (rawDate) {
+      if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+        cleanDate = rawDate.substring(0, 10);
+      } else {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          cleanDate = `${y}-${m}-${day}`;
+        }
+      }
+    }
+
+    // Dynamic 5-Year Warranty verification: plants installed > 5 years ago are Out of Warranty
+    let computedWarranty = c.is_in_warranty !== undefined ? Number(c.is_in_warranty) : 1;
+    if (cleanDate) {
+      const [year, month, day] = cleanDate.split('-').map(Number);
+      const installDate = new Date(year, month - 1, day);
+      const expiryDate = new Date(installDate);
+      expiryDate.setFullYear(expiryDate.getFullYear() + 5);
+      computedWarranty = new Date() <= expiryDate ? 1 : 0;
+    }
+
+    setSelectedCustomer({
+      ...c,
+      invoice_date: cleanDate || c.invoice_date,
+      is_in_warranty: computedWarranty
+    });
     setCustomerSearchResults([]);
     setCustomerSearchQuery('');
     setFormData(prev => ({
@@ -437,8 +468,8 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       consumer_no: c.consumer_no || prev.consumer_no,
       order_no: c.order_no || prev.order_no,
       invoice_no: c.invoice_no || prev.invoice_no || '',
-      invoice_date: c.invoice_date || prev.invoice_date || '',
-      is_in_warranty: c.is_in_warranty !== undefined ? c.is_in_warranty : 1,
+      invoice_date: cleanDate || prev.invoice_date || '',
+      is_in_warranty: computedWarranty,
       product_type: prev.product_type || 'Solar Rooftop Systems',
       installation_id: c.consumer_no || c.order_no || prev.installation_id,
       product_serial: c.inverter_serial || prev.product_serial
@@ -1144,6 +1175,31 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                               <button
                                 type="button"
                                 onClick={() => {
+                                  const rawDate = phoneVerification.invoiceDate || phoneVerification.installationDate || '';
+                                  let cleanDate = '';
+                                  if (rawDate) {
+                                    if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+                                      cleanDate = rawDate.substring(0, 10);
+                                    } else {
+                                      const d = new Date(rawDate);
+                                      if (!isNaN(d.getTime())) {
+                                        cleanDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                      }
+                                    }
+                                  }
+
+                                  let computedWarranty = phoneVerification.isInWarranty !== null && phoneVerification.isInWarranty !== undefined 
+                                    ? (phoneVerification.isInWarranty ? 1 : 0) 
+                                    : 1;
+
+                                  if (cleanDate) {
+                                    const [y, m, d] = cleanDate.split('-').map(Number);
+                                    const installD = new Date(y, m - 1, d);
+                                    const expD = new Date(installD);
+                                    expD.setFullYear(expD.getFullYear() + 5);
+                                    computedWarranty = new Date() <= expD ? 1 : 0;
+                                  }
+
                                   setFormData(prev => ({
                                     ...prev,
                                     customer_name: phoneVerification.customerName || prev.customer_name,
@@ -1151,9 +1207,9 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                                     consumer_no: phoneVerification.consumerNo || prev.consumer_no,
                                     order_no: phoneVerification.orderNo || prev.order_no,
                                     invoice_no: phoneVerification.invoiceNo || prev.invoice_no,
-                                    invoice_date: phoneVerification.invoiceDate || prev.invoice_date,
+                                    invoice_date: cleanDate || prev.invoice_date,
                                     product_serial: phoneVerification.inverterSerial || prev.product_serial,
-                                    is_in_warranty: phoneVerification.isInWarranty !== null ? (phoneVerification.isInWarranty ? 1 : 0) : prev.is_in_warranty
+                                    is_in_warranty: computedWarranty
                                   }));
                                 }}
                                 className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-0.5 rounded shadow-2xs transition-all cursor-pointer ml-auto"
@@ -1479,7 +1535,25 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                     <input
                       type="date"
                       value={formData.invoice_date || ''}
-                      onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
+                      onChange={(e) => {
+                        const newDate = e.target.value;
+                        let autoWarranty = formData.is_in_warranty;
+                        if (newDate && /^\d{4}-\d{2}-\d{2}/.test(newDate)) {
+                          const [year, month, day] = newDate.split('-').map(Number);
+                          const installDate = new Date(year, month - 1, day);
+                          const expiryDate = new Date(installDate);
+                          expiryDate.setFullYear(expiryDate.getFullYear() + 5);
+                          autoWarranty = new Date() <= expiryDate ? 1 : 0;
+                        }
+                        setFormData(prev => ({
+                          ...prev,
+                          invoice_date: newDate,
+                          is_in_warranty: autoWarranty
+                        }));
+                        if (selectedCustomer) {
+                          setSelectedCustomer(prev => prev ? ({ ...prev, invoice_date: newDate, is_in_warranty: autoWarranty }) : null);
+                        }
+                      }}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                     />
                   </div>

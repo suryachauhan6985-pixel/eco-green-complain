@@ -1,13 +1,13 @@
 {
-  "version": "2.5.8",
-  "buildTime": 1790604000000,
+  "version": "2.5.9",
+  "buildTime": 1790610000000,
   "releaseDate": "2026-09-28",
   "mandatory": true,
-  "title": "Eco Green Support v2.5.8",
-  "summary": "PWA Service Worker Update, Persistent Notification Clearing & Customer Portal Search Loader",
+  "title": "Eco Green Support v2.5.9",
+  "summary": "Excel Bulk Upload Speedup, Date Autofill Fix & Accurate 5-Year Warranty Calculation Engine",
   "features": [
-    "📱 PWA Service Worker & Manifest Refresh: Updated sw.js cache name to ecogreen-support-v258 with network-first manifest checking to refresh installed apps.",
-    "🔔 Permanent In-App Alert Clearing: Clearing all alerts now permanently clears notifications across tabs and prevents them from returning upon refresh or polling.",
-    "⚡ Customer Portal Search Bouncing Loader: Live searching now immediately displays the 3 green animated bouncing dots overlay and feedback card."
+    "🚀 Ultra-Fast Excel Sync: Replaced slow sequential database queries with batched multi-row inserts, eliminating upload abort errors.",
+    "📅 Date Autofill Resolution: Fixed date parsing for Excel serial numbers, DD-MM-YYYY, and ISO strings so installation date cleanly auto-fills into date pickers.",
+    "🛡️ Accurate 5-Year Warranty Engine: Plants older than 5 years are now strictly classified as Out of Warranty (🔴) across the entire application."
   ]
 }

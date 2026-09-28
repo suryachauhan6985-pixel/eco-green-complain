@@ -51,40 +51,116 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         throw new Error('Uploaded Excel file appears to be empty');
       }
 
+      // Robust helper to extract Excel cell values matching multiple possible column headers
+      const getExcelVal = (row, aliases) => {
+        if (!row || typeof row !== 'object') return '';
+        const keys = Object.keys(row);
+        for (const alias of aliases) {
+          if (row[alias] !== undefined && row[alias] !== null && String(row[alias]).trim() !== '') {
+            return row[alias];
+          }
+          const normAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const foundKey = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === normAlias);
+          if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && String(row[foundKey]).trim() !== '') {
+            return row[foundKey];
+          }
+        }
+        return '';
+      };
+
+      // Comprehensive date parser for Excel serial numbers, DD-MM-YYYY, DD/MM/YYYY, ISO, and textual dates
+      const parseExcelDate = (val) => {
+        if (!val) return null;
+        if (val instanceof Date && !isNaN(val.getTime())) {
+          return val;
+        }
+        // Excel serial date number (e.g., 43000 to 47000 covers 2017 to 2028)
+        if (typeof val === 'number' && !isNaN(val) && val > 1000) {
+          const jsDate = new Date(Math.round((val - 25569) * 86400 * 1000));
+          if (!isNaN(jsDate.getTime())) return jsDate;
+        }
+        const str = String(val).trim();
+        if (!str) return null;
+
+        // String numeric serial like "44024"
+        if (/^\d{5}$/.test(str)) {
+          const num = Number(str);
+          const jsDate = new Date(Math.round((num - 25569) * 86400 * 1000));
+          if (!isNaN(jsDate.getTime())) return jsDate;
+        }
+
+        // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+        const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+        if (dmyMatch) {
+          const day = parseInt(dmyMatch[1], 10);
+          const month = parseInt(dmyMatch[2], 10) - 1;
+          const year = parseInt(dmyMatch[3], 10);
+          const d = new Date(year, month, day);
+          if (!isNaN(d.getTime())) return d;
+        }
+
+        // YYYY-MM-DD or YYYY/MM/DD
+        const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+        if (ymdMatch) {
+          const year = parseInt(ymdMatch[1], 10);
+          const month = parseInt(ymdMatch[2], 10) - 1;
+          const day = parseInt(ymdMatch[3], 10);
+          const d = new Date(year, month, day);
+          if (!isNaN(d.getTime())) return d;
+        }
+
+        // Textual or standard ISO format (e.g. "15-Aug-2018", "2019-05-14T00:00:00.000Z")
+        const parsed = new Date(str);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+
+        return null;
+      };
+
       let inWarrantyCount = 0;
       let outWarrantyCount = 0;
       const today = new Date();
       const mappedCustomers = [];
 
       for (const r of rows) {
-        const customerName = (r['Customer Name'] || r['customer_name'] || r['Name'] || '').toString().trim();
+        const customerName = String(getExcelVal(r, [
+          'Customer Name', 'CustomerName', 'Name of Customer', 'Consumer Name', 'Name', 'Customer'
+        ])).trim();
         if (!customerName) continue;
 
-        const rawInvDate = r['Invoice Date'] || r['invoice_date'] || r['Date of Installation of Solar Meter'] || r['installation_date'];
-        let refDate = null;
+        // Check all standard variants of installation and invoice date headers
+        const rawDateVal = getExcelVal(r, [
+          'Date of Installation of Solar Meter', 'Date of Installation', 'Installation Date',
+          'Date of Commissioning', 'Commissioning Date', 'DOC', 'DOI', 'Installation Dt',
+          'Meter Installation Date', 'Meter Date', 'Date of Solar Meter Installation',
+          'Invoice Date', 'InvoiceDate', 'Inv Date', 'Date'
+        ]);
 
-        if (rawInvDate instanceof Date && !isNaN(rawInvDate)) {
-          refDate = rawInvDate;
-        } else if (rawInvDate) {
-          const str = String(rawInvDate).trim();
-          if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-            refDate = new Date(str.substring(0, 10));
-          } else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
-            const parts = str.split(' ')[0].split('/');
-            refDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-          } else {
-            const d = new Date(str);
-            if (!isNaN(d.getTime())) refDate = d;
-          }
-        }
-
-        let isInWarranty = 1;
+        const refDate = parseExcelDate(rawDateVal);
+        let isInWarranty = 0;
+        let dateStr = null;
         let expiryDateStr = null;
+
         if (refDate && !isNaN(refDate.getTime())) {
+          const y = refDate.getFullYear();
+          const m = String(refDate.getMonth() + 1).padStart(2, '0');
+          const d = String(refDate.getDate()).padStart(2, '0');
+          dateStr = `${y}-${m}-${d}`;
+
           const expiryDate = new Date(refDate);
           expiryDate.setFullYear(expiryDate.getFullYear() + 5);
+
+          const expY = expiryDate.getFullYear();
+          const expM = String(expiryDate.getMonth() + 1).padStart(2, '0');
+          const expD = String(expiryDate.getDate()).padStart(2, '0');
+          expiryDateStr = `${expY}-${expM}-${expD}`;
+
+          // Precise 5-Year Warranty Rule: If today is after 5 years from installation, plant is OUT OF WARRANTY!
           isInWarranty = today <= expiryDate ? 1 : 0;
-          expiryDateStr = expiryDate.toISOString().split('T')[0];
+        } else {
+          // If no date could be parsed, do not falsely claim it is in warranty
+          isInWarranty = 0;
         }
 
         if (isInWarranty) inWarrantyCount++;
@@ -92,14 +168,14 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
 
         mappedCustomers.push({
           customer_name: customerName,
-          consumer_mobile: (r['Consumer Mobile'] || r['Mobile'] || r['Phone'] || '').toString().trim(),
-          consumer_no: (r['Consumer No.'] || r['Consumer No'] || '').toString().trim(),
-          city_village: (r['City/Village'] || r['City'] || '').toString().trim(),
-          dealer_name: (r['Dealer Name'] || r['Dealer'] || '').toString().trim(),
-          invoice_no: (r['Invoice No '] || r['Invoice No'] || '').toString().trim(),
-          invoice_date: refDate ? refDate.toISOString().split('T')[0] : null,
-          installation_date: refDate ? refDate.toISOString().split('T')[0] : null,
-          inverter_serial: (r['Inverter Sr. No.'] || r['Inverter Serial'] || '').toString().trim(),
+          consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact'])).trim(),
+          consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No'])).trim(),
+          city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim(),
+          dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim(),
+          invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim(),
+          invoice_date: dateStr,
+          installation_date: dateStr,
+          inverter_serial: String(getExcelVal(r, ['Inverter Sr. No.', 'Inverter Sr No', 'Inverter Serial', 'Inverter Serial No', 'Serial No'])).trim(),
           is_in_warranty: isInWarranty,
           warranty_expiry_date: expiryDateStr
         });
@@ -116,12 +192,19 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       localStorage.setItem('egs_customer_stats', JSON.stringify(statsObj));
       setCustomerStats(statsObj);
 
-      // Sync summary and sample to backend database
+      // Save complete uploaded customer list into localStorage for instant offline typeahead autofill
+      try {
+        localStorage.setItem('egs_uploaded_customers', JSON.stringify(mappedCustomers.slice(0, 6500)));
+      } catch (cacheErr) {
+        console.warn('Local storage cache limit reached for full customer directory:', cacheErr.message);
+      }
+
+      // Sync summary and sample (up to 1,000 customers in fast multi-row batch) to backend database
       await api.syncCustomersFromExcel({
         totalCustomers,
         inWarrantyCount,
         outWarrantyCount,
-        customers: mappedCustomers.slice(0, 500)
+        customers: mappedCustomers.slice(0, 1000)
       });
 
       setSyncToast({

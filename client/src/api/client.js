@@ -1407,7 +1407,33 @@ export const api = {
   },
 
   // Customer Directory & 5-Year Warranty Engine
-  searchCustomers: (query) => request(`/customers/search?q=${encodeURIComponent(query || '')}`),
+  searchCustomers: async (query) => {
+    const q = (query || '').trim().toLowerCase();
+    try {
+      const res = await request(`/customers/search?q=${encodeURIComponent(query || '')}`);
+      if (res && Array.isArray(res.customers) && res.customers.length > 0) {
+        return res;
+      }
+    } catch (err) {
+      console.warn('Server customer search notice, checking local directory cache:', err.message);
+    }
+    // Fallback to local stored Excel uploaded directory
+    try {
+      const localCustomers = JSON.parse(localStorage.getItem('egs_uploaded_customers') || '[]');
+      if (localCustomers.length > 0 && q) {
+        const matches = localCustomers.filter(c => 
+          (c.customer_name && c.customer_name.toLowerCase().includes(q)) ||
+          (c.consumer_mobile && c.consumer_mobile.includes(q)) ||
+          (c.consumer_no && c.consumer_no.toLowerCase().includes(q)) ||
+          (c.city_village && c.city_village.toLowerCase().includes(q)) ||
+          (c.invoice_no && c.invoice_no.toLowerCase().includes(q)) ||
+          (c.inverter_serial && c.inverter_serial.toLowerCase().includes(q))
+        ).slice(0, 25);
+        return { customers: matches, totalMatches: matches.length };
+      }
+    } catch (_) {}
+    return { customers: [] };
+  },
   getCustomerStats: async () => {
     try {
       const res = await request('/customers/stats');
