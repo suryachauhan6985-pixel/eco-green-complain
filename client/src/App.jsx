@@ -27,11 +27,10 @@ const OnboardingTour = React.lazy(() => import('./components/common/OnboardingTo
 const WhatsAppWebInbox = React.lazy(() => import('./components/whatsapp/WhatsAppWebInbox').then(m => ({ default: m.WhatsAppWebInbox })));
 
 import { AppPageSkeleton, ComplaintGridSkeleton } from './components/common/SkeletonLoader';
+import { GlobalLoadingOverlay } from './components/common/GlobalLoadingOverlay';
 
 const LoadingFallback = () => (
-  <div className="p-6">
-    <ComplaintGridSkeleton count={6} />
-  </div>
+  <GlobalLoadingOverlay isVisible={true} />
 );
 
 function getTrackingInfoFromUrl() {

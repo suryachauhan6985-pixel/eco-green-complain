@@ -578,6 +578,52 @@ app.get('/api/complaints/:id/whatsapp-messages', authenticateToken, (req, res) =
   }
 });
 
+// WhatsApp Media Proxy (streams media securely from Meta Cloud API lookaside CDN to frontend)
+app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req, res) => {
+  const { mediaId } = req.params;
+  const token = process.env.META_ACCESS_TOKEN || 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
+
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!metaRes.ok) {
+      const errText = await metaRes.text();
+      console.error('[WhatsApp Media] Meta error for ID', mediaId, errText);
+      return res.status(metaRes.status).send('Failed to locate media on Meta: ' + errText);
+    }
+
+    const metaData = await metaRes.json();
+    if (!metaData.url) {
+      return res.status(404).send('Media URL not provided by Meta');
+    }
+
+    const fileRes = await fetch(metaData.url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!fileRes.ok) {
+      return res.status(fileRes.status).send('Failed to download media binary from Meta CDN');
+    }
+
+    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
+    const contentLength = metaData.file_size || fileRes.headers.get('content-length');
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+
+    const arrayBuffer = await fileRes.arrayBuffer();
+    return res.status(200).send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error('[WhatsApp Media Proxy Error]:', err.message);
+    return res.status(500).send('Error streaming media: ' + err.message);
+  }
+});
+
 // 4. Staff direct reply to customer via WhatsApp from complaint drawer
 app.post('/api/complaints/:id/whatsapp-reply', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
   try {

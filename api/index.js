@@ -5106,7 +5106,7 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
 // WhatsApp Media Proxy (streams media securely from Meta Cloud API lookaside CDN to frontend)
 app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req, res) => {
   const { mediaId } = req.params;
-  const token = process.env.META_ACCESS_TOKEN;
+  const token = getMetaAccessToken();
   if (!token) {
     return res.status(500).send('META_ACCESS_TOKEN is not configured');
   }
@@ -5120,7 +5120,7 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req
     if (!metaRes.ok) {
       const errText = await metaRes.text();
       console.error('[WhatsApp Media] Meta error for ID', mediaId, errText);
-      return res.status(metaRes.status).send('Failed to locate media on Meta');
+      return res.status(metaRes.status).send('Failed to locate media on Meta: ' + errText);
     }
 
     const metaData = await metaRes.json();
@@ -5138,9 +5138,11 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req
       return res.status(fileRes.status).send('Failed to download media binary from Meta CDN');
     }
 
-    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'application/octet-stream';
+    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
     const contentLength = metaData.file_size || fileRes.headers.get('content-length');
 
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Type', contentType);
     if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // Cache for 7 days
@@ -5154,7 +5156,7 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req
     return res.status(200).send(Buffer.from(arrayBuffer));
   } catch (err) {
     console.error('[WhatsApp Media Proxy Error]:', err.message);
-    return res.status(500).send('Error streaming media');
+    return res.status(500).send('Error streaming media: ' + err.message);
   }
 });
 

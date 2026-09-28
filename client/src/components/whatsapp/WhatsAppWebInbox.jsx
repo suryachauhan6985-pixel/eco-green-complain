@@ -14,6 +14,33 @@ import {
   Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
+import { GlobalLoadingOverlay } from '../common/GlobalLoadingOverlay';
+
+// Helper: Resolve relative or proxy WhatsApp media URLs
+function getWhatsAppMediaUrl(msg) {
+  if (!msg) return '';
+  let url = msg.media_url;
+  if (!url && msg.media_id) {
+    url = `/api/whatsapp/media/${msg.media_id}`;
+  }
+  if (!url) return '';
+  url = String(url).trim();
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  const base = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+  if (base && url.startsWith('/api')) {
+    return `${base}${url.replace(/^\/api/, '')}`;
+  }
+  return url;
+}
+
+function isImageMessage(msg) {
+  if (!msg) return false;
+  if (msg.media_type === 'image' || msg.media_type?.includes('image')) return true;
+  if (msg.media_id && (msg.message_body?.toLowerCase().includes('image') || msg.message_body?.toLowerCase().includes('photo') || msg.message_body?.includes('📷'))) return true;
+  return false;
+}
 
 const EMOJI_CATEGORIES = {
   'Smileys': ['😀', '😃', '😄', '😁', '😊', '😇', '🙂', '😉', '😌', '😍', '🥰', '😘', '🤗', '🤔', '🤨', '😐', '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐', '😯', '😪', '😫', '😴', '😌', '😛', '😜', '😝', '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲'],
@@ -113,7 +140,8 @@ export const WhatsAppWebInbox = ({
       return [];
     }
   });
-  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [failedImageIds, setFailedImageIds] = useState(new Set());
   const [selectedPhone, setSelectedPhone] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -228,7 +256,7 @@ export const WhatsAppWebInbox = ({
 
   // Load conversation list from server
   const loadConversations = async (silent = false) => {
-    if (!silent && conversations.length === 0) setLoadingConversations(true);
+    if (!silent) setLoadingConversations(true);
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
@@ -313,9 +341,9 @@ export const WhatsAppWebInbox = ({
     }
   }, [initialTarget]);
 
-  // Initial load: 0ms instant cached load, then silent background sync
+  // Initial load: show loading overlay while fetching live conversation threads
   useEffect(() => {
-    loadConversations(true);
+    loadConversations(false);
 
     // Sync client-side backup asynchronously in background without blocking UI
     const localBackup = getPermanentWhatsAppMessages();
@@ -883,122 +911,197 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* Media: Image Photo preview with download button */}
-                {msg.media_url && (msg.media_type === 'image' || msg.media_type?.includes('image')) && (
-                  <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black/5">
-                    <img
-                      src={msg.media_url}
-                      alt="WhatsApp photo"
-                      className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
-                      onClick={() => setPreviewMedia({ url: msg.media_url, type: 'image' })}
-                    />
-                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMedia({ url: msg.media_url, type: 'image' })}
-                        className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
-                        title="View Full Size"
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadFile(msg.media_url, `whatsapp_${msg.id}.jpg`)}
-                        className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
-                        title="Download Photo"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+                {/* Media: Image Photo preview with download button & graceful failure card */}
+                {isImageMessage(msg) && (
+                  (() => {
+                    const mediaUrl = getWhatsAppMediaUrl(msg);
+                    if (!mediaUrl) return null;
+                    const isFailed = failedImageIds.has(msg.id);
+
+                    if (isFailed) {
+                      return (
+                        <div className="mb-2 p-3 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0">
+                              <Camera className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800">Photo</p>
+                              <p className="text-[11px] text-slate-500 truncate max-w-[180px]">
+                                {msg.media_caption || 'WhatsApp Photo'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFailedImageIds(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(msg.id);
+                                  return next;
+                                });
+                              }}
+                              className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded text-emerald-700 font-semibold flex items-center gap-1 cursor-pointer"
+                              title="Retry Loading"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Retry</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadFile(mediaUrl, `whatsapp_${msg.id || 'photo'}.jpg`)}
+                              className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"
+                              title="Download Photo"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black/5">
+                        <img
+                          src={mediaUrl}
+                          alt="WhatsApp photo"
+                          loading="lazy"
+                          onError={() => {
+                            setFailedImageIds(prev => new Set(prev).add(msg.id));
+                          }}
+                          className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
+                          onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image' })}
+                        />
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image' })}
+                            className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
+                            title="View Full Size"
+                          >
+                            <Maximize2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadFile(mediaUrl, `whatsapp_${msg.id || 'photo'}.jpg`)}
+                            className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
+                            title="Download Photo"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Media: Video Player with Full View & Download */}
-                {msg.media_url && (msg.media_type === 'video' || msg.media_type?.includes('video')) && (
-                  <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs">
-                    <video
-                      src={msg.media_url}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="w-full max-h-72 rounded-t-lg object-contain bg-black"
-                    />
-                    <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
-                      <span className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300">
-                        <Video className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span className="truncate">{msg.media_caption || 'WhatsApp Video'}</span>
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewMedia({ url: msg.media_url, type: 'video', title: msg.media_caption || 'WhatsApp Video' })}
-                          className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
-                          title="Open Full Player"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadFile(msg.media_url, `whatsapp_${msg.id}.mp4`)}
-                          className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
-                          title="Download Video"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
+                {(msg.media_type === 'video' || msg.media_type?.includes('video')) && (
+                  (() => {
+                    const videoUrl = getWhatsAppMediaUrl(msg);
+                    if (!videoUrl) return null;
+                    return (
+                      <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs">
+                        <video
+                          src={videoUrl}
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="w-full max-h-72 rounded-t-lg object-contain bg-black"
+                        />
+                        <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
+                          <span className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300">
+                            <Video className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span className="truncate">{msg.media_caption || 'WhatsApp Video'}</span>
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video' })}
+                              className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
+                              title="Open Full Player"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadFile(videoUrl, `whatsapp_${msg.id || 'video'}.mp4`)}
+                              className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
+                              title="Download Video"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    );
+                  })()
                 )}
 
                 {/* Media: Audio / Voice Note */}
-                {msg.media_url && (msg.media_type === 'audio' || msg.media_type?.includes('audio')) && (
-                  <div className="mb-2 p-2.5 rounded-lg bg-black/5 border border-black/5 max-w-sm">
-                    <div className="flex items-center gap-2 mb-1 text-xs text-[#008069] font-semibold">
-                      <Mic className="w-3.5 h-3.5" />
-                      <span>Voice Note</span>
-                    </div>
-                    <audio src={msg.media_url} controls className="w-full h-8" />
-                  </div>
+                {(msg.media_type === 'audio' || msg.media_type?.includes('audio')) && (
+                  (() => {
+                    const audioUrl = getWhatsAppMediaUrl(msg);
+                    if (!audioUrl) return null;
+                    return (
+                      <div className="mb-2 p-2.5 rounded-lg bg-black/5 border border-black/5 max-w-sm">
+                        <div className="flex items-center gap-2 mb-1 text-xs text-[#008069] font-semibold">
+                          <Mic className="w-3.5 h-3.5" />
+                          <span>Voice Note</span>
+                        </div>
+                        <audio src={audioUrl} controls className="w-full h-8" />
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Media: PDF / Document Card with In-App View & Download */}
-                {msg.media_url && (msg.media_type === 'document' || msg.media_type?.includes('pdf') || msg.media_type?.includes('document')) && (
-                  <div 
-                    onClick={() => setPreviewMedia({ url: msg.media_url, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
-                    className="mb-2 p-3 bg-black/5 hover:bg-emerald-50/80 rounded-lg flex items-center justify-between gap-3 border border-black/5 hover:border-emerald-300 transition-all cursor-pointer group"
-                    title="Click to view PDF in app"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-[#d9fdd3] text-[#008069] group-hover:bg-[#008069] group-hover:text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs transition-colors">
-                        <FileText className="w-5 h-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-xs text-[#111b21] group-hover:text-[#008069] truncate max-w-[220px] transition-colors">
-                          {msg.media_caption || 'Attached Document.pdf'}
-                        </p>
-                        <span className="text-[10px] text-[#667781] uppercase font-mono flex items-center gap-1">
-                          <Eye className="w-3 h-3 text-emerald-600" /> Click to read inside app
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMedia({ url: msg.media_url, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
-                        className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer"
-                        title="View PDF In App"
+                {/* Media: PDF / Document Card with In-App View & Download */}
+                {(msg.media_type === 'document' || msg.media_type?.includes('pdf') || msg.media_type?.includes('document')) && (
+                  (() => {
+                    const docUrl = getWhatsAppMediaUrl(msg);
+                    if (!docUrl) return null;
+                    return (
+                      <div 
+                        onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
+                        className="mb-2 p-3 bg-black/5 hover:bg-emerald-50/80 rounded-lg flex items-center justify-between gap-3 border border-black/5 hover:border-emerald-300 transition-all cursor-pointer group"
+                        title="Click to view PDF in app"
                       >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadFile(msg.media_url, msg.media_caption || 'document.pdf')}
-                        className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/80 rounded-full transition-colors cursor-pointer"
-                        title="Download PDF"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-[#d9fdd3] text-[#008069] group-hover:bg-[#008069] group-hover:text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs transition-colors">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-xs text-[#111b21] group-hover:text-[#008069] truncate max-w-[220px] transition-colors">
+                              {msg.media_caption || 'Attached Document.pdf'}
+                            </p>
+                            <span className="text-[10px] text-[#667781] uppercase font-mono flex items-center gap-1">
+                              <Eye className="w-3 h-3 text-emerald-600" /> Click to read inside app
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
+                            className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer"
+                            title="View PDF In App"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadFile(docUrl, msg.media_caption || 'document.pdf')}
+                            className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/80 rounded-full transition-colors cursor-pointer"
+                            title="Download PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Link Preview Card */}
@@ -1160,6 +1263,9 @@ export const WhatsAppWebInbox = ({
 
   return (
     <div className="w-full flex-1 h-full flex overflow-hidden bg-[#efeae2] select-none">
+      {/* 3 Static Green Bouncing Dots Loading Overlay while chats are loading */}
+      <GlobalLoadingOverlay isVisible={loadingConversations} />
+
       {/* ================= ECO GREEN SOLAR INBOX PANE ================= */}
       <div className={`w-full md:w-[380px] lg:w-[410px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {/* Header: Eco Green Solar Brand & Action Buttons */}
