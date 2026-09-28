@@ -362,17 +362,22 @@ function AppContent() {
       </main>
 
       {/* Mobile Bottom Navigation Bar (App-like navigation on Android / iOS) */}
-      <nav className="md:hidden shrink-0 bg-white border-t border-slate-200 px-2 py-1.5 flex items-center justify-around z-30 shadow-lg">
+      <nav 
+        aria-label="Mobile Navigation"
+        className="md:hidden shrink-0 w-full max-w-full bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-1 py-1 flex items-center justify-between overflow-x-auto scrollbar-none z-30 shadow-lg pb-[max(0.35rem,env(safe-area-inset-bottom))]"
+      >
         {/* Complaints Desk */}
         {['admin', 'staff'].includes(currentUser?.role) && (
           <button
             onClick={() => handleTabChange('complaints')}
-            className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
-              currentTab === 'complaints' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            className={`flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer ${
+              currentTab === 'complaints' 
+                ? 'text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs' 
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Users className="w-4 h-4 mb-0.5" />
-            <span>Complaints</span>
+            <Users className={`w-4 h-4 mb-0.5 shrink-0 ${currentTab === 'complaints' ? 'text-emerald-700 scale-105' : 'text-slate-400'}`} />
+            <span className="text-[9px] sm:text-[10px] leading-tight truncate w-full text-center tracking-tight">Complaints</span>
           </button>
         )}
 
@@ -383,12 +388,14 @@ function AppContent() {
               setTechSection('field_ops');
               handleTabChange('technician');
             }}
-            className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
-              currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            className={`flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer ${
+              currentTab === 'technician' && techSection === 'field_ops' 
+                ? 'text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs' 
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Wrench className="w-4 h-4 mb-0.5" />
-            <span>Field Ops</span>
+            <Wrench className={`w-4 h-4 mb-0.5 shrink-0 ${currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-700 scale-105' : 'text-slate-400'}`} />
+            <span className="text-[9px] sm:text-[10px] leading-tight truncate w-full text-center tracking-tight">Field Ops</span>
           </button>
         )}
 
@@ -399,12 +406,14 @@ function AppContent() {
               setTechSection('collection');
               handleTabChange('technician');
             }}
-            className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
-              currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            className={`flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer ${
+              currentTab === 'technician' && techSection === 'collection' 
+                ? 'text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs' 
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <IndianRupee className="w-4 h-4 mb-0.5" />
-            <span>Collection</span>
+            <IndianRupee className={`w-4 h-4 mb-0.5 shrink-0 ${currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-700 scale-105' : 'text-slate-400'}`} />
+            <span className="text-[9px] sm:text-[10px] leading-tight truncate w-full text-center tracking-tight">Collection</span>
           </button>
         )}
 
@@ -412,12 +421,14 @@ function AppContent() {
         {['admin', 'staff'].includes(currentUser?.role) && (
           <button
             onClick={() => handleTabChange('whatsapp-inbox')}
-            className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
-              currentTab === 'whatsapp-inbox' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            className={`flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer ${
+              currentTab === 'whatsapp-inbox' 
+                ? 'text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs' 
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <MessageCircle className="w-4 h-4 mb-0.5" />
-            <span>WhatsApp</span>
+            <MessageCircle className={`w-4 h-4 mb-0.5 shrink-0 ${currentTab === 'whatsapp-inbox' ? 'text-emerald-700 scale-105' : 'text-slate-400'}`} />
+            <span className="text-[9px] sm:text-[10px] leading-tight truncate w-full text-center tracking-tight">WhatsApp</span>
           </button>
         )}
 
@@ -425,12 +436,14 @@ function AppContent() {
         {currentUser?.role === 'admin' && (
           <button
             onClick={() => handleTabChange('team')}
-            className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
-              currentTab === 'team' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            className={`flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer ${
+              currentTab === 'team' 
+                ? 'text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs' 
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Shield className="w-4 h-4 mb-0.5" />
-            <span>Team</span>
+            <Shield className={`w-4 h-4 mb-0.5 shrink-0 ${currentTab === 'team' ? 'text-emerald-700 scale-105' : 'text-slate-400'}`} />
+            <span className="text-[9px] sm:text-[10px] leading-tight truncate w-full text-center tracking-tight">Team</span>
           </button>
         )}
 
@@ -438,12 +451,14 @@ function AppContent() {
         {currentUser?.role === 'admin' && (
           <button
             onClick={() => handleTabChange('analytics')}
-            className={`flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
-              currentTab === 'analytics' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500'
+            className={`flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer ${
+              currentTab === 'analytics' 
+                ? 'text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs' 
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <BarChart3 className="w-4 h-4 mb-0.5" />
-            <span>Analytics</span>
+            <BarChart3 className={`w-4 h-4 mb-0.5 shrink-0 ${currentTab === 'analytics' ? 'text-emerald-700 scale-105' : 'text-slate-400'}`} />
+            <span className="text-[9px] sm:text-[10px] leading-tight truncate w-full text-center tracking-tight">Analytics</span>
           </button>
         )}
 
@@ -451,10 +466,10 @@ function AppContent() {
         {currentUser?.role === 'customer' && (
           <button
             onClick={() => handleTabChange('customer')}
-            className="flex flex-col items-center py-1 px-3 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50"
+            className="flex-1 max-w-[160px] flex flex-col items-center justify-center py-1.5 px-3 rounded-xl text-emerald-700 bg-emerald-50/90 font-bold shadow-2xs active:scale-95 transition-all cursor-pointer"
           >
-            <Search className="w-4 h-4 mb-0.5" />
-            <span>Track & Help</span>
+            <Search className="w-4 h-4 mb-0.5 text-emerald-700 scale-105" />
+            <span className="text-[10px] leading-tight font-bold">Track & Help</span>
           </button>
         )}
 
@@ -462,10 +477,13 @@ function AppContent() {
         {['admin', 'staff'].includes(currentUser?.role) && (
           <button
             onClick={() => setIsNewComplaintOpen(true)}
-            className="flex flex-col items-center py-1 px-2.5 rounded-xl text-[10px] font-bold text-emerald-700 hover:text-emerald-800"
+            className="flex-1 min-w-[46px] max-w-[76px] flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-center select-none active:scale-95 transition-all cursor-pointer text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50/50"
+            title="Create New Complaint Ticket"
           >
-            <Plus className="w-4 h-4 mb-0.5 text-emerald-600" />
-            <span>+ Ticket</span>
+            <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center mb-0.5 shadow-2xs shrink-0">
+              <Plus className="w-3 h-3 stroke-[3]" />
+            </div>
+            <span className="text-[9px] sm:text-[10px] leading-tight font-bold truncate w-full text-center tracking-tight text-emerald-700">+ Ticket</span>
           </button>
         )}
       </nav>

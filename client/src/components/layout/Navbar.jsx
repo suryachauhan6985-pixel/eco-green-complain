@@ -438,16 +438,29 @@ export const Navbar = ({
 
                       <div className="space-y-2">
                         {currentUser?.role === 'admin' && (
-                          <button
-                            onClick={() => {
-                              setRoleMenuOpen(false);
-                              if (onOpenTour) onOpenTour();
-                            }}
-                            className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
-                          >
-                            <Compass className="w-4 h-4" />
-                            <span>App Feature Tour (Quick Guide)</span>
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                setRoleMenuOpen(false);
+                                if (setCurrentTab) setCurrentTab('templates');
+                              }}
+                              className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                            >
+                              <Settings className="w-4 h-4 text-emerald-700" />
+                              <span>WhatsApp Message Templates</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setRoleMenuOpen(false);
+                                if (onOpenTour) onOpenTour();
+                              }}
+                              className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
+                            >
+                              <Compass className="w-4 h-4" />
+                              <span>App Feature Tour (Quick Guide)</span>
+                            </button>
+                          </>
                         )}
 
                         <button
