@@ -6,7 +6,6 @@ import {
   Wrench, Phone, Star, RotateCcw, AlertTriangle, Send, ArrowRight
 } from 'lucide-react';
 import { formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
-import { GlobalLoadingOverlay } from '../common/GlobalLoadingOverlay';
 
 const STEPS = [
   { key: 'Registered', label: 'Registered' },
@@ -40,10 +39,13 @@ export const CustomerPublicPortal = ({
     if (!q) return;
 
     try {
-      if (!silent) setLoading(true);
-      setSearched(true);
+      if (!silent) {
+        setLoading(true);
+        setSearched(false);
+      }
       const data = await api.trackTicket(q);
       setTrackingData(data);
+      if (!silent) setSearched(true);
       if (data?.complaint?.rating) {
         setStarRating(data.complaint.rating);
         setFeedbackText(data.complaint.feedback_comments || '');
@@ -52,7 +54,10 @@ export const CustomerPublicPortal = ({
         setFeedbackSubmitted(false);
       }
     } catch (err) {
-      if (!silent) setTrackingData(null);
+      if (!silent) {
+        setTrackingData(null);
+        setSearched(true);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -65,16 +70,17 @@ export const CustomerPublicPortal = ({
     }
   }, [initialTicketId]);
 
-  // Real-time live tracking auto-refresh every 5 seconds
+  // Real-time live tracking auto-refresh ONLY when an active ticket is currently loaded
   useEffect(() => {
-    if (!ticketQuery) return;
+    const activeTicketId = trackingData?.complaint?.ticket_id;
+    if (!activeTicketId) return;
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible' && ticketQuery.trim()) {
-        performSearch(ticketQuery.trim(), true);
+      if (document.visibilityState === 'visible') {
+        performSearch(activeTicketId, true);
       }
-    }, 5000);
+    }, 15000);
     return () => clearInterval(interval);
-  }, [ticketQuery]);
+  }, [trackingData?.complaint?.ticket_id]);
 
   const handleSearch = (e) => {
     e?.preventDefault();
@@ -110,9 +116,6 @@ export const CustomerPublicPortal = ({
 
   const portalBody = (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Global 3-Dots Bouncing Loading Overlay */}
-      <GlobalLoadingOverlay isVisible={loading} />
-
       {/* Customer Header Banner */}
       <div className="text-center py-6 px-4 bg-gradient-to-b from-emerald-800 to-teal-900 text-white rounded-3xl shadow-lg">
         {/* Transparent & Enlarged Logo matching login screen */}
