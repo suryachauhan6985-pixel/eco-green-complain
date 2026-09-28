@@ -41,7 +41,7 @@ export const AppUpdateModal = () => {
       const currentBuild = APP_BUILD_TIME;
 
       // If remote build is newer than our running client app build
-      const isNewerBuild = remote.buildTime && remote.buildTime > currentBuild;
+      const isNewerBuild = remote.buildTime && (remote.buildTime > currentBuild || remote.buildTime > installedBuild);
       const isDifferentVersion = remote.version !== APP_VERSION;
 
       if (isNewerBuild || isDifferentVersion) {
@@ -64,8 +64,8 @@ export const AppUpdateModal = () => {
 
     checkForUpdate();
 
-    // Check periodically every 45 seconds and on window focus / visibility change
-    const interval = setInterval(checkForUpdate, 45000);
+    // Check periodically every 25 seconds and on window focus / visibility change
+    const interval = setInterval(checkForUpdate, 25000);
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         checkForUpdate();

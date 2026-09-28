@@ -1,13 +1,13 @@
 {
-  "version": "2.5.4",
-  "buildTime": 1790595000000,
+  "version": "2.5.5",
+  "buildTime": 1790595600000,
   "releaseDate": "2026-09-28",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.5.4",
-  "summary": "Staff & Technician Sign-In Fix, Live Complaint Re-Notification & Dynamic Meta Templates",
+  "title": "Eco Green Solar CMS v2.5.5",
+  "summary": "Mobile Bottom Navbar Viewport Fix & Touch Responsive Navigation",
   "features": [
-    "🔐 Staff & Technician Sign-In Fix: Resolved multi-account phone mapping on password reset to ensure 100% login reliability.",
-    "📲 Real-Time WhatsApp Re-Notification: Editing complaint with customer notification now instantly delivers official Meta WhatsApp templates.",
-    "☀️ Dynamic Meta Approved Templates: Integrated complaint_registered_no_charges directly from Meta WhatsApp Business Platform."
+    "📱 Responsive Mobile Bottom Navbar: All 7 tabs (Complaints, Field Ops, Collection, WhatsApp, Team, Analytics, + Ticket) fit cleanly without being cut off on any mobile viewport.",
+    "⚡ Adaptive Multi-Viewport Layout: Proportional flex distribution and min-width boundaries eliminate horizontal overflow on Samsung, Redmi, iPhone, and Pixel devices.",
+    "💬 Mobile WhatsApp Templates Access: Quick direct shortcut to WhatsApp message templates added to the mobile user profile menu."
   ]
 }
