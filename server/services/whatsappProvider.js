@@ -362,12 +362,12 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
             parameters: [
               { type: 'text', parameter_name: 'technician_name', text: techName },
               { type: 'text', parameter_name: 'complaint_id', text: tktId },
+              { type: 'text', parameter_name: 'reopen_reason', text: reopenReason },
               { type: 'text', parameter_name: 'customer_name', text: custName },
               { type: 'text', parameter_name: 'customer_phone', text: custPhone },
               { type: 'text', parameter_name: 'customer_address', text: custAddress },
-              { type: 'text', parameter_name: 'product_type', text: prodType },
               { type: 'text', parameter_name: 'issue_category', text: issueCat },
-              { type: 'text', parameter_name: 'reopen_reason', text: reopenReason },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
               { type: 'text', parameter_name: 'priority', text: priority },
               { type: 'text', parameter_name: 'portal_url', text: portalLink }
             ]

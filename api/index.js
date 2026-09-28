@@ -489,7 +489,7 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
             { type: 'text', parameter_name: 'issue_category', text: issueCat },
             { type: 'text', parameter_name: 'product_type', text: prodType },
             { type: 'text', parameter_name: 'priority', text: priority },
-            { type: 'text', parameter_name: 'technician_portal_url', text: portalLink }
+            { type: 'text', parameter_name: 'portal_url', text: portalLink }
           ]
         }]
       };
