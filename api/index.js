@@ -858,6 +858,24 @@ app.get(['/api/location/search', '/api/location/postoffice/:query'], async (req,
   }
 });
 
+// App Version Endpoint for Update Modal
+app.get('/version.json', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  return res.json({
+    version: '2.5.4',
+    buildTime: 1790595000000,
+    releaseDate: '2026-09-28',
+    mandatory: true,
+    title: 'Eco Green Solar CMS v2.5.4',
+    summary: 'Staff & Technician Sign-In Fix, Live Complaint Re-Notification & Dynamic Meta Templates',
+    features: [
+      '🔐 Staff & Technician Sign-In Fix: Resolved multi-account phone mapping on password reset to ensure 100% login reliability.',
+      '📲 Real-Time WhatsApp Re-Notification: Editing complaint with customer notification now instantly delivers official Meta WhatsApp templates.',
+      '☀️ Dynamic Meta Approved Templates: Integrated complaint_registered_no_charges directly from Meta WhatsApp Business Platform.'
+    ]
+  });
+});
+
 // ==================== AUTH ROUTES ====================
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
@@ -870,8 +888,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       `SELECT * FROM users 
        WHERE LOWER(email) = LOWER($1) 
           OR LOWER(username) = LOWER($1) 
-          OR ($2 != '' AND phone LIKE '%' || $2)
-       LIMIT 1`,
+          OR ($2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%'))
+       ORDER BY is_active DESC, id DESC`,
       [loginId, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '']
     );
 
@@ -879,20 +897,38 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const user = userRes.rows[0];
+    let user = null;
+    let anyActive = false;
+    for (const candidate of userRes.rows) {
+      if (candidate.is_active !== 0) anyActive = true;
+      const valid = await bcrypt.compare(password, candidate.password_hash);
+      if (valid) {
+        user = candidate;
+        break;
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({ error: anyActive ? 'Invalid credentials' : 'Account is deactivated' });
+    }
+
     if (user.is_active === 0) {
       return res.status(403).json({ error: 'Account is deactivated' });
     }
 
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
     let technicianId = null;
     if (user.role === 'technician') {
-      const techRes = await query('SELECT id FROM technicians WHERE user_id = $1 LIMIT 1', [user.id]);
+      const techRes = await query(
+        `SELECT id FROM technicians 
+         WHERE user_id = $1 
+            OR ($2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%'))
+         ORDER BY id DESC LIMIT 1`, 
+        [user.id, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '']
+      );
       technicianId = techRes.rows[0]?.id || null;
+      if (technicianId) {
+        await query('UPDATE technicians SET user_id = $1 WHERE id = $2 AND (user_id IS NULL OR user_id != $1)', [user.id, technicianId]).catch(() => {});
+      }
     }
 
     const token = jwt.sign(
@@ -1077,12 +1113,19 @@ app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Target user ID or technician ID is required' });
     }
 
-    const updateRes = await query('UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id, name, username, email, role', [hash, targetUserId]);
+    const updateRes = await query('UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id, name, username, email, role, phone', [hash, targetUserId]);
     if (updateRes.rows.length === 0) {
       return res.status(404).json({ error: 'User account not found' });
     }
 
     const u = updateRes.rows[0];
+    if (u.phone && u.phone.trim()) {
+      const cleanP = u.phone.replace(/[^0-9]/g, '');
+      if (cleanP.length >= 10) {
+        await query('UPDATE users SET password_hash = $1 WHERE phone LIKE $2 AND id != $3', [hash, `%${cleanP.slice(-10)}`, u.id]).catch(() => {});
+      }
+    }
+
     return res.json({
       success: true,
       message: `Password securely updated for ${u.name} (@${u.username || u.email.split('@')[0]})`,
@@ -2156,7 +2199,50 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
       current.id
     ]);
 
-    return res.json({ message: 'Complaint updated successfully' });
+    // Fetch updated complaint
+    const updatedRes = await query('SELECT * FROM complaints WHERE id = $1', [current.id]);
+    const updatedComp = updatedRes.rows[0];
+
+    // Check if customer notification was requested
+    const shouldNotifyCustomer = (b.notify_customer === true || b.notify_customer === 1 || b.notify_customer === '1' || b.notify_customer === 'true' || cleanNotifyCharges === 1);
+
+    let waResult = null;
+    if (shouldNotifyCustomer && updatedComp?.customer_phone) {
+      try {
+        const estCharges = Number(updatedComp.estimated_charges || 0);
+        const shouldCharge = (cleanNotifyCharges === 1 && estCharges > 0);
+        const templateToUse = shouldCharge ? 'complaint_registered' : 'complaint_registered_no_charges';
+
+        waResult = await sendWhatsApp({
+          to: updatedComp.customer_phone,
+          templateName: templateToUse,
+          variables: {
+            customer_name: updatedComp.customer_name,
+            ticket_id: updatedComp.ticket_id,
+            product_type: updatedComp.product_type,
+            issue_category: updatedComp.issue_category,
+            estimated_charges: updatedComp.estimated_charges,
+            notify_charges: cleanNotifyCharges,
+            db_complaint_id: updatedComp.id
+          }
+        });
+
+        const performerName = req.user?.name || 'Supervisor';
+        const performerRole = req.user?.role || 'staff';
+        await query(
+          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+          [updatedComp.id, 'Customer Re-Notified', `Ticket updated and notification dispatched to customer via WhatsApp (${shouldCharge ? 'With Quoted Charges ₹' + estCharges : 'Standard / No Charges'})`, performerName, performerRole]
+        ).catch(() => {});
+      } catch (waErr) {
+        console.warn('[Edit Complaint WhatsApp Error]', waErr.message);
+      }
+    }
+
+    return res.json({ 
+      message: 'Complaint updated successfully',
+      complaint: updatedComp,
+      whatsapp_notified: !!waResult?.success
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

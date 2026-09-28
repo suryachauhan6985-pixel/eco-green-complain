@@ -597,11 +597,6 @@ async function updateComplaint(req, res) {
     const actorName = req.user ? req.user.name : 'Supervisor';
     const actorRole = req.user ? req.user.role : 'staff';
 
-    db.prepare(`
-      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
-      VALUES (?, 'Details Updated', 'Complaint parameters and customer details updated', ?, ?, 0, CURRENT_TIMESTAMP)
-    `).run(id, actorName, actorRole);
-
     const updated = db.prepare(`
       SELECT c.*, t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone
       FROM complaints c
@@ -609,8 +604,43 @@ async function updateComplaint(req, res) {
       WHERE c.id = ?
     `).get(id);
 
+    const shouldNotifyCust = (req.body.notify_customer === true || req.body.notify_customer === 1 || req.body.notify_customer === '1' || shouldNotifyCharges === 1);
+
+    if (shouldNotifyCust && updated?.customer_phone) {
+      try {
+        const estCharges = Number(updated.estimated_charges || 0);
+        const shouldCharge = (shouldNotifyCharges === 1 && estCharges > 0);
+        const templateKey = shouldCharge ? 'complaint_registered' : 'complaint_registered_no_charges';
+
+        notificationService.dispatchAsync({
+          complaintId: id,
+          templateKey,
+          data: {
+            customer_name: updated.customer_name,
+            ticket_id: updated.ticket_id,
+            product_type: updated.product_type,
+            issue_category: updated.issue_category,
+            estimated_charges: updated.estimated_charges,
+            notify_charges: shouldNotifyCharges
+          }
+        });
+
+        db.prepare(`
+          INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
+          VALUES (?, 'Customer Re-Notified', ?, ?, ?, 1, CURRENT_TIMESTAMP)
+        `).run(id, `Ticket updated and notification dispatched to customer via WhatsApp (${shouldCharge ? 'With Quoted Charges ₹' + estCharges : 'Standard / No Charges'})`, actorName, actorRole);
+      } catch (e) {
+        console.warn('Dispatch notification on update error:', e.message);
+      }
+    } else {
+      db.prepare(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
+        VALUES (?, 'Details Updated', 'Complaint parameters and customer details updated', ?, ?, 0, CURRENT_TIMESTAMP)
+      `).run(id, actorName, actorRole);
+    }
+
     realtimeService.notifyComplaintUpdate({ id, action: 'updated', status: updated?.status });
-    res.json({ message: 'Complaint updated successfully', complaint: updated });
+    res.json({ message: 'Complaint updated successfully', complaint: updated, whatsapp_notified: shouldNotifyCust });
   } catch (err) {
     console.error('Update complaint error:', err);
     res.status(500).json({ error: 'Failed to update complaint: ' + err.message });

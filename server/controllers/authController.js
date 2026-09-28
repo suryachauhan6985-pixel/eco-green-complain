@@ -18,7 +18,7 @@ async function login(req, res) {
     const numericMatch = rawIdentifier.match(/^(?:tech[-_ ]*|staff[-_ ]*|id[-_ ]*|#)?(\d+)$/i);
     const numericId = numericMatch ? parseInt(numericMatch[1], 10) : null;
 
-    const user = db.prepare(`
+    const candidates = db.prepare(`
       SELECT * FROM users 
       WHERE is_active = 1 AND (
         LOWER(username) = ?
@@ -40,8 +40,8 @@ async function login(req, res) {
           )
         )
       )
-      LIMIT 1
-    `).get(
+      ORDER BY id DESC
+    `).all(
       noAt, noAt,
       rawIdentifier.toLowerCase(), rawIdentifier.toLowerCase(),
       rawIdentifier.toLowerCase(),
@@ -55,12 +55,16 @@ async function login(req, res) {
       last10Phone, `%${last10Phone}%`
     );
 
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid User ID or password' });
+    let user = null;
+    for (const cand of candidates) {
+      const isMatch = await bcrypt.compare(password, cand.password_hash);
+      if (isMatch) {
+        user = cand;
+        break;
+      }
     }
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
+    if (!user) {
       return res.status(401).json({ error: 'Invalid User ID or password' });
     }
 
@@ -348,7 +352,16 @@ async function adminResetPassword(req, res) {
       return res.status(404).json({ error: 'User account not found' });
     }
 
-    const updatedUser = db.prepare('SELECT id, name, username, email, role FROM users WHERE id = ?').get(targetUserId);
+    const updatedUser = db.prepare('SELECT id, name, username, email, role, phone FROM users WHERE id = ?').get(targetUserId);
+    if (updatedUser?.phone && updatedUser.phone.trim()) {
+      const cleanP = updatedUser.phone.replace(/\D/g, '');
+      if (cleanP.length >= 10) {
+        try {
+          db.prepare('UPDATE users SET password_hash = ? WHERE phone LIKE ? AND id != ?').run(passwordHash, `%${cleanP.slice(-10)}`, targetUserId);
+        } catch (_) {}
+      }
+    }
+
     res.json({
       success: true,
       message: `Password securely updated for ${updatedUser.name} (@${updatedUser.username || updatedUser.email?.split('@')[0]})`,

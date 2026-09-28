@@ -814,13 +814,14 @@ export const ComplaintDetailDrawer = ({
         ...editFormData,
         is_in_warranty: (editFormData.is_in_warranty === 1 || editFormData.is_in_warranty === true || editFormData.is_in_warranty === '1') ? 1 : 0,
         notify_charges: (editFormData.notify_charges === 1 || editFormData.notify_charges === true || editFormData.notify_charges === '1') ? 1 : 0,
-        estimated_charges: Number(editFormData.estimated_charges) || 0
+        estimated_charges: Number(editFormData.estimated_charges) || 0,
+        notify_customer: Boolean(editFormData.notify_charges)
       };
-      await api.updateComplaint(ticket.id, payload);
+      const res = await api.updateComplaint(ticket.id, payload);
       await fetchTicketDetails();
       setIsEditing(false);
       if (onComplaintUpdated) onComplaintUpdated();
-      showToast('Complaint details updated successfully!', 'success');
+      showToast(res?.whatsapp_notified ? 'Complaint updated & customer notified via WhatsApp! 📲' : 'Complaint details updated successfully!', 'success');
     } catch (err) {
       showToast('Failed to update complaint: ' + err.message, 'error');
     } finally {

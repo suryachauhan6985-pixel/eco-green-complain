@@ -1,13 +1,13 @@
 {
-  "version": "2.5.3",
-  "buildTime": 1790535000000,
-  "releaseDate": "2026-09-27",
+  "version": "2.5.4",
+  "buildTime": 1790595000000,
+  "releaseDate": "2026-09-28",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.5.3",
-  "summary": "Fix Complaints CSV Report Export & High-Performance In-Browser Excel Customer Directory Sync (Fix 413)",
+  "title": "Eco Green Solar CMS v2.5.4",
+  "summary": "Staff & Technician Sign-In Fix, Live Complaint Re-Notification & Dynamic Meta Templates",
   "features": [
-    "📊 Reliable Complaints CSV Export: Implemented authenticated /api/reports/export-csv endpoint with client-side fallback to ensure 1-click CSV download always succeeds.",
-    "🚀 In-Browser Excel Processing (Fix Status 413): Switched customer directory Excel parser to client-side SheetJS engine, completely eliminating Vercel 4.5MB payload limit errors.",
-    "⚡ Instant Analytics & Warranty Calculations: Automatically recalculates 0-5 year warranty statuses for 6,000+ customer records instantaneously in browser memory."
+    "🔐 Staff & Technician Sign-In Fix: Resolved multi-account phone mapping on password reset to ensure 100% login reliability.",
+    "📲 Real-Time WhatsApp Re-Notification: Editing complaint with customer notification now instantly delivers official Meta WhatsApp templates.",
+    "☀️ Dynamic Meta Approved Templates: Integrated complaint_registered_no_charges directly from Meta WhatsApp Business Platform."
   ]
 }
