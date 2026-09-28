@@ -721,12 +721,8 @@ function notifyLoading(isLoading, message = 'Processing...') {
 
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
-  const isBackground = 
-    endpoint.includes('/unread-count') || 
-    endpoint.includes('/meta-status') || 
-    endpoint.startsWith('/auth/me');
-
-  const shouldTrack = !isBackground && options.noOverlay !== true;
+  const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+  const shouldTrack = (isMutation || options.showOverlay === true) && options.noOverlay !== true;
   let timerId = null;
 
   if (shouldTrack) {
