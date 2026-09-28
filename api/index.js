@@ -195,7 +195,8 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
       const issueCat = cleanParam(variables.issue_category, 'Service Request');
 
       const estCharges = Number(variables.estimated_charges || 0);
-      const shouldNotifyCharges = variables.notify_charges !== false && variables.notify_charges !== 0 && estCharges > 0;
+      const isNotifyActive = (variables.notify_charges === 1 || variables.notify_charges === '1' || variables.notify_charges === true || variables.notify_charges === 'true');
+      const shouldNotifyCharges = isNotifyActive && estCharges > 0;
       const chargesParam = shouldNotifyCharges ? `₹${estCharges}` : '₹0 (Under Warranty)';
 
       renderedBody = `Namaste ${custName},\n\nYour service complaint has been registered with Eco Green Solar.\nTicket ID: ${ticketId}\nProduct: ${prodType}\nIssue: ${issueCat}\nEstimated Service Charge: ${chargesParam}\n\nTrack ticket: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
@@ -1579,9 +1580,9 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
       body.invoice_no || '',
       body.invoice_date || '',
       body.location_url || '',
-      Number(body.is_in_warranty ?? 1),
+      (body.is_in_warranty === 1 || body.is_in_warranty === true || body.is_in_warranty === '1' || body.is_in_warranty === 'true') ? 1 : 0,
       Number(body.estimated_charges || 0),
-      body.notify_charges ? 1 : 0,
+      (body.notify_charges === 1 || body.notify_charges === true || body.notify_charges === '1' || body.notify_charges === 'true') ? 1 : 0,
       0,
       Number(body.estimated_charges || 0) > 0 ? 'Unpaid' : 'Not Applicable',
       body.product_type || 'Solar Rooftop Systems',

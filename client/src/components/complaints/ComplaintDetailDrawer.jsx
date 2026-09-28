@@ -790,7 +790,7 @@ export const ComplaintDetailDrawer = ({
       location_url: ticket.location_url || '',
       is_in_warranty: ticket.is_in_warranty !== undefined ? ticket.is_in_warranty : 1,
       estimated_charges: ticket.estimated_charges !== undefined ? ticket.estimated_charges : 0,
-      notify_charges: ticket.notify_charges === 1,
+      notify_charges: (ticket.notify_charges === 1 || ticket.notify_charges === '1' || ticket.notify_charges === true),
       product_type: ticket.product_type || 'Solar Rooftop Systems',
       product_serial: ticket.product_serial || '',
       installation_id: ticket.installation_id || '',
@@ -1293,8 +1293,10 @@ export const ComplaintDetailDrawer = ({
                         <div className="bg-white p-2.5 rounded-lg border border-amber-100">
                           <span className="text-[11px] text-slate-500 block">Quoted Service Charge:</span>
                           <strong className="text-base font-black text-slate-900">₹{ticket.estimated_charges || 0}</strong>
-                          {ticket.notify_charges === 1 && (
+                          {(ticket.notify_charges === 1 || ticket.notify_charges === '1' || ticket.notify_charges === true) && Number(ticket.estimated_charges || 0) > 0 ? (
                             <span className="text-[10px] text-emerald-700 block font-semibold">✓ Customer Notified</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 block font-medium">Customer Not Notified</span>
                           )}
                         </div>
 
@@ -3052,6 +3054,19 @@ export const ComplaintDetailDrawer = ({
                       <option value="Medium">Medium</option>
                       <option value="Low">Low</option>
                     </select>
+                  </div>
+                  <div className="sm:col-span-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!editFormData.notify_charges}
+                        onChange={(e) => setEditFormData({ ...editFormData, notify_charges: e.target.checked })}
+                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">
+                        Include charges in customer notification message (Customer Notified)
+                      </span>
+                    </label>
                   </div>
                 </div>
 

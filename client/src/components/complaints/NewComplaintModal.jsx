@@ -561,7 +561,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       setSubmitting(true);
       const data = new FormData();
       Object.keys(formData).forEach((key) => {
-        if (formData[key] !== undefined && formData[key] !== null && formData[key] !== '') {
+        if (key === 'notify_charges') {
+          data.append('notify_charges', formData.notify_charges ? '1' : '0');
+        } else if (key === 'is_in_warranty') {
+          data.append('is_in_warranty', (formData.is_in_warranty === 1 || formData.is_in_warranty === '1' || formData.is_in_warranty === true) ? '1' : '0');
+        } else if (formData[key] !== undefined && formData[key] !== null && formData[key] !== '') {
           data.append(key, formData[key]);
         }
       });

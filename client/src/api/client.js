@@ -429,7 +429,7 @@ class LocalMockStore {
       location_url: data.get ? data.get('location_url') : data.location_url,
       is_in_warranty: (data.get ? data.get('is_in_warranty') : data.is_in_warranty) !== undefined ? Number(data.get ? data.get('is_in_warranty') : data.is_in_warranty) : 1,
       estimated_charges: Number((data.get ? data.get('estimated_charges') : data.estimated_charges) || 0),
-      notify_charges: (data.get ? data.get('notify_charges') : data.notify_charges) ? 1 : 0,
+      notify_charges: ((data.get ? data.get('notify_charges') : data.notify_charges) === 1 || (data.get ? data.get('notify_charges') : data.notify_charges) === '1' || (data.get ? data.get('notify_charges') : data.notify_charges) === true || (data.get ? data.get('notify_charges') : data.notify_charges) === 'true') ? 1 : 0,
       payment_collected: 0,
       payment_status: Number((data.get ? data.get('estimated_charges') : data.estimated_charges) || 0) > 0 ? 'Unpaid' : 'Not Applicable',
       product_type: data.get ? data.get('product_type') : data.product_type,
@@ -448,7 +448,7 @@ class LocalMockStore {
     // Also add simulated notification
     const notifs = JSON.parse(localStorage.getItem('egs_mock_notifications') || '[]');
     let chargesText = '';
-    if (newComplaint.notify_charges && newComplaint.estimated_charges > 0) {
+    if (newComplaint.notify_charges === 1 && newComplaint.estimated_charges > 0) {
       chargesText = `\nEstimated Service Charges: ₹${newComplaint.estimated_charges}`;
     }
     notifs.unshift({
@@ -490,7 +490,8 @@ class LocalMockStore {
         comp.estimated_charges = Number(getVal('estimated_charges'));
       }
       if (getVal('notify_charges') !== undefined) {
-        comp.notify_charges = getVal('notify_charges') ? 1 : 0;
+        const rawNotify = getVal('notify_charges');
+        comp.notify_charges = (rawNotify === 1 || rawNotify === '1' || rawNotify === true || rawNotify === 'true') ? 1 : 0;
       }
       localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
     }
