@@ -197,7 +197,7 @@ export const TemplateManager = () => {
     const isTech = isTechnicianTemplate(tmpl);
 
     const verifiedKeys = [
-      'complaint_registered', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
+      'complaint_registered', 'complaint_registered_no_charges', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
       'technician_work_order', 'technician_reminder', 'technician_reach_out_customer',
       'technician_reopened_work_order', 'technician_reopen_job_transferred',
