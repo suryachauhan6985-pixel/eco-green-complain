@@ -134,7 +134,7 @@ export const AppUpdateModal = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-emerald-400">Update Installed Successfully! ✨</p>
               <p className="text-[11px] text-slate-300 line-clamp-2">
-                Eco Green Solar CMS v{APP_VERSION} is now active with all new features and performance enhancements.
+                Eco Green Support v{APP_VERSION} is now active with all new features and performance enhancements.
               </p>
             </div>
             <button 
@@ -169,7 +169,7 @@ export const AppUpdateModal = () => {
                     </span>
                   </div>
                   <h3 className="text-lg sm:text-xl font-black text-white mt-0.5">
-                    {updateData?.title || 'Eco Green Solar CMS Update'}
+                    {updateData?.title || 'Eco Green Support Update'}
                   </h3>
                 </div>
               </div>

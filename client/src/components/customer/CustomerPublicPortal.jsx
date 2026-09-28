@@ -115,7 +115,7 @@ export const CustomerPublicPortal = ({
         <div className="mb-4 flex justify-center items-center py-1">
           <img 
             src="/company-logo-white.png" 
-            alt="Eco Green Solar" 
+            alt="Eco Green Support" 
             className="h-14 sm:h-16 w-auto object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] hover:scale-105 transition-transform" 
           />
         </div>
@@ -357,7 +357,7 @@ export const CustomerPublicPortal = ({
         {/* Top Standalone Header */}
         <header className="bg-white border-b border-slate-200 shadow-2xs px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-2.5">
-            <img src="/company-logo.png" alt="Eco Green Solar" className="h-9 sm:h-10 w-auto object-contain shrink-0" />
+            <img src="/company-logo.png" alt="Eco Green Support" className="h-9 sm:h-10 w-auto object-contain shrink-0" />
             <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded tracking-wide uppercase hidden sm:inline-block">
               Tracking Portal
             </span>
@@ -377,7 +377,7 @@ export const CustomerPublicPortal = ({
 
         {/* Footer */}
         <footer className="bg-white border-t border-slate-200 py-4 px-4 text-center text-xs text-slate-500 font-medium">
-          <p>© 2026 Eco Green Solar — Customer Service Desk • Rooftop Solar • Water Heaters • Heat Pumps</p>
+          <p>© 2026 Eco Green Support — Customer Service Desk • Rooftop Solar • Water Heaters • Heat Pumps</p>
         </footer>
       </div>
     );

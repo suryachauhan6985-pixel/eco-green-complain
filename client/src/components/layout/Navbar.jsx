@@ -55,11 +55,11 @@ export const Navbar = ({
             >
               <img 
                 src="/company-logo.png" 
-                alt="Eco Green Solar" 
+                alt="Eco Green Support" 
                 className="h-11 sm:h-12 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity" 
               />
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0 hidden sm:inline-block">
-                CMS
+                SUPPORT
               </span>
             </div>
 
@@ -394,7 +394,7 @@ export const Navbar = ({
                       <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 shrink-0">
                         <div>
                           <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
-                            Eco Green Solar Portals
+                            Eco Green Support Portals
                           </p>
                           <p className="text-sm font-bold text-slate-900">
                             Active User Account

@@ -290,7 +290,7 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
             <div className="w-4 h-4 rounded-md bg-emerald-600 flex items-center justify-center text-white text-[10px] font-bold">
               ⚡
             </div>
-            <span className="font-semibold text-slate-300 text-[11px] tracking-wide">Eco Green Solar CMS</span>
+            <span className="font-semibold text-slate-300 text-[11px] tracking-wide">Eco Green Support</span>
             <span className="text-slate-500">•</span>
             <span className="text-[10px] text-slate-400">Just now</span>
           </div>

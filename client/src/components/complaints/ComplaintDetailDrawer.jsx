@@ -3206,10 +3206,10 @@ export const ComplaintDetailDrawer = ({
                       <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 text-xs space-y-1 animate-in fade-in">
                         <div className="flex items-center gap-1.5 font-bold text-amber-900">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>Warning: Quoted Charge se Kam Payment Liya Ja Raha Hai!</span>
+                          <span>Warning: Payment Amount is Less Than Quoted Service Charge</span>
                         </div>
                         <p className="text-[11px] text-amber-800 leading-relaxed">
-                          Allocated amount <strong>₹{allocatedAmount}</strong> hai par aap <strong>₹{enteredAmount}</strong> (₹{allocatedAmount - enteredAmount} kam) collect kar rahe hain. Kiske approval se kam liya hai uska reason likhna <strong>anivarya (mandatory)</strong> hai.
+                          Quoted service charge is <strong>₹{allocatedAmount}</strong>, but you are recording <strong>₹{enteredAmount}</strong> (₹{allocatedAmount - enteredAmount} short). Authorizing authority and reason for reduced payment is <strong>mandatory</strong>.
                         </p>
                       </div>
                     )}
@@ -3218,10 +3218,10 @@ export const ComplaintDetailDrawer = ({
                       <div className="p-3 bg-blue-50 border border-blue-300 rounded-xl text-blue-950 text-xs space-y-1 animate-in fade-in">
                         <div className="flex items-center gap-1.5 font-bold text-blue-900">
                           <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0" />
-                          <span>Warning: Quoted Charge se Extra / Jyada Payment Liya Ja Raha Hai!</span>
+                          <span>Warning: Payment Amount Exceeds Quoted Service Charge</span>
                         </div>
                         <p className="text-[11px] text-blue-800 leading-relaxed">
-                          Allocated amount <strong>₹{allocatedAmount}</strong> hai par aap <strong>₹{enteredAmount}</strong> (₹{enteredAmount - allocatedAmount} extra) collect kar rahe hain. Kiske approval se extra liya hai uska reason likhna <strong>anivarya (mandatory)</strong> hai.
+                          Quoted service charge is <strong>₹{allocatedAmount}</strong>, but you are recording <strong>₹{enteredAmount}</strong> (₹{enteredAmount - allocatedAmount} additional). Authorizing authority and reason for extra collection is <strong>mandatory</strong>.
                         </p>
                       </div>
                     )}
@@ -3232,7 +3232,7 @@ export const ComplaintDetailDrawer = ({
                         <label className="block text-[11px] font-bold text-slate-800 flex items-center justify-between">
                           <span className="flex items-center gap-1">
                             <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            {isUnderpaid ? 'Approval Note (Kiske Approval Se Kam Liya Hai) *' : 'Approval Note (Kiske Approval Se Jyada Liya Hai) *'}
+                            {isUnderpaid ? 'Approval Note (Authorized By & Reason for Discount / Shortage) *' : 'Approval Note (Authorized By & Reason for Additional Collection) *'}
                           </span>
                           <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
                             Required to Unlock
@@ -3243,15 +3243,15 @@ export const ComplaintDetailDrawer = ({
                           required
                           placeholder={
                             isUnderpaid
-                              ? 'e.g. Approved by Admin (Rohit Bhai) due to customer discount / pending visit'
-                              : 'e.g. Approved by Admin / Customer agreed for extra 10m cable & connector replacement'
+                              ? 'e.g. Approved by Supervisor / Admin due to customer discount or partial visit'
+                              : 'e.g. Approved by Supervisor / Customer agreed for extra cable or spare parts'
                           }
                           value={paymentData.collection_reason}
                           onChange={(e) => setPaymentData({ ...paymentData, collection_reason: e.target.value })}
                           className="w-full text-xs px-3 py-2 border border-amber-300 bg-amber-50/40 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
                         />
                         <p className="text-[10px] text-slate-500">
-                          Providing this reason is mandatory to unlock the payment collection button.
+                          Providing this approval note is mandatory to unlock the payment collection button.
                         </p>
                       </div>
                     )}

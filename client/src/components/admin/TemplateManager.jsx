@@ -22,6 +22,7 @@ export const TRIGGER_OPTIONS = [
   { id: 'technician_reminder', label: 'Pending Visit Reminder', audience: 'technician', desc: 'Fires as schedule reminder for upcoming service visit' },
   { id: 'technician_reopened_work_order', label: 'Technician Reopened Work Order (Reopened Case)', audience: 'technician', desc: 'Fires to assigned technician when a closed complaint is reopened' },
   { id: 'technician_reopen_job_transferred', label: 'Technician Reopened Job Transferred (Previous Tech Notice)', audience: 'technician', desc: 'Fires on reopen to notify previous technician that job was transferred to another specialist' },
+  { id: 'technician_reach_out_customer', label: 'Technician WhatsApp Message (Quick Chat to Customer)', audience: 'customer', desc: 'Pre-fills technician greeting message when clicking WhatsApp button on job card in Field Workspace' },
   { id: 'technician_direct_reachout', label: 'Technician Direct Reach Out (Quick Chat)', audience: 'customer', desc: 'Pre-fills technician greeting message when clicking WhatsApp on complaint card' },
   { id: 'custom_trigger', label: 'Custom Outbound Trigger', audience: 'all', desc: 'Triggered via custom API or manual supervisor broadcast' }
 ];

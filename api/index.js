@@ -862,16 +862,17 @@ app.get(['/api/location/search', '/api/location/postoffice/:query'], async (req,
 app.get('/version.json', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.json({
-    version: '2.5.6',
-    buildTime: 1790596300000,
+    version: '2.5.7',
+    buildTime: 1790602000000,
     releaseDate: '2026-09-28',
     mandatory: true,
-    title: 'Eco Green Solar CMS v2.5.6',
-    summary: 'Resolved Complaint WhatsApp Technician Name Fix & Mobile Navigation Enhancements',
+    title: 'Eco Green Support v2.5.7',
+    summary: 'Eco Green Support Rebranding, Technician WhatsApp Template Control & Mobile Nav Enhancements',
     features: [
-      '👨‍🔧 Real Technician Name in Resolution WhatsApp: Fixed customer resolution template so actual assigned technician name is populated instead of default Service Engineer.',
-      '📱 Responsive Mobile Bottom Navbar: All 7 navigation tabs fit seamlessly across all mobile viewports without any horizontal cutoff.',
-      '💬 Meta Approved WhatsApp Delivery: Complete parameter sync for complaint_resolved official templates.'
+      '🌿 Official Eco Green Support Rebranding: Upgraded all portal headers, manifests, badges and footers to Eco Green Support.',
+      '📱 Balanced Mobile Bottom Navbar: Seamlessly centered and spaced navigation buttons on mobile viewports.',
+      '💬 Dynamic Technician WhatsApp Message: Fully customizable technician reach-out message in Template Manager.',
+      '💰 Cash Settlement Amount Sync: Real-time collection and settlement figures accurately mapped across all technicians.'
     ]
   });
 });
@@ -1221,7 +1222,10 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
       SELECT t.*, 
         COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress', 'On Hold')) as active_tickets_count,
         COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
-        ROUND(AVG(c.rating)::numeric, 1) as average_rating
+        ROUND(AVG(c.rating)::numeric, 1) as average_rating,
+        COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id), 0) as total_collected,
+        COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND c2.company_settlement_status = 'Settled with Company'), 0) as total_settled_with_company,
+        COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND (c2.company_settlement_status IS NULL OR c2.company_settlement_status != 'Settled with Company')), 0) as cash_in_hand_due
       FROM technicians t
       LEFT JOIN complaints c ON c.assigned_technician_id = t.id
       GROUP BY t.id
@@ -1330,6 +1334,123 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
   } catch (err) {
     console.error('Batch settlement error:', err);
     return res.status(500).json({ error: 'Failed to settle technician balance: ' + err.message });
+  }
+});
+
+// ==================== NOTIFICATION TEMPLATES ROUTES ====================
+app.get('/api/notifications/templates', async (req, res) => {
+  try {
+    const r = await query(`
+      SELECT * FROM notification_templates 
+      ORDER BY 
+        CASE audience 
+          WHEN 'customer' THEN 1 
+          WHEN 'technician' THEN 2 
+          WHEN 'staff' THEN 3 
+          ELSE 4 
+        END ASC, 
+        id ASC
+    `);
+    return res.json({ success: true, templates: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch templates: ' + err.message });
+  }
+});
+
+app.get('/api/notifications/templates/meta-status', async (req, res) => {
+  try {
+    const r = await query('SELECT id, template_key, meta_status, last_synced_at FROM notification_templates');
+    return res.json({ success: true, templates: r.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/notifications/templates/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { whatsapp_body, email_subject, email_body, is_active, name } = req.body;
+    const updateRes = await query(`
+      UPDATE notification_templates SET
+        whatsapp_body = COALESCE($1, whatsapp_body),
+        email_subject = COALESCE($2, email_subject),
+        email_body = COALESCE($3, email_body),
+        is_active = COALESCE($4, is_active),
+        name = COALESCE($5, name),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $6 OR template_key = $6
+      RETURNING *
+    `, [whatsapp_body, email_subject, email_body, is_active, name, String(id)]);
+
+    if (!updateRes.rows.length) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    return res.json({ success: true, message: 'Template updated successfully', template: updateRes.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notifications/templates/:id/toggle-active', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateRes = await query(`
+      UPDATE notification_templates SET
+        is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $1 OR template_key = $1
+      RETURNING is_active
+    `, [String(id)]);
+
+    if (!updateRes.rows.length) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    return res.json({ success: true, is_active: updateRes.rows[0].is_active, message: 'Status updated' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notifications/templates', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const {
+      name,
+      template_key,
+      audience = 'customer',
+      trigger_event = 'manual',
+      whatsapp_body,
+      email_subject = '',
+      email_body = '',
+      is_active = 1
+    } = req.body;
+
+    if (!name || !whatsapp_body) {
+      return res.status(400).json({ error: 'Template name and WhatsApp body are required' });
+    }
+
+    const cleanKey = (template_key || name.toLowerCase().replace(/[^a-z0-9_]/g, '_')).replace(/_+/g, '_').slice(0, 50);
+
+    const r = await query(`
+      INSERT INTO notification_templates (
+        template_key, name, whatsapp_body, email_subject, email_body,
+        audience, trigger_event, is_active, channel, meta_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'whatsapp', 'DIRECT_CHAT')
+      RETURNING *
+    `, [cleanKey, name.trim(), whatsapp_body, email_subject || name.trim(), email_body || whatsapp_body, audience, trigger_event, is_active]);
+
+    return res.status(201).json({ success: true, message: 'Template created', template: r.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/notifications/templates/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM notification_templates WHERE id::text = $1 OR template_key = $1', [String(id)]);
+    return res.json({ success: true, message: 'Template deleted' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

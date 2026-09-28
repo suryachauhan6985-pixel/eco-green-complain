@@ -1,13 +1,14 @@
 {
-  "version": "2.5.6",
-  "buildTime": 1790596300000,
+  "version": "2.5.7",
+  "buildTime": 1790602000000,
   "releaseDate": "2026-09-28",
   "mandatory": true,
-  "title": "Eco Green Solar CMS v2.5.6",
-  "summary": "Resolved Complaint WhatsApp Technician Name Fix & Mobile Navigation Enhancements",
+  "title": "Eco Green Support v2.5.7",
+  "summary": "Eco Green Support Rebranding, Technician WhatsApp Template Control & Mobile Nav Enhancements",
   "features": [
-    "👨‍🔧 Real Technician Name in Resolution WhatsApp: Fixed customer resolution template so actual assigned technician name is populated instead of default Service Engineer.",
-    "📱 Responsive Mobile Bottom Navbar: All 7 navigation tabs fit seamlessly across all mobile viewports without any horizontal cutoff.",
-    "💬 Meta Approved WhatsApp Delivery: Complete parameter sync for complaint_resolved official templates."
+    "🌿 Official Eco Green Support Rebranding: Upgraded all portal headers, manifests, badges and footers to Eco Green Support.",
+    "📱 Balanced Mobile Bottom Navbar: Seamlessly centered and spaced navigation buttons on mobile viewports.",
+    "💬 Dynamic Technician WhatsApp Message: Fully customizable technician reach-out message in Template Manager.",
+    "💰 Cash Settlement Amount Sync: Real-time collection and settlement figures accurately mapped across all technicians."
   ]
 }

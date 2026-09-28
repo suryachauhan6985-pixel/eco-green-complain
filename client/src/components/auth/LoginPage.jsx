@@ -120,7 +120,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
               <div className="mb-5 flex justify-center items-center py-1">
                 <img 
                   src="/company-logo-white.png" 
-                  alt="Eco Green Solar" 
+                  alt="Eco Green Support" 
                   className="h-14 w-auto object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] hover:scale-105 transition-transform" 
                 />
               </div>
@@ -176,8 +176,8 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
 
             {/* Footer note on left */}
             <div className="mt-4 pt-3 border-t border-emerald-700/50 text-[11px] text-emerald-200/80 flex items-center justify-between">
-              <span>© 2026 Eco Green Solar</span>
-              <span className="font-mono text-[10px] bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-600/40 text-emerald-300">CMS Enterprise</span>
+              <span>© 2026 Eco Green Support</span>
+              <span className="font-mono text-[10px] bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-600/40 text-emerald-300">Support Portal</span>
             </div>
           </div>
         </div>
@@ -189,11 +189,11 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
             <div className="lg:hidden flex flex-col items-center text-center mb-6 pb-4 border-b border-slate-100">
               <img 
                 src="/company-logo.png" 
-                alt="Eco Green Solar" 
+                alt="Eco Green Support" 
                 className="h-12 w-auto object-contain mb-1.5 filter drop-shadow-2xs" 
               />
               <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                CMS Enterprise Portal
+                Eco Green Support Portal
               </span>
             </div>
 
@@ -203,7 +203,7 @@ export const LoginPage = ({ onSwitchToCustomer }) => {
                   Staff & Technician Sign In
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Sign in with your Eco Green credentials
+                  Sign in with your Eco Green Support credentials
                 </p>
               </div>
             </div>

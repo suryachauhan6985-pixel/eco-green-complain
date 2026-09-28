@@ -73,14 +73,23 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     try {
       const data = await api.getTechnicians();
       const techs = data.technicians || [];
-      setTechnicians(techs);
-
-      const match = techs.find(t => 
-        (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
-        (currentUser?.id && t.user_id && String(t.user_id) === String(currentUser.id)) ||
-        (currentUser?.email && t.email?.toLowerCase() === currentUser.email?.toLowerCase()) ||
-        (currentUser?.name && t.name?.toLowerCase() === currentUser.name?.toLowerCase())
-      ) || techs[0];
+      const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);
+      const match = techs.find(t => {
+        const tPhoneClean = (t.phone || '').replace(/[^0-9]/g, '').slice(-10);
+        return (
+          (currentUser?.technician_id && String(t.id) === String(currentUser.technician_id)) ||
+          (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
+          (currentUser?.id && t.user_id && String(t.user_id) === String(currentUser.id)) ||
+          (userPhoneClean && tPhoneClean && userPhoneClean === tPhoneClean) ||
+          (currentUser?.email && t.email?.toLowerCase() === currentUser.email?.toLowerCase()) ||
+          (currentUser?.name && t.name?.toLowerCase() === currentUser.name?.toLowerCase())
+        );
+      }) || (currentUser?.role === 'technician' ? {
+        id: currentUser?.technician_id || currentUser?.id,
+        name: currentUser?.name || 'Technician',
+        phone: currentUser?.phone || '',
+        is_available: 1
+      } : techs[0]);
       setTechProfile(match);
     } catch (e) {
       console.error('Failed to load tech profile:', e);
@@ -175,12 +184,23 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     // Find all complaints assigned to this technician that collected payment
     const techJobs = complaints.filter(c => String(c.assigned_technician_id) === String(tech.id) || String(c.technician_id) === String(tech.id));
     const cashJobs = techJobs.filter(c => (parseFloat(c.payment_collected) || 0) > 0);
-    const totalCollected = cashJobs.reduce((sum, c) => sum + (parseFloat(c.payment_collected) || 0), 0);
-    const totalSettled = cashJobs
+    const computedTotal = cashJobs.reduce((sum, c) => sum + (parseFloat(c.payment_collected) || 0), 0);
+    const computedSettled = cashJobs
       .filter(c => c.company_settlement_status === 'Settled with Company')
       .reduce((sum, c) => sum + (parseFloat(c.payment_collected) || 0), 0);
-    const cashInHandDue = Math.max(0, totalCollected - totalSettled);
+    const computedDue = Math.max(0, computedTotal - computedSettled);
     const pendingJobs = cashJobs.filter(c => c.company_settlement_status !== 'Settled with Company');
+
+    // Prefer live backend aggregated cash values if present, else fallback to loaded complaints
+    const totalCollected = (tech.total_collected !== undefined && tech.total_collected !== null)
+      ? parseFloat(tech.total_collected)
+      : computedTotal;
+    const totalSettled = (tech.total_settled_with_company !== undefined && tech.total_settled_with_company !== null)
+      ? parseFloat(tech.total_settled_with_company)
+      : computedSettled;
+    const cashInHandDue = (tech.cash_in_hand_due !== undefined && tech.cash_in_hand_due !== null)
+      ? parseFloat(tech.cash_in_hand_due)
+      : computedDue;
 
     return {
       ...tech,
@@ -193,13 +213,28 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   });
 
   // Scoped Technician Profiles
-  const myTechData = techCashBreakdown.find(t => 
-    (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
-    (techProfile && String(t.id) === String(techProfile.id)) ||
-    (currentUser?.id && t.user_id && String(t.user_id) === String(currentUser.id)) ||
-    (currentUser?.email && t.email?.toLowerCase() === currentUser.email?.toLowerCase()) ||
-    (currentUser?.name && t.name?.toLowerCase() === currentUser.name?.toLowerCase())
-  ) || techCashBreakdown[0];
+  const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);
+  const myTechData = techCashBreakdown.find(t => {
+    const tPhoneClean = (t.phone || '').replace(/[^0-9]/g, '').slice(-10);
+    return (
+      (currentUser?.technician_id && String(t.id) === String(currentUser.technician_id)) ||
+      (currentUser?.technicianId && String(t.id) === String(currentUser.technicianId)) ||
+      (techProfile && String(t.id) === String(techProfile.id)) ||
+      (currentUser?.id && t.user_id && String(t.user_id) === String(currentUser.id)) ||
+      (userPhoneClean && tPhoneClean && userPhoneClean === tPhoneClean) ||
+      (currentUser?.email && t.email?.toLowerCase() === currentUser.email?.toLowerCase()) ||
+      (currentUser?.name && t.name?.toLowerCase() === currentUser.name?.toLowerCase())
+    );
+  }) || (currentUser?.role === 'technician' ? {
+    id: currentUser?.technician_id || currentUser?.id,
+    name: currentUser?.name || 'Technician',
+    phone: currentUser?.phone || '',
+    cashJobs: [],
+    totalCollected: 0,
+    totalSettled: 0,
+    cashInHandDue: 0,
+    pendingJobs: []
+  } : techCashBreakdown[0]);
 
   const visibleTechs = currentUser?.role === 'technician'
     ? (myTechData ? [myTechData] : [])

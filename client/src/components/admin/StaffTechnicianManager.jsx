@@ -104,7 +104,7 @@ export const StaffTechnicianManager = () => {
   const handleCopyCredentials = () => {
     const mobileNo = resetMember?.phone || 'No phone set';
     const roleName = resetMember?.isTech ? 'Field Technician' : (resetMember?.role === 'admin' ? 'Admin Supervisor' : 'Support Staff');
-    const text = `🌿 *Eco Green Solar CMS Login Credentials*\n👤 *Member:* ${resetMember?.name}\n🏷️ *Role:* ${roleName}\n📱 *Mobile Number / Login:* ${mobileNo}\n🔒 *New Password:* ${resetNewPassword}\n🌐 *Login Portal:* https://complain.ecogreensolar.co.in/login\n\nPlease keep your credentials safe and do not share them.`;
+    const text = `🌿 *Eco Green Support Login Credentials*\n👤 *Member:* ${resetMember?.name}\n🏷️ *Role:* ${roleName}\n📱 *Mobile Number / Login:* ${mobileNo}\n🔒 *New Password:* ${resetNewPassword}\n🌐 *Login Portal:* https://complain.ecogreensolar.co.in/login\n\nPlease keep your credentials safe and do not share them.`;
     navigator.clipboard.writeText(text);
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 2500);
@@ -1303,7 +1303,7 @@ export const StaffTechnicianManager = () => {
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-300">
-                    Eco Green Solar CMS Authentication Control
+                    Eco Green Support Authentication Control
                   </p>
                 </div>
               </div>

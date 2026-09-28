@@ -62,7 +62,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   const handleCopyCredentials = () => {
     const idToCopy = phone || 'user';
     const passToCopy = newPassword || '••••••••';
-    const text = `🌿 *Eco Green Solar CMS ${roleTitle} Credentials*\n👤 *Name:* ${name}\n📱 *Mobile Number / Login:* ${idToCopy}\n🔒 *Password:* ${passToCopy}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
+    const text = `🌿 *Eco Green Support ${roleTitle} Credentials*\n👤 *Name:* ${name}\n📱 *Mobile Number / Login:* ${idToCopy}\n🔒 *Password:* ${passToCopy}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
