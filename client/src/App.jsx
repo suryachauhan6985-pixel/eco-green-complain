@@ -225,22 +225,7 @@ function AppContent() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [resetSuccessToast, setResetSuccessToast] = useState(false);
 
-  // Standalone tracking portal route: accessed via /track/:ticketId (Zero staff chrome)
-  if (trackingInfo.isTracking) {
-    return (
-      <React.Suspense fallback={<LoadingFallback />}>
-        <CustomerPublicPortal
-          initialTicketId={trackingInfo.ticketId}
-          isStandalone={true}
-          onExitStandalone={() => {
-            window.history.pushState(null, '', '/');
-            setTrackingInfo({ isTracking: false, ticketId: '' });
-          }}
-          onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
-        />
-      </React.Suspense>
-    );
-  }
+  const { confirm, showToast } = useDialog();
 
   // Keep tab aligned when role changes
   useEffect(() => {
@@ -252,39 +237,6 @@ function AppContent() {
       setCurrentTab('complaints');
     }
   }, [currentUser?.role]);
-
-  if (loading) {
-    return <AppPageSkeleton />;
-  }
-
-  if (!currentUser) {
-    return <LoginPage onSwitchToCustomer={() => switchRole('customer')} />;
-  }
-
-  const { confirm, showToast } = useDialog();
-
-  const handleReloadDemoData = async () => {
-    const ok = await confirm({
-      title: 'Reload Sample Complaints?',
-      message: 'Are you sure you want to refresh sample demo complaints? All your newly created complaints will remain safe.',
-      type: 'warning',
-      confirmText: 'Reload Sample Data'
-    });
-    if (!ok) return;
-
-    try {
-      api.resetDemoData();
-      try {
-        await fetch('/api/demo/reset', { method: 'POST' });
-      } catch (e) {
-        // Backend offline, local mock already reset
-      }
-      setRefreshKey(k => k + 1);
-      showToast('Demo Data successfully reset with 12+ realistic complaints!', 'success');
-    } catch (err) {
-      showToast('Failed to reset demo data: ' + err.message, 'error');
-    }
-  };
 
   // Global Escape key listener to close topmost open drawer or modal
   useEffect(() => {
@@ -315,6 +267,54 @@ function AppContent() {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [selectedComplaintId, isNewComplaintOpen, isNotificationDrawerOpen, historyPhone, isTourOpen]);
+
+  const handleReloadDemoData = async () => {
+    const ok = await confirm({
+      title: 'Reload Sample Complaints?',
+      message: 'Are you sure you want to refresh sample demo complaints? All your newly created complaints will remain safe.',
+      type: 'warning',
+      confirmText: 'Reload Sample Data'
+    });
+    if (!ok) return;
+
+    try {
+      api.resetDemoData();
+      try {
+        await fetch('/api/demo/reset', { method: 'POST' });
+      } catch (e) {
+        // Backend offline, local mock already reset
+      }
+      setRefreshKey(k => k + 1);
+      showToast('Demo Data successfully reset with 12+ realistic complaints!', 'success');
+    } catch (err) {
+      showToast('Failed to reset demo data: ' + err.message, 'error');
+    }
+  };
+
+  // Standalone tracking portal route: accessed via /track/:ticketId (Zero staff chrome)
+  if (trackingInfo.isTracking) {
+    return (
+      <React.Suspense fallback={<LoadingFallback />}>
+        <CustomerPublicPortal
+          initialTicketId={trackingInfo.ticketId}
+          isStandalone={true}
+          onExitStandalone={() => {
+            window.history.pushState(null, '', '/');
+            setTrackingInfo({ isTracking: false, ticketId: '' });
+          }}
+          onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+        />
+      </React.Suspense>
+    );
+  }
+
+  if (loading) {
+    return <AppPageSkeleton />;
+  }
+
+  if (!currentUser) {
+    return <LoginPage onSwitchToCustomer={() => switchRole('customer')} />;
+  }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-slate-50 font-sans">

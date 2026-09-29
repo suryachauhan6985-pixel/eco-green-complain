@@ -47,8 +47,6 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   const [passwordError, setPasswordError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleGeneratePassword = () => {
     const prefixes = ['EcoGreen', 'SolarTech', 'CleanEnergy', 'SolarPro'];
     const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
@@ -164,6 +162,8 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
 
   return (
     <div 

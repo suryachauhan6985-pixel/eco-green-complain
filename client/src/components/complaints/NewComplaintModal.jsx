@@ -446,8 +446,6 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [searchTimeout, setSearchTimeout] = useState(null);
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleCustomerSearch = (val) => {
     setCustomerSearchQuery(val);
     if (searchTimeout) clearTimeout(searchTimeout);
@@ -776,6 +774,8 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
+
+  if (!isOpen) return null;
 
   return (
     <div 
