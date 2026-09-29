@@ -4216,9 +4216,9 @@ app.get('/api/customers/search', optionalAuth, async (req, res) => {
         SELECT 
           id, customer_name, consumer_mobile, consumer_no, city_village, 
           dealer_name, invoice_no, 
-          TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
-          TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
-          TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+          invoice_date,
+          installation_date,
+          warranty_expiry_date,
           panel_make, inverter_make, inverter_serial, is_in_warranty
         FROM installed_customers 
         ORDER BY id DESC 
@@ -4227,25 +4227,39 @@ app.get('/api/customers/search', optionalAuth, async (req, res) => {
       return res.json({ customers: sample.rows, totalMatches: sample.rows.length });
     }
 
-    const wild = `%${q}%`;
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const conditions = [];
+    const params = [];
+
+    tokens.forEach((token, idx) => {
+      const paramIdx = idx + 1;
+      params.push(`%${token}%`);
+      conditions.push(`(
+        customer_name ILIKE $${paramIdx} 
+        OR consumer_mobile ILIKE $${paramIdx} 
+        OR consumer_no ILIKE $${paramIdx} 
+        OR city_village ILIKE $${paramIdx} 
+        OR inverter_serial ILIKE $${paramIdx}
+        OR invoice_no ILIKE $${paramIdx}
+        OR dealer_name ILIKE $${paramIdx}
+      )`);
+    });
+
+    const whereClause = conditions.join(' AND ');
+
     const r = await query(`
       SELECT 
         id, customer_name, consumer_mobile, consumer_no, city_village, 
         dealer_name, invoice_no, 
-        TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
-        TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
-        TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+        invoice_date,
+        installation_date,
+        warranty_expiry_date,
         panel_make, inverter_make, inverter_serial, is_in_warranty
       FROM installed_customers 
-      WHERE customer_name ILIKE $1 
-         OR consumer_mobile ILIKE $1 
-         OR consumer_no ILIKE $1 
-         OR city_village ILIKE $1 
-         OR inverter_serial ILIKE $1
-         OR invoice_no ILIKE $1
+      WHERE ${whereClause}
       ORDER BY customer_name ASC 
       LIMIT 30
-    `, [wild]);
+    `, params);
 
     return res.json({ customers: r.rows, query: q, totalMatches: r.rows.length });
   } catch (err) {
@@ -6412,14 +6426,15 @@ app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
       SELECT 
         id, customer_name, consumer_mobile, consumer_no, city_village, 
         dealer_name, invoice_no, 
-        TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
-        TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
-        TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+        invoice_date,
+        installation_date,
+        warranty_expiry_date,
         inverter_serial, is_in_warranty
       FROM installed_customers 
-      WHERE consumer_mobile ILIKE $1
+      WHERE consumer_mobile ILIKE $1 
+         OR RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $2
       LIMIT 1
-    `, [`%${last10}%`]);
+    `, [`%${last10}%`, last10]);
 
     if (custQuery.rows.length > 0) {
       const c = custQuery.rows[0];
