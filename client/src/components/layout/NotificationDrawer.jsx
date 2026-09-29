@@ -20,6 +20,7 @@ const SwipeableCard = ({ children, onDismiss, disabled = false, className = '' }
 
   const handleTouchStart = (e) => {
     if (disabled) return;
+    if (e.target.closest('button') || e.target.closest('a')) return;
     const t = e.touches[0];
     startCoordRef.current = { x: t.clientX, y: t.clientY };
     setIsDragging(true);
@@ -31,14 +32,17 @@ const SwipeableCard = ({ children, onDismiss, disabled = false, className = '' }
     const diffX = t.clientX - startCoordRef.current.x;
     const diffY = t.clientY - startCoordRef.current.y;
     if (Math.abs(diffX) > Math.abs(diffY)) {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
       setDragX(diffX);
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e) => {
     if (!isDragging || disabled) return;
+    if (e && e.stopPropagation) e.stopPropagation();
     setIsDragging(false);
-    if (Math.abs(dragX) > 75) {
+    if (Math.abs(dragX) > 50) {
       const dir = dragX > 0 ? 'right' : 'left';
       setDirection(dir);
       setIsDismissing(true);
@@ -105,6 +109,7 @@ const SwipeableCard = ({ children, onDismiss, disabled = false, className = '' }
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         style={{
+          touchAction: 'pan-y',
           transform: isDismissing 
             ? (direction === 'right' ? 'translateX(105%)' : 'translateX(-105%)') 
             : `translateX(${dragX}px)`,
@@ -612,6 +617,7 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                     return (
                       <SwipeableCard
                         key={group.key}
+                        disabled={isExpanded}
                         onDismiss={() => {
                           deleteNotificationsForTicket(group.key);
                           showToast(`Dismissed ${group.ticketId || 'ticket'} updates`, 'info');

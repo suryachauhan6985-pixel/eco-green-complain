@@ -991,19 +991,25 @@ export const TourLedgerSection = ({
           </div>
 
           <!-- 4 Signatures -->
-          <table style="width: 100%; margin-top: 12px; border-collapse: collapse;">
+          <table style="width: 100%; margin-top: 12px; border-collapse: separate; border-spacing: 12px 0;">
             <tr>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">Authorized Signature</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;"></td>
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;">
                 ${chunk.isApproved ? `
-                  <div style="font-weight: bold; font-size: 8pt; color: #166534; text-transform: uppercase; line-height: 1.2;">APPROVED BY</div>
-                  <div style="font-weight: bold; font-size: 7.5pt; color: #1e293b; margin-top: 2px;">(${chunk.approverName || 'Admin'})</div>
+                  <div style="font-weight: bold; font-size: 7.5pt; color: #166534; text-transform: uppercase; line-height: 1.1;">APPROVED BY</div>
+                  <div style="font-weight: bold; font-size: 7pt; color: #1e293b; line-height: 1.1; margin-top: 1px;">(${chunk.approverName || 'Admin Supervisor'})</div>
                 ` : `
-                  <div style="font-weight: bold; font-size: 8pt; color: #dc2626; text-transform: uppercase;">UNAPPROVED</div>
+                  <div style="font-weight: bold; font-size: 7.5pt; color: #dc2626; text-transform: uppercase; line-height: 1.1;">UNAPPROVED</div>
                 `}
               </td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">Paid by</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">Receiver's Signature</td>
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;"></td>
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;"></td>
+            </tr>
+            <tr>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Authorized Signature</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Checked by</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Paid by</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Receiver's Signature</td>
             </tr>
           </table>
         </div>
@@ -2804,30 +2810,39 @@ export const TourLedgerSection = ({
                             </div>
 
                             {/* 4 Signatures */}
-                            <div className="grid grid-cols-4 gap-2 pt-2.5 text-center text-[9px] text-slate-700">
-                              <div className="border-t border-slate-700 pt-0.5 font-semibold">
-                                Authorized Signature
-                              </div>
-                              <div className="border-t border-slate-700 pt-0.5 font-semibold leading-tight">
+                            <div className="grid grid-cols-4 gap-3 sm:gap-4 pt-1 text-center text-[9px]">
+                              {/* Row above line (Signature / Stamp / Status) */}
+                              <div className="h-7 flex items-end justify-center pb-1"></div>
+                              <div className="h-7 flex flex-col items-center justify-end pb-1 leading-tight">
                                 {chunk.isApproved ? (
-                                  <div>
-                                    <div className="text-[8.5px] font-bold text-emerald-800 uppercase tracking-wide">
+                                  <>
+                                    <div className="text-[8.5px] font-black text-teal-800 uppercase tracking-wide">
                                       APPROVED BY
                                     </div>
-                                    <div className="text-[8px] font-bold text-slate-800 mt-0.5">
-                                      ({chunk.approverName || 'Admin'})
+                                    <div className="text-[8px] font-bold text-slate-900 leading-tight">
+                                      ({chunk.approverName || 'Admin Supervisor'})
                                     </div>
-                                  </div>
+                                  </>
                                 ) : (
                                   <div className="text-[8.5px] font-bold text-rose-600 uppercase tracking-wider">
                                     UNAPPROVED
                                   </div>
                                 )}
                               </div>
-                              <div className="border-t border-slate-700 pt-0.5 font-semibold">
+                              <div className="h-7 flex items-end justify-center pb-1"></div>
+                              <div className="h-7 flex items-end justify-center pb-1"></div>
+
+                              {/* Row of lines + signature labels */}
+                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
+                                Authorized Signature
+                              </div>
+                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
+                                Checked by
+                              </div>
+                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
                                 Paid by
                               </div>
-                              <div className="border-t border-slate-700 pt-0.5 font-semibold">
+                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
                                 Receiver's Signature
                               </div>
                             </div>

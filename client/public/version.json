@@ -1,13 +1,13 @@
 {
-  "version": "2.5.9",
-  "buildTime": 1790610000000,
-  "releaseDate": "2026-09-28",
+  "version": "2.6.0",
+  "buildTime": 1790686000000,
+  "releaseDate": "2026-09-29",
   "mandatory": true,
-  "title": "Eco Green Support v2.5.9",
-  "summary": "Excel Bulk Upload Speedup, Date Autofill Fix & Accurate 5-Year Warranty Calculation Engine",
+  "title": "Eco Green Support v2.6.0",
+  "summary": "Tour Ledger Voucher Enhancements, Mobile Swipe Notifications & Smart Location Indicators",
   "features": [
-    "🚀 Ultra-Fast Excel Sync: Replaced slow sequential database queries with batched multi-row inserts, eliminating upload abort errors.",
-    "📅 Date Autofill Resolution: Fixed date parsing for Excel serial numbers, DD-MM-YYYY, and ISO strings so installation date cleanly auto-fills into date pickers.",
-    "🛡️ Accurate 5-Year Warranty Engine: Plants older than 5 years are now strictly classified as Out of Warranty (🔴) across the entire application."
+    "📑 Formal Voucher Layout: Official Green Energy branding, separated vouchers per ticket, and Checked by signature placement with authorized stamp above line.",
+    "📲 Mobile Swipe Dismiss: Smooth horizontal swipe-to-dismiss for all notification alerts and update notifications.",
+    "📍 Smart Location Badging: Location icons and navigation buttons now only appear on tasks when an address or map pin is explicitly provided."
   ]
 }

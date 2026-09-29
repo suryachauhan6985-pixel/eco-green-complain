@@ -898,16 +898,16 @@ app.get(['/api/location/search', '/api/location/postoffice/:query'], async (req,
 app.get('/version.json', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.json({
-    version: '2.5.8',
-    buildTime: 1790604000000,
-    releaseDate: '2026-09-28',
+    version: '2.6.0',
+    buildTime: 1790686000000,
+    releaseDate: '2026-09-29',
     mandatory: true,
-    title: 'Eco Green Support v2.5.8',
-    summary: 'PWA Service Worker Update, Persistent Notification Clearing & Customer Portal Search Loader',
+    title: 'Eco Green Support v2.6.0',
+    summary: 'Tour Ledger Voucher Enhancements, Mobile Swipe Notifications & Smart Location Indicators',
     features: [
-      '📱 PWA Service Worker & Manifest Refresh: Updated sw.js cache name to ecogreen-support-v258 with network-first manifest checking to refresh installed apps.',
-      '🔔 Permanent In-App Alert Clearing: Clearing all alerts now permanently clears notifications across tabs and prevents them from returning upon refresh or polling.',
-      '⚡ Customer Portal Search Bouncing Loader: Live searching now immediately displays the 3 green animated bouncing dots overlay and feedback card.'
+      '📑 Formal Voucher Layout: Official Green Energy branding, separated vouchers per ticket, and Checked by signature placement with authorized stamp above line.',
+      '📲 Mobile Swipe Dismiss: Smooth horizontal swipe-to-dismiss for all notification alerts and update notifications.',
+      '📍 Smart Location Badging: Location icons and navigation buttons now only appear on tasks when an address or map pin is explicitly provided.'
     ]
   });
 });

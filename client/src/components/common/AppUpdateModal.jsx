@@ -14,6 +14,29 @@ export const AppUpdateModal = () => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [toastDragX, setToastDragX] = useState(0);
+  const toastStartRef = React.useRef({ x: 0, y: 0 });
+
+  const handleToastTouchStart = (e) => {
+    const t = e.touches[0];
+    toastStartRef.current = { x: t.clientX, y: t.clientY };
+  };
+
+  const handleToastTouchMove = (e) => {
+    const t = e.touches[0];
+    const diffX = t.clientX - toastStartRef.current.x;
+    const diffY = t.clientY - toastStartRef.current.y;
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      setToastDragX(diffX);
+    }
+  };
+
+  const handleToastTouchEnd = () => {
+    if (Math.abs(toastDragX) > 50) {
+      setShowSuccessToast(false);
+    }
+    setToastDragX(0);
+  };
 
   // Check on mount if we just updated
   useEffect(() => {
@@ -126,7 +149,18 @@ export const AppUpdateModal = () => {
     <>
       {/* Toast Notification after update completes */}
       {showSuccessToast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] w-[92%] max-w-md animate-in slide-in-from-top-4 duration-300">
+        <div 
+          onTouchStart={handleToastTouchStart}
+          onTouchMove={handleToastTouchMove}
+          onTouchEnd={handleToastTouchEnd}
+          style={{
+            touchAction: 'pan-y',
+            transform: `translateX(calc(-50% + ${toastDragX}px))`,
+            transition: toastDragX === 0 ? 'transform 0.2s ease, opacity 0.2s ease' : 'none',
+            opacity: Math.max(0.3, 1 - Math.abs(toastDragX) / 180)
+          }}
+          className="fixed top-4 left-1/2 z-[9999] w-[92%] max-w-md animate-in slide-in-from-top-4 duration-300"
+        >
           <div className="bg-slate-900/95 backdrop-blur-md text-white border border-emerald-500/40 rounded-2xl p-4 shadow-2xl flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
               <CheckCircle2 className="w-5 h-5" />

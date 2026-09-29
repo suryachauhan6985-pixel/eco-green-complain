@@ -13,6 +13,15 @@ import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../commo
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { TourLedgerSection } from './TourLedgerSection';
 
+const checkHasLocation = (job) => {
+  if (!job) return false;
+  const invalid = ['n/a', 'na', '-', 'none', 'null', 'undefined', ''];
+  const hasUrl = Boolean(job.location_url && job.location_url.trim() && !invalid.includes(job.location_url.trim().toLowerCase()));
+  const hasAddr = Boolean(job.customer_address && job.customer_address.trim() && !invalid.includes(job.customer_address.trim().toLowerCase()));
+  const hasCity = Boolean(job.city && job.city.trim() && !invalid.includes(job.city.trim().toLowerCase()));
+  return hasUrl || hasAddr || hasCity;
+};
+
 export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'field_ops', onSectionChange }) => {
   const { currentUser } = useAuth();
   const { showToast, confirm } = useDialog();
@@ -1049,10 +1058,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       {job.issue_description}
                     </p>
 
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 pt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="truncate">{job.city ? `${job.city} • ` : ''}{job.customer_address}</span>
-                    </div>
+                    {checkHasLocation(job) && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500 pt-0.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="truncate">{job.city ? `${job.city} • ` : ''}{job.customer_address}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right: Quick Action Buttons */}
@@ -1075,15 +1086,17 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       <MessageCircle className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline text-[11px]">WhatsApp</span>
                     </a>
-                    <a
-                      href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent(job.customer_address || job.city || '')}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-2 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center shadow-2xs border border-slate-200 active:scale-95"
-                      title="Open in Google Maps"
-                    >
-                      <Navigation className="w-3.5 h-3.5 text-emerald-700 fill-emerald-600/30" />
-                    </a>
+                    {checkHasLocation(job) && (
+                      <a
+                        href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent([job.customer_address, job.city].filter(Boolean).join(', '))}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center shadow-2xs border border-slate-200 active:scale-95"
+                        title="Open in Google Maps"
+                      >
+                        <Navigation className="w-3.5 h-3.5 text-emerald-700 fill-emerald-600/30" />
+                      </a>
+                    )}
                     <button
                       type="button"
                       onClick={() => onSelectComplaint && onSelectComplaint(job.ticket_id || job.id)}
@@ -1244,25 +1257,27 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         </button>
                       </div>
 
-                      {/* Address & Google Maps Location Pin Icon Button */}
-                      <div className="flex items-center justify-between gap-2 text-slate-600 pt-1.5 border-t border-slate-200/60">
-                        <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                          <span className="text-[11px] text-slate-700 leading-snug line-clamp-2">
-                            {job.city ? <strong className="text-slate-900 font-semibold">{job.city} • </strong> : null}
-                            {job.customer_address}
-                          </span>
+                      {/* Address & Google Maps Location Pin Icon Button - Only if location exists */}
+                      {checkHasLocation(job) && (
+                        <div className="flex items-center justify-between gap-2 text-slate-600 pt-1.5 border-t border-slate-200/60">
+                          <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                            <span className="text-[11px] text-slate-700 leading-snug line-clamp-2">
+                              {job.city ? <strong className="text-slate-900 font-semibold">{job.city} • </strong> : null}
+                              {job.customer_address}
+                            </span>
+                          </div>
+                          <a
+                            href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent([job.customer_address, job.city].filter(Boolean).join(', '))}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg shrink-0 flex items-center justify-center transition-colors shadow-2xs border border-emerald-200 active:scale-95"
+                            title="Open Google Maps Location"
+                          >
+                            <Navigation className="w-3.5 h-3.5 text-emerald-700 fill-emerald-600/30" />
+                          </a>
                         </div>
-                        <a
-                          href={job.location_url || `https://maps.google.com/?q=${encodeURIComponent(job.customer_address || job.city || '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg shrink-0 flex items-center justify-center transition-colors shadow-2xs border border-emerald-200 active:scale-95"
-                          title="Open Google Maps Location"
-                        >
-                          <Navigation className="w-3.5 h-3.5 text-emerald-700 fill-emerald-600/30" />
-                        </a>
-                      </div>
+                      )}
                     </div>
 
                     {/* If resolved: show notes */}

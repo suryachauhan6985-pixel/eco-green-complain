@@ -203,6 +203,24 @@ function healthHandler(req, res) {
 app.get(['/health', '/api/health', '/ping'], healthHandler);
 app.head(['/health', '/api/health', '/ping'], (req, res) => res.status(200).end());
 
+// App Version Endpoint for Update Modal
+app.get('/version.json', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  return res.json({
+    version: '2.6.0',
+    buildTime: 1790686000000,
+    releaseDate: '2026-09-29',
+    mandatory: true,
+    title: 'Eco Green Support v2.6.0',
+    summary: 'Tour Ledger Voucher Enhancements, Mobile Swipe Notifications & Smart Location Indicators',
+    features: [
+      '📑 Formal Voucher Layout: Official Green Energy branding, separated vouchers per ticket, and Checked by signature placement with authorized stamp above line.',
+      '📲 Mobile Swipe Dismiss: Smooth horizontal swipe-to-dismiss for all notification alerts and update notifications.',
+      '📍 Smart Location Badging: Location icons and navigation buttons now only appear on tasks when an address or map pin is explicitly provided.'
+    ]
+  });
+});
+
 // Demo Data Reset Endpoint
 app.post('/api/demo/reset', async (req, res) => {
   try {
