@@ -7,7 +7,7 @@ import {
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, ChevronLeft, ChevronDown, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
-  Camera, Ticket, Edit2, Lock
+  Camera, Ticket, Edit2, Lock, RotateCcw
 } from 'lucide-react';
 import { formatIndianDateOnly } from '../common/TicketAgeBadge';
 
@@ -416,6 +416,8 @@ export const TourLedgerSection = ({
   const [receiptLightbox, setReceiptLightbox] = useState(null);
   const [copiedWord, setCopiedWord] = useState(false);
   const [startingVoucherNo, setStartingVoucherNo] = useState(341);
+  const [selectedVoucherKeys, setSelectedVoucherKeys] = useState(new Set());
+  const [printFilter, setPrintFilter] = useState('all'); // 'all' | 'selected' | 'pending' | 'approved'
 
   // Sync latest global voucher sequence when modal opens
   useEffect(() => {
@@ -483,6 +485,7 @@ export const TourLedgerSection = ({
     if (rawExps.length === 0) {
       return [{
         voucherNo: `TT-${startingVoucherNo}`,
+        ticketId: null,
         date: formatIndianDateOnly(new Date().toISOString()),
         items: [],
         total: 0
@@ -497,9 +500,32 @@ export const TourLedgerSection = ({
       return new Date(a.expense_date || 0) - new Date(b.expense_date || 0);
     });
 
+    // Filter by print options: All / Selected / Pending / Approved
+    let filtered = sorted;
+    if (printFilter === 'selected' && selectedVoucherKeys.size > 0) {
+      filtered = sorted.filter(it => {
+        const vKey = it.voucher_no ? `vch_${it.voucher_no}` : (it.ticket_id ? `tkt_${it.ticket_id}_${it.expense_date}` : `item_${it.id}`);
+        return selectedVoucherKeys.has(vKey);
+      });
+    } else if (printFilter === 'pending') {
+      filtered = sorted.filter(it => (it.status || '').toLowerCase() !== 'approved');
+    } else if (printFilter === 'approved') {
+      filtered = sorted.filter(it => (it.status || '').toLowerCase() === 'approved');
+    }
+
+    if (filtered.length === 0) {
+      return [{
+        voucherNo: `TT-${startingVoucherNo}`,
+        ticketId: null,
+        date: formatIndianDateOnly(new Date().toISOString()),
+        items: [],
+        total: 0
+      }];
+    }
+
     // Group strictly by ticket (or voucher if general tour without ticket)
     const ticketGroups = new Map();
-    sorted.forEach(it => {
+    filtered.forEach(it => {
       const key = (it.ticket_id && String(it.ticket_id).trim())
         ? `tkt_${String(it.ticket_id).trim()}`
         : (it.voucher_no ? `vch_${it.voucher_no}` : `item_${it.id}`);
@@ -540,7 +566,7 @@ export const TourLedgerSection = ({
     });
 
     return chunks;
-  }, [ledgerData.expenses, startingVoucherNo]);
+  }, [ledgerData.expenses, startingVoucherNo, printFilter, selectedVoucherKeys]);
 
   // Pair vouchers 2 per page for flawless A4 print layout
   const voucherPages = useMemo(() => {
@@ -726,7 +752,7 @@ export const TourLedgerSection = ({
   };
 
 
-  // Handle Settle / Return Balance
+  // Handle Settle / Return Balance / Reimbursement
   const handleSettleBalance = async (e) => {
     e.preventDefault();
     const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
@@ -734,26 +760,34 @@ export const TourLedgerSection = ({
     const amt = parseFloat(settleForm.amount);
     if (!amt || amt <= 0) return showToast('Please enter a valid settlement amount', 'error');
 
+    const isReimbursement = (summary.net_balance || 0) < 0;
+
     try {
       setSubmittingSettle(true);
       await api.settleTourBalance({
         technician_id: effectiveTechId,
         amount: amt,
-        settlement_type: settleForm.settlement_type,
+        returned_amount: isReimbursement ? 0 : amt,
+        reimbursed_amount: isReimbursement ? amt : 0,
+        settlement_type: isReimbursement ? 'reimbursed_by_company' : 'return_to_company',
         payment_mode: settleForm.payment_mode,
         reference_no: settleForm.reference_no,
         notes: settleForm.notes,
         received_by_name: currentUser?.name || 'Admin Supervisor'
       });
 
-      showToast(`₹${amt} cash return/settlement recorded successfully!`, 'success');
+      showToast(isReimbursement 
+        ? `₹${amt} reimbursement to specialist recorded successfully!` 
+        : `₹${amt} cash return to company recorded successfully!`, 
+        'success'
+      );
       setIsSettleModalOpen(false);
       setSettleForm({
         amount: '',
         settlement_type: 'return_to_company',
         payment_mode: 'Cash',
         reference_no: '',
-        notes: 'Tour remaining cash deposited back to company'
+        notes: ''
       });
       await fetchLedger(true);
     } catch (err) {
@@ -802,6 +836,17 @@ export const TourLedgerSection = ({
       await fetchLedger(true);
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');
+    }
+  };
+
+  // Revert / Unapprove all items in a voucher group to 'submitted' (unlock for editing)
+  const handleRevertVoucherGroup = async (group) => {
+    try {
+      await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'submitted')));
+      showToast(`Voucher ${group.voucher_no} reverted to Submitted (Unlocked for editing)`, 'info');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to revert voucher: ' + err.message, 'error');
     }
   };
 
@@ -861,9 +906,7 @@ export const TourLedgerSection = ({
         if (item) {
           const descStr = item.description ? ` (${item.description})` : '';
           const titleStr = (item.title && item.title.toLowerCase() !== (item.category || '').toLowerCase()) ? ` - ${item.title}` : '';
-          const detail = item.ticket_id 
-            ? `[${item.ticket_id}] ${item.category}${titleStr}${descStr}` 
-            : `${item.category}${titleStr}${descStr}`;
+          const detail = `${item.category}${titleStr}${descStr}`;
           rowsHtml += `
             <tr style="height: 22px;">
               <td style="padding: 2px 6px; border-right: 1.5px solid #000; font-size: 8.5pt; vertical-align: middle;">${detail}</td>
@@ -900,13 +943,20 @@ export const TourLedgerSection = ({
             </tr>
           </table>
 
-          <!-- Name & Account -->
+          <!-- Name & Account with Ticket No on Right -->
           <div style="font-size: 8.5pt; margin: 3px 0 2px 0; border-top: 1px solid #cbd5e1; border-bottom: 1px dotted #cbd5e1; padding: 2px 0;">
             <b>Name :</b> ${techName}
           </div>
-          <div style="font-size: 8.5pt; margin-bottom: 3px;">
-            <b>Account :</b> TECHNICIAN TOUR EXPENSES
-          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 3px; font-size: 8.5pt;">
+            <tr>
+              <td style="width: 60%; vertical-align: middle;">
+                <b>Account :</b> TECHNICIAN TOUR EXPENSES
+              </td>
+              <td style="width: 40%; vertical-align: middle; text-align: right;">
+                <b>Ticket No :</b> ${chunk.ticketId || 'General Tour'}
+              </td>
+            </tr>
+          </table>
 
           <!-- Particulars & Amount Table -->
           <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-bottom: 3px;">
@@ -1077,6 +1127,44 @@ export const TourLedgerSection = ({
     };
   }, [ledgerData.summary, computedTotalAdvance, computedApprovedExpenses, computedTotalReturned, computedTotalReimbursed, computedNetBalance]);
 
+  const openSettleModal = () => {
+    const isReimbursement = (summary.net_balance || 0) < 0;
+    const absBal = Math.abs(summary.net_balance || 0);
+    setSettleForm({
+      amount: absBal > 0 ? String(absBal) : '',
+      settlement_type: isReimbursement ? 'reimbursed_by_company' : 'return_to_company',
+      payment_mode: isReimbursement ? 'UPI / Bank Transfer' : 'Cash',
+      reference_no: '',
+      notes: isReimbursement 
+        ? 'Reimbursement paid to specialist for out-of-pocket tour expenses' 
+        : 'Tour surplus cash returned back to company'
+    });
+    setIsSettleModalOpen(true);
+  };
+
+  const toggleSelectVoucher = (key) => {
+    setSelectedVoucherKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVouchers = () => {
+    if (selectedVoucherKeys.size === voucherLogs.length) {
+      setSelectedVoucherKeys(new Set());
+    } else {
+      setSelectedVoucherKeys(new Set(voucherLogs.map(v => v.key)));
+    }
+  };
+
+  const handlePrintSingleVoucher = (grp) => {
+    setSelectedVoucherKeys(new Set([grp.key]));
+    setPrintFilter('selected');
+    setIsVoucherModalOpen(true);
+  };
+
   return (
     <div className="space-y-4">
       {/* Top Header & Technician Switcher Bar */}
@@ -1129,120 +1217,170 @@ export const TourLedgerSection = ({
             {/* Print & Word Export Button */}
             <button
               type="button"
-              onClick={() => setIsVoucherModalOpen(true)}
-              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={() => {
+                if (selectedVoucherKeys.size > 0) {
+                  setPrintFilter('selected');
+                } else {
+                  setPrintFilter('all');
+                }
+                setIsVoucherModalOpen(true);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+                selectedVoucherKeys.size > 0
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-300'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+              }`}
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print / Export Voucher (.doc)</span>
+              <span>
+                {selectedVoucherKeys.size > 0 
+                  ? `Print Selected (${selectedVoucherKeys.size})` 
+                  : 'Print / Export Voucher (.doc)'}
+              </span>
             </button>
           </div>
         </div>
 
-        {/* 4 Financial Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-          <div className="bg-gradient-to-br from-blue-50/80 to-blue-100/50 p-3.5 rounded-xl border border-blue-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-bold text-blue-800">Total Tour Advance</span>
-              <span className="p-1 bg-blue-200/60 rounded-md text-blue-800">
-                <ArrowDownLeft className="w-3.5 h-3.5" />
-              </span>
+        {/* Loading State with Bouncing Dots or 4 Financial Stat Cards */}
+        {loading ? (
+          <div className="py-8 px-4 text-center mt-3 bg-slate-50/60 rounded-xl border border-slate-100">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.3s]"></div>
+              <div className="w-3 h-3 rounded-full bg-emerald-600 animate-bounce [animation-delay:-0.15s]"></div>
+              <div className="w-3 h-3 rounded-full bg-emerald-700 animate-bounce"></div>
             </div>
-            <strong className="text-xl font-black text-blue-950 font-mono block mt-1">
-              {formatCur(summary.total_advance)}
-            </strong>
-            <span className="text-[10px] text-blue-700">Company allocated cash for tour</span>
-          </div>
-
-          <div className="bg-gradient-to-br from-rose-50/80 to-rose-100/50 p-3.5 rounded-xl border border-rose-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-bold text-rose-800">Expenses Incurred</span>
-              <span className="p-1 bg-rose-200/60 rounded-md text-rose-800">
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </span>
+            <p className="text-xs font-bold text-slate-700">Loading Tour Ledger & Vouchers...</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Fetching advances, expense claims, bills and live balances</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 max-w-4xl mx-auto">
+              {[1, 2, 3, 4].map(idx => (
+                <div key={idx} className="h-20 bg-slate-100/80 rounded-xl animate-pulse" />
+              ))}
             </div>
-            <strong className="text-xl font-black text-rose-950 font-mono block mt-1">
-              {formatCur(summary.approved_expenses)}
-            </strong>
-            <span className="text-[10px] text-rose-700">{expenses.length} Voucher item(s) logged</span>
           </div>
+        ) : (
+          <>
+            {/* 4 Financial Stat Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <div className="bg-gradient-to-br from-blue-50/80 to-blue-100/50 p-3.5 rounded-xl border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-blue-800">Total Tour Advance</span>
+                  <span className="p-1 bg-blue-200/60 rounded-md text-blue-800">
+                    <ArrowDownLeft className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+                <strong className="text-xl font-black text-blue-950 font-mono block mt-1">
+                  {formatCur(summary.total_advance)}
+                </strong>
+                <span className="text-[10px] text-blue-700">Company allocated cash for tour</span>
+              </div>
 
-          <div className="bg-gradient-to-br from-emerald-50/80 to-emerald-100/50 p-3.5 rounded-xl border border-emerald-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-bold text-emerald-800">Deposited to Company</span>
-              <span className="p-1 bg-emerald-200/60 rounded-md text-emerald-800">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-              </span>
-            </div>
-            <strong className="text-xl font-black text-emerald-950 font-mono block mt-1">
-              {formatCur(summary.total_returned)}
-            </strong>
-            <span className="text-[10px] text-emerald-700">Unused balance returned back</span>
-          </div>
+              <div className="bg-gradient-to-br from-rose-50/80 to-rose-100/50 p-3.5 rounded-xl border border-rose-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-rose-800">Expenses Incurred</span>
+                  <span className="p-1 bg-rose-200/60 rounded-md text-rose-800">
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+                <strong className="text-xl font-black text-rose-950 font-mono block mt-1">
+                  {formatCur(summary.approved_expenses)}
+                </strong>
+                <span className="text-[10px] text-rose-700">{expenses.length} Voucher item(s) logged</span>
+              </div>
 
-          <div className={`p-3.5 rounded-xl border ${
-            (summary.net_balance || 0) > 0 
-              ? 'bg-amber-50/90 border-amber-300 ring-1 ring-amber-200' 
-              : 'bg-slate-50 border-slate-200'
-          }`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-[10px] uppercase font-bold block ${
-                (summary.net_balance || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-600'
+              <div className="bg-gradient-to-br from-emerald-50/80 to-emerald-100/50 p-3.5 rounded-xl border border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-emerald-800">Deposited to Company</span>
+                  <span className="p-1 bg-emerald-200/60 rounded-md text-emerald-800">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+                <strong className="text-xl font-black text-emerald-950 font-mono block mt-1">
+                  {formatCur(summary.total_returned)}
+                </strong>
+                <span className="text-[10px] text-emerald-700">Unused balance returned back</span>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border ${
+                (summary.net_balance || 0) > 0 
+                  ? 'bg-amber-50/90 border-amber-300 ring-1 ring-amber-200' 
+                  : (summary.net_balance < 0 ? 'bg-blue-50/90 border-blue-300 ring-1 ring-blue-200' : 'bg-slate-50 border-slate-200')
               }`}>
-                Remaining Balance In Hand
-              </span>
-              {(summary.net_balance || 0) > 0 && (
-                <span className="text-[9px] bg-amber-200 text-amber-950 font-bold px-1.5 py-0.5 rounded-full">
-                  To Return
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] uppercase font-bold block ${
+                    (summary.net_balance || 0) > 0 
+                      ? 'text-amber-900 font-black' 
+                      : (summary.net_balance < 0 ? 'text-blue-900 font-black' : 'text-slate-600')
+                  }`}>
+                    {(summary.net_balance || 0) < 0 ? 'Reimbursement Due' : 'Remaining Balance In Hand'}
+                  </span>
+                  {(summary.net_balance || 0) > 0 ? (
+                    <span className="text-[9px] bg-amber-200 text-amber-950 font-bold px-1.5 py-0.5 rounded-full">
+                      To Return
+                    </span>
+                  ) : ((summary.net_balance || 0) < 0 ? (
+                    <span className="text-[9px] bg-blue-200 text-blue-950 font-bold px-1.5 py-0.5 rounded-full">
+                      Company Pays
+                    </span>
+                  ) : null)}
+                </div>
+                <strong className={`text-xl font-black font-mono block mt-1 ${
+                  (summary.net_balance || 0) > 0 
+                    ? 'text-amber-950' 
+                    : ((summary.net_balance || 0) < 0 ? 'text-blue-950' : 'text-slate-800')
+                }`}>
+                  {formatCur(Math.abs(summary.net_balance || 0))}
+                </strong>
+                <span className="text-[10px] text-slate-500">
+                  {(summary.net_balance || 0) > 0 
+                    ? 'Advance balance remaining with technician' 
+                    : (summary.net_balance < 0 ? 'Reimbursement due to technician' : 'Ledger fully squared & settled')}
                 </span>
-              )}
+              </div>
             </div>
-            <strong className={`text-xl font-black font-mono block mt-1 ${
-              (summary.net_balance || 0) > 0 ? 'text-amber-950' : 'text-slate-800'
-            }`}>
-              {formatCur(summary.net_balance)}
-            </strong>
-            <span className="text-[10px] text-slate-500">
-              {(summary.net_balance || 0) > 0 
-                ? 'Advance balance remaining with technician' 
-                : (summary.net_balance < 0 ? 'Reimbursement due to technician' : 'Ledger fully squared & settled')}
-            </span>
-          </div>
-        </div>
 
-        {/* Action Buttons Row */}
-        <div className="flex flex-wrap items-center gap-2.5 mt-4 pt-3 border-t border-slate-100">
-          {isAdminOrStaff && (
-            <button
-              type="button"
-              onClick={openAdvanceModal}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Allocate Tour Advance</span>
-            </button>
-          )}
+            {/* Action Buttons Row */}
+            <div className="flex flex-wrap items-center gap-2.5 mt-4 pt-3 border-t border-slate-100">
+              {isAdminOrStaff && (
+                <button
+                  type="button"
+                  onClick={openAdvanceModal}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Allocate Tour Advance</span>
+                </button>
+              )}
 
-          <button
-            type="button"
-            onClick={openExpenseModal}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Tour Expense / Voucher</span>
-          </button>
+              <button
+                type="button"
+                onClick={openExpenseModal}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Tour Expense / Voucher</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setSettleForm(prev => ({ ...prev, amount: Math.max(0, summary.net_balance || 0) }));
-              setIsSettleModalOpen(true);
-            }}
-            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-          >
-            <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
-            <span>Deposit / Return Balance to Company</span>
-          </button>
-        </div>
+              <button
+                type="button"
+                onClick={openSettleModal}
+                className={`px-3.5 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                  summary.net_balance < 0
+                    ? 'bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                }`}
+              >
+                <IndianRupee className="w-3.5 h-3.5" />
+                <span>
+                  {summary.net_balance < 0
+                    ? `Reimburse Specialist (${formatCur(Math.abs(summary.net_balance))})`
+                    : (summary.net_balance > 0 
+                        ? `Deposit / Return Balance (${formatCur(summary.net_balance)})`
+                        : 'Deposit / Return Balance to Company')}
+                </span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Main Ledger Sub-Tabs & Tables */}
@@ -1313,6 +1451,14 @@ export const TourLedgerSection = ({
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="py-2.5 px-3 w-8 text-center" title="Select All for Print">
+                        <input
+                          type="checkbox"
+                          checked={voucherLogs.length > 0 && selectedVoucherKeys.size === voucherLogs.length}
+                          onChange={toggleSelectAllVouchers}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                      </th>
                       <th className="py-2.5 px-3">Voucher #</th>
                       <th className="py-2.5 px-3">Date</th>
                       <th className="py-2.5 px-3">Ticket / Purpose</th>
@@ -1348,6 +1494,16 @@ export const TourLedgerSection = ({
                               isExpanded ? 'bg-emerald-50/50 hover:bg-emerald-50/80 font-medium' : 'hover:bg-slate-50/80'
                             }`}
                           >
+                            <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedVoucherKeys.has(grp.key)}
+                                onChange={() => toggleSelectVoucher(grp.key)}
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                title="Select this voucher for printing/export"
+                              />
+                            </td>
+
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-1.5">
                                 <button
@@ -1442,13 +1598,35 @@ export const TourLedgerSection = ({
 
                             <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
+                                {/* Quick Print Single Voucher */}
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintSingleVoucher(grp)}
+                                  className="p-1 hover:bg-blue-100 text-blue-700 rounded transition-colors cursor-pointer"
+                                  title="Print / Preview this Voucher slip"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+
                                 {grp.status === 'approved' ? (
-                                  <span 
-                                    className="p-1 text-emerald-600/70 cursor-not-allowed" 
-                                    title="Approved voucher is locked and cannot be edited"
-                                  >
-                                    <Lock className="w-3.5 h-3.5" />
-                                  </span>
+                                  <>
+                                    <span 
+                                      className="p-1 text-emerald-600/70 cursor-not-allowed" 
+                                      title="Approved voucher is locked"
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                    </span>
+                                    {isAdminOrStaff && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRevertVoucherGroup(grp)}
+                                        className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer"
+                                        title="Unapprove / Revert to Submitted (Unlock for editing)"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </>
                                 ) : (
                                   <button
                                     type="button"
@@ -1485,7 +1663,7 @@ export const TourLedgerSection = ({
                           {/* Expanded Item Breakdown Sub-Row */}
                           {isExpanded && (
                             <tr className="bg-slate-50/70 border-b border-slate-200">
-                              <td colSpan={8} className="p-3 pl-8 sm:pl-10">
+                              <td colSpan={9} className="p-3 pl-8 sm:pl-10">
                                 <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
                                   <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                                     <span className="text-[11px] font-bold text-slate-700">
@@ -1509,10 +1687,20 @@ export const TourLedgerSection = ({
                                             {item.description || item.title || 'Tour expense'}
                                           </span>
                                         </div>
-                                        <div className="flex items-center gap-3 shrink-0">
+                                        <div className="flex items-center gap-2 shrink-0">
                                           <span className="font-mono font-bold text-slate-900 text-xs">
                                             {formatCur(item.amount)}
                                           </span>
+                                          {isAdminOrStaff && item.status === 'approved' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateStatus(item.id, 'submitted')}
+                                              className="p-1 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded transition-colors cursor-pointer"
+                                              title="Unapprove this line item"
+                                            >
+                                              <RotateCcw className="w-3 h-3" />
+                                            </button>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={() => handleDeleteExpense(item)}
@@ -2148,32 +2336,48 @@ export const TourLedgerSection = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <IndianRupee className="w-4 h-4 text-emerald-600" />
-                <span>Return Surplus Advance to Company</span>
+                <IndianRupee className={`w-4 h-4 ${summary.net_balance < 0 ? 'text-blue-600' : 'text-emerald-600'}`} />
+                <span>
+                  {summary.net_balance < 0 
+                    ? 'Reimburse Specialist (Company Payout)' 
+                    : 'Return Surplus Advance to Company'}
+                </span>
               </h4>
               <button 
                 type="button" 
                 onClick={() => setIsSettleModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSettleBalance} className="space-y-3 text-xs">
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 space-y-1">
-                <div className="flex justify-between">
-                  <span>Current Tour Remaining Balance:</span>
-                  <strong className="font-mono font-bold text-emerald-950">{formatCur(summary.net_balance)}</strong>
+              {summary.net_balance < 0 ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-blue-800">Amount Company Owes Specialist:</span>
+                    <strong className="font-mono font-bold text-blue-950 text-sm">{formatCur(Math.abs(summary.net_balance))}</strong>
+                  </div>
+                  <p className="text-[10px] text-blue-700">
+                    Specialist ne tour par apni jeb se advance se zyada kharch kiya hai. Company yeh amount specialist ko pay / reimburse karegi.
+                  </p>
                 </div>
-                <p className="text-[10px] text-emerald-700">
-                  Technician returning unused cash after tour completion back to the company accounts.
-                </p>
-              </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-emerald-800">Current Tour Surplus Cash:</span>
+                    <strong className="font-mono font-bold text-emerald-950 text-sm">{formatCur(summary.net_balance)}</strong>
+                  </div>
+                  <p className="text-[10px] text-emerald-700">
+                    Specialist tour complete hone ke baad bacha hua company cash return kar raha hai.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Deposit / Return Amount (₹) *
+                  {summary.net_balance < 0 ? 'Reimbursement / Payout Amount (₹) *' : 'Deposit / Return Amount (₹) *'}
                 </label>
                 <input
                   type="number"
@@ -2193,17 +2397,40 @@ export const TourLedgerSection = ({
                 <select
                   value={settleForm.payment_mode}
                   onChange={(e) => setSettleForm(prev => ({ ...prev, payment_mode: e.target.value }))}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
                 >
-                  <option value="Cash">Cash in Hand to Office</option>
-                  <option value="Bank Transfer">Bank Transfer / Direct Deposit</option>
-                  <option value="UPI">UPI to Company Account</option>
+                  {summary.net_balance < 0 ? (
+                    <>
+                      <option value="UPI / Bank Transfer">UPI / Online Bank Transfer to Specialist</option>
+                      <option value="Cash">Cash Handover from Accounts</option>
+                      <option value="Company Cheque">Company Cheque</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Cash">Cash in Hand to Office</option>
+                      <option value="Bank Transfer">Bank Transfer / Direct Deposit</option>
+                      <option value="UPI">UPI to Company Account</option>
+                    </>
+                  )}
                 </select>
               </div>
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Remarks / Deposit Notes
+                  Ref / Transaction ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UTR / Receipt / Cash Voucher No."
+                  value={settleForm.reference_no}
+                  onChange={(e) => setSettleForm(prev => ({ ...prev, reference_no: e.target.value }))}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Remarks / Notes
                 </label>
                 <input
                   type="text"
@@ -2217,17 +2444,23 @@ export const TourLedgerSection = ({
                 <button
                   type="button"
                   onClick={() => setIsSettleModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingSettle}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className={`px-4 py-2 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
+                    summary.net_balance < 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
                 >
                   {submittingSettle && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{submittingSettle ? 'Saving...' : 'Confirm Cash Return'}</span>
+                  <span>
+                    {submittingSettle 
+                      ? 'Saving...' 
+                      : (summary.net_balance < 0 ? 'Confirm Payout to Specialist' : 'Confirm Cash Return')}
+                  </span>
                 </button>
               </div>
             </form>
@@ -2294,6 +2527,62 @@ export const TourLedgerSection = ({
                 >
                   <X className="w-5 h-5" />
                 </button>
+              </div>
+            </div>
+
+            {/* Print Selection & Status Filter Bar */}
+            <div className="bg-slate-900 px-4 py-2 text-white flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-400 font-bold text-[11px] uppercase tracking-wider mr-1">Print Filter:</span>
+                <button
+                  type="button"
+                  onClick={() => setPrintFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    printFilter === 'all' 
+                      ? 'bg-emerald-600 text-white shadow-xs' 
+                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  All Vouchers ({voucherLogs.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintFilter('selected')}
+                  disabled={selectedVoucherKeys.size === 0}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                    printFilter === 'selected' 
+                      ? 'bg-emerald-600 text-white shadow-xs' 
+                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  Selected Vouchers ({selectedVoucherKeys.size})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintFilter('pending')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    printFilter === 'pending' 
+                      ? 'bg-emerald-600 text-white shadow-xs' 
+                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  Unapproved Only ({voucherLogs.filter(v => (v.status || '').toLowerCase() !== 'approved').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintFilter('approved')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    printFilter === 'approved' 
+                      ? 'bg-emerald-600 text-white shadow-xs' 
+                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  Approved Only ({voucherLogs.filter(v => (v.status || '').toLowerCase() === 'approved').length})
+                </button>
+              </div>
+
+              <div className="text-[11px] font-mono text-emerald-400 font-semibold">
+                Rendering {voucherChunks.length} Voucher Slip{voucherChunks.length !== 1 ? 's' : ''} ({voucherPages.length} A4 Page{voucherPages.length !== 1 ? 's' : ''})
               </div>
             </div>
 
@@ -2418,11 +2707,19 @@ export const TourLedgerSection = ({
                                   {currentTech.name} {currentTech.phone ? `(${currentTech.phone})` : ''}
                                 </span>
                               </div>
-                              <div className="flex items-baseline gap-2">
-                                <span className="font-bold text-slate-900 shrink-0">Account :</span>
-                                <span className="font-bold text-slate-900 uppercase tracking-wide">
-                                  TECHNICIAN TOUR EXPENSES
-                                </span>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="font-bold text-slate-900 shrink-0">Account :</span>
+                                  <span className="font-bold text-slate-900 uppercase tracking-wide">
+                                    TECHNICIAN TOUR EXPENSES
+                                  </span>
+                                </div>
+                                <div className="flex items-baseline gap-1 text-[10px]">
+                                  <span className="font-bold text-slate-700">Ticket No :</span>
+                                  <span className="font-mono font-bold text-blue-900">
+                                    {chunk.ticketId || 'General Tour'}
+                                  </span>
+                                </div>
                               </div>
                             </div>
 
@@ -2442,9 +2739,6 @@ export const TourLedgerSection = ({
                                 {items.map((item, iIdx) => (
                                   <div key={item.id || iIdx} className="grid grid-cols-12 min-h-[19px] items-center">
                                     <div className="col-span-9 px-2 py-0.5 border-r-[1.5px] border-black font-medium text-slate-800 leading-tight">
-                                      {item.ticket_id && (
-                                        <span className="font-mono font-bold text-blue-800 mr-1">[{item.ticket_id}]</span>
-                                      )}
                                       <span className="font-semibold">{item.category}</span>
                                       {item.description ? (
                                         <span className="text-slate-600 text-[9px] ml-1">({item.description})</span>
