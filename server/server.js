@@ -203,20 +203,43 @@ function healthHandler(req, res) {
 app.get(['/health', '/api/health', '/ping'], healthHandler);
 app.head(['/health', '/api/health', '/ping'], (req, res) => res.status(200).end());
 
-// App Version Endpoint for Update Modal
-app.get('/version.json', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+// App Version Endpoint for Update Modal (Always fresh, dynamic & anti-cached)
+app.get(['/api/version', '/version.json'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const candidates = [
+      path.join(__dirname, '../client/dist/version.json'),
+      path.join(__dirname, '../client/public/version.json'),
+      path.join(process.cwd(), 'client/dist/version.json'),
+      path.join(process.cwd(), 'client/public/version.json')
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const fileData = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (fileData && fileData.version) {
+          return res.json(fileData);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Dynamic version read note:', err.message);
+  }
+
   return res.json({
-    version: '2.6.0',
-    buildTime: 1790686000000,
-    releaseDate: '2026-09-29',
+    version: '2.6.1',
+    buildTime: Date.now(),
     mandatory: true,
-    title: 'Eco Green Support v2.6.0',
-    summary: 'Tour Ledger Voucher Enhancements, Mobile Swipe Notifications & Smart Location Indicators',
+    title: 'Eco Green Support Update',
+    summary: 'New official release with continuous deploy sync and optimizations.',
     features: [
-      '📑 Formal Voucher Layout: Official Green Energy branding, separated vouchers per ticket, and Checked by signature placement with authorized stamp above line.',
-      '📲 Mobile Swipe Dismiss: Smooth horizontal swipe-to-dismiss for all notification alerts and update notifications.',
-      '📍 Smart Location Badging: Location icons and navigation buttons now only appear on tasks when an address or map pin is explicitly provided.'
+      '📑 Voucher & Tour Ledger: Official Green Energy branding, ticket segregation, and formal approval stamp.',
+      '⚡ Continuous Deploy Sync: Automatic detection of newly deployed features across all active devices.',
+      '📲 Mobile Notifications & Map Pins: Smooth swipe dismiss and smart conditional location display.'
     ]
   });
 });

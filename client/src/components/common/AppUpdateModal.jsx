@@ -3,9 +3,8 @@ import {
   Sparkles, Download, RefreshCw, CheckCircle2, 
   ShieldCheck, Smartphone, Zap, ArrowRight 
 } from 'lucide-react';
-import { APP_VERSION, APP_BUILD_TIME } from '../../version';
+import { APP_VERSION, APP_BUILD_TIME, APP_BUILD_ID } from '../../version';
 
-const STORAGE_INSTALLED_BUILD_KEY = 'egs_installed_build_time';
 const STORAGE_JUST_UPDATED_KEY = 'egs_just_updated';
 
 export const AppUpdateModal = () => {
@@ -52,22 +51,37 @@ export const AppUpdateModal = () => {
 
   const checkForUpdate = useCallback(async () => {
     try {
-      const res = await fetch(`/version.json?t=${Date.now()}`, {
+      // 1. Try dynamic API route first, fallback to static version.json
+      let res = await fetch(`/api/version?t=${Date.now()}`, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0' }
       });
+      if (!res.ok) {
+        res = await fetch(`/version.json?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0' }
+        });
+      }
       if (!res.ok) return;
       const remote = await res.json();
-      if (!remote || !remote.version) return;
+      if (!remote) return;
 
-      const installedBuild = parseInt(localStorage.getItem(STORAGE_INSTALLED_BUILD_KEY) || '0', 10);
-      const currentBuild = APP_BUILD_TIME;
+      const currentBuildTime = Number(APP_BUILD_TIME) || 0;
+      const currentVersion = String(APP_VERSION || '').trim();
+      const currentBuildId = typeof APP_BUILD_ID !== 'undefined' ? String(APP_BUILD_ID).trim() : '';
 
-      // If remote build is newer than our running client app build
-      const isNewerBuild = remote.buildTime && (remote.buildTime > currentBuild || remote.buildTime > installedBuild);
-      const isDifferentVersion = remote.version !== APP_VERSION;
+      const remoteBuildTime = Number(remote.buildTime) || 0;
+      const remoteVersion = String(remote.version || '').trim();
+      const remoteBuildId = String(remote.buildId || '').trim();
 
-      if (isNewerBuild || isDifferentVersion) {
+      // Reliable detection:
+      // Tab is running old code if remote build is strictly newer than current tab's build,
+      // or version string changed, or build identifier differs!
+      const isNewerBuild = remoteBuildTime > 0 && currentBuildTime > 0 && remoteBuildTime > currentBuildTime;
+      const isDifferentVersion = Boolean(remoteVersion && currentVersion && remoteVersion !== currentVersion);
+      const isDifferentBuildId = Boolean(remoteBuildId && currentBuildId && remoteBuildId !== currentBuildId);
+
+      if (isNewerBuild || isDifferentVersion || isDifferentBuildId) {
         setUpdateData(remote);
         setUpdateAvailable(true);
       }
@@ -77,18 +91,10 @@ export const AppUpdateModal = () => {
   }, []);
 
   useEffect(() => {
-    // Record current build on first launch if not set
-    try {
-      const stored = localStorage.getItem(STORAGE_INSTALLED_BUILD_KEY);
-      if (!stored) {
-        localStorage.setItem(STORAGE_INSTALLED_BUILD_KEY, String(APP_BUILD_TIME));
-      }
-    } catch (_) {}
-
     checkForUpdate();
 
-    // Check periodically every 25 seconds and on window focus / visibility change
-    const interval = setInterval(checkForUpdate, 25000);
+    // Check periodically every 15 seconds, and instantly on tab switch / window focus / reconnect
+    const interval = setInterval(checkForUpdate, 15000);
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         checkForUpdate();
@@ -96,11 +102,13 @@ export const AppUpdateModal = () => {
     };
     window.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
+    window.addEventListener('online', checkForUpdate);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
+      window.removeEventListener('online', checkForUpdate);
     };
   }, [checkForUpdate]);
 
@@ -110,13 +118,13 @@ export const AppUpdateModal = () => {
     setUpdateProgress('Purging cached bundles & files...');
 
     try {
-      // 1. Clear CacheStorage
+      // 1. Clear CacheStorage completely
       if ('caches' in window) {
         const cacheNames = await caches.keys();
         await Promise.all(cacheNames.map(name => caches.delete(name)));
       }
 
-      setUpdateProgress('Re-registering native application worker...');
+      setUpdateProgress('Re-registering application worker...');
 
       // 2. Unregister Service Workers so fresh build activates immediately
       if ('serviceWorker' in navigator) {
@@ -128,17 +136,14 @@ export const AppUpdateModal = () => {
 
       setUpdateProgress('Applying latest features & reload...');
 
-      // 3. Mark update success and update local build timestamp
-      if (updateData?.buildTime) {
-        localStorage.setItem(STORAGE_INSTALLED_BUILD_KEY, String(updateData.buildTime));
-      }
+      // 3. Mark update success flag for celebratory toast
       localStorage.setItem(STORAGE_JUST_UPDATED_KEY, 'true');
 
-      // 4. Force hard reload bypassing cache
+      // 4. Force hard reload bypassing cache with timestamp
       setTimeout(() => {
         const targetUrl = window.location.origin + window.location.pathname + '?upd=' + Date.now();
         window.location.replace(targetUrl);
-      }, 700);
+      }, 500);
     } catch (err) {
       console.warn('Update purge note:', err);
       window.location.reload(true);

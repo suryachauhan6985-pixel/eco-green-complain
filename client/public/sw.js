@@ -41,13 +41,18 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // Pass non-GET, API calls, and uploads straight to network
-  if (event.request.method !== 'GET' || url.includes('/api') || url.includes('/uploads')) {
+  // Pass non-GET, API calls, uploads, and version checks straight to network
+  if (
+    event.request.method !== 'GET' || 
+    url.includes('/api') || 
+    url.includes('/uploads') || 
+    url.includes('/version.json')
+  ) {
     return;
   }
 
-  // 1. Manifest & Version check: ALWAYS NETWORK-FIRST so app name and updates apply immediately
-  if (url.includes('/manifest.json') || url.includes('/version.json')) {
+  // 1. Manifest check: NETWORK-FIRST so app name and icons apply immediately
+  if (url.includes('/manifest.json')) {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {

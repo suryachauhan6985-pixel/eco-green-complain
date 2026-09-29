@@ -1,13 +1,14 @@
 {
   "version": "2.6.0",
-  "buildTime": 1790686000000,
+  "buildTime": 1790682928840,
+  "buildId": "b_1790682928840",
   "releaseDate": "2026-09-29",
   "mandatory": true,
   "title": "Eco Green Support v2.6.0",
-  "summary": "Tour Ledger Voucher Enhancements, Mobile Swipe Notifications & Smart Location Indicators",
+  "summary": "New official release with continuous deploy sync and optimizations.",
   "features": [
-    "📑 Formal Voucher Layout: Official Green Energy branding, separated vouchers per ticket, and Checked by signature placement with authorized stamp above line.",
-    "📲 Mobile Swipe Dismiss: Smooth horizontal swipe-to-dismiss for all notification alerts and update notifications.",
-    "📍 Smart Location Badging: Location icons and navigation buttons now only appear on tasks when an address or map pin is explicitly provided."
+    "📑 Voucher & Tour Ledger: Official Green Energy branding, ticket segregation, and formal approval stamp.",
+    "⚡ Continuous Deploy Sync: Automatic detection of newly deployed features across all active devices.",
+    "📲 Mobile Notifications & Map Pins: Smooth swipe dismiss and smart conditional location display."
   ]
 }
