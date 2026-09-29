@@ -559,6 +559,71 @@ app.post('/api/tour-expenses', authenticateToken, (req, res) => {
   }
 });
 
+app.put('/api/tour-vouchers/:voucherNo', authenticateToken, (req, res) => {
+  try {
+    const { voucherNo } = req.params;
+    const { items, ticket_id, expense_date, receipt_url, receipt_name } = req.body;
+
+    const existing = db.prepare('SELECT * FROM technician_tour_expenses WHERE voucher_no = ?').all(voucherNo);
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: 'Voucher not found' });
+    }
+
+    const isApproved = existing.some(r => String(r.status).toLowerCase() === 'approved' || String(r.status).toLowerCase() === 'verified');
+    if (isApproved && req.user.role !== 'admin') {
+      return res.status(400).json({ error: 'Approved voucher is locked and cannot be edited' });
+    }
+
+    const first = existing[0];
+    const targetTechId = first.technician_id;
+    const tourAdvanceId = first.tour_advance_id;
+    const complaintId = first.complaint_id;
+
+    // Remove existing rows for this voucher
+    db.prepare('DELETE FROM technician_tour_expenses WHERE voucher_no = ?').run(voucherNo);
+
+    const validItems = Array.isArray(items) && items.length > 0 
+      ? items 
+      : [{
+          category: req.body.category || 'Other Expense',
+          amount: req.body.amount,
+          description: req.body.description || req.body.title
+        }];
+
+    const stmt = db.prepare(`
+      INSERT INTO technician_tour_expenses (
+        technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+        receipt_url, receipt_name, ticket_id, complaint_id, status, created_by
+      ) VALUES (?, ?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
+    `);
+
+    const created = [];
+    for (const it of validItems) {
+      const itAmt = parseFloat(it.amount);
+      if (!itAmt || itAmt <= 0) continue;
+      const info = stmt.run(
+        String(targetTechId).trim(),
+        tourAdvanceId || null,
+        voucherNo,
+        it.expense_date || expense_date || first.expense_date || null,
+        it.category || 'Other Expense',
+        itAmt,
+        it.description || it.title || '',
+        it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
+        it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
+        it.ticket_id || ticket_id || first.ticket_id || null,
+        it.complaint_id || complaintId || null,
+        req.user ? req.user.name : 'Technician'
+      );
+      created.push(db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid));
+    }
+
+    res.json({ success: true, voucher_no: voucherNo, expenses: created });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/tour-expenses/:id/status', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
     const { id } = req.params;

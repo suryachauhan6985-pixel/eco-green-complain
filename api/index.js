@@ -1689,6 +1689,74 @@ app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
   }
 });
 
+// PUT /api/tour-vouchers/:voucherNo: Update an existing unapproved tour expense voucher and its items
+app.put('/api/tour-vouchers/:voucherNo', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const { voucherNo } = req.params;
+    const { items, ticket_id, expense_date, receipt_url, receipt_name } = req.body;
+
+    const existing = await query('SELECT * FROM technician_tour_expenses WHERE voucher_no = $1', [voucherNo]);
+    if (!existing.rows || existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Voucher not found' });
+    }
+
+    // Lock edit if already approved
+    const isApproved = existing.rows.some(r => String(r.status).toLowerCase() === 'approved' || String(r.status).toLowerCase() === 'verified');
+    if (isApproved && req.user.role !== 'admin') {
+      return res.status(400).json({ error: 'Approved voucher is locked and cannot be edited' });
+    }
+
+    const first = existing.rows[0];
+    const targetTechId = first.technician_id;
+    const tourAdvanceId = first.tour_advance_id;
+    const complaintId = first.complaint_id;
+
+    // Delete existing records under this voucher_no
+    await query('DELETE FROM technician_tour_expenses WHERE voucher_no = $1', [voucherNo]);
+
+    const validItems = Array.isArray(items) && items.length > 0
+      ? items
+      : [{
+          category: req.body.category || 'Other Expense',
+          amount: req.body.amount,
+          title: req.body.title || req.body.description,
+          description: req.body.description || req.body.title
+        }];
+
+    const created = [];
+    for (const it of validItems) {
+      const itAmt = parseFloat(it.amount);
+      if (!itAmt || itAmt <= 0) continue;
+      const r = await query(`
+        INSERT INTO technician_tour_expenses (
+          technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+          receipt_url, receipt_name, ticket_id, complaint_id, status, created_by
+        ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
+        RETURNING *
+      `, [
+        String(targetTechId).trim(),
+        tourAdvanceId || null,
+        voucherNo,
+        it.expense_date || expense_date || first.expense_date || null,
+        it.category || 'Other Expense',
+        itAmt,
+        it.description || it.title || '',
+        it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
+        it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
+        it.ticket_id || ticket_id || first.ticket_id || null,
+        it.complaint_id || complaintId || null,
+        req.user ? req.user.name : 'Technician'
+      ]);
+      if (r.rows[0]) created.push(r.rows[0]);
+    }
+
+    return res.json({ success: true, voucher_no: voucherNo, expenses: created });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/tour-expenses/:id/status: Approve/verify or reject expense
 app.put('/api/tour-expenses/:id/status', authenticateToken, async (req, res) => {
   try {

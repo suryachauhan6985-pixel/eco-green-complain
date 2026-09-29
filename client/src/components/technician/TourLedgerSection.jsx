@@ -7,7 +7,7 @@ import {
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, ChevronLeft, ChevronDown, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
-  Camera, Ticket
+  Camera, Ticket, Edit2, Lock
 } from 'lucide-react';
 import { formatIndianDateOnly } from '../common/TicketAgeBadge';
 
@@ -150,6 +150,7 @@ export const TourLedgerSection = ({
 
   // Multi-item row state for Add Tour Expense / Voucher Claim modal (Single Voucher per Ticket/Tour)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [editingVoucherNo, setEditingVoucherNo] = useState(null);
   const [expenseForm, setExpenseForm] = useState({
     technician_id: '',
     expense_date: new Date().toISOString().split('T')[0],
@@ -183,6 +184,7 @@ export const TourLedgerSection = ({
   };
 
   const openExpenseModal = () => {
+    setEditingVoucherNo(null);
     const initialTechId = (!isAdminOrStaff && scopedTechProfile?.id)
       ? String(scopedTechProfile.id)
       : ((selectedTechId && selectedTechId !== 'all') ? String(selectedTechId) : (loadedTechs[0]?.id ? String(loadedTechs[0].id) : ''));
@@ -200,6 +202,59 @@ export const TourLedgerSection = ({
           amount: ''
         }
       ]
+    });
+    setIsExpenseModalOpen(true);
+  };
+
+  const openEditExpenseModal = (grp) => {
+    // Parse receipt previews if available
+    let receiptPreviews = [];
+    if (grp.receipt_url) {
+      try {
+        if (typeof grp.receipt_url === 'string' && grp.receipt_url.startsWith('[')) {
+          const parsed = JSON.parse(grp.receipt_url);
+          receiptPreviews = parsed.map((url, idx) => ({
+            name: `Receipt #${idx + 1}`,
+            url
+          }));
+        } else {
+          receiptPreviews = [{
+            name: grp.receipt_name || 'Receipt #1',
+            url: grp.receipt_url
+          }];
+        }
+      } catch (_) {
+        receiptPreviews = [{
+          name: grp.receipt_name || 'Receipt #1',
+          url: grp.receipt_url
+        }];
+      }
+    }
+
+    const items = (grp.items && grp.items.length > 0)
+      ? grp.items.map((it, idx) => ({
+          id: it.id || `item-edit-${idx}-${Date.now()}`,
+          category: it.category || 'Food & Meals',
+          title: it.description || it.title || '',
+          amount: it.amount || ''
+        }))
+      : [
+          {
+            id: 'item-1',
+            category: grp.category || 'Food & Meals',
+            title: grp.description || grp.title || '',
+            amount: grp.totalAmount || ''
+          }
+        ];
+
+    setEditingVoucherNo(grp.voucher_no);
+    setExpenseForm({
+      technician_id: grp.technician_id ? String(grp.technician_id) : (selectedTechId !== 'all' ? String(selectedTechId) : ''),
+      expense_date: grp.expense_date ? String(grp.expense_date).split('T')[0] : new Date().toISOString().split('T')[0],
+      ticket_id: grp.ticket_id || '',
+      receipt_files: [],
+      receipt_previews: receiptPreviews,
+      items
     });
     setIsExpenseModalOpen(true);
   };
@@ -622,6 +677,26 @@ export const TourLedgerSection = ({
         };
       });
 
+      // If updating an existing unapproved voucher claim:
+      if (editingVoucherNo) {
+        await api.updateTourVoucher(editingVoucherNo, {
+          technician_id: effectiveTechId,
+          technician_name: chosenTech.name || 'Technician',
+          expense_date: expenseForm.expense_date,
+          ticket_id: expenseForm.ticket_id || null,
+          complaint_id: compId,
+          receipt_url: sharedReceiptUrl,
+          receipt_name: sharedReceiptName,
+          items: itemsPayload
+        });
+
+        showToast(`Voucher ${editingVoucherNo} updated successfully!`, 'success');
+        setIsExpenseModalOpen(false);
+        setEditingVoucherNo(null);
+        await fetchLedger(true);
+        return;
+      }
+
       await api.addTourExpense({
         technician_id: effectiveTechId,
         technician_name: chosenTech.name || 'Technician',
@@ -641,6 +716,7 @@ export const TourLedgerSection = ({
 
       showToast(`Voucher for ${expenseForm.ticket_id || 'General Tour'} (${itemsPayload.length} items - ₹${expenseTotalSum}) saved successfully!`, 'success');
       setIsExpenseModalOpen(false);
+      setEditingVoucherNo(null);
       await fetchLedger(true);
     } catch (err) {
       showToast('Failed to log expense: ' + err.message, 'error');
@@ -1366,6 +1442,24 @@ export const TourLedgerSection = ({
 
                             <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
+                                {grp.status === 'approved' ? (
+                                  <span 
+                                    className="p-1 text-emerald-600/70 cursor-not-allowed" 
+                                    title="Approved voucher is locked and cannot be edited"
+                                  >
+                                    <Lock className="w-3.5 h-3.5" />
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditExpenseModal(grp)}
+                                    className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer"
+                                    title="Edit Voucher Claim (Before Approval)"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
                                 {isAdminOrStaff && grp.status !== 'approved' && (
                                   <button
                                     type="button"
@@ -1692,12 +1786,20 @@ export const TourLedgerSection = ({
               <div>
                 <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                   <Tag className="w-4 h-4 text-emerald-600" />
-                  <span>Add Tour Expense / Voucher Claim</span>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-full border border-emerald-200">
-                    Batch Claim
+                  <span>{editingVoucherNo ? `Edit Tour Voucher (${editingVoucherNo})` : 'Add Tour Expense / Voucher Claim'}</span>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                    editingVoucherNo 
+                      ? 'bg-amber-50 text-amber-800 border-amber-300' 
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  }`}>
+                    {editingVoucherNo ? 'Editing Claim' : 'Batch Claim'}
                   </span>
                 </h4>
-                {isAdminOrStaff ? (
+                {editingVoucherNo ? (
+                  <p className="text-[11px] text-amber-700 font-medium mt-0.5">
+                    Modifying unapproved claim — Voucher number <strong className="font-mono">{editingVoucherNo}</strong> will remain unchanged.
+                  </p>
+                ) : isAdminOrStaff ? (
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Batch voucher claim for field operations
                   </p>
@@ -1709,7 +1811,7 @@ export const TourLedgerSection = ({
               </div>
               <button 
                 type="button" 
-                onClick={() => setIsExpenseModalOpen(false)}
+                onClick={() => { setIsExpenseModalOpen(false); setEditingVoucherNo(null); }}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -2019,7 +2121,7 @@ export const TourLedgerSection = ({
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsExpenseModalOpen(false)}
+                  onClick={() => { setIsExpenseModalOpen(false); setEditingVoucherNo(null); }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
                 >
                   Cancel
@@ -2031,7 +2133,7 @@ export const TourLedgerSection = ({
                 >
                   {(submittingExpense || compressingReceipts) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>
-                    {compressingReceipts ? 'Processing Photos...' : submittingExpense ? 'Saving...' : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum})`}
+                    {compressingReceipts ? 'Processing Photos...' : submittingExpense ? 'Saving...' : editingVoucherNo ? `Update Voucher (${editingVoucherNo})` : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum})`}
                   </span>
                 </button>
               </div>
