@@ -108,38 +108,106 @@ function exportComplaintsCsv(req, res) {
   try {
     const complaints = db.prepare(`
       SELECT 
+        c.id,
         c.ticket_id,
         c.customer_name,
         c.customer_phone,
         c.customer_email,
         c.customer_address,
+        c.city,
+        c.location_url,
+        c.consumer_no,
+        c.order_no,
+        c.invoice_no,
+        c.invoice_date,
+        c.is_in_warranty,
         c.product_type,
         c.product_serial,
         c.installation_id,
         c.issue_category,
+        c.issue_description,
         c.priority,
         c.status,
         t.name as technician_name,
+        t.phone as technician_phone,
         c.expected_visit_date,
         c.resolution_notes,
         c.spare_parts_used,
+        c.estimated_charges,
+        c.payment_collected,
+        c.payment_status,
+        c.company_settlement_status,
+        c.company_settled_by,
+        c.company_settled_at,
         c.rating,
         c.feedback_comments,
+        reg_user.name as registered_by_name,
         c.created_at,
         c.assigned_at,
+        c.status_updated_at,
         c.resolved_at,
-        c.closed_at
+        c.closed_at,
+        (
+          SELECT ct.performed_by_name || ' (' || ct.performed_by_role || '): ' || ct.action || (CASE WHEN ct.notes IS NOT NULL AND ct.notes != '' THEN ' - ' || ct.notes ELSE '' END)
+          FROM complaint_timelines ct
+          WHERE ct.complaint_id = c.id
+          ORDER BY ct.created_at DESC
+          LIMIT 1
+        ) as latest_remark,
+        (
+          SELECT GROUP_CONCAT('[' || datetime(ct.created_at, 'localtime') || '] ' || ct.performed_by_name || ' (' || ct.performed_by_role || '): ' || ct.action || (CASE WHEN ct.notes IS NOT NULL AND ct.notes != '' THEN ' - ' || ct.notes ELSE '' END), ' | ')
+          FROM complaint_timelines ct
+          WHERE ct.complaint_id = c.id
+          ORDER BY ct.created_at ASC
+        ) as full_history_remarks
       FROM complaints c
       LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      LEFT JOIN users reg_user ON c.registered_by_user_id = reg_user.id
       ORDER BY c.created_at DESC
     `).all();
 
-    // Generate CSV string
+    // Generate comprehensive CSV string
     const headers = [
-      'Ticket ID', 'Customer Name', 'Phone', 'Email', 'Address',
-      'Product Type', 'Serial Number', 'Installation ID', 'Issue Category', 'Priority',
-      'Status', 'Assigned Technician', 'Expected Visit Date', 'Resolution Notes',
-      'Spare Parts Used', 'Rating (1-5)', 'Feedback Comments', 'Created At', 'Assigned At', 'Resolved At', 'Closed At'
+      'Ticket ID',
+      'Registration Date & Time',
+      'Customer Name',
+      'Customer Mobile',
+      'Customer Email',
+      'Customer Address',
+      'City / Village',
+      'Location URL',
+      'Consumer No',
+      'Order No',
+      'Invoice No',
+      'Invoice Date',
+      'Warranty Status',
+      'Product Type',
+      'Product Serial',
+      'Installation ID',
+      'Issue Category',
+      'Issue Description',
+      'Priority',
+      'Current Stage / Status',
+      'Assigned Technician Name',
+      'Assigned Technician Phone',
+      'Scheduled Visit Date',
+      'Assigned Date & Time',
+      'Last Stage Updated At',
+      'Final Resolution Notes',
+      'Spare Parts Used',
+      'Resolved Date & Time',
+      'Closed Date & Time',
+      'Estimated Charges (Rs)',
+      'Payment Collected (Rs)',
+      'Payment Status',
+      'Company Cash Settlement Status',
+      'Cash Settled By',
+      'Cash Settled Date',
+      'Customer Rating (1-5)',
+      'Customer Feedback Comments',
+      'Registered By Staff',
+      'Latest Update & Remark',
+      'Complete History & Timeline Remarks'
     ];
 
     const escapeCsv = (val) => {
@@ -152,31 +220,50 @@ function exportComplaintsCsv(req, res) {
     for (const c of complaints) {
       csvRows.push([
         escapeCsv(c.ticket_id),
+        escapeCsv(c.created_at),
         escapeCsv(c.customer_name),
         escapeCsv(c.customer_phone),
-        escapeCsv(c.customer_email),
+        escapeCsv(c.customer_email || ''),
         escapeCsv(c.customer_address),
+        escapeCsv(c.city || ''),
+        escapeCsv(c.location_url || ''),
+        escapeCsv(c.consumer_no || ''),
+        escapeCsv(c.order_no || ''),
+        escapeCsv(c.invoice_no || ''),
+        escapeCsv(c.invoice_date || ''),
+        escapeCsv(c.is_in_warranty ? 'In Warranty (0-5 Yrs)' : 'Out of Warranty (5+ Yrs)'),
         escapeCsv(c.product_type),
-        escapeCsv(c.product_serial),
-        escapeCsv(c.installation_id),
+        escapeCsv(c.product_serial || ''),
+        escapeCsv(c.installation_id || ''),
         escapeCsv(c.issue_category),
+        escapeCsv(c.issue_description || ''),
         escapeCsv(c.priority),
         escapeCsv(c.status),
-        escapeCsv(c.technician_name),
-        escapeCsv(c.expected_visit_date),
-        escapeCsv(c.resolution_notes),
-        escapeCsv(c.spare_parts_used),
-        escapeCsv(c.rating),
-        escapeCsv(c.feedback_comments),
-        escapeCsv(c.created_at),
-        escapeCsv(c.assigned_at),
-        escapeCsv(c.resolved_at),
-        escapeCsv(c.closed_at)
+        escapeCsv(c.technician_name || 'Unassigned'),
+        escapeCsv(c.technician_phone || ''),
+        escapeCsv(c.expected_visit_date || ''),
+        escapeCsv(c.assigned_at || ''),
+        escapeCsv(c.status_updated_at || ''),
+        escapeCsv(c.resolution_notes || ''),
+        escapeCsv(c.spare_parts_used || ''),
+        escapeCsv(c.resolved_at || ''),
+        escapeCsv(c.closed_at || ''),
+        escapeCsv(c.estimated_charges || 0),
+        escapeCsv(c.payment_collected || 0),
+        escapeCsv(c.payment_status || 'Unpaid'),
+        escapeCsv(c.company_settlement_status || 'Pending Settlement'),
+        escapeCsv(c.company_settled_by || ''),
+        escapeCsv(c.company_settled_at || ''),
+        escapeCsv(c.rating || ''),
+        escapeCsv(c.feedback_comments || ''),
+        escapeCsv(c.registered_by_name || 'Staff'),
+        escapeCsv(c.latest_remark || ''),
+        escapeCsv(c.full_history_remarks || '')
       ].join(','));
     }
 
-    const csvData = csvRows.join('\r\n');
-    res.setHeader('Content-Type', 'text/csv');
+    const csvData = '\uFEFF' + csvRows.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="EcoGreen_Complaints_Report_${Date.now()}.csv"`);
     res.status(200).send(csvData);
   } catch (err) {

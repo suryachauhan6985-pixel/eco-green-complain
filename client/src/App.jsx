@@ -286,6 +286,36 @@ function AppContent() {
     }
   };
 
+  // Global Escape key listener to close topmost open drawer or modal
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (selectedComplaintId) {
+          setSelectedComplaintId(null);
+          return;
+        }
+        if (isNewComplaintOpen) {
+          setIsNewComplaintOpen(false);
+          return;
+        }
+        if (isNotificationDrawerOpen) {
+          setIsNotificationDrawerOpen(false);
+          return;
+        }
+        if (historyPhone) {
+          setHistoryPhone(null);
+          return;
+        }
+        if (isTourOpen) {
+          setIsTourOpen(false);
+          return;
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [selectedComplaintId, isNewComplaintOpen, isNotificationDrawerOpen, historyPhone, isTourOpen]);
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-slate-50 font-sans">
       {/* Top Main Navigation (Sticky Header) */}
@@ -575,7 +605,6 @@ function AppContent() {
           <OnboardingTour
             isOpen={isTourOpen}
             onClose={() => setIsTourOpen(false)}
-            onSwitchTab={(targetTab) => handleTabChange(targetTab)}
           />
         )}
 

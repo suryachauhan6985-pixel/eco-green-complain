@@ -7,7 +7,7 @@ import {
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
   Search, X, IndianRupee, ChevronDown, ChevronUp, CheckCheck,
   UserCheck, ShieldCheck, Layers, ExternalLink, RotateCcw,
-  LayoutGrid, List, Navigation, FileText, Users
+  LayoutGrid, List, Navigation, FileText, Users, Download
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
@@ -328,6 +328,121 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     );
   });
 
+  // Export Statement for Field Tasks (CSV)
+  const handleExportFieldTasksStatement = () => {
+    const listToExport = displayList.length > 0 ? displayList : scopedComplaints;
+    if (!listToExport || listToExport.length === 0) {
+      showToast('No field tasks available to export', 'warning');
+      return;
+    }
+    const headers = [
+      'Ticket ID', 'Registration Date', 'Customer Name', 'Customer Mobile',
+      'Address', 'City / Village', 'Location URL', 'Product Type', 'Issue Category',
+      'Issue Description', 'Priority', 'Stage / Status', 'Assigned Specialist',
+      'Scheduled Visit Date', 'Cash Collected (Rs)', 'Payment Status',
+      'Company Settlement Status', 'Resolution Notes', 'Spare Parts Used'
+    ];
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+    const rows = [headers.join(',')];
+    for (const c of listToExport) {
+      rows.push([
+        escapeCsv(c.ticket_id),
+        escapeCsv(c.created_at),
+        escapeCsv(c.customer_name),
+        escapeCsv(c.customer_phone),
+        escapeCsv(c.customer_address),
+        escapeCsv(c.city || ''),
+        escapeCsv(c.location_url || ''),
+        escapeCsv(c.product_type),
+        escapeCsv(c.issue_category),
+        escapeCsv(c.issue_description || ''),
+        escapeCsv(c.priority),
+        escapeCsv(c.status),
+        escapeCsv(c.technician_name || techProfile?.name || 'Unassigned'),
+        escapeCsv(c.expected_visit_date || ''),
+        escapeCsv(c.payment_collected || 0),
+        escapeCsv(c.payment_status || 'Unpaid'),
+        escapeCsv(c.company_settlement_status || 'Pending'),
+        escapeCsv(c.resolution_notes || ''),
+        escapeCsv(c.spare_parts_used || '')
+      ].join(','));
+    }
+    const csvContent = '\uFEFF' + rows.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `EcoGreen_Field_Tasks_Statement_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    showToast(`Field tasks statement exported successfully (${listToExport.length} tickets)`, 'success');
+  };
+
+  // Export Statement for Cash Collection Register (CSV)
+  const handleExportCollectionStatement = () => {
+    let cashList = [];
+    if (currentUser?.role === 'technician') {
+      cashList = (myTechData?.cashJobs || []).map(j => ({
+        ...j,
+        techName: techProfile?.name || 'Me'
+      }));
+    } else {
+      visibleTechs.forEach(t => {
+        if (t.cashJobs && t.cashJobs.length > 0) {
+          cashList.push(...t.cashJobs.map(j => ({ ...j, techName: t.name })));
+        }
+      });
+    }
+    if (cashList.length === 0) {
+      showToast('No cash collection records available to export', 'warning');
+      return;
+    }
+    const headers = [
+      'Ticket ID', 'Customer Name', 'Customer Mobile', 'Address & City',
+      'Technician Specialist', 'Product Type', 'Issue', 'Amount Collected (Rs)',
+      'Payment Status', 'Company Settlement Status', 'Settled Date & Time', 'Ticket Registered At'
+    ];
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+    const rows = [headers.join(',')];
+    for (const c of cashList) {
+      rows.push([
+        escapeCsv(c.ticket_id),
+        escapeCsv(c.customer_name),
+        escapeCsv(c.customer_phone),
+        escapeCsv(`${c.customer_address || ''} ${c.city ? '• ' + c.city : ''}`.trim()),
+        escapeCsv(c.techName || c.technician_name || ''),
+        escapeCsv(c.product_type),
+        escapeCsv(c.issue_category),
+        escapeCsv(c.payment_collected || 0),
+        escapeCsv(c.payment_status || 'Paid Cash with Tech'),
+        escapeCsv(c.company_settlement_status || 'Pending'),
+        escapeCsv(c.company_settled_at || ''),
+        escapeCsv(c.created_at)
+      ].join(','));
+    }
+    const csvContent = '\uFEFF' + rows.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `EcoGreen_Cash_Collection_Statement_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    showToast(`Collection register statement exported successfully (${cashList.length} records)`, 'success');
+  };
+
   return (
     <div className="w-full space-y-5">
       {/* Top Banner */}
@@ -496,6 +611,15 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={handleExportCollectionStatement}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="Export Cash Collection Statement (CSV)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Statement</span>
+            </button>
             <span className="text-[11px] font-mono px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg font-semibold">
               {currentUser?.role === 'technician' ? (techProfile?.name || 'Technician Desk') : `${technicians.length} Registered Techs`}
             </span>
@@ -946,33 +1070,45 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             </select>
 
             {/* Mobile & PC View Mode Toggle: Cards (Default) vs Compact List */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => handleViewModeChange('card')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  viewMode === 'card'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-                title="Card View (Default)"
+                onClick={handleExportFieldTasksStatement}
+                className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                title="Export Field Tasks Statement (CSV)"
               >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span className="text-[11px]">Cards</span>
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Export Statement</span>
               </button>
-              <button
-                type="button"
-                onClick={() => handleViewModeChange('list')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  viewMode === 'list'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-                title="Compact List View"
-              >
-                <List className="w-3.5 h-3.5" />
-                <span className="text-[11px]">List</span>
-              </button>
+
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleViewModeChange('card')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    viewMode === 'card'
+                      ? 'bg-white text-emerald-700 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Card View (Default)"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span className="text-[11px]">Cards</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleViewModeChange('list')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    viewMode === 'list'
+                      ? 'bg-white text-emerald-700 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Compact List View"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span className="text-[11px]">List</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

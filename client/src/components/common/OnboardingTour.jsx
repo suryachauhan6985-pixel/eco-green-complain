@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Shield, Users, Wrench, Search, Plus, Bell, 
   CheckCircle2, ArrowRight, ArrowLeft, X, Sparkles, 
@@ -170,8 +170,74 @@ const TOUR_STEPS = [
   }
 ];
 
-export const OnboardingTour = ({ isOpen, onClose, onSwitchTab }) => {
+export const OnboardingTour = ({ isOpen, onClose }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+
+  const handleFinish = () => {
+    localStorage.setItem('egs_cms_tour_completed', 'true');
+    onClose();
+  };
+
+  const handleNext = () => {
+    if (currentStepIndex === TOUR_STEPS.length - 1) {
+      handleFinish();
+    } else {
+      setCurrentStepIndex(prev => prev + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStepIndex > 0) {
+      setCurrentStepIndex(prev => prev - 1);
+    }
+  };
+
+  const handleJumpToStep = (index) => {
+    setCurrentStepIndex(index);
+  };
+
+  // Close tour on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleFinish();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
+  // Mobile swipe left & right support
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffX = endX - touchStartX.current;
+    const diffY = endY - touchStartY.current;
+
+    // Minimum swipe threshold 45px, dominantly horizontal
+    if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)) {
+      if (diffX < 0) {
+        // Swiped Left -> Next Feature
+        handleNext();
+      } else {
+        // Swiped Right -> Previous Feature
+        handleBack();
+      }
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+  };
 
   if (!isOpen) return null;
 
@@ -180,43 +246,21 @@ export const OnboardingTour = ({ isOpen, onClose, onSwitchTab }) => {
   const isLast = currentStepIndex === TOUR_STEPS.length - 1;
   const IconComponent = currentStep.icon;
 
-  const handleNext = () => {
-    if (isLast) {
-      handleFinish();
-    } else {
-      const nextIdx = currentStepIndex + 1;
-      setCurrentStepIndex(nextIdx);
-      if (onSwitchTab && TOUR_STEPS[nextIdx].tab) {
-        onSwitchTab(TOUR_STEPS[nextIdx].tab);
-      }
-    }
-  };
-
-  const handleBack = () => {
-    if (!isFirst) {
-      const prevIdx = currentStepIndex - 1;
-      setCurrentStepIndex(prevIdx);
-      if (onSwitchTab && TOUR_STEPS[prevIdx].tab) {
-        onSwitchTab(TOUR_STEPS[prevIdx].tab);
-      }
-    }
-  };
-
-  const handleFinish = () => {
-    localStorage.setItem('egs_cms_tour_completed', 'true');
-    onClose();
-  };
-
-  const handleJumpToStep = (index) => {
-    setCurrentStepIndex(index);
-    if (onSwitchTab && TOUR_STEPS[index].tab) {
-      onSwitchTab(TOUR_STEPS[index].tab);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleFinish();
+        }
+      }}
+    >
+      <div 
+        className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] cursor-default"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {/* Top Progress Bar */}
         <div className="w-full bg-slate-100 h-1.5 relative">
           <div 

@@ -1697,9 +1697,46 @@ export const api = {
     }
 
     const headers = [
-      'Ticket ID', 'Customer Name', 'Phone', 'Address', 'Product Type',
-      'Issue Category', 'Priority', 'Status', 'Assigned Technician',
-      'Expected Visit Date', 'Resolution Notes', 'Collected Amount', 'Created At'
+      'Ticket ID',
+      'Registration Date & Time',
+      'Customer Name',
+      'Customer Mobile',
+      'Customer Email',
+      'Customer Address',
+      'City / Village',
+      'Location URL',
+      'Consumer No',
+      'Order No',
+      'Invoice No',
+      'Invoice Date',
+      'Warranty Status',
+      'Product Type',
+      'Product Serial',
+      'Installation ID',
+      'Issue Category',
+      'Issue Description',
+      'Priority',
+      'Current Stage / Status',
+      'Assigned Technician Name',
+      'Assigned Technician Phone',
+      'Scheduled Visit Date',
+      'Assigned Date & Time',
+      'Last Stage Updated At',
+      'Final Resolution Notes',
+      'Spare Parts Used',
+      'Resolved Date & Time',
+      'Closed Date & Time',
+      'Estimated Charges (Rs)',
+      'Payment Collected (Rs)',
+      'Payment Status',
+      'Company Cash Settlement Status',
+      'Cash Settled By',
+      'Cash Settled Date',
+      'Customer Rating (1-5)',
+      'Customer Feedback Comments',
+      'Registered By Staff',
+      'Latest Update & Remark',
+      'Complete History & Timeline Remarks'
     ];
 
     const escapeCsv = (val) => {
@@ -1710,20 +1747,54 @@ export const api = {
 
     const csvRows = [headers.join(',')];
     for (const c of list) {
+      const historyStr = Array.isArray(c.timeline) 
+        ? c.timeline.map(t => `[${t.created_at || ''}] ${t.performed_by_name || 'User'} (${t.performed_by_role || ''}): ${t.action || ''}${t.notes ? ' - ' + t.notes : ''}`).join(' | ')
+        : (c.full_history_remarks || '');
+      const latestRemark = Array.isArray(c.timeline) && c.timeline.length > 0 
+        ? `${c.timeline[c.timeline.length - 1].performed_by_name}: ${c.timeline[c.timeline.length - 1].action}${c.timeline[c.timeline.length - 1].notes ? ' - ' + c.timeline[c.timeline.length - 1].notes : ''}`
+        : (c.latest_remark || '');
+
       csvRows.push([
         escapeCsv(c.ticket_id),
+        escapeCsv(c.created_at),
         escapeCsv(c.customer_name),
         escapeCsv(c.customer_phone),
+        escapeCsv(c.customer_email || ''),
         escapeCsv(c.customer_address),
+        escapeCsv(c.city || ''),
+        escapeCsv(c.location_url || ''),
+        escapeCsv(c.consumer_no || ''),
+        escapeCsv(c.order_no || ''),
+        escapeCsv(c.invoice_no || ''),
+        escapeCsv(c.invoice_date || ''),
+        escapeCsv(c.is_in_warranty ? 'In Warranty (0-5 Yrs)' : 'Out of Warranty (5+ Yrs)'),
         escapeCsv(c.product_type),
+        escapeCsv(c.product_serial || ''),
+        escapeCsv(c.installation_id || ''),
         escapeCsv(c.issue_category),
+        escapeCsv(c.issue_description || ''),
         escapeCsv(c.priority),
         escapeCsv(c.status),
-        escapeCsv(c.technician_name),
-        escapeCsv(c.expected_visit_date),
-        escapeCsv(c.resolution_notes),
-        escapeCsv(c.collected_amount),
-        escapeCsv(c.created_at)
+        escapeCsv(c.technician_name || 'Unassigned'),
+        escapeCsv(c.technician_phone || ''),
+        escapeCsv(c.expected_visit_date || ''),
+        escapeCsv(c.assigned_at || ''),
+        escapeCsv(c.status_updated_at || ''),
+        escapeCsv(c.resolution_notes || ''),
+        escapeCsv(c.spare_parts_used || ''),
+        escapeCsv(c.resolved_at || ''),
+        escapeCsv(c.closed_at || ''),
+        escapeCsv(c.estimated_charges || 0),
+        escapeCsv(c.payment_collected || c.collected_amount || 0),
+        escapeCsv(c.payment_status || 'Unpaid'),
+        escapeCsv(c.company_settlement_status || 'Pending Settlement'),
+        escapeCsv(c.company_settled_by || ''),
+        escapeCsv(c.company_settled_at || ''),
+        escapeCsv(c.rating || ''),
+        escapeCsv(c.feedback_comments || ''),
+        escapeCsv(c.registered_by_name || 'Staff'),
+        escapeCsv(latestRemark),
+        escapeCsv(historyStr)
       ].join(','));
     }
 
