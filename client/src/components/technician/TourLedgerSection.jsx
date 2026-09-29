@@ -937,79 +937,80 @@ export const TourLedgerSection = ({
       vouchersHtml += `
         <div style="border: 1.5px solid #000; padding: 8px 12px; margin-bottom: 12px; box-sizing: border-box; background: #fff; page-break-inside: avoid; height: 134mm; max-height: 135mm;">
           <!-- Header: Green Energy Logo + Address + Voucher No & Date -->
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 3px;">
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #cbd5e1;">
             <tr>
-              <td style="width: 25%; vertical-align: middle;">
-                <img src="${GREEN_ENERGY_LOGO_BASE64}" alt="Green ENERGY" style="height: 38px; width: auto; max-width: 100px; object-fit: contain; vertical-align: middle;" />
+              <td style="width: 28%; vertical-align: middle;">
+                <img src="${GREEN_ENERGY_LOGO_BASE64}" alt="Green ENERGY" style="height: 48px; width: auto; max-width: 150px; object-fit: contain; vertical-align: middle;" />
               </td>
-              <td style="width: 45%; vertical-align: middle; font-size: 7.5pt; color: #1e293b; line-height: 1.3; padding-left: 6px;">
-                Plot No. 4, Gajanand Industrial, Near RK Exotica,<br/>
+              <td style="width: 44%; vertical-align: middle; font-size: 8pt; color: #1e293b; line-height: 1.3; border-left: 1.5px solid #cbd5e1; padding-left: 8px;">
+                <b>Plot No. 4, Gajanand Industrial, Near RK Exotica,</b><br/>
                 Raven Survey No. 183, Vill. - Chhapra, Lodhika-360021
               </td>
-              <td style="width: 30%; vertical-align: middle; text-align: right; font-size: 8.5pt; line-height: 1.3;">
-                <b>Voucher No :</b> ${chunk.voucherNo}<br/>
+              <td style="width: 28%; vertical-align: middle; text-align: right; font-size: 8.5pt; line-height: 1.3;">
+                <b>Voucher No :</b> <span style="color: #0f766e; font-weight: bold;">${chunk.voucherNo}</span><br/>
                 <b>Date :</b> ${chunk.date}
               </td>
             </tr>
           </table>
 
           <!-- Name & Account with Ticket No on Right -->
-          <div style="font-size: 8.5pt; margin: 3px 0 2px 0; border-top: 1px solid #cbd5e1; border-bottom: 1px dotted #cbd5e1; padding: 2px 0;">
+          <div style="font-size: 8.5pt; margin: 4px 0 2px 0;">
             <b>Name :</b> ${techName}
           </div>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 3px; font-size: 8.5pt;">
+          <div style="border-bottom: 1px dashed #94a3b8; margin: 4px 0 6px 0;"></div>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 8.5pt;">
             <tr>
               <td style="width: 60%; vertical-align: middle;">
                 <b>Account :</b> TECHNICIAN TOUR EXPENSES
               </td>
               <td style="width: 40%; vertical-align: middle; text-align: right;">
-                <b>Ticket No :</b> ${chunk.ticketId || 'General Tour'}
+                <b>Ticket No :</b> <span style="color: #1e3a8a; font-weight: bold;">${chunk.ticketId || 'General Tour'}</span>
               </td>
             </tr>
           </table>
 
           <!-- Particulars & Amount Table -->
-          <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-bottom: 3px;">
+          <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-bottom: 6px;">
             <thead>
               <tr style="border-bottom: 1.5px solid #000; background: #f8fafc;">
-                <th style="padding: 2px 6px; border-right: 1.5px solid #000; text-align: center; font-size: 8.5pt; width: 75%;">Particulars</th>
-                <th style="padding: 2px 6px; text-align: center; font-size: 8.5pt; width: 25%;">Amount</th>
+                <th style="padding: 3px 8px; border-right: 1.5px solid #000; text-align: center; font-size: 8.5pt; width: 75%; text-transform: uppercase;">Particulars</th>
+                <th style="padding: 3px 8px; text-align: center; font-size: 8.5pt; width: 25%; text-transform: uppercase;">Amount</th>
               </tr>
             </thead>
             <tbody>
               ${rowsHtml}
-              <tr style="border-top: 1.5px solid #000; font-weight: bold; background: #f8fafc; height: 22px;">
-                <td style="padding: 2px 6px; border-right: 1.5px solid #000; text-align: right; font-size: 8.5pt;">Total:</td>
-                <td style="padding: 2px 6px; text-align: right; font-size: 8.5pt;">₹${Number(chunk.total || 0).toFixed(2)}</td>
+              <tr style="border-top: 1.5px solid #000; font-weight: bold; background: #f8fafc; height: 24px;">
+                <td style="padding: 3px 8px; border-right: 1.5px solid #000; text-align: right; font-size: 8.5pt; text-transform: uppercase;">Total:</td>
+                <td style="padding: 3px 8px; text-align: right; font-size: 9pt; color: #0f766e; font-weight: bold;">₹${Number(chunk.total || 0).toFixed(2)}</td>
               </tr>
             </tbody>
           </table>
 
           <!-- Amount in Word -->
-          <div style="font-size: 8pt; margin: 2px 0 6px 0; border-bottom: 1px dotted #94a3b8; padding-bottom: 2px;">
-            <b>Amount in Word :</b> ${numberToIndianWords(chunk.total)}
+          <div style="font-size: 8.5pt; margin: 4px 0 8px 0;">
+            <b>Amount in Word :</b> <span style="font-weight: bold; font-style: italic; border-bottom: 1.5px dashed #64748b; padding-bottom: 1px;">${numberToIndianWords(chunk.total)}</span>
           </div>
 
           <!-- 4 Signatures -->
-          <table style="width: 100%; margin-top: 12px; border-collapse: separate; border-spacing: 12px 0;">
+          <table style="width: 100%; margin-top: 18px; border-collapse: separate; border-spacing: 12px 0;">
             <tr>
-              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;"></td>
-              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;">
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 3px;"></td>
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 3px;">
                 ${chunk.isApproved ? `
-                  <div style="font-weight: bold; font-size: 7.5pt; color: #166534; text-transform: uppercase; line-height: 1.1;">APPROVED BY</div>
+                  <div style="font-weight: bold; font-size: 7.5pt; color: #0f766e; text-transform: uppercase; line-height: 1.1;">APPROVED BY</div>
                   <div style="font-weight: bold; font-size: 7pt; color: #1e293b; line-height: 1.1; margin-top: 1px;">(${chunk.approverName || 'Admin Supervisor'})</div>
                 ` : `
-                  <div style="font-weight: bold; font-size: 7.5pt; color: #dc2626; text-transform: uppercase; line-height: 1.1;">UNAPPROVED</div>
+                  <div style="font-weight: bold; font-size: 8pt; color: #dc2626; text-transform: uppercase; line-height: 1.1; letter-spacing: 0.5px;">UNAPPROVED</div>
                 `}
               </td>
-              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;"></td>
-              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 2px;"></td>
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 3px;"></td>
+              <td style="width: 25%; height: 26px; vertical-align: bottom; text-align: center; padding-bottom: 3px;"></td>
             </tr>
             <tr>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Authorized Signature</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Checked by</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Paid by</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1.5px solid #1e293b; padding-top: 3px; vertical-align: top; font-weight: 600;">Receiver's Signature</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 2px solid #0f172a; padding-top: 3px; vertical-align: top; font-weight: 600; color: #1e293b;">Authorized Signature</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 2px solid #0f172a; padding-top: 3px; vertical-align: top; font-weight: 600; color: #1e293b;">Checked by</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 2px solid #0f172a; padding-top: 3px; vertical-align: top; font-weight: 600; color: #1e293b;">Paid by</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 2px solid #0f172a; padding-top: 3px; vertical-align: top; font-weight: 600; color: #1e293b;">Receiver's Signature</td>
             </tr>
           </table>
         </div>
@@ -2691,47 +2692,52 @@ export const TourLedgerSection = ({
                     {pageChunks.map((chunk, cIdx) => {
                       const items = chunk.items || [];
                       const emptySlots = Math.max(0, 9 - items.length);
+                      const displayTechName = selectedTechId === 'all' 
+                        ? 'All Specialists (Consolidated)' 
+                        : (currentTech.name + (currentTech.phone ? ` (${currentTech.phone})` : ''));
 
                       return (
                         <React.Fragment key={chunk.voucherNo + '-' + cIdx}>
                           {/* Physical Voucher Slip Card */}
                           <div className="voucher-slip-card bg-white border-2 border-black p-3.5 sm:p-4.5 shadow-sm rounded-none font-sans text-slate-900 relative">
                             {/* Header: Green Energy Logo + Address + Voucher No & Date */}
-                            <div className="grid grid-cols-12 gap-2 pb-2 mb-1.5 border-b border-slate-200">
+                            <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-slate-200">
                               {/* Logo */}
-                              <div className="col-span-3 flex items-center justify-start">
+                              <div className="col-span-3 flex items-center justify-start py-0.5">
                                 <img 
                                   src={GREEN_ENERGY_LOGO_BASE64} 
                                   alt="Green ENERGY" 
-                                  className="h-10 w-auto max-w-[110px] object-contain"
+                                  className="h-12 sm:h-14 w-auto max-w-[150px] object-contain"
                                 />
                               </div>
 
                               {/* Address */}
-                              <div className="col-span-6 text-[9.5px] text-slate-700 leading-tight flex flex-col justify-center border-l border-slate-200 pl-2.5">
-                                <p className="font-semibold text-slate-800">Plot No. 4, Gajanand Industrial, Near RK Exotica,</p>
+                              <div className="col-span-6 text-[9.5px] text-slate-800 leading-snug flex flex-col justify-center border-l-[1.5px] border-slate-300 pl-3">
+                                <p className="font-semibold text-slate-900">Plot No. 4, Gajanand Industrial, Near RK Exotica,</p>
                                 <p>Raven Survey No. 183, Vill. - Chhapra, Lodhika-360021</p>
                               </div>
 
                               {/* Voucher No & Date */}
-                              <div className="col-span-3 text-right text-xs leading-tight flex flex-col justify-center">
+                              <div className="col-span-3 text-right text-xs leading-snug flex flex-col justify-center">
                                 <p className="font-bold text-slate-900">
-                                  Voucher No : <span className="font-mono text-emerald-800 text-xs font-black">{chunk.voucherNo}</span>
+                                  Voucher No : <span className="font-mono text-teal-700 text-xs font-black">{chunk.voucherNo}</span>
                                 </p>
-                                <p className="text-[10px] text-slate-700 mt-0.5">
-                                  Date : <span className="font-mono font-semibold">{chunk.date}</span>
+                                <p className="text-[10px] text-slate-800 mt-0.5 font-medium">
+                                  Date : <span className="font-mono font-bold text-slate-900">{chunk.date}</span>
                                 </p>
                               </div>
                             </div>
 
                             {/* Name & Account */}
-                            <div className="text-[10px] space-y-0.5 mb-1.5">
+                            <div className="text-[10px] mb-2 font-sans">
                               <div className="flex items-baseline gap-2">
                                 <span className="font-bold text-slate-900 shrink-0">Name :</span>
-                                <span className="font-semibold text-slate-800 border-b border-dotted border-slate-400 flex-1 pb-0.5">
-                                  {currentTech.name} {currentTech.phone ? `(${currentTech.phone})` : ''}
+                                <span className="font-bold text-slate-900">
+                                  {displayTechName}
                                 </span>
                               </div>
+                              {/* Full width dashed line between Name and Account */}
+                              <div className="border-b border-dashed border-slate-400 my-1.5" />
                               <div className="flex items-baseline justify-between gap-2">
                                 <div className="flex items-baseline gap-2">
                                   <span className="font-bold text-slate-900 shrink-0">Account :</span>
@@ -2740,7 +2746,7 @@ export const TourLedgerSection = ({
                                   </span>
                                 </div>
                                 <div className="flex items-baseline gap-1 text-[10px]">
-                                  <span className="font-bold text-slate-700">Ticket No :</span>
+                                  <span className="font-bold text-slate-900">Ticket No :</span>
                                   <span className="font-mono font-bold text-blue-900">
                                     {chunk.ticketId || 'General Tour'}
                                   </span>
@@ -2749,12 +2755,12 @@ export const TourLedgerSection = ({
                             </div>
 
                             {/* Particulars & Amount Table (11 Rows: 1 Heading + 9 Entries + 1 Total) */}
-                            <div className="border-[1.5px] border-black mb-1.5">
+                            <div className="border-[1.5px] border-black mb-2">
                               <div className="grid grid-cols-12 bg-slate-50 border-b-[1.5px] border-black text-[10px] font-bold text-center">
-                                <div className="col-span-9 p-0.5 border-r-[1.5px] border-black uppercase text-[9.5px]">
+                                <div className="col-span-9 p-0.5 border-r-[1.5px] border-black uppercase text-[9.5px] tracking-wider">
                                   Particulars
                                 </div>
-                                <div className="col-span-3 p-0.5 uppercase text-[9.5px]">
+                                <div className="col-span-3 p-0.5 uppercase text-[9.5px] tracking-wider">
                                   Amount
                                 </div>
                               </div>
@@ -2763,7 +2769,7 @@ export const TourLedgerSection = ({
                               <div className="divide-y divide-slate-200 text-[10px]">
                                 {items.map((item, iIdx) => (
                                   <div key={item.id || iIdx} className="grid grid-cols-12 min-h-[19px] items-center">
-                                    <div className="col-span-9 px-2 py-0.5 border-r-[1.5px] border-black font-medium text-slate-800 leading-tight">
+                                    <div className="col-span-9 px-2.5 py-0.5 border-r-[1.5px] border-black font-medium text-slate-800 leading-tight">
                                       <span className="font-semibold">{item.category}</span>
                                       {item.description ? (
                                         <span className="text-slate-600 text-[9px] ml-1">({item.description})</span>
@@ -2771,7 +2777,7 @@ export const TourLedgerSection = ({
                                         <span className="text-slate-600 text-[9px] ml-1">- {item.title}</span>
                                       ) : null)}
                                     </div>
-                                    <div className="col-span-3 px-2 py-0.5 text-right font-mono font-bold text-slate-900">
+                                    <div className="col-span-3 px-2.5 py-0.5 text-right font-mono font-bold text-slate-900">
                                       ₹{Number(item.amount || 0).toFixed(2)}
                                     </div>
                                   </div>
@@ -2780,10 +2786,10 @@ export const TourLedgerSection = ({
                                 {/* Blank padding rows to fit 9 entries perfectly */}
                                 {Array.from({ length: emptySlots }).map((_, bIdx) => (
                                   <div key={'blank-' + bIdx} className="grid grid-cols-12 h-[19px] items-center">
-                                    <div className="col-span-9 px-2 py-0.5 border-r-[1.5px] border-black text-slate-300 select-none">
+                                    <div className="col-span-9 px-2.5 py-0.5 border-r-[1.5px] border-black text-slate-300 select-none">
                                       &nbsp;
                                     </div>
-                                    <div className="col-span-3 px-2 py-0.5 text-right font-mono text-slate-300 select-none">
+                                    <div className="col-span-3 px-2.5 py-0.5 text-right font-mono text-slate-300 select-none">
                                       &nbsp;
                                     </div>
                                   </div>
@@ -2792,10 +2798,10 @@ export const TourLedgerSection = ({
 
                               {/* Total Row */}
                               <div className="grid grid-cols-12 bg-slate-50 border-t-[1.5px] border-black font-bold text-[10.5px]">
-                                <div className="col-span-9 px-2 py-0.5 border-r-[1.5px] border-black text-right uppercase">
+                                <div className="col-span-9 px-2.5 py-0.5 border-r-[1.5px] border-black text-right uppercase tracking-wider">
                                   Total:
                                 </div>
-                                <div className="col-span-3 px-2 py-0.5 text-right font-mono text-xs text-emerald-900 font-black">
+                                <div className="col-span-3 px-2.5 py-0.5 text-right font-mono text-xs text-teal-900 font-black">
                                   ₹{Number(chunk.total || 0).toFixed(2)}
                                 </div>
                               </div>
@@ -2804,13 +2810,13 @@ export const TourLedgerSection = ({
                             {/* Amount in Word */}
                             <div className="text-[10px] mb-2 leading-tight">
                               <span className="font-bold text-slate-900">Amount in Word : </span>
-                              <span className="font-semibold text-slate-800 border-b border-dotted border-slate-400 pb-0.5 italic">
+                              <span className="font-bold text-slate-900 italic border-b-2 border-dashed border-slate-400 pb-0.5">
                                 {numberToIndianWords(chunk.total)}
                               </span>
                             </div>
 
                             {/* 4 Signatures */}
-                            <div className="grid grid-cols-4 gap-3 sm:gap-4 pt-1 text-center text-[9px]">
+                            <div className="grid grid-cols-4 gap-3 sm:gap-4 pt-4 sm:pt-6 text-center text-[9px]">
                               {/* Row above line (Signature / Stamp / Status) */}
                               <div className="h-7 flex items-end justify-center pb-1"></div>
                               <div className="h-7 flex flex-col items-center justify-end pb-1 leading-tight">
@@ -2824,7 +2830,7 @@ export const TourLedgerSection = ({
                                     </div>
                                   </>
                                 ) : (
-                                  <div className="text-[8.5px] font-bold text-rose-600 uppercase tracking-wider">
+                                  <div className="text-[9px] font-bold text-red-600 uppercase tracking-wider">
                                     UNAPPROVED
                                   </div>
                                 )}
@@ -2833,16 +2839,16 @@ export const TourLedgerSection = ({
                               <div className="h-7 flex items-end justify-center pb-1"></div>
 
                               {/* Row of lines + signature labels */}
-                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
+                              <div className="border-t-2 border-slate-900 pt-1 font-semibold text-slate-800">
                                 Authorized Signature
                               </div>
-                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
+                              <div className="border-t-2 border-slate-900 pt-1 font-semibold text-slate-800">
                                 Checked by
                               </div>
-                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
+                              <div className="border-t-2 border-slate-900 pt-1 font-semibold text-slate-800">
                                 Paid by
                               </div>
-                              <div className="border-t-[1.5px] border-slate-800 pt-1 font-semibold text-slate-800">
+                              <div className="border-t-2 border-slate-900 pt-1 font-semibold text-slate-800">
                                 Receiver's Signature
                               </div>
                             </div>
