@@ -52,8 +52,9 @@
 
 ## 3. Core Coding & UI Standards
 
-1. **Clean UI Language:**
-   - 100% clean English across all customer & staff UI forms, badges, modals, and templates (no accidental mix of Hindi script in production UI strings unless localization switch is explicitly engaged).
+1. **Mandatory 100% Professional English across ALL UI, Notifications, Alerts & Messages (STRICT):**
+   - All notifications, alerts, warnings, info messages, labels, toasts, modals, tooltips, cards, buttons, badges, placeholders, and error messages across the entire codebase MUST ALWAYS be in 100% proper, professional English.
+   - Never write Devanagari/Hindi or Hinglish in the application UI, banners, error messages, tooltips, or notifications. Every UI element and system feedback must maintain high enterprise standards in clean English.
 2. **Visual & Aesthetic Quality:**
    - Modern, responsive, premium glassmorphic / clean solar theme (emerald/green/slate palette).
    - Dynamic micro-interactions, responsive layouts (mobile & desktop), animated skeleton loaders instead of plain text spinners.

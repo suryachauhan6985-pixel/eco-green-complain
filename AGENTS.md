@@ -12,6 +12,10 @@
 - **Har code change / fix ko git par commit aur push (`git push origin main`) karna anivarya hai** taaki changes live production server (`complain.ecogreensolar.co.in`) par turant deploy aur update ho jayein.
 - Push karne se pehle hamesha local verification aur build (`npm run build`) pass hona chahiye.
 
+## Mandatory Professional English Rule for All UI & Messaging (STRICT)
+- **All UI text, notifications, alerts, warnings, info messages, labels, toasts, modals, tooltips, cards, buttons, badges, placeholders, and error messages across the entire codebase MUST ALWAYS be in 100% proper, professional English.**
+- **Never write Devanagari/Hindi or Hinglish strings in the frontend or backend application code.** Every notification, alert, banner, info card, and system message shown to users or staff must maintain high enterprise standards in clean English.
+
 ## Full Rules Reference
 - Complete project rules, coding standards, and directory mappings are defined in [PROJECT_RULES.md](file:///c:/Users/Administrator/.gemini/antigravity/scratch/eco-green-solar-cms/PROJECT_RULES.md). Always follow them strictly to prevent hallucinations.
 

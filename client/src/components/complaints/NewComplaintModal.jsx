@@ -10,7 +10,7 @@ import {
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
-  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera
+  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera, Info
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -1707,9 +1707,26 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   {/* Manual Warranty Override Toggle */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-semibold text-slate-700">
-                        Warranty Status *
-                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          Warranty Status *
+                        </label>
+                        {(!formData.invoice_date || !formData.invoice_no) && (
+                          <div className="relative group inline-flex items-center">
+                            <button
+                              type="button"
+                              className="text-amber-700 hover:text-amber-800 bg-amber-100 hover:bg-amber-200 p-0.5 rounded-full transition-colors focus:outline-none"
+                              aria-label="Warranty Information"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                            <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-xl z-50 pointer-events-none leading-snug border border-slate-700">
+                              <p className="font-bold text-amber-300 mb-0.5">⚠️ Date / Invoice Not Available</p>
+                              <p>Invoice Date or Number is not available in system records. Please verify customer documents and manually select In Warranty or Out of Warranty.</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       {formData.is_in_warranty === 1 ? (
                         <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md">
                           🟢 In Warranty
@@ -1747,30 +1764,6 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         Out of Warranty
                       </button>
                     </div>
-
-                    {/* Notice if Date / Invoice No is missing */}
-                    {(!formData.invoice_date || !formData.invoice_no) && (
-                      <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-300/90 text-amber-950 flex items-start gap-2 shadow-2xs animate-in fade-in">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                        <div className="space-y-0.5 text-xs">
-                          <p className="font-bold text-amber-900 text-[11px] flex items-center gap-1.5">
-                            <span>
-                              {!formData.invoice_date && !formData.invoice_no 
-                                ? 'Invoice Date & Invoice Number Not Available' 
-                                : !formData.invoice_date 
-                                  ? 'Invoice Date Not Available' 
-                                  : 'Invoice Number Not Available'}
-                            </span>
-                            <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.2 rounded">
-                              Manual Selection
-                            </span>
-                          </p>
-                          <p className="text-amber-800 text-[11px] leading-relaxed">
-                            रिकॉर्ड में इनवॉइस डेट या नंबर उपलब्ध नहीं है, इसलिए सिस्टम ने वारंटी स्वतः तय नहीं की है। कृपया ग्राहक की पर्ची / बिल देखकर ऊपर <strong>In Warranty</strong> या <strong>Out of Warranty</strong> का बटन मैन्युअली सेलेक्ट करें।
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
