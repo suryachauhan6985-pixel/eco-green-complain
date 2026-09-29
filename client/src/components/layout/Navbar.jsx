@@ -336,47 +336,17 @@ export const Navbar = ({
                       </div>
                     </div>
 
-                    <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100">
-                      <p className="text-[10px] text-slate-500 leading-relaxed">
-                        🔒 <strong>Secure Session:</strong> Direct role-switching is restricted. To switch accounts or portals, please log out and sign in with your assigned ID.
-                      </p>
-                    </div>
-
-                    {/* Desktop Manage Credentials & Sign Out */}
-                    <div className="px-3 pt-2 space-y-1.5">
-                      {currentUser?.role === 'admin' && (
-                        <button
-                          onClick={() => {
-                            setRoleMenuOpen(false);
-                            if (onOpenTour) onOpenTour();
-                          }}
-                          className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                        >
-                          <Compass className="w-3.5 h-3.5 text-amber-600" />
-                          <span>Take Feature Tour Guide</span>
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => {
-                          setRoleMenuOpen(false);
-                          setAccountModalOpen(true);
-                        }}
-                        className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <Key className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{currentUser?.role === 'admin' ? 'Manage Admin Credentials' : 'My Account & Password'}</span>
-                      </button>
-
+                    {/* Desktop Sign Out */}
+                    <div className="p-3 pt-2">
                       <button
                         onClick={() => {
                           logout();
                           setRoleMenuOpen(false);
                         }}
-                        className="w-full text-center py-2 px-3 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-98"
+                        className="w-full text-center py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-98"
                       >
                         <LogOut className="w-3.5 h-3.5" />
-                        <span>Log Out / Switch Account</span>
+                        <span>Log Out</span>
                       </button>
                     </div>
                   </div>
@@ -394,7 +364,7 @@ export const Navbar = ({
                       <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 shrink-0">
                         <div>
                           <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
-                            Eco Green Support Portals
+                            Eco Green Support
                           </p>
                           <p className="text-sm font-bold text-slate-900">
                             Active User Account
@@ -409,7 +379,7 @@ export const Navbar = ({
                         </button>
                       </div>
 
-                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 mb-4">
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 mb-3">
                         <div className="flex items-center gap-3 mb-3">
                           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
                             {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
@@ -436,44 +406,7 @@ export const Navbar = ({
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        {currentUser?.role === 'admin' && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setRoleMenuOpen(false);
-                                if (setCurrentTab) setCurrentTab('templates');
-                              }}
-                              className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                            >
-                              <Settings className="w-4 h-4 text-emerald-700" />
-                              <span>WhatsApp Message Templates</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setRoleMenuOpen(false);
-                                if (onOpenTour) onOpenTour();
-                              }}
-                              className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
-                            >
-                              <Compass className="w-4 h-4" />
-                              <span>App Feature Tour (Quick Guide)</span>
-                            </button>
-                          </>
-                        )}
-
-                        <button
-                          onClick={() => {
-                            setRoleMenuOpen(false);
-                            setAccountModalOpen(true);
-                          }}
-                          className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                        >
-                          <Key className="w-4 h-4 text-emerald-600" />
-                          <span>{currentUser?.role === 'admin' ? 'Manage Admin Credentials' : 'My Account & Password'}</span>
-                        </button>
-
+                      <div className="pt-1">
                         <button
                           onClick={() => {
                             logout();
@@ -482,7 +415,7 @@ export const Navbar = ({
                           className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
                         >
                           <LogOut className="w-4 h-4" />
-                          <span>Log Out / Switch Account</span>
+                          <span>Log Out</span>
                         </button>
                       </div>
                     </div>
