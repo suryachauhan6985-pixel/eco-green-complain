@@ -10,6 +10,7 @@ import {
   Camera, Ticket, Edit2, Lock, RotateCcw
 } from 'lucide-react';
 import { formatIndianDateOnly } from '../common/TicketAgeBadge';
+import { GREEN_ENERGY_LOGO_BASE64 } from '../../assets/greenEnergyLogo';
 
 const EXPENSE_CATEGORIES = [
   'Bus / Train Fare',
@@ -929,8 +930,7 @@ export const TourLedgerSection = ({
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 3px;">
             <tr>
               <td style="width: 25%; vertical-align: middle;">
-                <div style="color: #15803d; font-family: 'Georgia', serif; font-size: 22pt; font-weight: bold; line-height: 0.9;">Green</div>
-                <div style="color: #166534; font-family: 'Arial Black', sans-serif; font-size: 7.5pt; letter-spacing: 2px; font-weight: 900; margin-top: -2px;">ENERGY</div>
+                <img src="${GREEN_ENERGY_LOGO_BASE64}" alt="Green ENERGY" style="height: 38px; width: auto; max-width: 100px; object-fit: contain; vertical-align: middle;" />
               </td>
               <td style="width: 45%; vertical-align: middle; font-size: 7.5pt; color: #1e293b; line-height: 1.3; padding-left: 6px;">
                 Plot No. 4, Gajanand Industrial, Near RK Exotica,<br/>
@@ -2673,13 +2673,12 @@ export const TourLedgerSection = ({
                             {/* Header: Green Energy Logo + Address + Voucher No & Date */}
                             <div className="grid grid-cols-12 gap-2 pb-2 mb-1.5 border-b border-slate-200">
                               {/* Logo */}
-                              <div className="col-span-3 flex flex-col justify-center">
-                                <span className="text-2xl font-black text-emerald-700 tracking-tight leading-none" style={{ fontFamily: 'Georgia, serif' }}>
-                                  Green
-                                </span>
-                                <span className="text-[8px] font-black text-emerald-800 tracking-[0.2em] uppercase mt-0.5" style={{ fontFamily: 'Arial Black, sans-serif' }}>
-                                  ENERGY
-                                </span>
+                              <div className="col-span-3 flex items-center justify-start">
+                                <img 
+                                  src={GREEN_ENERGY_LOGO_BASE64} 
+                                  alt="Green ENERGY" 
+                                  className="h-10 w-auto max-w-[110px] object-contain"
+                                />
                               </div>
 
                               {/* Address */}
