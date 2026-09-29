@@ -8,7 +8,7 @@ async function login(req, res) {
     const rawIdentifier = (req.body.identifier || req.body.email || req.body.username || '').trim();
     const { password } = req.body;
     if (!rawIdentifier || !password) {
-      return res.status(400).json({ error: 'User ID / Username and password are required' });
+      return res.status(400).json({ error: 'Mobile number and password are required' });
     }
 
     const noAt = rawIdentifier.replace(/^@+/, '').trim().toLowerCase();
@@ -65,7 +65,7 @@ async function login(req, res) {
     }
 
     if (!user) {
-      return res.status(401).json({ error: 'Invalid User ID or password' });
+      return res.status(401).json({ error: 'Invalid mobile number or password' });
     }
 
     // Find technician record if user is technician

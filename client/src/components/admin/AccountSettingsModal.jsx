@@ -411,7 +411,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500">
-                💡 <strong>Login Tip:</strong> You can log in using either your <strong>Mobile ({phone || 'phone'})</strong>, <strong>User ID (@{username || 'id'})</strong>, or <strong>Email</strong>.
+                💡 <strong>Login Tip:</strong> You can log in using your registered <strong>Mobile Number (+91 {phone || 'phone'})</strong>.
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3">

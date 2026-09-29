@@ -1336,7 +1336,7 @@ function fallbackHandler(endpoint, options) {
         user: found
       };
     }
-    const err = new Error('Invalid User ID or password. Please verify your credentials.');
+    const err = new Error('Invalid mobile number or password. Please verify your credentials.');
     err.status = 401;
     throw err;
   }

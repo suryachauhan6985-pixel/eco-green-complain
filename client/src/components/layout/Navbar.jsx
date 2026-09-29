@@ -323,14 +323,10 @@ export const Navbar = ({
                       </div>
 
                       <div className="mt-2.5 pt-2 border-t border-slate-100/80 space-y-1 text-[11px] text-slate-500">
-                        <div className="flex justify-between">
-                          <span className="font-semibold text-slate-400">User ID / Name:</span>
-                          <span className="font-mono text-slate-700 font-bold">{currentUser?.username || currentUser?.email?.split('@')[0] || 'admin'}</span>
-                        </div>
                         {currentUser?.phone && (
                           <div className="flex justify-between">
-                            <span className="font-semibold text-slate-400">Contact:</span>
-                            <span className="font-mono text-slate-700">+91 {currentUser.phone}</span>
+                            <span className="font-semibold text-slate-400">Mobile Number:</span>
+                            <span className="font-mono text-slate-700 font-bold">+91 {currentUser.phone}</span>
                           </div>
                         )}
                       </div>
@@ -393,14 +389,10 @@ export const Navbar = ({
                         </div>
 
                         <div className="space-y-1.5 text-xs border-t border-slate-200/60 pt-2.5">
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">User ID / Username:</span>
-                            <span className="font-mono font-bold text-slate-800">{currentUser?.username || currentUser?.email?.split('@')[0] || 'admin'}</span>
-                          </div>
                           {currentUser?.phone && (
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Mobile No:</span>
-                              <span className="font-mono text-slate-800">+91 {currentUser.phone}</span>
+                              <span className="text-slate-500">Mobile Number:</span>
+                              <span className="font-mono font-bold text-slate-800">+91 {currentUser.phone}</span>
                             </div>
                           )}
                         </div>
