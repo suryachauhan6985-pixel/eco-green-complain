@@ -88,16 +88,20 @@ export const TourLedgerSection = ({
 
   // Selected technician filter: default to scoped tech if technician, or activeTechId, or 'all' if admin
   const [internalTechId, setInternalTechId] = useState(() => {
-    if (activeTechId && activeTechId !== 'all') return String(activeTechId);
     if (!isAdminOrStaff && scopedTechProfile?.id) return String(scopedTechProfile.id);
+    if (activeTechId && activeTechId !== 'all') return String(activeTechId);
     return 'all';
   });
 
   useEffect(() => {
-    if (activeTechId !== undefined) {
-      setInternalTechId(String(activeTechId));
+    if (isAdminOrStaff) {
+      if (activeTechId !== undefined) {
+        setInternalTechId(String(activeTechId));
+      }
+    } else if (scopedTechProfile?.id) {
+      setInternalTechId(String(scopedTechProfile.id));
     }
-  }, [activeTechId]);
+  }, [activeTechId, isAdminOrStaff, scopedTechProfile]);
 
   const selectedTechId = internalTechId;
 
@@ -124,6 +128,7 @@ export const TourLedgerSection = ({
   // Modals state
   const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
   const [advanceForm, setAdvanceForm] = useState({
+    technician_id: '',
     amount: '',
     purpose: 'Tour Advance for Field Tasks',
     payment_mode: 'Cash',
@@ -134,6 +139,7 @@ export const TourLedgerSection = ({
   // Multi-item row state for Add Tour Expense / Voucher Claim modal (ECO-22 & ECO-23)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
+    technician_id: '',
     expense_date: new Date().toISOString().split('T')[0],
     items: [
       {
@@ -149,6 +155,44 @@ export const TourLedgerSection = ({
     ]
   });
   const [submittingExpense, setSubmittingExpense] = useState(false);
+
+  // Open modals with preselected technician without altering the outer tracking filter
+  const openAdvanceModal = () => {
+    const initialTechId = (selectedTechId && selectedTechId !== 'all') 
+      ? String(selectedTechId) 
+      : (loadedTechs[0]?.id ? String(loadedTechs[0].id) : (scopedTechProfile?.id ? String(scopedTechProfile.id) : ''));
+    setAdvanceForm({
+      technician_id: initialTechId,
+      amount: '',
+      purpose: 'Tour Advance for Field Tasks',
+      payment_mode: 'Cash',
+      reference_no: ''
+    });
+    setIsAdvanceModalOpen(true);
+  };
+
+  const openExpenseModal = () => {
+    const initialTechId = (!isAdminOrStaff && scopedTechProfile?.id)
+      ? String(scopedTechProfile.id)
+      : ((selectedTechId && selectedTechId !== 'all') ? String(selectedTechId) : (loadedTechs[0]?.id ? String(loadedTechs[0].id) : ''));
+    setExpenseForm({
+      technician_id: initialTechId,
+      expense_date: new Date().toISOString().split('T')[0],
+      items: [
+        {
+          id: 'item-1',
+          title: '',
+          category: 'Bus / Train Fare',
+          amount: '',
+          ticket_id: '',
+          description: '',
+          receipt_file: null,
+          receipt_preview: null
+        }
+      ]
+    });
+    setIsExpenseModalOpen(true);
+  };
 
   const handleAddItemRow = () => {
     setExpenseForm(prev => ({
@@ -302,30 +346,29 @@ export const TourLedgerSection = ({
   // Handle Allocate Tour Advance
   const handleAllocateAdvance = async (e) => {
     e.preventDefault();
-    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
+    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) 
+      ? scopedTechProfile.id 
+      : (advanceForm.technician_id || (selectedTechId !== 'all' ? selectedTechId : null));
     if (!effectiveTechId) return showToast('Please select a specific technician before allocating advance', 'error');
     const amt = parseFloat(advanceForm.amount);
     if (!amt || amt <= 0) return showToast('Please enter a valid advance amount', 'error');
+
+    const chosenTech = loadedTechs.find(t => String(t.id) === String(effectiveTechId)) || currentTech;
 
     try {
       setSubmittingAdvance(true);
       await api.allocateTourAdvance({
         technician_id: effectiveTechId,
-        technician_name: currentTech.name,
+        technician_name: chosenTech.name || 'Technician',
         amount: amt,
         purpose: advanceForm.purpose,
+        tour_title: advanceForm.purpose,
         payment_mode: advanceForm.payment_mode,
         reference_no: advanceForm.reference_no,
         allocated_by_name: currentUser?.name || 'Admin Supervisor'
       });
-      showToast(`₹${amt} tour advance allocated to ${currentTech.name}!`, 'success');
+      showToast(`₹${amt} tour advance allocated to ${chosenTech.name}!`, 'success');
       setIsAdvanceModalOpen(false);
-      setAdvanceForm({
-        amount: '',
-        purpose: 'Tour Advance for Field Tasks',
-        payment_mode: 'Cash',
-        reference_no: ''
-      });
       await fetchLedger(true);
     } catch (err) {
       showToast('Failed to allocate advance: ' + err.message, 'error');
@@ -337,8 +380,12 @@ export const TourLedgerSection = ({
   // Handle Add Tour Expense with Multi-item Rows (ECO-22 & ECO-23)
   const handleAddExpense = async (e) => {
     e.preventDefault();
-    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
+    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) 
+      ? scopedTechProfile.id 
+      : (expenseForm.technician_id || (selectedTechId !== 'all' ? selectedTechId : null));
     if (!effectiveTechId) return showToast('Please select a specific technician before submitting voucher claim', 'error');
+
+    const chosenTech = loadedTechs.find(t => String(t.id) === String(effectiveTechId)) || currentTech;
 
     const validItems = expenseForm.items.filter(it => (parseFloat(it.amount) || 0) > 0);
     if (validItems.length === 0) {
@@ -352,7 +399,9 @@ export const TourLedgerSection = ({
       let vNo = null;
       try {
         const seqRes = await api.getNextVoucherSequence();
-        if (seqRes && seqRes.next_voucher_no) vNo = seqRes.next_voucher_no;
+        if (seqRes && (seqRes.next_voucher_no || seqRes.next_seq)) {
+          vNo = seqRes.next_voucher_no || `TT-${seqRes.next_seq}`;
+        }
       } catch (_) {}
 
       const itemsPayload = validItems.map(it => {
@@ -376,7 +425,7 @@ export const TourLedgerSection = ({
 
       await api.addTourExpense({
         technician_id: effectiveTechId,
-        technician_name: currentTech.name,
+        technician_name: chosenTech.name || 'Technician',
         voucher_no: vNo,
         expense_date: expenseForm.expense_date,
         items: itemsPayload,
@@ -392,21 +441,6 @@ export const TourLedgerSection = ({
 
       showToast(`Consolidated voucher (${itemsPayload.length} item(s), ₹${expenseTotalSum}) saved successfully!`, 'success');
       setIsExpenseModalOpen(false);
-      setExpenseForm({
-        expense_date: new Date().toISOString().split('T')[0],
-        items: [
-          {
-            id: 'item-1',
-            title: '',
-            category: 'Bus / Train Fare',
-            amount: '',
-            ticket_id: '',
-            description: '',
-            receipt_file: null,
-            receipt_preview: null
-          }
-        ]
-      });
       await fetchLedger(true);
     } catch (err) {
       showToast('Failed to log expense: ' + err.message, 'error');
@@ -414,6 +448,7 @@ export const TourLedgerSection = ({
       setSubmittingExpense(false);
     }
   };
+
 
   // Handle Settle / Return Balance
   const handleSettleBalance = async (e) => {
@@ -656,10 +691,31 @@ export const TourLedgerSection = ({
     window.print();
   };
 
-  const summary = ledgerData.summary || {};
   const advances = ledgerData.advances || [];
   const expenses = ledgerData.expenses || [];
   const settlements = ledgerData.settlements || [];
+
+  const computedTotalAdvance = useMemo(() => advances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), [advances]);
+  const computedApprovedExpenses = useMemo(() => expenses.filter(e => e.status !== 'Rejected' && e.status !== 'rejected').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
+  const computedTotalReturned = useMemo(() => settlements.filter(s => s.settlement_type === 'return_to_company').reduce((s, s1) => s + (parseFloat(s1.returned_amount || s1.amount) || 0), 0), [settlements]);
+  const computedTotalReimbursed = useMemo(() => settlements.filter(s => s.settlement_type === 'reimbursed_by_company').reduce((s, s1) => s + (parseFloat(s1.reimbursed_amount || s1.amount) || 0), 0), [settlements]);
+  const computedNetBalance = useMemo(() => (computedTotalAdvance + computedTotalReimbursed) - (computedApprovedExpenses + computedTotalReturned), [computedTotalAdvance, computedTotalReimbursed, computedApprovedExpenses, computedTotalReturned]);
+
+  const summary = useMemo(() => {
+    const rawAdv = ledgerData.summary?.total_advance ?? ledgerData.summary?.totalAdvance;
+    const rawExp = ledgerData.summary?.approved_expenses ?? ledgerData.summary?.totalExpenses ?? ledgerData.summary?.total_expenses;
+    const rawRet = ledgerData.summary?.total_returned ?? ledgerData.summary?.totalReturned;
+    const rawReimb = ledgerData.summary?.total_reimbursed ?? ledgerData.summary?.totalReimbursed;
+    const rawBal = ledgerData.summary?.net_balance ?? ledgerData.summary?.currentBalance;
+
+    return {
+      total_advance: (rawAdv !== undefined && rawAdv !== null && Number(rawAdv) > 0) ? Number(rawAdv) : computedTotalAdvance,
+      approved_expenses: (rawExp !== undefined && rawExp !== null && Number(rawExp) > 0) ? Number(rawExp) : computedApprovedExpenses,
+      total_returned: (rawRet !== undefined && rawRet !== null && Number(rawRet) > 0) ? Number(rawRet) : computedTotalReturned,
+      total_reimbursed: (rawReimb !== undefined && rawReimb !== null && Number(rawReimb) > 0) ? Number(rawReimb) : computedTotalReimbursed,
+      net_balance: (rawBal !== undefined && rawBal !== null && (rawAdv || rawExp || rawRet)) ? Number(rawBal) : computedNetBalance
+    };
+  }, [ledgerData.summary, computedTotalAdvance, computedApprovedExpenses, computedTotalReturned, computedTotalReimbursed, computedNetBalance]);
 
   return (
     <div className="space-y-4">
@@ -798,7 +854,7 @@ export const TourLedgerSection = ({
           {isAdminOrStaff && (
             <button
               type="button"
-              onClick={() => setIsAdvanceModalOpen(true)}
+              onClick={openAdvanceModal}
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -808,7 +864,7 @@ export const TourLedgerSection = ({
 
           <button
             type="button"
-            onClick={() => setIsExpenseModalOpen(true)}
+            onClick={openExpenseModal}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -885,7 +941,7 @@ export const TourLedgerSection = ({
                 </p>
                 <button
                   type="button"
-                  onClick={() => setIsExpenseModalOpen(true)}
+                  onClick={openExpenseModal}
                   className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
@@ -1123,11 +1179,32 @@ export const TourLedgerSection = ({
             </div>
 
             <form onSubmit={handleAllocateAdvance} className="space-y-3 text-xs">
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900">
-                <span className="block text-[11px] font-semibold text-blue-700">Specialist:</span>
-                <strong className="text-sm font-bold text-blue-950">{currentTech.name}</strong>
-                <span className="text-[11px] text-blue-600 block mt-0.5">{currentTech.area_zone || 'Field Zone'}</span>
-              </div>
+              {isAdminOrStaff ? (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Select Specialist / Technician to Allocate Advance *
+                  </label>
+                  <select
+                    required
+                    value={advanceForm.technician_id}
+                    onChange={(e) => setAdvanceForm(prev => ({ ...prev, technician_id: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-blue-50/70 border border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-blue-950 cursor-pointer"
+                  >
+                    <option value="">-- Choose Specialist --</option>
+                    {loadedTechs.map(t => (
+                      <option key={t.id} value={t.id}>
+                        👤 {t.name} ({t.area_zone || 'Field Specialist'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900">
+                  <span className="block text-[11px] font-semibold text-blue-700">Specialist:</span>
+                  <strong className="text-sm font-bold text-blue-950">{currentTech.name}</strong>
+                  <span className="text-[11px] text-blue-600 block mt-0.5">{currentTech.area_zone || 'Field Zone'}</span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -1224,9 +1301,15 @@ export const TourLedgerSection = ({
                     Batch Claim
                   </span>
                 </h4>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Claiming for specialist: <strong className="text-slate-800">{currentTech.name}</strong>
-                </p>
+                {isAdminOrStaff ? (
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Batch voucher claim for field operations
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Claiming for specialist: <strong className="text-slate-800">{currentTech.name}</strong>
+                  </p>
+                )}
               </div>
               <button 
                 type="button" 
@@ -1238,6 +1321,26 @@ export const TourLedgerSection = ({
             </div>
 
             <form onSubmit={handleAddExpense} className="space-y-4 text-xs">
+              {isAdminOrStaff && (
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                  <label className="block text-[11px] font-bold text-emerald-950 mb-1">
+                    Select Specialist / Technician for Voucher Claim *
+                  </label>
+                  <select
+                    required
+                    value={expenseForm.technician_id}
+                    onChange={(e) => setExpenseForm(prev => ({ ...prev, technician_id: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 cursor-pointer"
+                  >
+                    <option value="">-- Choose Specialist --</option>
+                    {loadedTechs.map(t => (
+                      <option key={t.id} value={t.id}>
+                        👤 {t.name} ({t.area_zone || 'Field Specialist'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {/* Shared Date */}
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">

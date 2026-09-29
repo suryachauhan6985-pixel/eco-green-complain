@@ -423,7 +423,19 @@ app.get('/api/tour-ledger', authenticateToken, (req, res) => {
       advances,
       expenses,
       settlements,
-      summary: { totalAdvance, totalExpenses, totalReturned, totalReimbursed, currentBalance }
+      summary: {
+        total_advance: totalAdvance,
+        approved_expenses: totalExpenses,
+        total_expenses: totalExpenses,
+        total_returned: totalReturned,
+        total_reimbursed: totalReimbursed,
+        net_balance: currentBalance,
+        totalAdvance,
+        totalExpenses,
+        totalReturned,
+        totalReimbursed,
+        currentBalance
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

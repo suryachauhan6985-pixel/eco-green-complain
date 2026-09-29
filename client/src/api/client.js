@@ -704,7 +704,7 @@ class LocalMockStore {
     let expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
     let settlements = JSON.parse(localStorage.getItem('egs_mock_tour_settlements') || '[]');
 
-    if (techId) {
+    if (techId && String(techId).trim() !== '' && techId !== 'all') {
       advances = advances.filter(a => String(a.technician_id) === String(techId));
       expenses = expenses.filter(e => String(e.technician_id) === String(techId));
       settlements = settlements.filter(s => String(s.technician_id) === String(techId));
@@ -724,9 +724,15 @@ class LocalMockStore {
       summary: {
         total_advance: totalAdvance,
         approved_expenses: approvedExpenses,
+        total_expenses: approvedExpenses,
         total_returned: totalReturned,
         total_reimbursed: totalReimbursed,
-        net_balance: netBalance
+        net_balance: netBalance,
+        totalAdvance,
+        totalExpenses: approvedExpenses,
+        totalReturned,
+        totalReimbursed,
+        currentBalance: netBalance
       }
     };
   }

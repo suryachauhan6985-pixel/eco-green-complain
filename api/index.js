@@ -1417,6 +1417,13 @@ async function ensureTourLedgerAndSecondaryTechTables() {
       )
     `).catch(() => {});
 
+    // Ensure columns exist on older tables
+    await query(`ALTER TABLE technician_tour_expenses ADD COLUMN IF NOT EXISTS voucher_no TEXT;`).catch(() => {});
+    await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS purpose TEXT;`).catch(() => {});
+    await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS tour_title TEXT;`).catch(() => {});
+    await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS payment_mode TEXT DEFAULT 'Cash';`).catch(() => {});
+    await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS reference_no TEXT;`).catch(() => {});
+
     // 4. Ensure technician_tour_settlements table
     await query(`
       CREATE TABLE IF NOT EXISTS technician_tour_settlements (
@@ -1440,12 +1447,46 @@ async function ensureTourLedgerAndSecondaryTechTables() {
   }
 }
 
-// GET /api/tour-ledger: Fetch advances, expenses, and settlements
+async function getNextPostgresVoucherNo() {
+  try {
+    const rows = await query(`
+      SELECT voucher_no FROM technician_tour_expenses 
+      WHERE voucher_no LIKE 'TT-%' 
+      ORDER BY id DESC LIMIT 100
+    `);
+    let maxSeq = 340;
+    for (const r of rows.rows) {
+      if (r.voucher_no) {
+        const num = parseInt(r.voucher_no.replace('TT-', ''), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+    return `TT-${maxSeq + 1}`;
+  } catch (_) {
+    return 'TT-341';
+  }
+}
+
+// GET /api/tour-vouchers/next-sequence: Fetch next global voucher sequence number
+app.get('/api/tour-vouchers/next-sequence', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const nextSeq = await getNextPostgresVoucherNo();
+    const num = parseInt(nextSeq.replace('TT-', ''), 10) || 341;
+    return res.json({ success: true, next_seq: num, next_voucher_no: nextSeq });
+  } catch (err) {
+    return res.json({ success: true, next_seq: 341, next_voucher_no: 'TT-341' });
+  }
+});
+
+// GET /api/tour-ledger: Fetch advances, expenses, and settlements with dual format summary
 app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
   try {
     await ensureTourLedgerAndSecondaryTechTables();
     const { technician_id } = req.query;
-    let targetTechId = req.user.role === 'technician' ? req.user.technician_id : technician_id;
+    let targetTechId = req.user.role === 'technician' 
+      ? (req.user.technician_id || req.user.technicianId || req.user.id) 
+      : technician_id;
 
     let advWhere = '';
     let expWhere = '';
@@ -1493,7 +1534,7 @@ app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
 
     const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || 0), 0);
+    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || s.amount || 0), 0);
     const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
     const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
 
@@ -1503,6 +1544,12 @@ app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
       expenses,
       settlements,
       summary: {
+        total_advance: totalAdvance,
+        approved_expenses: totalExpenses,
+        total_expenses: totalExpenses,
+        total_returned: totalReturned,
+        total_reimbursed: totalReimbursed,
+        net_balance: currentBalance,
         totalAdvance,
         totalExpenses,
         totalReturned,
@@ -1522,14 +1569,14 @@ app.post('/api/tour-advances', authenticateToken, async (req, res) => {
     if (req.user.role === 'technician') {
       return res.status(403).json({ error: 'Only staff and admin can allocate tour advances' });
     }
-    const { technician_id, amount, tour_title, payment_mode, reference_no, notes, allocated_at } = req.body;
+    const { technician_id, amount, tour_title, purpose, payment_mode, reference_no, notes, allocated_at } = req.body;
     if (!technician_id || !amount || parseFloat(amount) <= 0) {
       return res.status(400).json({ error: 'Technician and valid advance amount are required' });
     }
     const r = await query(`
       INSERT INTO technician_tour_advances (
-        technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes
-      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8)
+        technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes, purpose
+      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8, $9)
       RETURNING *
     `, [
       String(technician_id).trim(),
@@ -1538,8 +1585,9 @@ app.post('/api/tour-advances', authenticateToken, async (req, res) => {
       allocated_at || null,
       payment_mode || 'Cash',
       reference_no || null,
-      tour_title || 'Service Tour',
-      notes || null
+      tour_title || purpose || 'Service Tour',
+      notes || null,
+      purpose || tour_title || 'Tour Advance for Field Tasks'
     ]);
     return res.json({ success: true, advance: r.rows[0] });
   } catch (err) {
@@ -1547,7 +1595,7 @@ app.post('/api/tour-advances', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /api/tour-expenses: Submit tour expense with receipt
+// POST /api/tour-expenses: Submit tour expense with multi-item batch support and voucher_no
 app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
   try {
     await ensureTourLedgerAndSecondaryTechTables();
@@ -1561,23 +1609,70 @@ app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
       receipt_url,
       receipt_data,
       receipt_name,
-      ticket_id
+      ticket_id,
+      voucher_no,
+      items
     } = req.body;
 
-    const targetTechId = req.user.role === 'technician' ? req.user.technician_id : technician_id;
-    if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
+    const targetTechId = req.user.role === 'technician'
+      ? (req.user.technician_id || req.user.technicianId || req.user.id || technician_id)
+      : technician_id;
+
+    if (!targetTechId) {
+      return res.status(400).json({ error: 'Technician is required' });
+    }
+
+    let finalVoucherNo = voucher_no;
+    if (!finalVoucherNo || finalVoucherNo === 'VCH-NEW') {
+      finalVoucherNo = await getNextPostgresVoucherNo();
+    }
+
+    // Multi-item row batch claim (ECO-22)
+    if (Array.isArray(items) && items.length > 0) {
+      const created = [];
+      for (const it of items) {
+        const itAmt = parseFloat(it.amount);
+        if (!itAmt || itAmt <= 0) continue;
+        const r = await query(`
+          INSERT INTO technician_tour_expenses (
+            technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+            receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
+          ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, 'Submitted', $11)
+          RETURNING *
+        `, [
+          String(targetTechId).trim(),
+          tour_advance_id || null,
+          finalVoucherNo,
+          it.expense_date || expense_date || null,
+          it.category || 'Other Expense',
+          itAmt,
+          it.description || it.title || '',
+          it.receipt_url || null,
+          it.receipt_data || null,
+          it.receipt_name || null,
+          it.ticket_id || ticket_id || null,
+          req.user ? req.user.name : 'Technician'
+        ]);
+        created.push(r.rows[0]);
+      }
+      return res.json({ success: true, expenses: created, voucher_no: finalVoucherNo });
+    }
+
+    // Single item fallback
+    if (!category || !amount || parseFloat(amount) <= 0) {
       return res.status(400).json({ error: 'Category, amount and technician are required' });
     }
 
     const r = await query(`
       INSERT INTO technician_tour_expenses (
-        technician_id, tour_advance_id, expense_date, category, amount, description,
+        technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
         receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-      ) VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, 'Submitted', $11)
+      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, 'Submitted', $11)
       RETURNING *
     `, [
       String(targetTechId).trim(),
       tour_advance_id || null,
+      finalVoucherNo,
       expense_date || null,
       category,
       parseFloat(amount),
@@ -1586,9 +1681,9 @@ app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
       receipt_data || null,
       receipt_name || null,
       ticket_id || null,
-      req.user.name || 'Technician'
+      req.user ? req.user.name : 'Technician'
     ]);
-    return res.json({ success: true, expense: r.rows[0] });
+    return res.json({ success: true, expense: r.rows[0], voucher_no: finalVoucherNo });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1603,7 +1698,7 @@ app.put('/api/tour-expenses/:id/status', authenticateToken, async (req, res) => 
     if (!['Submitted', 'Verified', 'Rejected'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
-    const r = await query('UPDATE technician_tour_expenses SET status = $1 WHERE id = $2 RETURNING *', [status, id]);
+    const r = await query('UPDATE technician_tour_expenses SET status = $1 WHERE id::text = $2 RETURNING *', [status, id]);
     return res.json({ success: true, expense: r.rows[0] });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1615,7 +1710,7 @@ app.delete('/api/tour-expenses/:id', authenticateToken, async (req, res) => {
   try {
     await ensureTourLedgerAndSecondaryTechTables();
     const { id } = req.params;
-    await query('DELETE FROM technician_tour_expenses WHERE id = $1', [id]);
+    await query('DELETE FROM technician_tour_expenses WHERE id::text = $1', [id]);
     return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1627,7 +1722,9 @@ app.post('/api/tour-settlements', authenticateToken, async (req, res) => {
   try {
     await ensureTourLedgerAndSecondaryTechTables();
     const { technician_id, returned_amount, reimbursed_amount, notes, tour_advance_id } = req.body;
-    const targetTechId = req.user.role === 'technician' ? req.user.technician_id : technician_id;
+    const targetTechId = req.user.role === 'technician' 
+      ? (req.user.technician_id || req.user.technicianId || req.user.id || technician_id) 
+      : technician_id;
     if (!targetTechId) {
       return res.status(400).json({ error: 'Technician is required' });
     }
@@ -6611,190 +6708,7 @@ async function ensureTourLedgerTables() {
   }
 }
 
-async function getNextPostgresVoucherNo() {
-  try {
-    const rows = await query(`
-      SELECT voucher_no FROM technician_tour_expenses 
-      WHERE voucher_no LIKE 'TT-%' 
-      ORDER BY id DESC LIMIT 100
-    `);
-    let maxSeq = 340;
-    for (const r of rows.rows) {
-      if (r.voucher_no) {
-        const num = parseInt(r.voucher_no.replace('TT-', ''), 10);
-        if (!isNaN(num) && num > maxSeq) maxSeq = num;
-      }
-    }
-    return `TT-${maxSeq + 1}`;
-  } catch (_) {
-    return 'TT-341';
-  }
-}
 
-app.get('/api/tour-vouchers/next-sequence', authenticateToken, async (req, res) => {
-  await ensureTourLedgerTables();
-  const nextSeq = await getNextPostgresVoucherNo();
-  res.json({ success: true, next_voucher_no: nextSeq });
-});
-
-app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
-  try {
-    await ensureTourLedgerTables();
-    const { technician_id } = req.query;
-    let targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
-
-    let advSql = `SELECT a.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_advances a LEFT JOIN technicians t ON a.technician_id::text = t.id::text `;
-    let expSql = `SELECT e.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_expenses e LEFT JOIN technicians t ON e.technician_id::text = t.id::text `;
-    let stlSql = `SELECT s.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_settlements s LEFT JOIN technicians t ON s.technician_id::text = t.id::text `;
-    let params = [];
-
-    if (targetTechId && String(targetTechId).trim() !== '' && targetTechId !== 'all') {
-      advSql += `WHERE a.technician_id::text = $1 `;
-      expSql += `WHERE e.technician_id::text = $1 `;
-      stlSql += `WHERE s.technician_id::text = $1 `;
-      params.push(String(targetTechId).trim());
-    }
-
-    advSql += `ORDER BY a.allocated_at DESC`;
-    expSql += `ORDER BY e.expense_date DESC, e.created_at DESC`;
-    stlSql += `ORDER BY s.settled_at DESC`;
-
-    const advances = (await query(advSql, params)).rows;
-    const expenses = (await query(expSql, params)).rows;
-    const settlements = (await query(stlSql, params)).rows;
-
-    const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
-    const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || 0), 0);
-    const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
-    const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
-
-    res.json({
-      success: true,
-      advances,
-      expenses,
-      settlements,
-      summary: { totalAdvance, totalExpenses, totalReturned, totalReimbursed, currentBalance }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/tour-advances', authenticateToken, async (req, res) => {
-  try {
-    await ensureTourLedgerTables();
-    const { technician_id, amount, tour_title, payment_mode, reference_no, notes, allocated_at } = req.body;
-    if (!technician_id || !amount || parseFloat(amount) <= 0) {
-      return res.status(400).json({ error: 'Technician and valid amount are required' });
-    }
-    const ins = await query(`
-      INSERT INTO technician_tour_advances (technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes)
-      VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8)
-      RETURNING *
-    `, [String(technician_id).trim(), parseFloat(amount), req.user ? req.user.name : 'Admin', allocated_at || null, payment_mode || 'Cash', reference_no || null, tour_title || 'Service Tour', notes || null]);
-    res.json({ success: true, advance: ins.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
-  try {
-    await ensureTourLedgerTables();
-    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, items } = req.body;
-    const targetTechId = req.user.role === 'technician' ? (req.user.technicianId || req.user.technician_id) : technician_id;
-    if (!targetTechId) {
-      return res.status(400).json({ error: 'Technician is required' });
-    }
-    const finalVoucherNo = voucher_no || await getNextPostgresVoucherNo();
-
-    if (Array.isArray(items) && items.length > 0) {
-      const created = [];
-      for (const it of items) {
-        if (!it.amount || parseFloat(it.amount) <= 0) continue;
-        const ins = await query(`
-          INSERT INTO technician_tour_expenses (
-            technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
-            receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-          ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
-          RETURNING *
-        `, [
-          String(targetTechId).trim(),
-          tour_advance_id || null,
-          finalVoucherNo,
-          it.expense_date || expense_date || null,
-          it.category || 'Other Expense',
-          parseFloat(it.amount),
-          it.description || it.title || '',
-          it.receipt_url || null,
-          it.receipt_data || null,
-          it.receipt_name || null,
-          it.ticket_id || ticket_id || null,
-          req.user ? req.user.name : 'Technician'
-        ]);
-        created.push(ins.rows[0]);
-      }
-      return res.json({ success: true, expenses: created, voucher_no: finalVoucherNo });
-    }
-
-    if (!category || !amount || parseFloat(amount) <= 0) {
-      return res.status(400).json({ error: 'Category, amount and technician are required' });
-    }
-    const ins = await query(`
-      INSERT INTO technician_tour_expenses (
-        technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
-        receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
-      RETURNING *
-    `, [String(targetTechId).trim(), tour_advance_id || null, finalVoucherNo, expense_date || null, category, parseFloat(amount), description || '', receipt_url || null, receipt_data || null, receipt_name || null, ticket_id || null, req.user ? req.user.name : 'Technician']);
-    res.json({ success: true, expense: ins.rows[0], voucher_no: finalVoucherNo });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/tour-expenses/:id/status', authenticateToken, async (req, res) => {
-  try {
-    await ensureTourLedgerTables();
-    const { id } = req.params;
-    const { status } = req.body;
-    const upd = await query('UPDATE technician_tour_expenses SET status = $1 WHERE id::text = $2 RETURNING *', [status, id]);
-    res.json({ success: true, expense: upd.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/tour-expenses/:id', authenticateToken, async (req, res) => {
-  try {
-    await ensureTourLedgerTables();
-    const { id } = req.params;
-    await query('DELETE FROM technician_tour_expenses WHERE id::text = $1', [id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/tour-settlements', authenticateToken, async (req, res) => {
-  try {
-    await ensureTourLedgerTables();
-    const { technician_id, returned_amount, reimbursed_amount, notes, tour_advance_id } = req.body;
-    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
-    if (!targetTechId) {
-      return res.status(400).json({ error: 'Technician is required' });
-    }
-    const ins = await query(`
-      INSERT INTO technician_tour_settlements (technician_id, returned_amount, reimbursed_amount, settled_by, notes, tour_advance_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING *
-    `, [String(targetTechId).trim(), parseFloat(returned_amount || 0), parseFloat(reimbursed_amount || 0), req.user ? req.user.name : 'Admin', notes || null, tour_advance_id || null]);
-    res.json({ success: true, settlement: ins.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Fallback status check
 app.get('/api', (req, res) => {
