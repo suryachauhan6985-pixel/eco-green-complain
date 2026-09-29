@@ -1594,9 +1594,9 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(data)
   }),
-  updateTourExpenseStatus: (id, status, reviewNotes = '') => request(`/tour-expenses/${id}/status`, {
+  updateTourExpenseStatus: (id, status, reviewNotes = '', approvedByName = '') => request(`/tour-expenses/${id}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ status, review_notes: reviewNotes })
+    body: JSON.stringify({ status, review_notes: reviewNotes, approved_by_name: approvedByName })
   }),
   deleteTourExpense: (id) => request(`/tour-expenses/${id}`, {
     method: 'DELETE'

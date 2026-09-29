@@ -1419,6 +1419,7 @@ async function ensureTourLedgerAndSecondaryTechTables() {
 
     // Ensure columns exist on older tables
     await query(`ALTER TABLE technician_tour_expenses ADD COLUMN IF NOT EXISTS voucher_no TEXT;`).catch(() => {});
+    await query(`ALTER TABLE technician_tour_expenses ADD COLUMN IF NOT EXISTS approved_by_name TEXT;`).catch(() => {});
     await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS purpose TEXT;`).catch(() => {});
     await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS tour_title TEXT;`).catch(() => {});
     await query(`ALTER TABLE technician_tour_advances ADD COLUMN IF NOT EXISTS payment_mode TEXT DEFAULT 'Cash';`).catch(() => {});
@@ -1762,11 +1763,11 @@ app.put('/api/tour-expenses/:id/status', authenticateToken, async (req, res) => 
   try {
     await ensureTourLedgerAndSecondaryTechTables();
     const { id } = req.params;
-    const { status } = req.body;
-    if (!['Submitted', 'Verified', 'Rejected'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
-    }
-    const r = await query('UPDATE technician_tour_expenses SET status = $1 WHERE id::text = $2 RETURNING *', [status, id]);
+    const { status, approved_by_name } = req.body;
+    const isAppr = status === 'approved' || status === 'Verified';
+    const approver = isAppr ? (approved_by_name || req.user?.name || req.user?.username || 'Admin') : null;
+    await query(`ALTER TABLE technician_tour_expenses ADD COLUMN IF NOT EXISTS approved_by_name TEXT;`).catch(() => {});
+    const r = await query('UPDATE technician_tour_expenses SET status = $1, approved_by_name = $2 WHERE id::text = $3 RETURNING *', [status, approver, id]);
     return res.json({ success: true, expense: r.rows[0] });
   } catch (err) {
     return res.status(500).json({ error: err.message });

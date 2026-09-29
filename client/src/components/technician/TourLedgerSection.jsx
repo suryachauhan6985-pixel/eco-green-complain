@@ -556,18 +556,26 @@ export const TourLedgerSection = ({
           ? formatIndianDateOnly(chunkItems[0].expense_date)
           : formatIndianDateOnly(new Date().toISOString());
 
+        const isApproved = chunkItems.every(it => {
+          const st = (it.status || '').toLowerCase();
+          return st === 'approved' || st === 'verified';
+        });
+        const approverName = chunkItems.find(it => it.approved_by_name)?.approved_by_name || (isApproved ? (currentUser?.name || 'Admin') : null);
+
         chunks.push({
           voucherNo: vNo,
           ticketId: chunkItems[0]?.ticket_id || null,
           date: latestDate,
           items: chunkItems,
-          total: chunkTotal
+          total: chunkTotal,
+          isApproved,
+          approverName
         });
       }
     });
 
     return chunks;
-  }, [ledgerData.expenses, startingVoucherNo, printFilter, selectedVoucherKeys]);
+  }, [ledgerData.expenses, startingVoucherNo, printFilter, selectedVoucherKeys, currentUser]);
 
   // Pair vouchers 2 per page for flawless A4 print layout
   const voucherPages = useMemo(() => {
@@ -801,7 +809,8 @@ export const TourLedgerSection = ({
   // Toggle Expense Status (Approved / Pending / Rejected)
   const handleUpdateStatus = async (expId, newStatus) => {
     try {
-      await api.updateTourExpenseStatus(expId, newStatus);
+      const approverName = newStatus === 'approved' ? (currentUser?.name || currentUser?.username || 'Admin') : null;
+      await api.updateTourExpenseStatus(expId, newStatus, '', approverName);
       showToast(`Expense marked as ${newStatus}`, 'info');
       await fetchLedger(true);
     } catch (err) {
@@ -832,8 +841,9 @@ export const TourLedgerSection = ({
   // Approve all items in a voucher group
   const handleApproveVoucherGroup = async (group) => {
     try {
-      await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'approved')));
-      showToast(`Voucher ${group.voucher_no} marked as approved`, 'info');
+      const approverName = currentUser?.name || currentUser?.username || 'Admin';
+      await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'approved', '', approverName)));
+      showToast(`Voucher ${group.voucher_no} marked as approved by ${approverName}`, 'info');
       await fetchLedger(true);
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');
@@ -843,7 +853,7 @@ export const TourLedgerSection = ({
   // Revert / Unapprove all items in a voucher group to 'submitted' (unlock for editing)
   const handleRevertVoucherGroup = async (group) => {
     try {
-      await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'submitted')));
+      await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'submitted', '', null)));
       showToast(`Voucher ${group.voucher_no} reverted to Submitted (Unlocked for editing)`, 'info');
       await fetchLedger(true);
     } catch (err) {
@@ -983,10 +993,17 @@ export const TourLedgerSection = ({
           <!-- 4 Signatures -->
           <table style="width: 100%; margin-top: 12px; border-collapse: collapse;">
             <tr>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px;">Authorized Signature</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px;">Checked by</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px;">Paid by</td>
-              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px;">Receiver's Signature</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">Authorized Signature</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">
+                ${chunk.isApproved ? `
+                  <div style="font-weight: bold; font-size: 8pt; color: #166534; text-transform: uppercase; line-height: 1.2;">APPROVED BY</div>
+                  <div style="font-weight: bold; font-size: 7.5pt; color: #1e293b; margin-top: 2px;">(${chunk.approverName || 'Admin'})</div>
+                ` : `
+                  <div style="font-weight: bold; font-size: 8pt; color: #dc2626; text-transform: uppercase;">UNAPPROVED</div>
+                `}
+              </td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">Paid by</td>
+              <td style="width: 25%; text-align: center; font-size: 7.5pt; border-top: 1px solid #334155; padding-top: 3px; vertical-align: top;">Receiver's Signature</td>
             </tr>
           </table>
         </div>
@@ -1096,6 +1113,9 @@ export const TourLedgerSection = ({
       if (!grp.receipt_url && exp.receipt_url) {
         grp.receipt_url = exp.receipt_url;
         grp.receipt_name = exp.receipt_name;
+      }
+      if (!grp.approved_by_name && exp.approved_by_name) {
+        grp.approved_by_name = exp.approved_by_name;
       }
       if (exp.status === 'Submitted' || exp.status === 'Pending') {
         grp.status = exp.status;
@@ -2788,8 +2808,21 @@ export const TourLedgerSection = ({
                               <div className="border-t border-slate-700 pt-0.5 font-semibold">
                                 Authorized Signature
                               </div>
-                              <div className="border-t border-slate-700 pt-0.5 font-semibold">
-                                Checked by
+                              <div className="border-t border-slate-700 pt-0.5 font-semibold leading-tight">
+                                {chunk.isApproved ? (
+                                  <div>
+                                    <div className="text-[8.5px] font-bold text-emerald-800 uppercase tracking-wide">
+                                      APPROVED BY
+                                    </div>
+                                    <div className="text-[8px] font-bold text-slate-800 mt-0.5">
+                                      ({chunk.approverName || 'Admin'})
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[8.5px] font-bold text-rose-600 uppercase tracking-wider">
+                                    UNAPPROVED
+                                  </div>
+                                )}
                               </div>
                               <div className="border-t border-slate-700 pt-0.5 font-semibold">
                                 Paid by

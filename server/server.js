@@ -627,8 +627,20 @@ app.put('/api/tour-vouchers/:voucherNo', authenticateToken, (req, res) => {
 app.put('/api/tour-expenses/:id/status', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-    db.prepare('UPDATE technician_tour_expenses SET status = ? WHERE id = ?').run(status, id);
+    const { status, approved_by_name } = req.body;
+    const approver = (status === 'approved' || status === 'Verified')
+      ? (approved_by_name || req.user?.name || req.user?.username || 'Admin')
+      : null;
+    try {
+      db.prepare('UPDATE technician_tour_expenses SET status = ?, approved_by_name = ? WHERE id = ?').run(status, approver, id);
+    } catch (e) {
+      try {
+        db.prepare('ALTER TABLE technician_tour_expenses ADD COLUMN approved_by_name TEXT').run();
+        db.prepare('UPDATE technician_tour_expenses SET status = ?, approved_by_name = ? WHERE id = ?').run(status, approver, id);
+      } catch (_) {
+        db.prepare('UPDATE technician_tour_expenses SET status = ? WHERE id = ?').run(status, id);
+      }
+    }
     const expense = db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(id);
     res.json({ success: true, expense });
   } catch (err) {
