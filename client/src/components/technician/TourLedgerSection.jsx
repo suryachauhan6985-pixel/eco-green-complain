@@ -5,7 +5,7 @@ import { useDialog } from '../../context/DialogContext';
 import { 
   IndianRupee, Plus, FileText, Download, Printer, Copy, Check, 
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
-  AlertCircle, ChevronRight, ChevronLeft, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
+  AlertCircle, ChevronRight, ChevronLeft, ChevronDown, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
   Camera, Ticket
 } from 'lucide-react';
@@ -422,6 +422,7 @@ export const TourLedgerSection = ({
   };
 
   // Divide expenses into 9-entry vouchers matching the physical printed voucher slip (11 rows total: 1 header + 9 entries + 1 total)
+  // Each ticket has its dedicated voucher table (no mixing of tickets in the same voucher)
   const voucherChunks = useMemo(() => {
     const rawExps = ledgerData.expenses || [];
     if (rawExps.length === 0) {
@@ -433,29 +434,56 @@ export const TourLedgerSection = ({
       }];
     }
 
-    // Merge same date + same category + same ticket items for print/export only
-    const exps = groupExpensesForPrint(rawExps);
+    // Sort chronologically/by sequence
+    const sorted = [...rawExps].sort((a, b) => {
+      const vA = parseInt(String(a.voucher_no || '').replace(/\D/g, '')) || 0;
+      const vB = parseInt(String(b.voucher_no || '').replace(/\D/g, '')) || 0;
+      if (vA !== vB) return vA - vB;
+      return new Date(a.expense_date || 0) - new Date(b.expense_date || 0);
+    });
+
+    // Group strictly by ticket (or voucher if general tour without ticket)
+    const ticketGroups = new Map();
+    sorted.forEach(it => {
+      const key = (it.ticket_id && String(it.ticket_id).trim())
+        ? `tkt_${String(it.ticket_id).trim()}`
+        : (it.voucher_no ? `vch_${it.voucher_no}` : `item_${it.id}`);
+
+      if (!ticketGroups.has(key)) {
+        ticketGroups.set(key, []);
+      }
+      ticketGroups.get(key).push(it);
+    });
 
     const chunks = [];
     const chunkSize = 9;
-    for (let i = 0; i < exps.length; i += chunkSize) {
-      const chunkItems = exps.slice(i, i + chunkSize);
-      const chunkTotal = chunkItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
-      
-      // Enforce strict consecutive sequential numbering starting from startingVoucherNo
-      const vNo = `TT-${Number(startingVoucherNo) + chunks.length}`;
-      
-      const latestDate = chunkItems[0]?.expense_date 
-        ? formatIndianDateOnly(chunkItems[0].expense_date)
-        : formatIndianDateOnly(new Date().toISOString());
 
-      chunks.push({
-        voucherNo: vNo,
-        date: latestDate,
-        items: chunkItems,
-        total: chunkTotal
-      });
-    }
+    // Process each ticket's items into its dedicated voucher table(s)
+    ticketGroups.forEach((ticketExps) => {
+      // Merge same date + same category within this specific ticket for print/export
+      const groupedItems = groupExpensesForPrint(ticketExps);
+
+      for (let i = 0; i < groupedItems.length; i += chunkSize) {
+        const chunkItems = groupedItems.slice(i, i + chunkSize);
+        const chunkTotal = chunkItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
+
+        // Consecutive sequential numbering starting from startingVoucherNo
+        const vNo = `TT-${Number(startingVoucherNo) + chunks.length}`;
+
+        const latestDate = chunkItems[0]?.expense_date 
+          ? formatIndianDateOnly(chunkItems[0].expense_date)
+          : formatIndianDateOnly(new Date().toISOString());
+
+        chunks.push({
+          voucherNo: vNo,
+          ticketId: chunkItems[0]?.ticket_id || null,
+          date: latestDate,
+          items: chunkItems,
+          total: chunkTotal
+        });
+      }
+    });
+
     return chunks;
   }, [ledgerData.expenses, startingVoucherNo]);
 
@@ -690,6 +718,38 @@ export const TourLedgerSection = ({
     }
   };
 
+  // Approve all items in a voucher group
+  const handleApproveVoucherGroup = async (group) => {
+    try {
+      await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'approved')));
+      showToast(`Voucher ${group.voucher_no} marked as approved`, 'info');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to update status: ' + err.message, 'error');
+    }
+  };
+
+  // Delete all items in a voucher group
+  const handleDeleteVoucherGroup = async (group) => {
+    const itemCount = group.items.length;
+    const ok = await confirm({
+      title: 'Delete Tour Expense Voucher?',
+      message: `Are you sure you want to delete Voucher ${group.voucher_no} (${itemCount} item${itemCount > 1 ? 's' : ''} - ₹${group.totalAmount.toLocaleString('en-IN')})?`,
+      type: 'danger',
+      confirmText: 'Delete Voucher',
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
+    try {
+      await Promise.all(group.items.map(it => api.deleteTourExpense(it.id)));
+      showToast(`Voucher ${group.voucher_no} deleted successfully`, 'success');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to delete voucher: ' + err.message, 'error');
+    }
+  };
+
   // Receipt File Chooser
   const handleReceiptChange = (e) => {
     const file = e.target.files?.[0];
@@ -868,6 +928,56 @@ export const TourLedgerSection = ({
   const advances = ledgerData.advances || [];
   const expenses = ledgerData.expenses || [];
   const settlements = ledgerData.settlements || [];
+
+  // Group individual expense items into 1 row per voucher with accordion expand/collapse
+  const [expandedVouchers, setExpandedVouchers] = useState(new Set());
+
+  const toggleVoucherExpanded = (vKey) => {
+    setExpandedVouchers(prev => {
+      const next = new Set(prev);
+      if (next.has(vKey)) next.delete(vKey);
+      else next.add(vKey);
+      return next;
+    });
+  };
+
+  const voucherLogs = useMemo(() => {
+    const map = new Map();
+
+    expenses.forEach(exp => {
+      const vKey = exp.voucher_no 
+        ? `vch_${exp.voucher_no}` 
+        : (exp.ticket_id ? `tkt_${exp.ticket_id}_${exp.expense_date}` : `item_${exp.id}`);
+
+      if (!map.has(vKey)) {
+        map.set(vKey, {
+          key: vKey,
+          voucher_no: exp.voucher_no || 'VCH-NEW',
+          ticket_id: exp.ticket_id || null,
+          expense_date: exp.expense_date,
+          status: exp.status || 'Submitted',
+          receipt_url: exp.receipt_url,
+          receipt_name: exp.receipt_name,
+          items: [],
+          totalAmount: 0
+        });
+      }
+
+      const grp = map.get(vKey);
+      grp.items.push(exp);
+      grp.totalAmount += (parseFloat(exp.amount) || 0);
+
+      if (!grp.receipt_url && exp.receipt_url) {
+        grp.receipt_url = exp.receipt_url;
+        grp.receipt_name = exp.receipt_name;
+      }
+      if (exp.status === 'Submitted' || exp.status === 'Pending') {
+        grp.status = exp.status;
+      }
+    });
+
+    return Array.from(map.values());
+  }, [expenses]);
 
   const computedTotalAdvance = useMemo(() => advances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), [advances]);
   const computedApprovedExpenses = useMemo(() => expenses.filter(e => e.status !== 'Rejected' && e.status !== 'rejected').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
@@ -1073,7 +1183,7 @@ export const TourLedgerSection = ({
             }`}
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Expense Vouchers & Bills ({expenses.length})</span>
+            <span>Expense Vouchers & Bills ({voucherLogs.length})</span>
           </button>
 
           <button
@@ -1106,7 +1216,7 @@ export const TourLedgerSection = ({
         {/* ================= 1. EXPENSES TAB ================= */}
         {subTab === 'expenses' && (
           <div className="p-4 sm:p-5">
-            {expenses.length === 0 ? (
+            {voucherLogs.length === 0 ? (
               <div className="text-center py-12 px-4">
                 <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                 <h4 className="text-sm font-bold text-slate-700">No Tour Expenses Logged Yet</h4>
@@ -1129,110 +1239,205 @@ export const TourLedgerSection = ({
                     <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
                       <th className="py-2.5 px-3">Voucher #</th>
                       <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">Category</th>
-                      <th className="py-2.5 px-3">Ticket / Particulars</th>
+                      <th className="py-2.5 px-3">Ticket / Purpose</th>
+                      <th className="py-2.5 px-3">Categories</th>
                       <th className="py-2.5 px-3">Receipt / Bill</th>
-                      <th className="py-2.5 px-3 text-right">Amount</th>
+                      <th className="py-2.5 px-3 text-right">Total Amount</th>
                       <th className="py-2.5 px-3 text-center">Status</th>
                       <th className="py-2.5 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {expenses.map((exp) => (
-                      <tr key={exp.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-2.5 px-3 font-mono font-bold text-emerald-800">
-                          {exp.voucher_no || 'VCH-NEW'}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                          {exp.expense_date ? formatIndianDateOnly(exp.expense_date) : '-'}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                            {exp.category}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 max-w-xs">
-                          {exp.ticket_id && (
-                            <span className="font-mono text-[10px] font-bold text-blue-700 block">
-                              Ticket: {exp.ticket_id}
-                            </span>
+                    {voucherLogs.map((grp) => {
+                      const isExpanded = expandedVouchers.has(grp.key);
+                      const uniqueCats = Array.from(new Set(grp.items.map(it => it.category).filter(Boolean)));
+                      let receiptUrls = [];
+                      if (grp.receipt_url) {
+                        try {
+                          if (typeof grp.receipt_url === 'string' && grp.receipt_url.startsWith('[')) {
+                            receiptUrls = JSON.parse(grp.receipt_url);
+                          } else {
+                            receiptUrls = [grp.receipt_url];
+                          }
+                        } catch (_) {
+                          receiptUrls = [grp.receipt_url];
+                        }
+                      }
+
+                      return (
+                        <React.Fragment key={grp.key}>
+                          <tr
+                            onClick={() => toggleVoucherExpanded(grp.key)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded ? 'bg-emerald-50/50 hover:bg-emerald-50/80 font-medium' : 'hover:bg-slate-50/80'
+                            }`}
+                          >
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  className="p-1 rounded-md hover:bg-slate-200/70 text-slate-500 transition-colors cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleVoucherExpanded(grp.key);
+                                  }}
+                                  title={isExpanded ? 'Collapse items' : 'Expand items'}
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-emerald-700" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                                  )}
+                                </button>
+                                <div>
+                                  <span className="font-mono font-black text-emerald-800 text-xs">
+                                    {grp.voucher_no}
+                                  </span>
+                                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                    {grp.items.length} {grp.items.length === 1 ? 'item' : 'items'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap text-xs">
+                              {grp.expense_date ? formatIndianDateOnly(grp.expense_date) : '-'}
+                            </td>
+
+                            <td className="py-2.5 px-3 max-w-xs">
+                              {grp.ticket_id ? (
+                                <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                                  <Ticket className="w-3 h-3 text-blue-600" />
+                                  {grp.ticket_id}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 italic">General Tour</span>
+                              )}
+                            </td>
+
+                            <td className="py-2.5 px-3">
+                              <div className="flex flex-wrap gap-1 max-w-xs">
+                                {uniqueCats.slice(0, 2).map((cat, idx) => (
+                                  <span key={idx} className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 truncate">
+                                    {cat}
+                                  </span>
+                                ))}
+                                {uniqueCats.length > 2 && (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-200 text-slate-600">
+                                    +{uniqueCats.length - 2} more
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                              {receiptUrls.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setReceiptLightbox({
+                                    urls: receiptUrls,
+                                    url: receiptUrls[0],
+                                    index: 0,
+                                    name: grp.receipt_name || `${grp.voucher_no} Bill Proofs`
+                                  })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition-colors cursor-pointer shadow-2xs"
+                                >
+                                  <ImageIcon className="w-3 h-3 text-emerald-600" />
+                                  <span>View Bill{receiptUrls.length > 1 ? ` (${receiptUrls.length})` : ''}</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">Self-Voucher</span>
+                              )}
+                            </td>
+
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-sm">
+                              {formatCur(grp.totalAmount)}
+                            </td>
+
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                grp.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                                grp.status === 'rejected' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                                'bg-amber-100 text-amber-900 border border-amber-200'
+                              }`}>
+                                {grp.status || 'Submitted'}
+                              </span>
+                            </td>
+
+                            <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                                {isAdminOrStaff && grp.status !== 'approved' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveVoucherGroup(grp)}
+                                    className="p-1 hover:bg-emerald-100 text-emerald-700 rounded transition-colors cursor-pointer"
+                                    title="Approve all items in voucher"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteVoucherGroup(grp)}
+                                  className="p-1 hover:bg-rose-100 text-rose-600 rounded transition-colors cursor-pointer"
+                                  title="Delete Voucher"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Expanded Item Breakdown Sub-Row */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/70 border-b border-slate-200">
+                              <td colSpan={8} className="p-3 pl-8 sm:pl-10">
+                                <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                                  <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-slate-700">
+                                      Itemized Entries for Voucher {grp.voucher_no} ({grp.items.length} items)
+                                    </span>
+                                    <span className="text-[11px] font-mono font-bold text-emerald-700">
+                                      Total: {formatCur(grp.totalAmount)}
+                                    </span>
+                                  </div>
+                                  <div className="divide-y divide-slate-100 text-xs">
+                                    {grp.items.map((item, itIdx) => (
+                                      <div key={item.id || itIdx} className="px-3.5 py-2 flex items-center justify-between gap-3 hover:bg-slate-50/50">
+                                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                          <span className="w-5 text-[10px] font-bold text-slate-400 font-mono">
+                                            #{itIdx + 1}
+                                          </span>
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                                            {item.category}
+                                          </span>
+                                          <span className="text-slate-800 text-xs font-medium truncate" title={item.description || item.title}>
+                                            {item.description || item.title || 'Tour expense'}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-3 shrink-0">
+                                          <span className="font-mono font-bold text-slate-900 text-xs">
+                                            {formatCur(item.amount)}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteExpense(item)}
+                                            className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                            title="Delete this line item"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                          <strong className="text-slate-800 font-semibold block truncate" title={exp.title}>
-                            {exp.title}
-                          </strong>
-                          {exp.description && (
-                            <span className="text-[11px] text-slate-500 block truncate" title={exp.description}>
-                              {exp.description}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          {exp.receipt_url ? (() => {
-                            let urls = [];
-                            try {
-                              if (typeof exp.receipt_url === 'string' && exp.receipt_url.startsWith('[')) {
-                                urls = JSON.parse(exp.receipt_url);
-                              } else {
-                                urls = [exp.receipt_url];
-                              }
-                            } catch (_) {
-                              urls = [exp.receipt_url];
-                            }
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => setReceiptLightbox({
-                                  urls,
-                                  url: urls[0],
-                                  index: 0,
-                                  name: exp.receipt_name || exp.title || 'Voucher Bill'
-                                })}
-                                className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition-colors cursor-pointer"
-                              >
-                                <ImageIcon className="w-3 h-3 text-emerald-600" />
-                                <span>View Bill{urls.length > 1 ? ` (${urls.length})` : ''}</span>
-                              </button>
-                            );
-                          })() : (
-                            <span className="text-[10px] text-slate-400 italic">Self-Voucher</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-sm">
-                          {formatCur(exp.amount)}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            exp.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                            exp.status === 'rejected' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
-                            'bg-amber-100 text-amber-900 border border-amber-200'
-                          }`}>
-                            {exp.status || 'Pending'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {isAdminOrStaff && exp.status !== 'approved' && (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateStatus(exp.id, 'approved')}
-                                className="p-1 hover:bg-emerald-100 text-emerald-700 rounded transition-colors"
-                                title="Approve Voucher"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteExpense(exp)}
-                              className="p-1 hover:bg-rose-100 text-rose-600 rounded transition-colors"
-                              title="Delete Voucher"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
