@@ -1771,13 +1771,19 @@ export const api = {
   getCustomerStats: async () => {
     try {
       const res = await request('/customers/stats');
-      if (res && res.totalCustomers) {
+      if (res && res.totalCustomers !== undefined) {
         localStorage.setItem('egs_customer_stats', JSON.stringify(res));
         return res;
       }
     } catch (_) {}
     const cached = JSON.parse(localStorage.getItem('egs_customer_stats') || 'null');
-    return cached || { totalCustomers: 6102, inWarrantyCount: 3623, outWarrantyCount: 2479 };
+    return cached || { totalCustomers: 0, inWarrantyCount: 0, outWarrantyCount: 0 };
+  },
+  syncCustomersBatch: (data) => {
+    return request('/customers/sync', {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    });
   },
   syncCustomersFromExcel: (data) => {
     if (data instanceof FormData) {

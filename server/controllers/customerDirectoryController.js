@@ -102,6 +102,56 @@ async function syncFromExcel(req, res) {
       if (req.file.path && fs.existsSync(req.file.path)) {
         try { fs.unlinkSync(req.file.path); } catch (_) {}
       }
+    } else if (Array.isArray(req.body?.customers)) {
+      const { customers, isFirstBatch, isLastBatch, batchIndex = 0, totalBatches = 1 } = req.body;
+      if (isFirstBatch === true || (batchIndex === 0 && !req.body.append)) {
+        try { db.prepare('DELETE FROM installed_customers').run(); } catch (_) {}
+      }
+      if (customers.length > 0) {
+        const insertStmt = db.prepare(`
+          INSERT INTO installed_customers (
+            customer_name, consumer_mobile, consumer_no, city_village, 
+            dealer_name, invoice_no, invoice_date, installation_date,
+            inverter_serial, is_in_warranty, warranty_expiry_date
+          ) VALUES (
+            @customer_name, @consumer_mobile, @consumer_no, @city_village,
+            @dealer_name, @invoice_no, @invoice_date, @installation_date,
+            @inverter_serial, @is_in_warranty, @warranty_expiry_date
+          )
+        `);
+        const runBatch = db.transaction((rows) => {
+          for (const c of rows) {
+            if (!c.customer_name) continue;
+            insertStmt.run({
+              customer_name: String(c.customer_name).trim().slice(0, 250),
+              consumer_mobile: c.consumer_mobile ? String(c.consumer_mobile).trim().slice(0, 50) : null,
+              consumer_no: c.consumer_no ? String(c.consumer_no).trim().slice(0, 100) : null,
+              city_village: c.city_village ? String(c.city_village).trim().slice(0, 250) : null,
+              dealer_name: c.dealer_name ? String(c.dealer_name).trim().slice(0, 250) : null,
+              invoice_no: c.invoice_no ? String(c.invoice_no).trim().slice(0, 100) : null,
+              invoice_date: c.invoice_date || null,
+              installation_date: c.installation_date || null,
+              inverter_serial: c.inverter_serial ? String(c.inverter_serial).trim().slice(0, 100) : null,
+              is_in_warranty: (c.is_in_warranty === 1 || c.is_in_warranty === true) ? 1 : 0,
+              warranty_expiry_date: c.warranty_expiry_date || null
+            });
+          }
+        });
+        runBatch(customers);
+      }
+      const total = db.prepare('SELECT COUNT(*) as count FROM installed_customers').get().count;
+      const inW = db.prepare('SELECT COUNT(*) as count FROM installed_customers WHERE is_in_warranty = 1').get().count;
+      const outW = db.prepare('SELECT COUNT(*) as count FROM installed_customers WHERE is_in_warranty = 0 OR is_in_warranty IS NULL').get().count;
+      return res.json({
+        success: true,
+        count: total,
+        totalCustomers: total,
+        inWarrantyCount: inW,
+        outWarrantyCount: outW,
+        batchIndex,
+        totalBatches,
+        message: `Customer database permanently saved in database (${total} total records)`
+      });
     } else {
       result = await syncCustomersFromExcel();
     }

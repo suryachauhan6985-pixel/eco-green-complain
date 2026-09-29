@@ -4168,9 +4168,10 @@ app.delete('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff
   }
 });
 
-// ==================== CUSTOMERS ROUTES (Authenticated Staff/Admin only) ====================
-app.get('/api/customers/stats', authenticateToken, async (req, res) => {
+// ==================== CUSTOMERS ROUTES (Unified Customer Directory & Stats) ====================
+app.get('/api/customers/stats', optionalAuth, async (req, res) => {
   try {
+    await ensureCustomerDirectoryTable();
     const r = await query(`
       SELECT 
         COUNT(*) as total,
@@ -4179,36 +4180,79 @@ app.get('/api/customers/stats', authenticateToken, async (req, res) => {
       FROM installed_customers
     `);
     const row = r.rows[0];
-    return res.json({
-      totalCustomers: parseInt(row.total || 0, 10),
-      inWarrantyCount: parseInt(row.in_warranty || 0, 10),
-      outWarrantyCount: parseInt(row.out_warranty || 0, 10)
-    });
+    const actualTotal = parseInt(row.total || 0, 10);
+    const inWarranty = parseInt(row.in_warranty || 0, 10);
+    const outWarranty = parseInt(row.out_warranty || 0, 10);
+
+    if (actualTotal > 0) {
+      return res.json({
+        totalCustomers: actualTotal,
+        inWarrantyCount: inWarranty,
+        outWarrantyCount: outWarranty
+      });
+    }
+
+    const statRes = await query('SELECT total_customers, in_warranty_count, out_warranty_count FROM customer_directory_stats ORDER BY id DESC LIMIT 1');
+    if (statRes.rows.length > 0) {
+      return res.json({
+        totalCustomers: Number(statRes.rows[0].total_customers || 0),
+        inWarrantyCount: Number(statRes.rows[0].in_warranty_count || 0),
+        outWarrantyCount: Number(statRes.rows[0].out_warranty_count || 0)
+      });
+    }
+
+    return res.json({ totalCustomers: 0, inWarrantyCount: 0, outWarrantyCount: 0 });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/customers/search', authenticateToken, async (req, res) => {
+app.get('/api/customers/search', optionalAuth, async (req, res) => {
   try {
-    const q = (req.query.q || req.query.query || '').trim();
-    if (!q || q.length < 2) return res.json({ customers: [] });
+    await ensureCustomerDirectoryTable();
+    const q = (req.query.q || req.query.query || req.query.search || '').trim();
+    if (!q || q.length < 2) {
+      const sample = await query(`
+        SELECT 
+          id, customer_name, consumer_mobile, consumer_no, city_village, 
+          dealer_name, invoice_no, 
+          TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
+          TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
+          TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+          panel_make, inverter_make, inverter_serial, is_in_warranty
+        FROM installed_customers 
+        ORDER BY id DESC 
+        LIMIT 10
+      `);
+      return res.json({ customers: sample.rows, totalMatches: sample.rows.length });
+    }
 
+    const wild = `%${q}%`;
     const r = await query(`
-      SELECT * FROM installed_customers
-      WHERE LOWER(customer_name) LIKE $1 
-         OR consumer_mobile LIKE $1 
-         OR LOWER(consumer_no) LIKE $1 
-         OR LOWER(city_village) LIKE $1
-         OR LOWER(inverter_serial) LIKE $1
-      LIMIT 25
-    `, [`%${q.toLowerCase()}%`]);
+      SELECT 
+        id, customer_name, consumer_mobile, consumer_no, city_village, 
+        dealer_name, invoice_no, 
+        TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
+        TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
+        TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
+        panel_make, inverter_make, inverter_serial, is_in_warranty
+      FROM installed_customers 
+      WHERE customer_name ILIKE $1 
+         OR consumer_mobile ILIKE $1 
+         OR consumer_no ILIKE $1 
+         OR city_village ILIKE $1 
+         OR inverter_serial ILIKE $1
+         OR invoice_no ILIKE $1
+      ORDER BY customer_name ASC 
+      LIMIT 30
+    `, [wild]);
 
-    return res.json({ customers: r.rows });
+    return res.json({ customers: r.rows, query: q, totalMatches: r.rows.length });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
+
 
 // ==================== REPORTS ROUTES ====================
 app.get('/api/reports/metrics', authenticateToken, async (req, res) => {
@@ -6349,67 +6393,6 @@ async function ensureCustomerDirectoryTable() {
   }
 }
 
-app.get('/api/customers/stats', async (req, res) => {
-  try {
-    await ensureCustomerDirectoryTable();
-    const r = await query('SELECT total_customers, in_warranty_count, out_warranty_count FROM customer_directory_stats ORDER BY id DESC LIMIT 1');
-    if (r.rows.length > 0) {
-      return res.json({
-        totalCustomers: Number(r.rows[0].total_customers || 6102),
-        inWarrantyCount: Number(r.rows[0].in_warranty_count || 3623),
-        outWarrantyCount: Number(r.rows[0].out_warranty_count || 2479)
-      });
-    }
-    return res.json({ totalCustomers: 6102, inWarrantyCount: 3623, outWarrantyCount: 2479 });
-  } catch (err) {
-    return res.json({ totalCustomers: 6102, inWarrantyCount: 3623, outWarrantyCount: 2479 });
-  }
-});
-
-app.get('/api/customers/search', async (req, res) => {
-  try {
-    await ensureCustomerDirectoryTable();
-    const q = (req.query.q || req.query.search || '').trim();
-    if (!q || q.length < 2) {
-      const sample = await query(`
-        SELECT 
-          id, customer_name, consumer_mobile, consumer_no, city_village, 
-          dealer_name, invoice_no, 
-          TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
-          TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
-          TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
-          panel_make, inverter_make, inverter_serial, is_in_warranty
-        FROM installed_customers 
-        ORDER BY id DESC 
-        LIMIT 10
-      `);
-      return res.json({ customers: sample.rows });
-    }
-    const wild = `%${q}%`;
-    const r = await query(`
-      SELECT 
-        id, customer_name, consumer_mobile, consumer_no, city_village, 
-        dealer_name, invoice_no, 
-        TO_CHAR(invoice_date, 'YYYY-MM-DD') AS invoice_date,
-        TO_CHAR(installation_date, 'YYYY-MM-DD') AS installation_date,
-        TO_CHAR(warranty_expiry_date, 'YYYY-MM-DD') AS warranty_expiry_date,
-        panel_make, inverter_make, inverter_serial, is_in_warranty
-      FROM installed_customers 
-      WHERE customer_name ILIKE $1 
-         OR consumer_mobile ILIKE $1 
-         OR consumer_no ILIKE $1 
-         OR city_village ILIKE $1 
-         OR inverter_serial ILIKE $1
-         OR invoice_no ILIKE $1
-      ORDER BY customer_name ASC 
-      LIMIT 25
-    `, [wild]);
-    return res.json({ customers: r.rows, query: q, totalMatches: r.rows.length });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
   try {
     await ensureCustomerDirectoryTable();
@@ -6467,27 +6450,30 @@ app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
 app.post('/api/customers/sync', authenticateToken, async (req, res) => {
   try {
     await ensureCustomerDirectoryTable();
-    const { totalCustomers, inWarrantyCount, outWarrantyCount, customers } = req.body || {};
-
-    const total = Number(totalCustomers || 6102);
-    const inW = Number(inWarrantyCount || 3623);
-    const outW = Number(outWarrantyCount !== undefined ? outWarrantyCount : Math.max(0, total - inW));
-
-    await query(`
-      INSERT INTO customer_directory_stats (total_customers, in_warranty_count, out_warranty_count, updated_at)
-      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-    `, [total, inW, outW]);
+    const { 
+      totalCustomers, 
+      inWarrantyCount, 
+      outWarrantyCount, 
+      customers,
+      isFirstBatch,
+      isLastBatch,
+      batchIndex = 0,
+      totalBatches = 1
+    } = req.body || {};
 
     let inserted = 0;
-    if (Array.isArray(customers) && customers.length > 0) {
-      // Clear old customer index before re-populating from freshly uploaded Excel
+
+    // Clear previous customer records ONLY on the first batch of an upload
+    if ((isFirstBatch === true || (batchIndex === 0 && !req.body.append)) && Array.isArray(customers) && customers.length > 0) {
       try {
         await query('DELETE FROM installed_customers');
       } catch (delErr) {
         console.warn('Notice while clearing installed_customers:', delErr.message);
       }
+    }
 
-      // Fast multi-row batch insert in chunks of 50 (takes < 500ms for 1000 rows instead of timing out)
+    if (Array.isArray(customers) && customers.length > 0) {
+      // Fast multi-row batch insert in chunks of 50
       const chunkSize = 50;
       for (let i = 0; i < customers.length; i += chunkSize) {
         const chunk = customers.slice(i, i + chunkSize);
@@ -6499,18 +6485,21 @@ app.post('/api/customers/sync', authenticateToken, async (req, res) => {
           if (!c.customer_name) continue;
           valueClauses.push(`($${paramIdx}, $${paramIdx+1}, $${paramIdx+2}, $${paramIdx+3}, $${paramIdx+4}, $${paramIdx+5}, $${paramIdx+6}, $${paramIdx+7}, $${paramIdx+8}, $${paramIdx+9}, $${paramIdx+10})`);
           
+          // Strict date validation (must be valid YYYY-MM-DD or null)
+          const validDate = (d) => (d && /^\d{4}-\d{2}-\d{2}$/.test(String(d).trim())) ? String(d).trim() : null;
+
           values.push(
-            String(c.customer_name).trim(),
-            c.consumer_mobile ? String(c.consumer_mobile).trim() : null,
-            c.consumer_no ? String(c.consumer_no).trim() : null,
-            c.city_village ? String(c.city_village).trim() : null,
-            c.dealer_name ? String(c.dealer_name).trim() : null,
-            c.invoice_no ? String(c.invoice_no).trim() : null,
-            c.invoice_date || null,
-            c.installation_date || null,
-            c.inverter_serial ? String(c.inverter_serial).trim() : null,
-            c.is_in_warranty ? 1 : 0,
-            c.warranty_expiry_date || null
+            String(c.customer_name).trim().slice(0, 250),
+            c.consumer_mobile ? String(c.consumer_mobile).trim().slice(0, 50) : null,
+            c.consumer_no ? String(c.consumer_no).trim().slice(0, 100) : null,
+            c.city_village ? String(c.city_village).trim().slice(0, 250) : null,
+            c.dealer_name ? String(c.dealer_name).trim().slice(0, 250) : null,
+            c.invoice_no ? String(c.invoice_no).trim().slice(0, 100) : null,
+            validDate(c.invoice_date),
+            validDate(c.installation_date),
+            c.inverter_serial ? String(c.inverter_serial).trim().slice(0, 100) : null,
+            (c.is_in_warranty === 1 || c.is_in_warranty === true) ? 1 : 0,
+            validDate(c.warranty_expiry_date)
           );
           paramIdx += 11;
           inserted++;
@@ -6529,14 +6518,49 @@ app.post('/api/customers/sync', authenticateToken, async (req, res) => {
       }
     }
 
+    // When the final batch completes OR if sync called without batches (e.g. Sync Server Copy):
+    // Always compute and lock in the live database counts from installed_customers
+    if (isLastBatch !== false) {
+      const countRes = await query(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE is_in_warranty = 1) as in_warranty,
+          COUNT(*) FILTER (WHERE is_in_warranty = 0 OR is_in_warranty IS NULL) as out_warranty
+        FROM installed_customers
+      `);
+      const row = countRes.rows[0];
+      const liveTotal = parseInt(row.total || 0, 10);
+      const liveInW = parseInt(row.in_warranty || 0, 10);
+      const liveOutW = parseInt(row.out_warranty || 0, 10);
+
+      const finalTotal = liveTotal > 0 ? liveTotal : Number(totalCustomers || 0);
+      const finalInW = liveTotal > 0 ? liveInW : Number(inWarrantyCount || 0);
+      const finalOutW = liveTotal > 0 ? liveOutW : Number(outWarrantyCount !== undefined ? outWarrantyCount : Math.max(0, finalTotal - finalInW));
+
+      await query(`
+        INSERT INTO customer_directory_stats (total_customers, in_warranty_count, out_warranty_count, updated_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      `, [finalTotal, finalInW, finalOutW]);
+
+      return res.json({
+        success: true,
+        count: finalTotal,
+        totalCustomers: finalTotal,
+        inWarrantyCount: finalInW,
+        outWarrantyCount: finalOutW,
+        insertedCustomers: inserted,
+        batchIndex,
+        totalBatches,
+        message: `Customer database permanently saved in database (${finalTotal} total records)`
+      });
+    }
+
     return res.json({
       success: true,
-      count: total,
-      totalCustomers: total,
-      inWarrantyCount: inW,
-      outWarrantyCount: outW,
+      batchIndex,
+      totalBatches,
       insertedCustomers: inserted,
-      message: `Customer database synced successfully (${total} records)`
+      message: `Batch ${batchIndex + 1}/${totalBatches} inserted successfully`
     });
   } catch (err) {
     console.error('Customer sync error:', err);

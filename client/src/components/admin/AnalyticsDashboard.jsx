@@ -32,15 +32,19 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       setUploadingExcel(true);
       setSyncToast({
         type: 'info',
-        message: 'Reading and validating Excel file...'
+        message: 'Reading and validating Excel workbook...'
       });
 
-      // Parse Excel file in browser memory via SheetJS (bypasses 4.5MB server limit)
+      // Parse Excel file in browser memory via SheetJS
       const buffer = await file.arrayBuffer();
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       
-      const sheetName = workbook.SheetNames.find(s => s.trim().toUpperCase() === 'ALL CUSTOMER') || workbook.SheetNames[0];
+      const sheetName = workbook.SheetNames.find(s => {
+        const n = s.trim().toUpperCase();
+        return n === 'ALL CUSTOMER' || n === 'ALL CUSTOMERS' || n === 'CUSTOMERS' || n === 'CUSTOMER' || n === 'SHEET1';
+      }) || workbook.SheetNames[0];
+
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) {
         throw new Error('No valid sheet found in uploaded Excel workbook');
@@ -68,54 +72,104 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         return '';
       };
 
-      // Comprehensive date parser for Excel serial numbers, DD-MM-YYYY, DD/MM/YYYY, ISO, and textual dates
+      // Comprehensive date parser for Excel serial numbers, DD-MM-YYYY, DD/MM/YYYY, ISO, and 2-digit years
       const parseExcelDate = (val) => {
         if (!val) return null;
         if (val instanceof Date && !isNaN(val.getTime())) {
           return val;
         }
-        // Excel serial date number (e.g., 43000 to 47000 covers 2017 to 2028)
+
+        // Excel serial date code
         if (typeof val === 'number' && !isNaN(val) && val > 1000) {
+          try {
+            if (XLSX.SSF && XLSX.SSF.parse_date_code) {
+              const p = XLSX.SSF.parse_date_code(val);
+              if (p && p.y && p.m && p.d) {
+                const d = new Date(p.y, p.m - 1, p.d);
+                if (!isNaN(d.getTime())) return d;
+              }
+            }
+          } catch (_) {}
           const jsDate = new Date(Math.round((val - 25569) * 86400 * 1000));
           if (!isNaN(jsDate.getTime())) return jsDate;
         }
-        const str = String(val).trim();
-        if (!str) return null;
+
+        const rawStr = String(val).trim();
+        if (!rawStr) return null;
 
         // String numeric serial like "44024"
-        if (/^\d{5}$/.test(str)) {
-          const num = Number(str);
+        if (/^\d{5}$/.test(rawStr)) {
+          const num = Number(rawStr);
           const jsDate = new Date(Math.round((num - 25569) * 86400 * 1000));
           if (!isNaN(jsDate.getTime())) return jsDate;
         }
 
-        // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
-        const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-        if (dmyMatch) {
-          const day = parseInt(dmyMatch[1], 10);
-          const month = parseInt(dmyMatch[2], 10) - 1;
-          const year = parseInt(dmyMatch[3], 10);
+        // Clean string from trailing timestamps like " 00:00:00"
+        const str = rawStr.split(' ')[0].split('T')[0].trim();
+
+        // 4-digit Year: DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+        const dmy4Match = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+        if (dmy4Match) {
+          const day = parseInt(dmy4Match[1], 10);
+          const month = parseInt(dmy4Match[2], 10) - 1;
+          const year = parseInt(dmy4Match[3], 10);
           const d = new Date(year, month, day);
           if (!isNaN(d.getTime())) return d;
         }
 
-        // YYYY-MM-DD or YYYY/MM/DD
-        const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-        if (ymdMatch) {
-          const year = parseInt(ymdMatch[1], 10);
-          const month = parseInt(ymdMatch[2], 10) - 1;
-          const day = parseInt(ymdMatch[3], 10);
+        // 2-digit Year: DD-MM-YY or DD/MM/YY or DD.MM.YY
+        const dmy2Match = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+        if (dmy2Match) {
+          const day = parseInt(dmy2Match[1], 10);
+          const month = parseInt(dmy2Match[2], 10) - 1;
+          const rawY = parseInt(dmy2Match[3], 10);
+          const year = rawY < 50 ? 2000 + rawY : 1900 + rawY;
+          const d = new Date(year, month, day);
+          if (!isNaN(d.getTime())) return d;
+        }
+
+        // 4-digit Year: YYYY-MM-DD or YYYY/MM/DD
+        const ymd4Match = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+        if (ymd4Match) {
+          const year = parseInt(ymd4Match[1], 10);
+          const month = parseInt(ymd4Match[2], 10) - 1;
+          const day = parseInt(ymd4Match[3], 10);
           const d = new Date(year, month, day);
           if (!isNaN(d.getTime())) return d;
         }
 
         // Textual or standard ISO format (e.g. "15-Aug-2018", "2019-05-14T00:00:00.000Z")
-        const parsed = new Date(str);
+        const parsed = new Date(rawStr);
         if (!isNaN(parsed.getTime())) {
           return parsed;
         }
 
         return null;
+      };
+
+      // Intelligent date value extractor that checks explicit aliases, then fuzzy keyword matching
+      const getExcelDateVal = (row) => {
+        const explicit = getExcelVal(row, [
+          'Date of Installation of Solar Meter', 'Date of Installation', 'Installation Date', 'Install Date',
+          'Date of Commissioning', 'Commissioning Date', 'DOC', 'DOI', 'Installation Dt',
+          'Meter Installation Date', 'Meter Date', 'Date of Solar Meter Installation',
+          'Date of Commissioning of Solar PV System', 'Commissioning Dt', 'Solar Meter Inst Date',
+          'Connection Date', 'Work Completion Date', 'Invoice Date', 'InvoiceDate', 'Inv Date', 'Bill Date', 'Date'
+        ]);
+        if (explicit) return explicit;
+
+        const keys = Object.keys(row);
+        const dateKey = keys.find(k => {
+          const lower = k.toLowerCase();
+          return (lower.includes('date') || lower.includes('dt')) && 
+                 (lower.includes('install') || lower.includes('commiss') || lower.includes('meter') || lower.includes('invoice') || lower.includes('doc') || lower.includes('doi'));
+        });
+        if (dateKey && row[dateKey]) return row[dateKey];
+
+        const anyDateKey = keys.find(k => k.toLowerCase().includes('date') || k.toLowerCase().includes('dt'));
+        if (anyDateKey && row[anyDateKey]) return row[anyDateKey];
+
+        return '';
       };
 
       let inWarrantyCount = 0;
@@ -125,18 +179,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
 
       for (const r of rows) {
         const customerName = String(getExcelVal(r, [
-          'Customer Name', 'CustomerName', 'Name of Customer', 'Consumer Name', 'Name', 'Customer'
+          'Customer Name', 'CustomerName', 'Name of Customer', 'Consumer Name', 'Client Name', 'Name', 'Customer'
         ])).trim();
         if (!customerName) continue;
 
-        // Check all standard variants of installation and invoice date headers
-        const rawDateVal = getExcelVal(r, [
-          'Date of Installation of Solar Meter', 'Date of Installation', 'Installation Date',
-          'Date of Commissioning', 'Commissioning Date', 'DOC', 'DOI', 'Installation Dt',
-          'Meter Installation Date', 'Meter Date', 'Date of Solar Meter Installation',
-          'Invoice Date', 'InvoiceDate', 'Inv Date', 'Date'
-        ]);
-
+        const rawDateVal = getExcelDateVal(r);
         const refDate = parseExcelDate(rawDateVal);
         let isInWarranty = 0;
         let dateStr = null;
@@ -156,10 +203,9 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           const expD = String(expiryDate.getDate()).padStart(2, '0');
           expiryDateStr = `${expY}-${expM}-${expD}`;
 
-          // Precise 5-Year Warranty Rule: If today is after 5 years from installation, plant is OUT OF WARRANTY!
+          // Precise 5-Year Warranty Rule: If today is within 5 years from installation, plant is IN WARRANTY
           isInWarranty = today <= expiryDate ? 1 : 0;
         } else {
-          // If no date could be parsed, do not falsely claim it is in warranty
           isInWarranty = 0;
         }
 
@@ -168,8 +214,8 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
 
         mappedCustomers.push({
           customer_name: customerName,
-          consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact'])).trim(),
-          consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No'])).trim(),
+          consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim(),
+          consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim(),
           city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim(),
           dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim(),
           invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim(),
@@ -181,37 +227,58 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         });
       }
 
-      const totalCustomers = mappedCustomers.length || rows.length;
+      const totalCustomers = mappedCustomers.length;
+      if (totalCustomers === 0) {
+        throw new Error('No valid customer rows found in uploaded sheet');
+      }
 
-      // Update client stats immediately
-      const statsObj = {
-        totalCustomers,
-        inWarrantyCount,
-        outWarrantyCount
-      };
-      localStorage.setItem('egs_customer_stats', JSON.stringify(statsObj));
-      setCustomerStats(statsObj);
+      // Stream ALL customer records to database in fast batches of 500
+      const BATCH_SIZE = 500;
+      const totalBatches = Math.ceil(mappedCustomers.length / BATCH_SIZE);
+      let latestServerResult = null;
+
+      for (let b = 0; b < totalBatches; b++) {
+        const start = b * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, mappedCustomers.length);
+        const chunk = mappedCustomers.slice(start, end);
+        const isFirstBatch = b === 0;
+        const isLastBatch = b === totalBatches - 1;
+
+        const progressPercent = Math.round((end / mappedCustomers.length) * 100);
+        setSyncToast({
+          type: 'info',
+          message: `Saving to database: ${end.toLocaleString()} / ${mappedCustomers.length.toLocaleString()} records (${progressPercent}%)...`
+        });
+
+        const res = await api.syncCustomersBatch({
+          isFirstBatch,
+          isLastBatch,
+          batchIndex: b,
+          totalBatches,
+          totalCustomers: mappedCustomers.length,
+          inWarrantyCount,
+          outWarrantyCount,
+          customers: chunk
+        });
+
+        if (isLastBatch && res) {
+          latestServerResult = res;
+        }
+      }
+
+      // Fetch live verified count directly from database
+      await fetchCustomerStats();
 
       // Save complete uploaded customer list into localStorage for instant offline typeahead autofill
       try {
-        localStorage.setItem('egs_uploaded_customers', JSON.stringify(mappedCustomers.slice(0, 6500)));
-      } catch (cacheErr) {
-        console.warn('Local storage cache limit reached for full customer directory:', cacheErr.message);
-      }
-
-      // Sync summary and sample (up to 1,000 customers in fast multi-row batch) to backend database
-      await api.syncCustomersFromExcel({
-        totalCustomers,
-        inWarrantyCount,
-        outWarrantyCount,
-        customers: mappedCustomers.slice(0, 1000)
-      });
+        localStorage.setItem('egs_uploaded_customers', JSON.stringify(mappedCustomers.slice(0, 3000)));
+      } catch (_) {}
 
       setSyncToast({
         type: 'success',
-        message: `Successfully uploaded and synced ${totalCustomers.toLocaleString()} customer records! In Warranty: ${inWarrantyCount.toLocaleString()} (0-5 Yrs), Out of Warranty: ${outWarrantyCount.toLocaleString()} (5+ Yrs)`
+        message: `Successfully saved all ${totalCustomers.toLocaleString()} customer records permanently in database! In Warranty: ${inWarrantyCount.toLocaleString()} (0-5 Yrs), Out of Warranty: ${outWarrantyCount.toLocaleString()} (5+ Yrs)`
       });
-      setTimeout(() => setSyncToast(null), 6000);
+      setTimeout(() => setSyncToast(null), 8000);
     } catch (err) {
       console.error('Excel upload processing error:', err);
       setSyncToast({
@@ -230,11 +297,12 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       setSyncingExcel(true);
       const res = await api.syncCustomersFromExcel();
       await fetchCustomerStats();
+      const count = res.totalCustomers || res.count || customerStats?.totalCustomers || 0;
       setSyncToast({
         type: 'success',
-        message: `Successfully synchronized ${res.count || 6102} customer records from server Excel!`
+        message: `Database synchronized with live server! (${count.toLocaleString()} records in database)`
       });
-      setTimeout(() => setSyncToast(null), 4000);
+      setTimeout(() => setSyncToast(null), 5000);
     } catch (err) {
       setSyncToast({
         type: 'error',
@@ -370,7 +438,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             </h3>
             <p className="text-xs text-slate-300 flex items-center gap-1.5 flex-wrap">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Central Customer Directory • Secure Local Synchronization</span>
+              <span>Central Customer Directory • Permanent Cloud Database Engine</span>
             </p>
           </div>
 
@@ -403,11 +471,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           <div className="bg-white/5 backdrop-blur-xs p-4 rounded-2xl border border-white/10">
             <div className="text-xs font-semibold text-slate-400 mb-1">Total Installed Customers</div>
             <div className="text-3xl font-black text-white">
-              {customerStats?.totalCustomers?.toLocaleString() || '6,102'}
+              {customerStats ? (customerStats.totalCustomers || 0).toLocaleString() : '...'}
             </div>
             <div className="text-[11px] text-emerald-300/80 mt-1 flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
-              Indexed for instant typeahead search
+              Saved permanently in cloud database
             </div>
           </div>
 
@@ -415,11 +483,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
               <span>In Warranty (0-5 Years)</span>
               <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded">
-                {customerStats?.totalCustomers ? Math.round((customerStats.inWarrantyCount / customerStats.totalCustomers) * 100) : 59}%
+                {customerStats && customerStats.totalCustomers > 0 ? Math.round(((customerStats.inWarrantyCount || 0) / customerStats.totalCustomers) * 100) : 0}%
               </span>
             </div>
             <div className="text-3xl font-black text-emerald-400">
-              {customerStats?.inWarrantyCount?.toLocaleString() || '3,623'}
+              {customerStats ? (customerStats.inWarrantyCount || 0).toLocaleString() : '...'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">Eligible for free service & repairs</div>
           </div>
@@ -428,11 +496,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
               <span>Out of Warranty (5+ Years)</span>
               <span className="text-[10px] font-bold bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded">
-                {customerStats?.totalCustomers ? Math.round((customerStats.outWarrantyCount / customerStats.totalCustomers) * 100) : 41}%
+                {customerStats && customerStats.totalCustomers > 0 ? Math.round(((customerStats.outWarrantyCount || 0) / customerStats.totalCustomers) * 100) : 0}%
               </span>
             </div>
             <div className="text-3xl font-black text-rose-300">
-              {customerStats?.outWarrantyCount?.toLocaleString() || '2,479'}
+              {customerStats ? (customerStats.outWarrantyCount || 0).toLocaleString() : '...'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">Paid visit & component replacement rates</div>
           </div>
