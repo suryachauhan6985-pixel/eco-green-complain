@@ -5,7 +5,7 @@ import { useDialog } from '../../context/DialogContext';
 import { 
   IndianRupee, Plus, FileText, Download, Printer, Copy, Check, 
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
-  AlertCircle, ChevronRight, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
+  AlertCircle, ChevronRight, ChevronLeft, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
   Camera, Ticket
 } from 'lucide-react';
@@ -236,27 +236,103 @@ export const TourLedgerSection = ({
     }));
   };
 
-  const handleAddReceiptFiles = (files) => {
-    if (!files || files.length === 0) return;
-    const fileList = Array.from(files);
-    fileList.forEach(file => {
-      if (file.size > 15 * 1024 * 1024) {
-        showToast(`File ${file.name} exceeds 15MB limit`, 'error');
-        return;
+  // Client-side image compression to prevent mobile upload timeouts and Vercel payload limits
+  const compressImageFile = (file) => {
+    return new Promise((resolve) => {
+      if (!file || !file.type || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+        return resolve(file);
       }
       const reader = new FileReader();
-      reader.onload = (event) => {
-        setExpenseForm(prev => ({
-          ...prev,
-          receipt_files: [...(prev.receipt_files || []), file],
-          receipt_previews: [
-            ...(prev.receipt_previews || []),
-            { name: file.name, url: event.target.result }
-          ]
-        }));
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const maxDim = 1200; // 1200px max dimension provides crisp bill details while reducing size to ~80-120KB
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return resolve(file);
+              const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressed);
+            },
+            'image/jpeg',
+            0.75
+          );
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target.result;
       };
+      reader.onerror = () => resolve(file);
       reader.readAsDataURL(file);
     });
+  };
+
+  const [compressingReceipts, setCompressingReceipts] = useState(false);
+
+  const handleAddReceiptFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+
+    try {
+      setCompressingReceipts(true);
+      const newFiles = [];
+      const newPreviews = [];
+
+      for (const file of fileList) {
+        if (file.size > 25 * 1024 * 1024) {
+          showToast(`File ${file.name} exceeds 25MB limit`, 'error');
+          continue;
+        }
+
+        // Compress image before generating base64 data URL
+        const processedFile = await compressImageFile(file);
+
+        const dataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(processedFile);
+        });
+
+        if (dataUrl) {
+          newFiles.push(processedFile);
+          newPreviews.push({
+            name: processedFile.name,
+            url: dataUrl
+          });
+        }
+      }
+
+      setExpenseForm(prev => ({
+        ...prev,
+        receipt_files: [...(prev.receipt_files || []), ...newFiles],
+        receipt_previews: [
+          ...(prev.receipt_previews || []),
+          ...newPreviews
+        ]
+      }));
+    } catch (err) {
+      console.error('Failed to process receipt files:', err);
+      showToast('Error processing photos. Please try again.', 'error');
+    } finally {
+      setCompressingReceipts(false);
+    }
   };
 
   const handleRemoveReceiptFile = (index) => {
@@ -498,8 +574,11 @@ export const TourLedgerSection = ({
       }
 
       // Shared receipts
-      const sharedReceiptUrl = expenseForm.receipt_previews?.[0]?.url || null;
-      const sharedReceiptName = expenseForm.receipt_previews?.map(r => r.name).join(', ') || null;
+      const previews = expenseForm.receipt_previews || [];
+      const sharedReceiptUrl = previews.length > 1
+        ? JSON.stringify(previews.map(r => r.url))
+        : (previews[0]?.url || null);
+      const sharedReceiptName = previews.map(r => r.name).join(', ') || null;
 
       const itemsPayload = validItems.map(it => {
         return {
@@ -1088,16 +1167,33 @@ export const TourLedgerSection = ({
                           )}
                         </td>
                         <td className="py-2.5 px-3">
-                          {exp.receipt_url ? (
-                            <button
-                              type="button"
-                              onClick={() => setReceiptLightbox({ url: exp.receipt_url, name: exp.receipt_name || exp.title })}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition-colors cursor-pointer"
-                            >
-                              <ImageIcon className="w-3 h-3 text-emerald-600" />
-                              <span>View Bill</span>
-                            </button>
-                          ) : (
+                          {exp.receipt_url ? (() => {
+                            let urls = [];
+                            try {
+                              if (typeof exp.receipt_url === 'string' && exp.receipt_url.startsWith('[')) {
+                                urls = JSON.parse(exp.receipt_url);
+                              } else {
+                                urls = [exp.receipt_url];
+                              }
+                            } catch (_) {
+                              urls = [exp.receipt_url];
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setReceiptLightbox({
+                                  urls,
+                                  url: urls[0],
+                                  index: 0,
+                                  name: exp.receipt_name || exp.title || 'Voucher Bill'
+                                })}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition-colors cursor-pointer"
+                              >
+                                <ImageIcon className="w-3 h-3 text-emerald-600" />
+                                <span>View Bill{urls.length > 1 ? ` (${urls.length})` : ''}</span>
+                              </button>
+                            );
+                          })() : (
                             <span className="text-[10px] text-slate-400 italic">Self-Voucher</span>
                           )}
                         </td>
@@ -1634,7 +1730,10 @@ export const TourLedgerSection = ({
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onChange={(e) => handleAddReceiptFiles(e.target.files)}
+                      onChange={(e) => {
+                        handleAddReceiptFiles(e.target.files);
+                        e.target.value = '';
+                      }}
                       className="hidden"
                     />
                   </label>
@@ -1647,16 +1746,24 @@ export const TourLedgerSection = ({
                       type="file"
                       multiple
                       accept="image/*,application/pdf"
-                      onChange={(e) => handleAddReceiptFiles(e.target.files)}
+                      onChange={(e) => {
+                        handleAddReceiptFiles(e.target.files);
+                        e.target.value = '';
+                      }}
                       className="hidden"
                     />
                   </label>
 
-                  {(expenseForm.receipt_previews || []).length > 0 && (
+                  {compressingReceipts ? (
+                    <span className="text-xs text-amber-600 font-bold flex items-center gap-1.5 animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Optimizing photos...
+                    </span>
+                  ) : (expenseForm.receipt_previews || []).length > 0 ? (
                     <span className="text-xs text-emerald-700 font-bold">
                       ✓ {expenseForm.receipt_previews.length} bill(s) attached
                     </span>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Attached Photos Preview Grid */}
@@ -1668,7 +1775,12 @@ export const TourLedgerSection = ({
                           src={rec.url} 
                           alt={rec.name || 'Receipt'} 
                           className="w-full h-full object-cover cursor-pointer"
-                          onClick={() => setReceiptLightbox(rec)}
+                          onClick={() => setReceiptLightbox({
+                            urls: (expenseForm.receipt_previews || []).map(r => r.url),
+                            url: rec.url,
+                            index: rIdx,
+                            name: rec.name || `Bill #${rIdx + 1}`
+                          })}
                         />
                         <button
                           type="button"
@@ -1709,11 +1821,13 @@ export const TourLedgerSection = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingExpense || expenseTotalSum <= 0}
+                  disabled={submittingExpense || compressingReceipts || expenseTotalSum <= 0}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                 >
-                  {submittingExpense && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{submittingExpense ? 'Saving...' : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum})`}</span>
+                  {(submittingExpense || compressingReceipts) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>
+                    {compressingReceipts ? 'Processing Photos...' : submittingExpense ? 'Saving...' : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum})`}
+                  </span>
                 </button>
               </div>
             </form>
@@ -2118,25 +2232,86 @@ export const TourLedgerSection = ({
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl p-4 flex flex-col"
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl p-4 flex flex-col"
           >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-800">{receiptLightbox.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800">{receiptLightbox.name}</span>
+                {receiptLightbox.urls?.length > 1 && (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
+                    Bill {(receiptLightbox.index || 0) + 1} of {receiptLightbox.urls.length}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setReceiptLightbox(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-auto flex items-center justify-center">
+            <div className="flex-1 overflow-auto flex items-center justify-center relative min-h-[300px] bg-slate-50 rounded-xl">
+              {receiptLightbox.urls?.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const currentIdx = receiptLightbox.index || 0;
+                      const newIdx = (currentIdx - 1 + receiptLightbox.urls.length) % receiptLightbox.urls.length;
+                      setReceiptLightbox(prev => ({
+                        ...prev,
+                        index: newIdx,
+                        url: prev.urls[newIdx]
+                      }));
+                    }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-white/90 hover:bg-white text-slate-800 rounded-full shadow-lg border border-slate-200 z-10 cursor-pointer"
+                    title="Previous Bill"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const currentIdx = receiptLightbox.index || 0;
+                      const newIdx = (currentIdx + 1) % receiptLightbox.urls.length;
+                      setReceiptLightbox(prev => ({
+                        ...prev,
+                        index: newIdx,
+                        url: prev.urls[newIdx]
+                      }));
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-white/90 hover:bg-white text-slate-800 rounded-full shadow-lg border border-slate-200 z-10 cursor-pointer"
+                    title="Next Bill"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
               <img 
                 src={receiptLightbox.url} 
                 alt={receiptLightbox.name}
-                className="max-h-[75vh] w-auto object-contain rounded-lg"
+                className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg"
               />
             </div>
+            {receiptLightbox.urls?.length > 1 && (
+              <div className="flex items-center gap-2 pt-3 overflow-x-auto">
+                {receiptLightbox.urls.map((u, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setReceiptLightbox(prev => ({ ...prev, index: idx, url: u }))}
+                    className={`w-12 h-12 rounded-lg border-2 overflow-hidden shrink-0 transition-all cursor-pointer ${
+                      (receiptLightbox.index || 0) === idx ? 'border-emerald-600 ring-2 ring-emerald-200' : 'border-slate-200 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={u} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

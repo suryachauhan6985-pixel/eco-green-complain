@@ -939,15 +939,25 @@ async function request(endpoint, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
+  let didTimeout = false;
   try {
     const controller = new AbortController();
     const timeoutMs = options.timeout || (
       endpoint.includes('/customers/sync') ? 60000 :
+      endpoint.includes('/tour-expenses') ? 60000 :
+      endpoint.includes('/attachments') || endpoint.includes('/upload') ? 60000 :
       endpoint.startsWith('/auth/me') ? 6000 :
       endpoint.includes('/meta-status') ? 8000 :
-      12000
+      25000
     );
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => {
+      didTimeout = true;
+      try {
+        controller.abort(new Error('Request timed out'));
+      } catch (_) {
+        controller.abort();
+      }
+    }, timeoutMs);
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
@@ -971,6 +981,10 @@ async function request(endpoint, options = {}) {
 
     return data !== null ? data : response;
   } catch (err) {
+    if (didTimeout || err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('signal is aborted')) {
+      throw new Error(`Request timed out. Please check your internet connection and try again.`);
+    }
+
     const method = (options.method || 'GET').toUpperCase();
     const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
 
