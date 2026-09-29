@@ -7,7 +7,7 @@ import {
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
-  Camera
+  Camera, Ticket
 } from 'lucide-react';
 import { formatIndianDateOnly } from '../common/TicketAgeBadge';
 
@@ -86,6 +86,18 @@ export const TourLedgerSection = ({
     }
   }, [allTechnicians]);
 
+  // Complaints / Tickets list with fallback fetch
+  const [loadedComplaints, setLoadedComplaints] = useState(complaints || []);
+  useEffect(() => {
+    if (complaints && complaints.length > 0) {
+      setLoadedComplaints(complaints);
+    } else {
+      api.getComplaints().then(res => {
+        if (res && res.complaints) setLoadedComplaints(res.complaints);
+      }).catch(err => console.error('Failed to load complaints for voucher:', err));
+    }
+  }, [complaints]);
+
   // Selected technician filter: default to scoped tech if technician, or activeTechId, or 'all' if admin
   const [internalTechId, setInternalTechId] = useState(() => {
     if (!isAdminOrStaff && scopedTechProfile?.id) return String(scopedTechProfile.id);
@@ -136,21 +148,20 @@ export const TourLedgerSection = ({
   });
   const [submittingAdvance, setSubmittingAdvance] = useState(false);
 
-  // Multi-item row state for Add Tour Expense / Voucher Claim modal (ECO-22 & ECO-23)
+  // Multi-item row state for Add Tour Expense / Voucher Claim modal (Single Voucher per Ticket/Tour)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
     technician_id: '',
     expense_date: new Date().toISOString().split('T')[0],
+    ticket_id: '',
+    receipt_files: [],
+    receipt_previews: [],
     items: [
       {
         id: 'item-1',
-        title: '',
         category: 'Bus / Train Fare',
-        amount: '',
-        ticket_id: '',
-        description: '',
-        receipt_file: null,
-        receipt_preview: null
+        title: '',
+        amount: ''
       }
     ]
   });
@@ -178,16 +189,15 @@ export const TourLedgerSection = ({
     setExpenseForm({
       technician_id: initialTechId,
       expense_date: new Date().toISOString().split('T')[0],
+      ticket_id: '',
+      receipt_files: [],
+      receipt_previews: [],
       items: [
         {
           id: 'item-1',
-          title: '',
           category: 'Bus / Train Fare',
-          amount: '',
-          ticket_id: '',
-          description: '',
-          receipt_file: null,
-          receipt_preview: null
+          title: '',
+          amount: ''
         }
       ]
     });
@@ -201,13 +211,9 @@ export const TourLedgerSection = ({
         ...prev.items,
         {
           id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          category: 'Food & Meals',
           title: '',
-          category: 'Bus / Train Fare',
-          amount: '',
-          ticket_id: '',
-          description: '',
-          receipt_file: null,
-          receipt_preview: null
+          amount: ''
         }
       ]
     }));
@@ -230,17 +236,35 @@ export const TourLedgerSection = ({
     }));
   };
 
-  const handleItemReceiptChange = (itemId, file) => {
-    if (!file) return;
-    if (file.size > 15 * 1024 * 1024) {
-      return showToast('Receipt file size exceeds 15MB limit', 'error');
-    }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      handleUpdateItemRow(itemId, 'receipt_file', file);
-      handleUpdateItemRow(itemId, 'receipt_preview', event.target.result);
-    };
-    reader.readAsDataURL(file);
+  const handleAddReceiptFiles = (files) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+    fileList.forEach(file => {
+      if (file.size > 15 * 1024 * 1024) {
+        showToast(`File ${file.name} exceeds 15MB limit`, 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setExpenseForm(prev => ({
+          ...prev,
+          receipt_files: [...(prev.receipt_files || []), file],
+          receipt_previews: [
+            ...(prev.receipt_previews || []),
+            { name: file.name, url: event.target.result }
+          ]
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemoveReceiptFile = (index) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      receipt_files: (prev.receipt_files || []).filter((_, i) => i !== index),
+      receipt_previews: (prev.receipt_previews || []).filter((_, i) => i !== index)
+    }));
   };
 
   const expenseTotalSum = useMemo(() => {
@@ -321,7 +345,7 @@ export const TourLedgerSection = ({
     }));
   };
 
-  // Divide expenses into 6-item vouchers matching the physical printed voucher slip
+  // Divide expenses into 9-entry vouchers matching the physical printed voucher slip (11 rows total: 1 header + 9 entries + 1 total)
   const voucherChunks = useMemo(() => {
     const rawExps = ledgerData.expenses || [];
     if (rawExps.length === 0) {
@@ -337,7 +361,7 @@ export const TourLedgerSection = ({
     const exps = groupExpensesForPrint(rawExps);
 
     const chunks = [];
-    const chunkSize = 6;
+    const chunkSize = 9;
     for (let i = 0; i < exps.length; i += chunkSize) {
       const chunkItems = exps.slice(i, i + chunkSize);
       const chunkTotal = chunkItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
@@ -439,7 +463,7 @@ export const TourLedgerSection = ({
     }
   };
 
-  // Handle Add Tour Expense with Multi-item Rows (ECO-22 & ECO-23)
+  // Handle Add Tour Expense with Multi-item Rows (Single Voucher per Ticket/Tour)
   const handleAddExpense = async (e) => {
     e.preventDefault();
     const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) 
@@ -466,22 +490,28 @@ export const TourLedgerSection = ({
         }
       } catch (_) {}
 
+      // Find complaint_id if ticket_id is selected
+      let compId = null;
+      if (expenseForm.ticket_id) {
+        const found = (loadedComplaints || complaints).find(c => c.ticket_id === expenseForm.ticket_id || String(c.id) === String(expenseForm.ticket_id));
+        if (found) compId = found.id;
+      }
+
+      // Shared receipts
+      const sharedReceiptUrl = expenseForm.receipt_previews?.[0]?.url || null;
+      const sharedReceiptName = expenseForm.receipt_previews?.map(r => r.name).join(', ') || null;
+
       const itemsPayload = validItems.map(it => {
-        let compId = null;
-        if (it.ticket_id) {
-          const found = complaints.find(c => c.ticket_id === it.ticket_id || String(c.id) === String(it.ticket_id));
-          if (found) compId = found.id;
-        }
         return {
           category: it.category || 'Other Expense',
           amount: parseFloat(it.amount),
           title: it.title || `${it.category || 'Tour'} Expense`,
-          description: it.description || '',
-          ticket_id: it.ticket_id || null,
+          description: it.title || '',
+          ticket_id: expenseForm.ticket_id || null,
           complaint_id: compId,
           expense_date: expenseForm.expense_date,
-          receipt_url: it.receipt_preview || null,
-          receipt_name: it.receipt_file?.name || null
+          receipt_url: sharedReceiptUrl,
+          receipt_name: sharedReceiptName
         };
       });
 
@@ -490,18 +520,19 @@ export const TourLedgerSection = ({
         technician_name: chosenTech.name || 'Technician',
         voucher_no: vNo,
         expense_date: expenseForm.expense_date,
+        ticket_id: expenseForm.ticket_id || null,
+        complaint_id: compId,
+        receipt_url: sharedReceiptUrl,
+        receipt_name: sharedReceiptName,
         items: itemsPayload,
         // Fallback fields for legacy/single endpoints
         category: itemsPayload[0].category,
         amount: itemsPayload[0].amount,
         title: itemsPayload[0].title,
-        description: itemsPayload[0].description,
-        ticket_id: itemsPayload[0].ticket_id,
-        receipt_url: itemsPayload[0].receipt_url,
-        receipt_name: itemsPayload[0].receipt_name
+        description: itemsPayload[0].description
       });
 
-      showToast(`Consolidated voucher (${itemsPayload.length} item(s), ₹${expenseTotalSum}) saved successfully!`, 'success');
+      showToast(`Voucher for ${expenseForm.ticket_id || 'General Tour'} (${itemsPayload.length} items - ₹${expenseTotalSum}) saved successfully!`, 'success');
       setIsExpenseModalOpen(false);
       await fetchLedger(true);
     } catch (err) {
@@ -607,10 +638,10 @@ export const TourLedgerSection = ({
 
     let vouchersHtml = '';
     voucherChunks.forEach((chunk, cIdx) => {
-      // Build 6 rows
+      // Build 9 rows (total 11 rows: 1 header + 9 entries + 1 total)
       let rowsHtml = '';
       const items = chunk.items || [];
-      for (let r = 0; r < 6; r++) {
+      for (let r = 0; r < 9; r++) {
         const item = items[r];
         if (item) {
           const descStr = item.description ? ` (${item.description})` : '';
@@ -1405,25 +1436,72 @@ export const TourLedgerSection = ({
                   </select>
                 </div>
               )}
-              {/* Shared Date */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-slate-600" />
-                  <label className="text-[11px] font-bold text-slate-700">
-                    Voucher Expense Date *
-                  </label>
+              {/* Top Configuration: Ticket + Date (+ Specialist if Admin) */}
+              <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                {isAdminOrStaff && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-800 mb-1">
+                      Select Specialist / Technician *
+                    </label>
+                    <select
+                      required
+                      value={expenseForm.technician_id}
+                      onChange={(e) => setExpenseForm(prev => ({ ...prev, technician_id: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 cursor-pointer"
+                    >
+                      <option value="">-- Choose Specialist --</option>
+                      {loadedTechs.map(t => (
+                        <option key={t.id} value={t.id}>
+                          👤 {t.name} ({t.area_zone || 'Field Specialist'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* 1. Ticket Selector (Top Priority - Dedicated Voucher per Ticket) */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Ticket className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Voucher Ticket / Tour (Optional)</span>
+                    </label>
+                    <select
+                      value={expenseForm.ticket_id}
+                      onChange={(e) => setExpenseForm(prev => ({ ...prev, ticket_id: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800 cursor-pointer"
+                    >
+                      <option value="">-- General / Non-ticket Tour Travel --</option>
+                      {(loadedComplaints || complaints).map(c => (
+                        <option key={c.id} value={c.ticket_id}>
+                          {c.ticket_id} — {c.customer_name} ({c.city || 'Site'})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Is ticket ke sabhi expenses ek single dedicated voucher slip par aayenge.
+                    </p>
+                  </div>
+
+                  {/* 2. Voucher Expense Date */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Voucher Expense Date *</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={expenseForm.expense_date}
+                      onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                    />
+                  </div>
                 </div>
-                <input
-                  type="date"
-                  required
-                  value={expenseForm.expense_date}
-                  onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
-                  className="text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
-                />
               </div>
 
-              {/* Dynamic Items List (ECO-22) */}
-              <div className="space-y-3">
+              {/* Clean Table-style Expense Line Items */}
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
                     Expense Line Items ({expenseForm.items.length})
@@ -1434,181 +1512,176 @@ export const TourLedgerSection = ({
                     className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Another Item Row</span>
+                    <span>+ Add Line Item</span>
                   </button>
                 </div>
 
-                {expenseForm.items.map((item, idx) => (
-                  <div key={item.id} className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-2xl space-y-3 relative">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
-                      <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
-                          {idx + 1}
-                        </span>
-                        <span>Expense Item #{idx + 1}</span>
-                      </span>
-                      {expenseForm.items.length > 1 && (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                  {/* Table Header */}
+                  <div className="hidden sm:grid sm:grid-cols-12 bg-slate-100/90 px-3 py-2 text-[11px] font-bold text-slate-700 border-b border-slate-200">
+                    <div className="col-span-1 text-center">#</div>
+                    <div className="col-span-4">Category *</div>
+                    <div className="col-span-4">Particulars / Details</div>
+                    <div className="col-span-2 text-right">Amount (₹) *</div>
+                    <div className="col-span-1 text-center">Action</div>
+                  </div>
+
+                  {/* Table Rows */}
+                  <div className="divide-y divide-slate-100">
+                    {expenseForm.items.map((item, idx) => (
+                      <div key={item.id} className="p-3 sm:px-3 sm:py-2.5 sm:grid sm:grid-cols-12 sm:items-center sm:gap-2 space-y-2 sm:space-y-0">
+                        <div className="col-span-1 flex items-center justify-between sm:justify-center">
+                          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold flex items-center justify-center">
+                            {idx + 1}
+                          </span>
+                          {/* Mobile delete button */}
+                          {expenseForm.items.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItemRow(item.id)}
+                              className="sm:hidden p-1 text-slate-400 hover:text-rose-600 rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4 text-rose-500" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="col-span-4">
+                          <label className="sm:hidden block text-[10px] font-bold text-slate-600 mb-0.5">Category *</label>
+                          <select
+                            value={item.category}
+                            onChange={(e) => handleUpdateItemRow(item.id, 'category', e.target.value)}
+                            className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-800"
+                          >
+                            {EXPENSE_CATEGORIES.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="col-span-4">
+                          <label className="sm:hidden block text-[10px] font-bold text-slate-600 mb-0.5">Particulars / Details</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Lunch with team, Cab to site"
+                            value={item.title}
+                            onChange={(e) => handleUpdateItemRow(item.id, 'title', e.target.value)}
+                            className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="sm:hidden block text-[10px] font-bold text-slate-600 mb-0.5">Amount (₹) *</label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            step="any"
+                            placeholder="0.00"
+                            value={item.amount}
+                            onChange={(e) => handleUpdateItemRow(item.id, 'amount', e.target.value)}
+                            className="w-full text-xs font-bold font-mono px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-right sm:text-right focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+
+                        <div className="col-span-1 hidden sm:flex sm:justify-center">
+                          {expenseForm.items.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItemRow(item.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Remove row"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 text-xs">-</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add another row button */}
+                  <div className="p-2 bg-slate-50/50 border-t border-slate-100 text-center">
+                    <button
+                      type="button"
+                      onClick={handleAddItemRow}
+                      className="py-1.5 px-4 text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Another Expense Category</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Combined Voucher Bills / Proofs Upload */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-slate-800">
+                    Voucher Receipts / Bill Proofs (Upload Together)
+                  </label>
+                  <span className="text-[10px] text-slate-500">Optional (Camera / Photos / PDF)</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Direct Camera Capture */}
+                  <label className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
+                    <Camera className="w-4 h-4 text-emerald-600" />
+                    <span>Take Photo (Camera)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => handleAddReceiptFiles(e.target.files)}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {/* Choose multiple from Gallery / Files */}
+                  <label className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
+                    <Upload className="w-4 h-4 text-slate-500" />
+                    <span>Upload from Gallery / Files</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,application/pdf"
+                      onChange={(e) => handleAddReceiptFiles(e.target.files)}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {(expenseForm.receipt_previews || []).length > 0 && (
+                    <span className="text-xs text-emerald-700 font-bold">
+                      ✓ {expenseForm.receipt_previews.length} bill(s) attached
+                    </span>
+                  )}
+                </div>
+
+                {/* Attached Photos Preview Grid */}
+                {(expenseForm.receipt_previews || []).length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {expenseForm.receipt_previews.map((rec, rIdx) => (
+                      <div key={rIdx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-300 shadow-xs group">
+                        <img 
+                          src={rec.url} 
+                          alt={rec.name || 'Receipt'} 
+                          className="w-full h-full object-cover cursor-pointer"
+                          onClick={() => setReceiptLightbox(rec)}
+                        />
                         <button
                           type="button"
-                          onClick={() => handleRemoveItemRow(item.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Remove this item row"
+                          onClick={() => handleRemoveReceiptFile(rIdx)}
+                          className="absolute top-1 right-1 p-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full text-xs shadow-xs cursor-pointer"
+                          title="Remove photo"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <X className="w-3 h-3" />
                         </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Category *
-                        </label>
-                        <select
-                          value={item.category}
-                          onChange={(e) => handleUpdateItemRow(item.id, 'category', e.target.value)}
-                          className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
-                        >
-                          {EXPENSE_CATEGORIES.map(c => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
                       </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Amount Spent (₹) *
-                        </label>
-                        <input
-                          type="number"
-                          required
-                          min="1"
-                          step="any"
-                          placeholder="e.g. 350"
-                          value={item.amount}
-                          onChange={(e) => handleUpdateItemRow(item.id, 'amount', e.target.value)}
-                          className="w-full text-sm font-bold font-mono px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                          Particulars / Title *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Bus fare to site, Petrol, Auto, Lunch"
-                          value={item.title}
-                          onChange={(e) => handleUpdateItemRow(item.id, 'title', e.target.value)}
-                          className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                          Linked Ticket (Optional)
-                        </label>
-                        <select
-                          value={item.ticket_id}
-                          onChange={(e) => handleUpdateItemRow(item.id, 'ticket_id', e.target.value)}
-                          className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                          <option value="">-- General / Non-ticket Tour Travel --</option>
-                          {complaints.slice(0, 30).map(c => (
-                            <option key={c.id} value={c.ticket_id}>
-                              {c.ticket_id} — {c.customer_name} ({c.city || 'Site'})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Detailed Notes (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Ticket / bill number, petrol liters, toll booth name"
-                        value={item.description}
-                        onChange={(e) => handleUpdateItemRow(item.id, 'description', e.target.value)}
-                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-
-                    {/* Attach Receipt / Bill Photo with Direct Camera + Gallery Options (ECO-23) */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                        Receipt / Bill Proof (Optional)
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Direct Camera Capture */}
-                        <label className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
-                          <Camera className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Take Photo (Camera)</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={(e) => handleItemReceiptChange(item.id, e.target.files?.[0])}
-                            className="hidden"
-                          />
-                        </label>
-
-                        {/* Choose from Gallery / Files */}
-                        <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Gallery / Files</span>
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            onChange={(e) => handleItemReceiptChange(item.id, e.target.files?.[0])}
-                            className="hidden"
-                          />
-                        </label>
-
-                        {item.receipt_file && (
-                          <span className="text-[11px] text-emerald-700 font-semibold truncate max-w-[180px]">
-                            ✓ {item.receipt_file.name}
-                          </span>
-                        )}
-                      </div>
-
-                      {item.receipt_preview && (
-                        <div className="mt-2 relative w-20 h-20 rounded-xl overflow-hidden border border-slate-300 shadow-xs">
-                          <img 
-                            src={item.receipt_preview} 
-                            alt="Receipt Preview" 
-                            className="w-full h-full object-cover" 
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleUpdateItemRow(item.id, 'receipt_file', null);
-                              handleUpdateItemRow(item.id, 'receipt_preview', null);
-                            }}
-                            className="absolute top-1 right-1 p-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full text-xs shadow-xs"
-                            title="Remove attached photo"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    ))}
                   </div>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={handleAddItemRow}
-                  className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-dashed border-slate-300 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 text-emerald-600" />
-                  <span>+ Add Another Expense / Item Row</span>
-                </button>
+                )}
               </div>
 
               {/* Total Calculation & Submit Footer */}
@@ -1881,7 +1954,7 @@ export const TourLedgerSection = ({
                   <div key={'page-pair-' + pIdx} className="voucher-page-pair">
                     {pageChunks.map((chunk, cIdx) => {
                       const items = chunk.items || [];
-                      const emptySlots = Math.max(0, 6 - items.length);
+                      const emptySlots = Math.max(0, 9 - items.length);
 
                       return (
                         <React.Fragment key={chunk.voucherNo + '-' + cIdx}>
@@ -1917,7 +1990,7 @@ export const TourLedgerSection = ({
                             </div>
 
                             {/* Name & Account */}
-                            <div className="text-[10.5px] space-y-0.5 mb-2">
+                            <div className="text-[10px] space-y-0.5 mb-1.5">
                               <div className="flex items-baseline gap-2">
                                 <span className="font-bold text-slate-900 shrink-0">Name :</span>
                                 <span className="font-semibold text-slate-800 border-b border-dotted border-slate-400 flex-1 pb-0.5">
@@ -1932,30 +2005,30 @@ export const TourLedgerSection = ({
                               </div>
                             </div>
 
-                            {/* Particulars & Amount Table (6 Rows) */}
-                            <div className="border-[1.5px] border-black mb-2">
-                              <div className="grid grid-cols-12 bg-slate-50 border-b-[1.5px] border-black text-[10.5px] font-bold text-center">
-                                <div className="col-span-9 p-1 border-r-[1.5px] border-black uppercase text-[10px]">
+                            {/* Particulars & Amount Table (11 Rows: 1 Heading + 9 Entries + 1 Total) */}
+                            <div className="border-[1.5px] border-black mb-1.5">
+                              <div className="grid grid-cols-12 bg-slate-50 border-b-[1.5px] border-black text-[10px] font-bold text-center">
+                                <div className="col-span-9 p-0.5 border-r-[1.5px] border-black uppercase text-[9.5px]">
                                   Particulars
                                 </div>
-                                <div className="col-span-3 p-1 uppercase text-[10px]">
+                                <div className="col-span-3 p-0.5 uppercase text-[9.5px]">
                                   Amount
                                 </div>
                               </div>
 
-                              {/* Item Rows */}
-                              <div className="divide-y divide-slate-300 text-[10.5px]">
+                              {/* Item Rows (up to 9 entries) */}
+                              <div className="divide-y divide-slate-200 text-[10px]">
                                 {items.map((item, iIdx) => (
-                                  <div key={item.id || iIdx} className="grid grid-cols-12 min-h-[22px] items-center">
+                                  <div key={item.id || iIdx} className="grid grid-cols-12 min-h-[19px] items-center">
                                     <div className="col-span-9 px-2 py-0.5 border-r-[1.5px] border-black font-medium text-slate-800 leading-tight">
                                       {item.ticket_id && (
                                         <span className="font-mono font-bold text-blue-800 mr-1">[{item.ticket_id}]</span>
                                       )}
                                       <span className="font-semibold">{item.category}</span>
                                       {item.description ? (
-                                        <span className="text-slate-600 text-[9.5px] ml-1">({item.description})</span>
+                                        <span className="text-slate-600 text-[9px] ml-1">({item.description})</span>
                                       ) : (item.title && item.title.toLowerCase() !== (item.category || '').toLowerCase() ? (
-                                        <span className="text-slate-600 text-[9.5px] ml-1">- {item.title}</span>
+                                        <span className="text-slate-600 text-[9px] ml-1">- {item.title}</span>
                                       ) : null)}
                                     </div>
                                     <div className="col-span-3 px-2 py-0.5 text-right font-mono font-bold text-slate-900">
@@ -1964,9 +2037,9 @@ export const TourLedgerSection = ({
                                   </div>
                                 ))}
 
-                                {/* Blank padding rows to fit 6 logs perfectly */}
+                                {/* Blank padding rows to fit 9 entries perfectly */}
                                 {Array.from({ length: emptySlots }).map((_, bIdx) => (
-                                  <div key={'blank-' + bIdx} className="grid grid-cols-12 h-[22px] items-center">
+                                  <div key={'blank-' + bIdx} className="grid grid-cols-12 h-[19px] items-center">
                                     <div className="col-span-9 px-2 py-0.5 border-r-[1.5px] border-black text-slate-300 select-none">
                                       &nbsp;
                                     </div>
