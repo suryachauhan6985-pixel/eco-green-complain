@@ -1637,7 +1637,7 @@ app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
           INSERT INTO technician_tour_expenses (
             technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
             receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-          ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, 'Submitted', $11)
+          ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
           RETURNING *
         `, [
           String(targetTechId).trim(),
@@ -1667,7 +1667,7 @@ app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
       INSERT INTO technician_tour_expenses (
         technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
         receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, 'Submitted', $11)
+      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
       RETURNING *
     `, [
       String(targetTechId).trim(),
