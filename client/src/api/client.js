@@ -766,6 +766,35 @@ class LocalMockStore {
   addTourExpense(data = {}) {
     const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
     const nextVoucher = data.voucher_no || this.getGlobalNextVoucherNumber();
+
+    if (Array.isArray(data.items) && data.items.length > 0) {
+      const created = [];
+      data.items.forEach((it, idx) => {
+        if (!it.amount || Number(it.amount) <= 0) return;
+        const newExp = {
+          id: Date.now() + idx,
+          voucher_no: nextVoucher,
+          technician_id: data.technician_id,
+          technician_name: data.technician_name || 'Technician',
+          complaint_id: it.complaint_id || data.complaint_id || null,
+          ticket_id: it.ticket_id || data.ticket_id || null,
+          expense_date: it.expense_date || data.expense_date || new Date().toISOString().split('T')[0],
+          category: it.category || 'Other Expense',
+          amount: Number(it.amount || 0),
+          title: it.title || `${it.category || 'Tour'} Expense`,
+          description: it.description || '',
+          receipt_url: it.receipt_preview || it.receipt_url || null,
+          receipt_name: it.receipt_name || null,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+        expenses.unshift(newExp);
+        created.push(newExp);
+      });
+      localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
+      return { success: true, expenses: created, voucher_no: nextVoucher };
+    }
+
     const newExp = {
       id: Date.now(),
       voucher_no: nextVoucher,
@@ -785,7 +814,7 @@ class LocalMockStore {
     };
     expenses.unshift(newExp);
     localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
-    return { success: true, expense: newExp };
+    return { success: true, expense: newExp, voucher_no: nextVoucher };
   }
 
 

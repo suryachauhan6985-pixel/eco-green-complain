@@ -482,12 +482,45 @@ app.get('/api/tour-vouchers/next-sequence', authenticateToken, (req, res) => {
 
 app.post('/api/tour-expenses', authenticateToken, (req, res) => {
   try {
-    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no } = req.body;
-    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
-    if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
-      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, items } = req.body;
+    const targetTechId = req.user.role === 'technician' ? (req.user.technicianId || req.user.technician_id) : technician_id;
+    if (!targetTechId) {
+      return res.status(400).json({ error: 'Technician is required' });
     }
     const finalVoucherNo = voucher_no || getNextGlobalVoucherNo();
+
+    if (Array.isArray(items) && items.length > 0) {
+      const created = [];
+      const stmt = db.prepare(`
+        INSERT INTO technician_tour_expenses (
+          technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+          receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
+        ) VALUES (?, ?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
+      `);
+      for (const it of items) {
+        if (!it.amount || parseFloat(it.amount) <= 0) continue;
+        const info = stmt.run(
+          String(targetTechId).trim(),
+          tour_advance_id || null,
+          finalVoucherNo,
+          it.expense_date || expense_date || null,
+          it.category || 'Other Expense',
+          parseFloat(it.amount),
+          it.description || it.title || '',
+          it.receipt_url || null,
+          it.receipt_data || null,
+          it.receipt_name || null,
+          it.ticket_id || ticket_id || null,
+          req.user ? req.user.name : 'Technician'
+        );
+        created.push(db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid));
+      }
+      return res.json({ success: true, expenses: created, voucher_no: finalVoucherNo });
+    }
+
+    if (!category || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    }
     const info = db.prepare(`
       INSERT INTO technician_tour_expenses (
         technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
@@ -508,7 +541,7 @@ app.post('/api/tour-expenses', authenticateToken, (req, res) => {
       req.user ? req.user.name : 'Technician'
     );
     const expense = db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid);
-    res.json({ success: true, expense });
+    res.json({ success: true, expense, voucher_no: finalVoucherNo });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -6702,12 +6702,45 @@ app.post('/api/tour-advances', authenticateToken, async (req, res) => {
 app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
   try {
     await ensureTourLedgerTables();
-    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no } = req.body;
-    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
-    if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
-      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, items } = req.body;
+    const targetTechId = req.user.role === 'technician' ? (req.user.technicianId || req.user.technician_id) : technician_id;
+    if (!targetTechId) {
+      return res.status(400).json({ error: 'Technician is required' });
     }
     const finalVoucherNo = voucher_no || await getNextPostgresVoucherNo();
+
+    if (Array.isArray(items) && items.length > 0) {
+      const created = [];
+      for (const it of items) {
+        if (!it.amount || parseFloat(it.amount) <= 0) continue;
+        const ins = await query(`
+          INSERT INTO technician_tour_expenses (
+            technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+            receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
+          ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
+          RETURNING *
+        `, [
+          String(targetTechId).trim(),
+          tour_advance_id || null,
+          finalVoucherNo,
+          it.expense_date || expense_date || null,
+          it.category || 'Other Expense',
+          parseFloat(it.amount),
+          it.description || it.title || '',
+          it.receipt_url || null,
+          it.receipt_data || null,
+          it.receipt_name || null,
+          it.ticket_id || ticket_id || null,
+          req.user ? req.user.name : 'Technician'
+        ]);
+        created.push(ins.rows[0]);
+      }
+      return res.json({ success: true, expenses: created, voucher_no: finalVoucherNo });
+    }
+
+    if (!category || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    }
     const ins = await query(`
       INSERT INTO technician_tour_expenses (
         technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
@@ -6715,7 +6748,7 @@ app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
       ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
       RETURNING *
     `, [String(targetTechId).trim(), tour_advance_id || null, finalVoucherNo, expense_date || null, category, parseFloat(amount), description || '', receipt_url || null, receipt_data || null, receipt_name || null, ticket_id || null, req.user ? req.user.name : 'Technician']);
-    res.json({ success: true, expense: ins.rows[0] });
+    res.json({ success: true, expense: ins.rows[0], voucher_no: finalVoucherNo });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

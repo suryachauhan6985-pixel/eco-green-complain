@@ -6,7 +6,8 @@ import {
   IndianRupee, Plus, FileText, Download, Printer, Copy, Check, 
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
-  Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2
+  Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
+  Camera
 } from 'lucide-react';
 import { formatIndianDateOnly } from '../common/TicketAgeBadge';
 
@@ -61,25 +62,49 @@ export function numberToIndianWords(amount) {
   return (result.trim() + ' Rupees Only').replace(/\s+/g, ' ');
 }
 
-export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], complaints = [] }) => {
+export const TourLedgerSection = ({ 
+  scopedTechProfile, 
+  allTechnicians = [], 
+  complaints = [],
+  activeTechId,
+  onTechChange 
+}) => {
   const { currentUser } = useAuth();
   const { showToast, confirm } = useDialog();
 
   const isAdminOrStaff = ['admin', 'staff'].includes(currentUser?.role);
 
-  // Selected technician filter: default to scoped tech if technician, or first tech if admin
-  const [selectedTechId, setSelectedTechId] = useState(() => {
+  // Technicians list with self-healing fallback fetch
+  const [loadedTechs, setLoadedTechs] = useState(allTechnicians || []);
+  useEffect(() => {
+    if (allTechnicians && allTechnicians.length > 0) {
+      setLoadedTechs(allTechnicians);
+    } else {
+      api.getTechnicians().then(res => {
+        if (res && res.technicians) setLoadedTechs(res.technicians);
+      }).catch(err => console.error('Failed to load technicians:', err));
+    }
+  }, [allTechnicians]);
+
+  // Selected technician filter: default to scoped tech if technician, or activeTechId, or 'all' if admin
+  const [internalTechId, setInternalTechId] = useState(() => {
+    if (activeTechId && activeTechId !== 'all') return String(activeTechId);
     if (!isAdminOrStaff && scopedTechProfile?.id) return String(scopedTechProfile.id);
-    return allTechnicians.length > 0 ? String(allTechnicians[0].id) : '';
+    return 'all';
   });
 
   useEffect(() => {
-    if (!isAdminOrStaff && scopedTechProfile?.id) {
-      setSelectedTechId(String(scopedTechProfile.id));
-    } else if (!selectedTechId && allTechnicians.length > 0) {
-      setSelectedTechId(String(allTechnicians[0].id));
+    if (activeTechId !== undefined) {
+      setInternalTechId(String(activeTechId));
     }
-  }, [scopedTechProfile, allTechnicians, isAdminOrStaff]);
+  }, [activeTechId]);
+
+  const selectedTechId = internalTechId;
+
+  const handleTechChange = (newId) => {
+    setInternalTechId(newId);
+    if (onTechChange) onTechChange(newId);
+  };
 
   const [ledgerData, setLedgerData] = useState({
     advances: [],
@@ -106,18 +131,77 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
   });
   const [submittingAdvance, setSubmittingAdvance] = useState(false);
 
+  // Multi-item row state for Add Tour Expense / Voucher Claim modal (ECO-22 & ECO-23)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
-    title: '',
-    category: 'Bus / Train Fare',
-    amount: '',
     expense_date: new Date().toISOString().split('T')[0],
-    ticket_id: '',
-    description: '',
-    receipt_file: null,
-    receipt_preview: null
+    items: [
+      {
+        id: 'item-1',
+        title: '',
+        category: 'Bus / Train Fare',
+        amount: '',
+        ticket_id: '',
+        description: '',
+        receipt_file: null,
+        receipt_preview: null
+      }
+    ]
   });
   const [submittingExpense, setSubmittingExpense] = useState(false);
+
+  const handleAddItemRow = () => {
+    setExpenseForm(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          title: '',
+          category: 'Bus / Train Fare',
+          amount: '',
+          ticket_id: '',
+          description: '',
+          receipt_file: null,
+          receipt_preview: null
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveItemRow = (itemId) => {
+    setExpenseForm(prev => {
+      if (prev.items.length <= 1) return prev;
+      return {
+        ...prev,
+        items: prev.items.filter(it => it.id !== itemId)
+      };
+    });
+  };
+
+  const handleUpdateItemRow = (itemId, field, value) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      items: prev.items.map(it => it.id === itemId ? { ...it, [field]: value } : it)
+    }));
+  };
+
+  const handleItemReceiptChange = (itemId, file) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      return showToast('Receipt file size exceeds 15MB limit', 'error');
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      handleUpdateItemRow(itemId, 'receipt_file', file);
+      handleUpdateItemRow(itemId, 'receipt_preview', event.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const expenseTotalSum = useMemo(() => {
+    return (expenseForm.items || []).reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
+  }, [expenseForm.items]);
 
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleForm, setSettleForm] = useState({
@@ -180,18 +264,26 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
 
   // Active technician details
   const currentTech = useMemo(() => {
-    return allTechnicians.find(t => String(t.id) === String(selectedTechId)) || scopedTechProfile || {
-      id: selectedTechId,
-      name: 'Technician',
+    if (selectedTechId && selectedTechId !== 'all') {
+      return loadedTechs.find(t => String(t.id) === String(selectedTechId)) || scopedTechProfile || {
+        id: selectedTechId,
+        name: 'Technician',
+        phone: '',
+        area_zone: 'General Zone'
+      };
+    }
+    return {
+      id: 'all',
+      name: 'All Specialists (Consolidated)',
       phone: '',
-      area_zone: 'General Zone'
+      area_zone: 'Company Wide'
     };
-  }, [allTechnicians, selectedTechId, scopedTechProfile]);
+  }, [loadedTechs, selectedTechId, scopedTechProfile]);
 
   const fetchLedger = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const params = selectedTechId ? { technician_id: selectedTechId } : {};
+      const params = (selectedTechId && selectedTechId !== 'all') ? { technician_id: selectedTechId } : {};
       const res = await api.getTourLedger(params);
       if (res && res.summary) {
         setLedgerData(res);
@@ -210,14 +302,15 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
   // Handle Allocate Tour Advance
   const handleAllocateAdvance = async (e) => {
     e.preventDefault();
-    if (!selectedTechId) return showToast('Please select a technician first', 'error');
+    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
+    if (!effectiveTechId) return showToast('Please select a specific technician before allocating advance', 'error');
     const amt = parseFloat(advanceForm.amount);
     if (!amt || amt <= 0) return showToast('Please enter a valid advance amount', 'error');
 
     try {
       setSubmittingAdvance(true);
       await api.allocateTourAdvance({
-        technician_id: selectedTechId,
+        technician_id: effectiveTechId,
         technician_name: currentTech.name,
         amount: amt,
         purpose: advanceForm.purpose,
@@ -241,51 +334,78 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
     }
   };
 
-  // Handle Add Tour Expense
+  // Handle Add Tour Expense with Multi-item Rows (ECO-22 & ECO-23)
   const handleAddExpense = async (e) => {
     e.preventDefault();
-    if (!selectedTechId) return showToast('Please select a technician first', 'error');
-    const amt = parseFloat(expenseForm.amount);
-    if (!amt || amt <= 0) return showToast('Please enter a valid expense amount', 'error');
+    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
+    if (!effectiveTechId) return showToast('Please select a specific technician before submitting voucher claim', 'error');
+
+    const validItems = expenseForm.items.filter(it => (parseFloat(it.amount) || 0) > 0);
+    if (validItems.length === 0) {
+      return showToast('Please enter at least one valid expense amount', 'error');
+    }
 
     try {
       setSubmittingExpense(true);
 
-      let receiptUrl = expenseForm.receipt_preview || null;
-      let receiptName = expenseForm.receipt_file?.name || null;
+      // Get latest global voucher sequence
+      let vNo = null;
+      try {
+        const seqRes = await api.getNextVoucherSequence();
+        if (seqRes && seqRes.next_voucher_no) vNo = seqRes.next_voucher_no;
+      } catch (_) {}
 
-      // Find linked complaint if selected
-      let compId = null;
-      if (expenseForm.ticket_id) {
-        const found = complaints.find(c => c.ticket_id === expenseForm.ticket_id || String(c.id) === String(expenseForm.ticket_id));
-        if (found) compId = found.id;
-      }
-
-      await api.addTourExpense({
-        technician_id: selectedTechId,
-        technician_name: currentTech.name,
-        complaint_id: compId,
-        ticket_id: expenseForm.ticket_id || null,
-        expense_date: expenseForm.expense_date,
-        category: expenseForm.category,
-        amount: amt,
-        title: expenseForm.title || `${expenseForm.category} Expense`,
-        description: expenseForm.description,
-        receipt_url: receiptUrl,
-        receipt_name: receiptName
+      const itemsPayload = validItems.map(it => {
+        let compId = null;
+        if (it.ticket_id) {
+          const found = complaints.find(c => c.ticket_id === it.ticket_id || String(c.id) === String(it.ticket_id));
+          if (found) compId = found.id;
+        }
+        return {
+          category: it.category || 'Other Expense',
+          amount: parseFloat(it.amount),
+          title: it.title || `${it.category || 'Tour'} Expense`,
+          description: it.description || '',
+          ticket_id: it.ticket_id || null,
+          complaint_id: compId,
+          expense_date: expenseForm.expense_date,
+          receipt_url: it.receipt_preview || null,
+          receipt_name: it.receipt_file?.name || null
+        };
       });
 
-      showToast(`Expense of ₹${amt} logged under voucher successfully!`, 'success');
+      await api.addTourExpense({
+        technician_id: effectiveTechId,
+        technician_name: currentTech.name,
+        voucher_no: vNo,
+        expense_date: expenseForm.expense_date,
+        items: itemsPayload,
+        // Fallback fields for legacy/single endpoints
+        category: itemsPayload[0].category,
+        amount: itemsPayload[0].amount,
+        title: itemsPayload[0].title,
+        description: itemsPayload[0].description,
+        ticket_id: itemsPayload[0].ticket_id,
+        receipt_url: itemsPayload[0].receipt_url,
+        receipt_name: itemsPayload[0].receipt_name
+      });
+
+      showToast(`Consolidated voucher (${itemsPayload.length} item(s), ₹${expenseTotalSum}) saved successfully!`, 'success');
       setIsExpenseModalOpen(false);
       setExpenseForm({
-        title: '',
-        category: 'Bus / Train Fare',
-        amount: '',
         expense_date: new Date().toISOString().split('T')[0],
-        ticket_id: '',
-        description: '',
-        receipt_file: null,
-        receipt_preview: null
+        items: [
+          {
+            id: 'item-1',
+            title: '',
+            category: 'Bus / Train Fare',
+            amount: '',
+            ticket_id: '',
+            description: '',
+            receipt_file: null,
+            receipt_preview: null
+          }
+        ]
       });
       await fetchLedger(true);
     } catch (err) {
@@ -298,14 +418,15 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
   // Handle Settle / Return Balance
   const handleSettleBalance = async (e) => {
     e.preventDefault();
-    if (!selectedTechId) return showToast('Please select a technician first', 'error');
+    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
+    if (!effectiveTechId) return showToast('Please select a specific technician first', 'error');
     const amt = parseFloat(settleForm.amount);
     if (!amt || amt <= 0) return showToast('Please enter a valid settlement amount', 'error');
 
     try {
       setSubmittingSettle(true);
       await api.settleTourBalance({
-        technician_id: selectedTechId,
+        technician_id: effectiveTechId,
         amount: amt,
         settlement_type: settleForm.settlement_type,
         payment_mode: settleForm.payment_mode,
@@ -571,12 +692,13 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
                 <span className="text-xs text-slate-500 font-semibold">Specialist:</span>
                 <select
                   value={selectedTechId}
-                  onChange={(e) => setSelectedTechId(e.target.value)}
-                  className="text-xs px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  onChange={(e) => handleTechChange(e.target.value)}
+                  className="text-xs px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
-                  {allTechnicians.map((t) => (
+                  <option value="all">👥 All Specialists (Consolidated)</option>
+                  {loadedTechs.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.area_zone || 'Field'})
+                      👤 {t.name} ({t.area_zone || 'Field'})
                     </option>
                   ))}
                 </select>
@@ -1089,156 +1211,251 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
         </div>
       )}
 
-      {/* ================= MODAL: ADD EXPENSE VOUCHER ================= */}
+      {/* ================= MODAL: ADD EXPENSE VOUCHER (MULTI-ITEM BATCH CLAIM) ================= */}
       {isExpenseModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Tag className="w-4 h-4 text-emerald-600" />
-                <span>Add Tour Expense / Voucher Claim</span>
-              </h4>
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-emerald-600" />
+                  <span>Add Tour Expense / Voucher Claim</span>
+                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-full border border-emerald-200">
+                    Batch Claim
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Claiming for specialist: <strong className="text-slate-800">{currentTech.name}</strong>
+                </p>
+              </div>
               <button 
                 type="button" 
                 onClick={() => setIsExpenseModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Expense Category *
+            <form onSubmit={handleAddExpense} className="space-y-4 text-xs">
+              {/* Shared Date */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-600" />
+                  <label className="text-[11px] font-bold text-slate-700">
+                    Voucher Expense Date *
                   </label>
-                  <select
-                    value={expenseForm.category}
-                    onChange={(e) => setExpenseForm(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
-                  >
-                    {EXPENSE_CATEGORIES.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
                 </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Amount Spent (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    step="any"
-                    placeholder="e.g. 350"
-                    value={expenseForm.amount}
-                    onChange={(e) => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))}
-                    className="w-full text-base font-bold font-mono px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Expense Date *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={expenseForm.expense_date}
-                    onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Linked Complaint Ticket (Optional)
-                  </label>
-                  <select
-                    value={expenseForm.ticket_id}
-                    onChange={(e) => setExpenseForm(prev => ({ ...prev, ticket_id: e.target.value }))}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">-- General / Non-ticket Tour Travel --</option>
-                    {complaints.slice(0, 30).map(c => (
-                      <option key={c.id} value={c.ticket_id}>
-                        {c.ticket_id} — {c.customer_name} ({c.city || 'Site'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Title / Brief Particulars *
-                </label>
                 <input
-                  type="text"
+                  type="date"
                   required
-                  placeholder="e.g. Bus fare from Rajkot to Gondal, or Petrol for site visit"
-                  value={expenseForm.title}
-                  onChange={(e) => setExpenseForm(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={expenseForm.expense_date}
+                  onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
+                  className="text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Detailed Notes / Remarks
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Additional details: vehicle number, ticket number, food bill particulars, etc."
-                  value={expenseForm.description}
-                  onChange={(e) => setExpenseForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              {/* Receipt / Bill Photo Upload */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Attach Receipt / Bill Photo (Optional)
-                </label>
-                <div className="flex items-center gap-3">
-                  <label className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-300 font-bold flex items-center gap-1.5 cursor-pointer transition-colors">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload Bill / Photo</span>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={handleReceiptChange}
-                      className="hidden"
-                    />
-                  </label>
-                  {expenseForm.receipt_file && (
-                    <span className="text-[11px] text-emerald-700 font-semibold truncate max-w-[200px]">
-                      ✓ {expenseForm.receipt_file.name}
-                    </span>
-                  )}
+              {/* Dynamic Items List (ECO-22) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                    Expense Line Items ({expenseForm.items.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddItemRow}
+                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Another Item Row</span>
+                  </button>
                 </div>
 
-                {expenseForm.receipt_preview && (
-                  <div className="mt-2 relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200">
-                    <img 
-                      src={expenseForm.receipt_preview} 
-                      alt="Receipt Preview" 
-                      className="w-full h-full object-cover" 
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setExpenseForm(prev => ({ ...prev, receipt_file: null, receipt_preview: null }))}
-                      className="absolute top-1 right-1 p-0.5 bg-rose-600 text-white rounded-full text-xs"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                {expenseForm.items.map((item, idx) => (
+                  <div key={item.id} className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-2xl space-y-3 relative">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                      <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
+                          {idx + 1}
+                        </span>
+                        <span>Expense Item #{idx + 1}</span>
+                      </span>
+                      {expenseForm.items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItemRow(item.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Remove this item row"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Category *
+                        </label>
+                        <select
+                          value={item.category}
+                          onChange={(e) => handleUpdateItemRow(item.id, 'category', e.target.value)}
+                          className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                        >
+                          {EXPENSE_CATEGORIES.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Amount Spent (₹) *
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          step="any"
+                          placeholder="e.g. 350"
+                          value={item.amount}
+                          onChange={(e) => handleUpdateItemRow(item.id, 'amount', e.target.value)}
+                          className="w-full text-sm font-bold font-mono px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Particulars / Title *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Bus fare to site, Petrol, Auto, Lunch"
+                          value={item.title}
+                          onChange={(e) => handleUpdateItemRow(item.id, 'title', e.target.value)}
+                          className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Linked Ticket (Optional)
+                        </label>
+                        <select
+                          value={item.ticket_id}
+                          onChange={(e) => handleUpdateItemRow(item.id, 'ticket_id', e.target.value)}
+                          className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">-- General / Non-ticket Tour Travel --</option>
+                          {complaints.slice(0, 30).map(c => (
+                            <option key={c.id} value={c.ticket_id}>
+                              {c.ticket_id} — {c.customer_name} ({c.city || 'Site'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Detailed Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Ticket / bill number, petrol liters, toll booth name"
+                        value={item.description}
+                        onChange={(e) => handleUpdateItemRow(item.id, 'description', e.target.value)}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    {/* Attach Receipt / Bill Photo with Direct Camera + Gallery Options (ECO-23) */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                        Receipt / Bill Proof (Optional)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Direct Camera Capture */}
+                        <label className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
+                          <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Take Photo (Camera)</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(e) => handleItemReceiptChange(item.id, e.target.files?.[0])}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {/* Choose from Gallery / Files */}
+                        <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Gallery / Files</span>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => handleItemReceiptChange(item.id, e.target.files?.[0])}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {item.receipt_file && (
+                          <span className="text-[11px] text-emerald-700 font-semibold truncate max-w-[180px]">
+                            ✓ {item.receipt_file.name}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.receipt_preview && (
+                        <div className="mt-2 relative w-20 h-20 rounded-xl overflow-hidden border border-slate-300 shadow-xs">
+                          <img 
+                            src={item.receipt_preview} 
+                            alt="Receipt Preview" 
+                            className="w-full h-full object-cover" 
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateItemRow(item.id, 'receipt_file', null);
+                              handleUpdateItemRow(item.id, 'receipt_preview', null);
+                            }}
+                            className="absolute top-1 right-1 p-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full text-xs shadow-xs"
+                            title="Remove attached photo"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={handleAddItemRow}
+                  className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-dashed border-slate-300 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-emerald-600" />
+                  <span>+ Add Another Expense / Item Row</span>
+                </button>
+              </div>
+
+              {/* Total Calculation & Submit Footer */}
+              <div className="bg-slate-900 text-white p-3.5 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300 font-semibold">Total Voucher Claim Amount:</span>
+                  <strong className="text-base font-black font-mono text-emerald-400">
+                    ₹{expenseTotalSum.toLocaleString('en-IN')}
+                  </strong>
+                </div>
+                {expenseTotalSum > 0 && (
+                  <p className="text-[10px] text-slate-400 italic">
+                    {numberToIndianWords(expenseTotalSum)}
+                  </p>
                 )}
               </div>
 
@@ -1246,17 +1463,17 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
                 <button
                   type="button"
                   onClick={() => setIsExpenseModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingExpense}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  disabled={submittingExpense || expenseTotalSum <= 0}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                 >
                   {submittingExpense && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{submittingExpense ? 'Saving...' : 'Save Expense Voucher'}</span>
+                  <span>{submittingExpense ? 'Saving...' : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum})`}</span>
                 </button>
               </div>
             </form>
