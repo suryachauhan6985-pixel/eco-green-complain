@@ -6,6 +6,7 @@ import { Navbar } from './components/layout/Navbar';
 import { NotificationDrawer } from './components/layout/NotificationDrawer';
 import { NotificationPopup } from './components/common/NotificationPopup';
 import { AppUpdateModal } from './components/common/AppUpdateModal';
+import { DevicePermissionsModal } from './components/common/DevicePermissionsModal';
 import { ComplaintList } from './components/complaints/ComplaintList';
 import { NewComplaintModal } from './components/complaints/NewComplaintModal';
 import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDrawer';
@@ -580,6 +581,9 @@ function AppContent() {
 
         {/* Native App-Style Mandatory Update Modal */}
         <AppUpdateModal />
+
+        {/* Global Device Permissions Prompt (Notifications, Location, Camera) */}
+        <DevicePermissionsModal />
       </React.Suspense>
     </div>
   );
