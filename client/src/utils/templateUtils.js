@@ -164,6 +164,52 @@ Please call the customer before visiting and confirm site access.
 }
 
 /**
+ * Build WhatsApp URL and text for Dual Technician Team Work Order (sent to technician with teammate info)
+ */
+export function buildTechnicianTeamWorkOrderWhatsApp(ticket, technician, partnerTechnician, expectedVisitDate) {
+  const cleanPhone = (technician?.phone || '').replace(/[^0-9]/g, '');
+  const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+  
+  const formattedDate = expectedVisitDate
+    ? new Date(expectedVisitDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : 'Immediate / Next Available Slot';
+
+  const portalLink = `${window.location.origin}/technician?ticket=${encodeURIComponent(ticket.ticket_id)}`;
+
+  const workOrderText = `🛠️ *Eco Green Solar — Joint Team Work Order (2 Technicians)*
+
+Dear ${technician?.name || 'Technician'}, you have been assigned to a field complaint along with your co-technician teammate.
+
+👥 *Assigned Team:*
+1. ${technician?.name || 'Technician'} (${technician?.phone || 'N/A'})
+2. ${partnerTechnician?.name || 'Partner Specialist'} (${partnerTechnician?.phone || 'N/A'})
+
+📌 *Ticket ID:* ${ticket.ticket_id}
+👤 *Customer:* ${ticket.customer_name}
+📞 *Customer Phone:* ${ticket.customer_phone}
+📍 *Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}
+${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔧 *Product:* ${ticket.product_type}
+⚠️ *Issue:* ${ticket.issue_category}
+📝 *Description:* ${ticket.issue_description || 'N/A'}
+🛡️ *Warranty:* ${ticket.is_in_warranty ? 'In-Warranty (Free Service)' : 'Out-of-Warranty'}
+📅 *Scheduled Visit:* ${formattedDate}
+
+🔗 *Direct Field Ticket Link:*
+${portalLink}
+
+🤝 Coordinate with your teammate ${partnerTechnician?.name || ''} and call the customer before visiting site.
+- Eco Green Solar Operations Desk`;
+
+  const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(workOrderText)}`;
+
+  return {
+    rawText: workOrderText,
+    sendUrl: waUrl,
+    phone: formattedPhone
+  };
+}
+
+/**
  * Helper to get template synchronously from in-memory cache, localStorage, or INITIAL_TEMPLATES
  */
 export function getTemplateSync(templateKey) {

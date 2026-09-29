@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp, buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
+import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp, buildTechnicianTeamWorkOrderWhatsApp, buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
   Send, CheckCircle, CheckCircle2, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
-  Play, Pause, Video, Download, Camera, Upload, Lock
+  Play, Pause, Video, Download, Camera, Upload, Lock, Users
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -46,6 +46,7 @@ export const ComplaintDetailDrawer = ({
 
   // Actions state
   const [selectedTechId, setSelectedTechId] = useState('');
+  const [secondaryTechId, setSecondaryTechId] = useState('');
   const [expectedDate, setExpectedDate] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [assignSuccessModal, setAssignSuccessModal] = useState(null);
@@ -305,6 +306,11 @@ export const ComplaintDetailDrawer = ({
         if (data.complaint.assigned_technician_id) {
           setSelectedTechId(String(data.complaint.assigned_technician_id));
         }
+        if (data.complaint.secondary_technician_id) {
+          setSecondaryTechId(String(data.complaint.secondary_technician_id));
+        } else {
+          setSecondaryTechId('');
+        }
         if (data.complaint.expected_visit_date) {
           setExpectedDate(String(data.complaint.expected_visit_date).split('T')[0]);
         }
@@ -390,17 +396,19 @@ export const ComplaintDetailDrawer = ({
 
     try {
       setAssigning(true);
-      const res = await api.assignTechnician(ticket.id, selectedTechId, expectedDate);
+      const res = await api.assignTechnician(ticket.id, selectedTechId, expectedDate, secondaryTechId || null);
       setIsReassignOpen(false);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
 
       // Find assigned technician details
       const assignedTech = technicians.find(t => String(t.id) === String(selectedTechId));
+      const secTech = secondaryTechId ? technicians.find(t => String(t.id) === String(secondaryTechId)) : null;
 
       setAssignSuccessModal({
         ticket,
         tech: assignedTech,
+        secondaryTech: secTech,
         expectedDate,
         apiRes: res
       });
@@ -422,18 +430,37 @@ export const ComplaintDetailDrawer = ({
         });
       }
 
-      // Trigger In-App Notification for the newly assigned technician (Tech B)
+      // Trigger In-App Notification for the newly assigned primary technician (Tech B)
       if (assignedTech) {
         addNotification({
           type: 'assignment',
           ticketId: ticket.ticket_id || ticket.id,
           complaintId: ticket.id,
-          title: `New Ticket Assigned: ${ticket.ticket_id}`,
-          message: `You have been assigned to customer ${ticket.customer_name} (${ticket.product_type} - ${ticket.issue_category}). Expected visit: ${expectedDate || 'Within 24 Hours'}`,
+          title: secTech ? `Joint Team Work Order: ${ticket.ticket_id}` : `New Ticket Assigned: ${ticket.ticket_id}`,
+          message: secTech 
+            ? `You and ${secTech.name} have been assigned as a team to customer ${ticket.customer_name} (${ticket.product_type}). Expected visit: ${expectedDate || 'Within 24 Hours'}`
+            : `You have been assigned to customer ${ticket.customer_name} (${ticket.product_type} - ${ticket.issue_category}). Expected visit: ${expectedDate || 'Within 24 Hours'}`,
           customerName: ticket.customer_name,
           targetRole: 'technician',
           targetTechnicianId: selectedTechId,
           targetTechnicianName: assignedTech.name,
+          performedByName: currentUser?.name || 'Staff Supervisor',
+          performedByRole: currentUser?.role || 'staff'
+        });
+      }
+
+      // Trigger In-App Notification for the secondary co-technician if assigned
+      if (secTech) {
+        addNotification({
+          type: 'assignment',
+          ticketId: ticket.ticket_id || ticket.id,
+          complaintId: ticket.id,
+          title: `Joint Team Work Order: ${ticket.ticket_id}`,
+          message: `You and ${assignedTech?.name || 'Lead Specialist'} have been assigned as a team to customer ${ticket.customer_name} (${ticket.product_type}). Expected visit: ${expectedDate || 'Within 24 Hours'}`,
+          customerName: ticket.customer_name,
+          targetRole: 'technician',
+          targetTechnicianId: secondaryTechId,
+          targetTechnicianName: secTech.name,
           performedByName: currentUser?.name || 'Staff Supervisor',
           performedByRole: currentUser?.role || 'staff'
         });
@@ -1650,14 +1677,19 @@ export const ComplaintDetailDrawer = ({
                                   👨‍🔧
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <h5 className="font-bold text-slate-900 text-sm">
                                       {ticket.technician_name || (currentUser?.role === 'technician' ? currentUser.name : 'Field Technician')}
                                       {currentUser?.role === 'technician' ? ' (You)' : ''}
                                     </h5>
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                      {currentUser?.role === 'technician' ? '✓ Assigned to You' : '✓ Currently Assigned'}
+                                      {currentUser?.role === 'technician' ? '✓ Assigned to You' : '✓ Primary / Lead Specialist'}
                                     </span>
+                                    {ticket.secondary_technician_name && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1">
+                                        <Users className="w-3 h-3" /> Team: +{ticket.secondary_technician_name}
+                                      </span>
+                                    )}
                                   </div>
                                   <p className="text-[11px] text-slate-600 font-medium mt-0.5">
                                     {ticket.technician_zone || (technicians.find(t => String(t.id) === String(ticket.assigned_technician_id))?.area_zone) || 'Field Service Zone'}
@@ -1702,33 +1734,24 @@ export const ComplaintDetailDrawer = ({
                                       const raw = (tPhone || '').replace(/[^0-9]/g, '');
                                       if (!raw) return null;
                                       const cleanTPhone = raw.startsWith('91') ? raw : `91${raw}`;
-                                      const workOrderText = 
-                                        `⚡ *ECO GREEN SOLAR - SERVICE WORK ORDER* ⚡\n\n` +
-                                        `👨‍🔧 *Technician:* ${ticket.technician_name || 'Assigned Technician'}\n` +
-                                        `🎫 *Ticket ID:* ${ticket.ticket_id}\n` +
-                                        `🚨 *Priority:* ${ticket.priority || 'Normal'}\n` +
-                                        `📅 *Scheduled Visit:* ${ticket.expected_visit_date ? formatIndianDateOnly(ticket.expected_visit_date) : 'Immediate / Today'}\n\n` +
-                                        `👤 *CUSTOMER DETAILS*\n` +
-                                        `• Name: ${ticket.customer_name}\n` +
-                                        `• Mobile: ${ticket.customer_phone}\n` +
-                                        `• Address: ${ticket.customer_address || 'Not Provided'}\n\n` +
-                                        `☀️ *SYSTEM & ISSUE DETAILS*\n` +
-                                        `• System: ${ticket.product_type || 'Solar System'}\n` +
-                                        `• Issue: ${ticket.issue_category || 'Service Request'}\n` +
-                                        `• Problem: ${ticket.description || 'On-site inspection & service'}\n\n` +
-                                        `👉 *Open Ticket in App:* ${window.location.origin}/?ticket=${ticket.ticket_id}\n\n` +
-                                        `- Central Dispatch Desk (Eco Green Solar)`;
+                                      const partnerTech = ticket.secondary_technician_id 
+                                        ? technicians.find(t => String(t.id) === String(ticket.secondary_technician_id)) || { name: ticket.secondary_technician_name, phone: ticket.secondary_technician_phone }
+                                        : null;
+
+                                      const workOrderInfo = partnerTech
+                                        ? buildTechnicianTeamWorkOrderWhatsApp(ticket, { name: ticket.technician_name, phone: ticket.technician_phone }, partnerTech, ticket.expected_visit_date)
+                                        : buildTechnicianWorkOrderWhatsApp(ticket, { name: ticket.technician_name, phone: ticket.technician_phone }, ticket.expected_visit_date);
 
                                       return (
                                         <a
-                                          href={`https://wa.me/${cleanTPhone}?text=${encodeURIComponent(workOrderText)}`}
+                                          href={workOrderInfo.sendUrl}
                                           target="_blank"
                                           rel="noreferrer"
                                           className="px-2.5 py-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
                                           title="Send complete work order directly to technician via WhatsApp Web / App"
                                         >
                                           <MessageCircle className="w-3.5 h-3.5" />
-                                          <span>WhatsApp Work Order</span>
+                                          <span>WhatsApp Lead Tech</span>
                                         </a>
                                       );
                                     })()}
@@ -1761,6 +1784,56 @@ export const ComplaintDetailDrawer = ({
                               </div>
                             </div>
 
+                            {/* Secondary / Co-Technician Banner if Assigned */}
+                            {ticket.secondary_technician_name && (
+                              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center text-xs shrink-0">
+                                    👥
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <strong className="text-blue-950 font-bold">{ticket.secondary_technician_name}</strong>
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                        Co-Technician / Partner Specialist
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-blue-700 mt-0.5">
+                                      Mobile: <span className="font-mono font-bold">{ticket.secondary_technician_phone || 'On file'}</span>
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {['admin', 'staff'].includes(currentUser?.role) && ticket.secondary_technician_phone && (
+                                  <div className="flex items-center gap-1.5">
+                                    <a
+                                      href={`tel:${ticket.secondary_technician_phone}`}
+                                      className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs"
+                                    >
+                                      <Phone className="w-3.5 h-3.5" /> Call
+                                    </a>
+                                    {(() => {
+                                      const secPhoneRaw = (ticket.secondary_technician_phone || '').replace(/[^0-9]/g, '');
+                                      const cleanSec = secPhoneRaw.startsWith('91') ? secPhoneRaw : `91${secPhoneRaw}`;
+                                      const leadTech = { name: ticket.technician_name, phone: ticket.technician_phone };
+                                      const secTech = { name: ticket.secondary_technician_name, phone: ticket.secondary_technician_phone };
+                                      const secWorkOrder = buildTechnicianTeamWorkOrderWhatsApp(ticket, secTech, leadTech, ticket.expected_visit_date);
+                                      return (
+                                        <a
+                                          href={secWorkOrder.sendUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2.5 py-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs"
+                                        >
+                                          <MessageCircle className="w-3.5 h-3.5" /> WhatsApp Co-Tech
+                                        </a>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {/* Schedule & Phone Bar */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-emerald-100 text-xs">
                               <div className="flex items-center gap-2 text-slate-700">
@@ -1772,7 +1845,7 @@ export const ComplaintDetailDrawer = ({
                               <div className="flex items-center gap-2 text-slate-700">
                                 <Phone className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                                 <span>
-                                  Tech Mobile: <strong className="text-slate-900 font-mono font-bold">{ticket.technician_phone || (technicians.find(t => String(t.id) === String(ticket.assigned_technician_id))?.phone) || 'Contact on file'}</strong>
+                                  Lead Mobile: <strong className="text-slate-900 font-mono font-bold">{ticket.technician_phone || (technicians.find(t => String(t.id) === String(ticket.assigned_technician_id))?.phone) || 'Contact on file'}</strong>
                                 </span>
                               </div>
                             </div>
@@ -1798,24 +1871,24 @@ export const ComplaintDetailDrawer = ({
                               </p>
                             )}
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                               <div>
                                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                  {ticket.assigned_technician_id ? 'Select New Specialist *' : 'Select Technician *'}
+                                  {ticket.assigned_technician_id ? 'Select Primary / Lead Specialist *' : 'Lead Technician *'}
                                 </label>
                                 <select
                                   value={selectedTechId}
                                   onChange={(e) => setSelectedTechId(e.target.value)}
                                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                                 >
-                                  <option value="">-- Choose Field Specialist --</option>
+                                  <option value="">-- Choose Lead Specialist --</option>
                                   {technicians.map((t) => (
                                     <option 
                                       key={t.id} 
                                       value={t.id}
                                       className={!t.is_available ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
                                     >
-                                      {t.is_available ? '🟢' : '🔴'} {t.name} ({t.area_zone}) — {t.is_available ? `${t.active_tickets_count || 0} Active` : 'OFF-DUTY (On Leave)'}
+                                      {t.is_available ? '🟢' : '🔴'} {t.name} ({t.area_zone}) — {t.is_available ? `${t.active_tickets_count || 0} Active` : 'OFF-DUTY'}
                                     </option>
                                   ))}
                                 </select>
@@ -1830,7 +1903,7 @@ export const ComplaintDetailDrawer = ({
                                         <div>
                                           <p className="font-bold text-amber-800">⚠️ Technician is Currently Off-Duty</p>
                                           <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
-                                            <strong>{pickedTech.name}</strong> is marked Off-Duty (on leave or unavailable). Assigning this ticket may lead to SLA breach or delayed customer inspection.
+                                            <strong>{pickedTech.name}</strong> is marked Off-Duty.
                                           </p>
                                         </div>
                                       </div>
@@ -1838,6 +1911,36 @@ export const ComplaintDetailDrawer = ({
                                   }
                                   return null;
                                 })()}
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                  <span>Co-Technician (2nd)</span>
+                                  <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                    Team Mode
+                                  </span>
+                                </label>
+                                <select
+                                  value={secondaryTechId}
+                                  onChange={(e) => setSecondaryTechId(e.target.value)}
+                                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                                >
+                                  <option value="">-- No Second Tech (Solo) --</option>
+                                  {technicians.filter(t => String(t.id) !== String(selectedTechId)).map((t) => (
+                                    <option 
+                                      key={t.id} 
+                                      value={t.id}
+                                      className={!t.is_available ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
+                                    >
+                                      {t.is_available ? '🟢' : '🔴'} {t.name} ({t.area_zone})
+                                    </option>
+                                  ))}
+                                </select>
+                                {secondaryTechId && (
+                                  <p className="mt-1 text-[10px] text-blue-700 font-medium leading-tight">
+                                    👥 2 Technicians assigned. Both receive WhatsApp team work order with both names.
+                                  </p>
+                                )}
                               </div>
 
                               <div>
@@ -3394,15 +3497,29 @@ export const ComplaintDetailDrawer = ({
               {/* Assignment Details Card */}
               <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-left text-xs space-y-2.5">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <span className="text-slate-500 font-medium">Assigned Technician:</span>
+                  <span className="text-slate-500 font-medium">Lead Technician:</span>
                   <strong className="text-slate-900 font-semibold flex items-center gap-1">
                     👨‍🔧 {assignSuccessModal.tech?.name || 'Technician'}
                   </strong>
                 </div>
+                {assignSuccessModal.secondaryTech && (
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <span className="text-slate-500 font-medium">Co-Technician:</span>
+                    <strong className="text-blue-900 font-semibold flex items-center gap-1">
+                      👥 {assignSuccessModal.secondaryTech.name}
+                    </strong>
+                  </div>
+                )}
                 {assignSuccessModal.tech?.phone && (
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                    <span className="text-slate-500 font-medium">Technician Phone:</span>
+                    <span className="text-slate-500 font-medium">Lead Mobile:</span>
                     <span className="font-mono font-bold text-emerald-700">📞 {assignSuccessModal.tech.phone}</span>
+                  </div>
+                )}
+                {assignSuccessModal.secondaryTech?.phone && (
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <span className="text-slate-500 font-medium">Co-Tech Mobile:</span>
+                    <span className="font-mono font-bold text-blue-700">📞 {assignSuccessModal.secondaryTech.phone}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">

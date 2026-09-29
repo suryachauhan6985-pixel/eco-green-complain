@@ -386,6 +386,157 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
   }
 });
 
+// ================= TOUR LEDGER & EXPENSE VOUCHER ROUTES =================
+app.get('/api/tour-ledger', authenticateToken, (req, res) => {
+  try {
+    const { technician_id } = req.query;
+    let targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
+
+    let advSql = `SELECT a.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_advances a LEFT JOIN technicians t ON a.technician_id = t.id `;
+    let expSql = `SELECT e.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_expenses e LEFT JOIN technicians t ON e.technician_id = t.id `;
+    let stlSql = `SELECT s.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_settlements s LEFT JOIN technicians t ON s.technician_id = t.id `;
+    let params = [];
+
+    if (targetTechId && String(targetTechId).trim() !== '' && targetTechId !== 'all') {
+      advSql += `WHERE a.technician_id = ? `;
+      expSql += `WHERE e.technician_id = ? `;
+      stlSql += `WHERE s.technician_id = ? `;
+      params.push(String(targetTechId).trim());
+    }
+
+    advSql += `ORDER BY a.allocated_at DESC`;
+    expSql += `ORDER BY e.expense_date DESC, e.created_at DESC`;
+    stlSql += `ORDER BY s.settled_at DESC`;
+
+    const advances = params.length > 0 ? db.prepare(advSql).all(params[0]) : db.prepare(advSql).all();
+    const expenses = params.length > 0 ? db.prepare(expSql).all(params[0]) : db.prepare(expSql).all();
+    const settlements = params.length > 0 ? db.prepare(stlSql).all(params[0]) : db.prepare(stlSql).all();
+
+    const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || 0), 0);
+    const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
+    const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
+
+    res.json({
+      success: true,
+      advances,
+      expenses,
+      settlements,
+      summary: { totalAdvance, totalExpenses, totalReturned, totalReimbursed, currentBalance }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tour-advances', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { technician_id, amount, tour_title, payment_mode, reference_no, notes, allocated_at } = req.body;
+    if (!technician_id || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Technician and valid amount are required' });
+    }
+    const info = db.prepare(`
+      INSERT INTO technician_tour_advances (technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes)
+      VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?)
+    `).run(
+      String(technician_id).trim(),
+      parseFloat(amount),
+      req.user ? req.user.name : 'Admin',
+      allocated_at || null,
+      payment_mode || 'Cash',
+      reference_no || null,
+      tour_title || 'Service Tour',
+      notes || null
+    );
+    const advance = db.prepare('SELECT * FROM technician_tour_advances WHERE id = ?').get(info.lastInsertRowid);
+    res.json({ success: true, advance });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tour-expenses', authenticateToken, (req, res) => {
+  try {
+    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id } = req.body;
+    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
+    if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    }
+    const info = db.prepare(`
+      INSERT INTO technician_tour_expenses (
+        technician_id, tour_advance_id, expense_date, category, amount, description,
+        receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
+      ) VALUES (?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
+    `).run(
+      String(targetTechId).trim(),
+      tour_advance_id || null,
+      expense_date || null,
+      category,
+      parseFloat(amount),
+      description || '',
+      receipt_url || null,
+      receipt_data || null,
+      receipt_name || null,
+      ticket_id || null,
+      req.user ? req.user.name : 'Technician'
+    );
+    const expense = db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid);
+    res.json({ success: true, expense });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tour-expenses/:id/status', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    db.prepare('UPDATE technician_tour_expenses SET status = ? WHERE id = ?').run(status, id);
+    const expense = db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(id);
+    res.json({ success: true, expense });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tour-expenses/:id', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare('DELETE FROM technician_tour_expenses WHERE id = ?').run(id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tour-settlements', authenticateToken, (req, res) => {
+  try {
+    const { technician_id, returned_amount, reimbursed_amount, notes, tour_advance_id } = req.body;
+    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
+    if (!targetTechId) {
+      return res.status(400).json({ error: 'Technician is required' });
+    }
+    const info = db.prepare(`
+      INSERT INTO technician_tour_settlements (
+        technician_id, advance_amount, expense_amount, returned_amount, reimbursed_amount,
+        settled_by, settled_at, notes, tour_advance_id
+      ) VALUES (?, 0, 0, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+    `).run(
+      String(targetTechId).trim(),
+      parseFloat(returned_amount || 0),
+      parseFloat(reimbursed_amount || 0),
+      req.user ? req.user.name : 'Accounts Desk',
+      notes || 'Tour Balance Settled with Company',
+      tour_advance_id || null
+    );
+    const settlement = db.prepare('SELECT * FROM technician_tour_settlements WHERE id = ?').get(info.lastInsertRowid);
+    res.json({ success: true, settlement });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ================= NOTIFICATION ROUTES =================
 app.get('/api/notifications/templates', notificationController.getTemplates);
 app.get('/api/notifications/templates/meta-status', notificationController.getMetaStatus);

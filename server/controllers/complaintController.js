@@ -51,14 +51,18 @@ function listComplaints(req, res) {
         c.*,
         t.name as technician_name,
         t.phone as technician_phone,
-        t.area_zone as technician_zone
+        t.area_zone as technician_zone,
+        t2.name as secondary_technician_name,
+        t2.phone as secondary_technician_phone,
+        t2.area_zone as secondary_technician_zone
       FROM complaints c
       LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      LEFT JOIN technicians t2 ON c.secondary_technician_id = t2.id
       WHERE 1=1
     `;
     const params = [];
 
-    // Role-based scoping: Technicians can only see their assigned complaints
+    // Role-based scoping: Technicians can only see their assigned complaints (primary or secondary)
     if (req.user && req.user.role === 'technician') {
       let userTechId = req.user.technicianId;
       if (!userTechId) {
@@ -69,11 +73,11 @@ function listComplaints(req, res) {
         const tRow = db.prepare('SELECT id FROM technicians WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)').get(req.user.email || '', req.user.name || '');
         if (tRow) userTechId = tRow.id;
       }
-      query += ` AND c.assigned_technician_id = ? `;
-      params.push(userTechId || -1);
+      query += ` AND (c.assigned_technician_id = ? OR c.secondary_technician_id = ?) `;
+      params.push(userTechId || -1, userTechId || -1);
     } else if (technician_id) {
-      query += ` AND c.assigned_technician_id = ? `;
-      params.push(technician_id);
+      query += ` AND (c.assigned_technician_id = ? OR c.secondary_technician_id = ?) `;
+      params.push(technician_id, technician_id);
     }
 
     if (search) {
@@ -130,9 +134,13 @@ function getComplaintById(req, res) {
         t.name as technician_name,
         t.phone as technician_phone,
         t.area_zone as technician_zone,
-        t.specialization as technician_specialization
+        t.specialization as technician_specialization,
+        t2.name as secondary_technician_name,
+        t2.phone as secondary_technician_phone,
+        t2.area_zone as secondary_technician_zone
       FROM complaints c
       LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      LEFT JOIN technicians t2 ON c.secondary_technician_id = t2.id
       WHERE c.id = ? OR c.ticket_id = ?
     `).get(id, id);
 
@@ -866,7 +874,7 @@ async function deleteCategory(req, res) {
 async function assignTechnician(req, res) {
   try {
     const { id } = req.params;
-    const { technician_id, expected_visit_date } = req.body;
+    const { technician_id, secondary_technician_id, expected_visit_date } = req.body;
 
     if (!technician_id) {
       return res.status(400).json({ error: 'Technician selection is required' });
@@ -890,25 +898,35 @@ async function assignTechnician(req, res) {
       return res.status(404).json({ error: 'Technician not found' });
     }
 
+    let secTech = null;
+    if (secondary_technician_id && String(secondary_technician_id).trim() !== '' && String(secondary_technician_id).trim() !== String(technician_id).trim()) {
+      secTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(secondary_technician_id);
+    }
+
     // Update complaint
     db.prepare(`
       UPDATE complaints 
       SET assigned_technician_id = ?, 
+          secondary_technician_id = ?,
           expected_visit_date = ?, 
           status = 'Assigned', 
           assigned_at = CURRENT_TIMESTAMP, 
           status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(technician_id, expected_visit_date || null, id);
+    `).run(technician_id, secTech ? secTech.id : null, expected_visit_date || null, id);
 
     // Add timeline
     const performer = req.user ? req.user.name : 'Support Desk';
     const role = req.user ? req.user.role : 'staff';
+    const timelineNote = secTech
+      ? `Assigned to 2-Technician Team: ${technician.name} & ${secTech.name}. Expected visit: ${expected_visit_date || 'Within 24-48 hrs'}`
+      : `Assigned to ${technician.name} (${technician.area_zone}). Expected visit: ${expected_visit_date || 'Within 24-48 hrs'}`;
+
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
       VALUES (?, 'Assigned', ?, ?, ?, 1)
-    `).run(id, `Assigned to ${technician.name} (${technician.area_zone}). Expected visit: ${expected_visit_date || 'Within 24-48 hrs'}`, performer, role);
+    `).run(id, timelineNote, performer, role);
 
     // Check if technician is already the same technician (e.g. re-dispatching, retrying or re-saving)
     const isSameTechnician = complaint.assigned_technician_id && String(complaint.assigned_technician_id) === String(technician_id);
@@ -933,6 +951,7 @@ async function assignTechnician(req, res) {
     if (shouldNotifyCustomer) {
       // 1. Notify Customer via WhatsApp & Email
       const custTemplateKey = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
+      const custTechDisplay = secTech ? `${technician.name} & ${secTech.name} (Field Team)` : technician.name;
       notificationService.dispatchAsync({
         complaintId: id,
         templateKey: custTemplateKey,
@@ -941,16 +960,16 @@ async function assignTechnician(req, res) {
           ticket_id: complaint.ticket_id,
           complaint_id: complaint.ticket_id,
           product_type: complaint.product_type || 'Solar System',
-          technician_name: technician.name,
-          technician_phone: technician.phone || '',
+          technician_name: custTechDisplay,
+          technician_phone: technician.phone || (secTech?.phone || ''),
           expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
         }
       });
     }
 
-    // 2. Notify Technician via WhatsApp (Direct dispatch using configured notification template)
+    // 2. Notify Primary Technician via WhatsApp
     if (technician.phone) {
-      const techTemplateKey = isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order';
+      const techTemplateKey = secTech ? 'technician_team_work_order' : (isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order');
       notificationService.dispatchAsync({
         complaintId: id,
         templateKey: techTemplateKey,
@@ -958,6 +977,35 @@ async function assignTechnician(req, res) {
         forceWhatsAppTo: technician.phone,
         data: {
           technician_name: technician.name,
+          partner_technician_name: secTech?.name || '',
+          partner_technician_phone: secTech?.phone || '',
+          all_technicians_names: secTech ? `${technician.name} & ${secTech.name}` : technician.name,
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          customer_phone: complaint.customer_phone,
+          customer_address: complaint.customer_address + (complaint.city ? ` (${complaint.city})` : ''),
+          product_type: complaint.product_type,
+          issue_category: complaint.issue_category,
+          issue_description: complaint.issue_description,
+          priority: complaint.priority,
+          expected_visit_date: expected_visit_date || 'Within 24-48 Hours',
+          notes: complaint.issue_description
+        }
+      });
+    }
+
+    // 2b. Notify Secondary Technician via WhatsApp if 2-technician team
+    if (secTech && secTech.phone) {
+      notificationService.dispatchAsync({
+        complaintId: id,
+        templateKey: 'technician_team_work_order',
+        channels: ['whatsapp'],
+        forceWhatsAppTo: secTech.phone,
+        data: {
+          technician_name: secTech.name,
+          partner_technician_name: technician.name,
+          partner_technician_phone: technician.phone || '',
+          all_technicians_names: `${technician.name} & ${secTech.name}`,
           ticket_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
           customer_phone: complaint.customer_phone,

@@ -7,10 +7,11 @@ import {
   Calendar, Upload, AlertTriangle, ArrowRight, RefreshCw, Star,
   Search, X, IndianRupee, ChevronDown, ChevronUp, CheckCheck,
   UserCheck, ShieldCheck, Layers, ExternalLink, RotateCcw,
-  LayoutGrid, List, Navigation
+  LayoutGrid, List, Navigation, FileText, Users
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
+import { TourLedgerSection } from './TourLedgerSection';
 
 export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'field_ops', onSectionChange }) => {
   const { currentUser } = useAuth();
@@ -245,12 +246,14 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const overallCashSettled = techCashBreakdown.reduce((sum, t) => sum + t.totalSettled, 0);
   const overallCashDue = techCashBreakdown.reduce((sum, t) => sum + t.cashInHandDue, 0);
 
-  // Scoped complaints: If logged in as technician, ONLY show jobs assigned to this technician!
+  // Scoped complaints: If logged in as technician, show jobs assigned as primary or secondary technician!
   const scopedComplaints = currentUser?.role === 'technician' && myTechData
     ? complaints.filter(c => 
         String(c.assigned_technician_id) === String(myTechData.id) || 
         String(c.technician_id) === String(myTechData.id) ||
-        (c.technician_name && c.technician_name.toLowerCase() === myTechData.name.toLowerCase())
+        String(c.secondary_technician_id) === String(myTechData.id) ||
+        (c.technician_name && c.technician_name.toLowerCase() === myTechData.name.toLowerCase()) ||
+        (c.secondary_technician_name && c.secondary_technician_name.toLowerCase() === myTechData.name.toLowerCase())
       )
     : complaints;
 
@@ -364,6 +367,18 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               ₹{myTechData.cashInHandDue}
             </span>
           )}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSectionSwitch('tour_ledger')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            section === 'tour_ledger'
+              ? 'bg-emerald-800 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Tour Ledger & Vouchers</span>
         </button>
       </div>
 
@@ -670,6 +685,15 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       </div>
       )}
 
+      {/* ================= TOUR ADVANCE & EXPENSE VOUCHER LEDGER SECTION ================= */}
+      {section === 'tour_ledger' && (
+        <TourLedgerSection 
+          scopedTechProfile={myTechData || techProfile} 
+          allTechnicians={technicians} 
+          complaints={complaints} 
+        />
+      )}
+
       {/* ================= FIELD TASKS & WORK SECTION ================= */}
       {section === 'field_ops' && (
       <div className="space-y-3">
@@ -896,6 +920,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         {job.priority}
                       </span>
                       <TicketAgeBadge complaint={job} compact={true} />
+                      {job.secondary_technician_name && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-300">
+                          <Users className="w-2.5 h-2.5" /> Team: {job.technician_name} + {job.secondary_technician_name}
+                        </span>
+                      )}
                       {job.payment_collected > 0 && (
                         <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
                           <IndianRupee className="w-2.5 h-2.5" /> ₹{job.payment_collected}
@@ -1001,6 +1030,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
                         👨‍🔧 {job.technician_name || myTechData?.name || currentUser?.name || 'Assigned to You'}
                       </span>
+                      {job.secondary_technician_name && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1">
+                          <Users className="w-3 h-3" /> Co-Tech: {job.secondary_technician_name}
+                        </span>
+                      )}
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                         job.priority === 'High' ? 'bg-amber-100 text-amber-800' :
                         job.priority === 'Medium' ? 'bg-blue-100 text-blue-800' :

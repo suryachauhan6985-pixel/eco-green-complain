@@ -291,6 +291,42 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           ]
         }]
       };
+    } else if (templateName === 'technician_team_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const partnerName = cleanParam(variables.partner_technician_name, 'Co-Specialist');
+      const partnerPhone = cleanParam(variables.partner_technician_phone, '');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Address on file');
+      const prodType = cleanParam(variables.product_type, 'Solar Equipment');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const notes = cleanParam(variables.notes || variables.issue_description, 'Joint team site inspection');
+      const priority = cleanParam(variables.priority, 'Medium');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Today');
+      const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(ticketId)}`;
+      renderedBody = `Hello ${techName}, you and *${partnerName}* have been assigned as a 2-member service team for Ticket *${ticketId}*.\n\n*Assigned Team:* ${techName} & ${partnerName}\n${partnerPhone ? `*Partner Contact:* ${partnerPhone}\n` : ''}\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddress}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*Issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\n*Direct Ticket Link:* ${portalLink}\n\nPlease coordinate with ${partnerName} and call the customer before visiting the site.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'technician_name', text: `${techName} & ${partnerName}` },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'notes', text: notes },
+            { type: 'text', parameter_name: 'priority', text: priority },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+          ]
+        }]
+      };
     } else if (templateName === 'complaint_resolved') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
@@ -1336,6 +1372,285 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
   }
 });
 
+// ==================== TOUR LEDGER & EXPENSE VOUCHER ENGINE ====================
+let tourLedgerInitialized = false;
+async function ensureTourLedgerAndSecondaryTechTables() {
+  if (tourLedgerInitialized) return;
+  try {
+    // 1. Ensure secondary_technician_id in complaints
+    await query(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS secondary_technician_id TEXT`).catch(() => {});
+
+    // 2. Ensure technician_tour_advances table
+    await query(`
+      CREATE TABLE IF NOT EXISTS technician_tour_advances (
+        id BIGSERIAL PRIMARY KEY,
+        technician_id TEXT NOT NULL,
+        amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        allocated_by TEXT,
+        allocated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        payment_mode TEXT DEFAULT 'Cash',
+        reference_no TEXT,
+        tour_title TEXT,
+        notes TEXT,
+        status TEXT DEFAULT 'Active',
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(() => {});
+
+    // 3. Ensure technician_tour_expenses table
+    await query(`
+      CREATE TABLE IF NOT EXISTS technician_tour_expenses (
+        id BIGSERIAL PRIMARY KEY,
+        technician_id TEXT NOT NULL,
+        tour_advance_id BIGINT,
+        expense_date DATE DEFAULT CURRENT_DATE,
+        category TEXT NOT NULL,
+        amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        description TEXT,
+        receipt_url TEXT,
+        receipt_data TEXT,
+        receipt_name TEXT,
+        ticket_id TEXT,
+        status TEXT DEFAULT 'Submitted',
+        created_by TEXT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(() => {});
+
+    // 4. Ensure technician_tour_settlements table
+    await query(`
+      CREATE TABLE IF NOT EXISTS technician_tour_settlements (
+        id BIGSERIAL PRIMARY KEY,
+        technician_id TEXT NOT NULL,
+        advance_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        expense_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        returned_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        reimbursed_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        settled_by TEXT,
+        settled_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT,
+        tour_advance_id BIGINT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(() => {});
+
+    tourLedgerInitialized = true;
+  } catch (err) {
+    console.warn('[TourLedger] Migration note:', err.message);
+  }
+}
+
+// GET /api/tour-ledger: Fetch advances, expenses, and settlements
+app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const { technician_id } = req.query;
+    let targetTechId = req.user.role === 'technician' ? req.user.technician_id : technician_id;
+
+    let advWhere = '';
+    let expWhere = '';
+    let stlWhere = '';
+    let advParams = [];
+    let expParams = [];
+    let stlParams = [];
+
+    if (targetTechId && String(targetTechId).trim() !== '' && targetTechId !== 'all') {
+      advParams.push(String(targetTechId).trim());
+      advWhere = `WHERE a.technician_id::text = $1`;
+      expParams.push(String(targetTechId).trim());
+      expWhere = `WHERE e.technician_id::text = $1`;
+      stlParams.push(String(targetTechId).trim());
+      stlWhere = `WHERE s.technician_id::text = $1`;
+    }
+
+    const [advRes, expRes, stlRes] = await Promise.all([
+      query(`
+        SELECT a.*, t.name as technician_name, t.phone as technician_phone
+        FROM technician_tour_advances a
+        LEFT JOIN technicians t ON t.id::text = a.technician_id::text
+        ${advWhere}
+        ORDER BY a.allocated_at DESC
+      `, advParams),
+      query(`
+        SELECT e.*, t.name as technician_name, t.phone as technician_phone
+        FROM technician_tour_expenses e
+        LEFT JOIN technicians t ON t.id::text = e.technician_id::text
+        ${expWhere}
+        ORDER BY e.expense_date DESC, e.created_at DESC
+      `, expParams),
+      query(`
+        SELECT s.*, t.name as technician_name, t.phone as technician_phone
+        FROM technician_tour_settlements s
+        LEFT JOIN technicians t ON t.id::text = s.technician_id::text
+        ${stlWhere}
+        ORDER BY s.settled_at DESC
+      `, stlParams)
+    ]);
+
+    const advances = advRes.rows;
+    const expenses = expRes.rows;
+    const settlements = stlRes.rows;
+
+    const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || 0), 0);
+    const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
+    const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
+
+    return res.json({
+      success: true,
+      advances,
+      expenses,
+      settlements,
+      summary: {
+        totalAdvance,
+        totalExpenses,
+        totalReturned,
+        totalReimbursed,
+        currentBalance
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tour-advances: Allocate advance to technician
+app.post('/api/tour-advances', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    if (req.user.role === 'technician') {
+      return res.status(403).json({ error: 'Only staff and admin can allocate tour advances' });
+    }
+    const { technician_id, amount, tour_title, payment_mode, reference_no, notes, allocated_at } = req.body;
+    if (!technician_id || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Technician and valid advance amount are required' });
+    }
+    const r = await query(`
+      INSERT INTO technician_tour_advances (
+        technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes
+      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8)
+      RETURNING *
+    `, [
+      String(technician_id).trim(),
+      parseFloat(amount),
+      req.user.name || 'Admin',
+      allocated_at || null,
+      payment_mode || 'Cash',
+      reference_no || null,
+      tour_title || 'Service Tour',
+      notes || null
+    ]);
+    return res.json({ success: true, advance: r.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tour-expenses: Submit tour expense with receipt
+app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const {
+      technician_id,
+      tour_advance_id,
+      expense_date,
+      category,
+      amount,
+      description,
+      receipt_url,
+      receipt_data,
+      receipt_name,
+      ticket_id
+    } = req.body;
+
+    const targetTechId = req.user.role === 'technician' ? req.user.technician_id : technician_id;
+    if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    }
+
+    const r = await query(`
+      INSERT INTO technician_tour_expenses (
+        technician_id, tour_advance_id, expense_date, category, amount, description,
+        receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
+      ) VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, 'Submitted', $11)
+      RETURNING *
+    `, [
+      String(targetTechId).trim(),
+      tour_advance_id || null,
+      expense_date || null,
+      category,
+      parseFloat(amount),
+      description || '',
+      receipt_url || null,
+      receipt_data || null,
+      receipt_name || null,
+      ticket_id || null,
+      req.user.name || 'Technician'
+    ]);
+    return res.json({ success: true, expense: r.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/tour-expenses/:id/status: Approve/verify or reject expense
+app.put('/api/tour-expenses/:id/status', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!['Submitted', 'Verified', 'Rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const r = await query('UPDATE technician_tour_expenses SET status = $1 WHERE id = $2 RETURNING *', [status, id]);
+    return res.json({ success: true, expense: r.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/tour-expenses/:id
+app.delete('/api/tour-expenses/:id', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const { id } = req.params;
+    await query('DELETE FROM technician_tour_expenses WHERE id = $1', [id]);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tour-settlements: Deposit balance back to company
+app.post('/api/tour-settlements', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerAndSecondaryTechTables();
+    const { technician_id, returned_amount, reimbursed_amount, notes, tour_advance_id } = req.body;
+    const targetTechId = req.user.role === 'technician' ? req.user.technician_id : technician_id;
+    if (!targetTechId) {
+      return res.status(400).json({ error: 'Technician is required' });
+    }
+    const r = await query(`
+      INSERT INTO technician_tour_settlements (
+        technician_id, advance_amount, expense_amount, returned_amount, reimbursed_amount,
+        settled_by, settled_at, notes, tour_advance_id
+      ) VALUES ($1, 0, 0, $2, $3, $4, CURRENT_TIMESTAMP, $5, $6)
+      RETURNING *
+    `, [
+      String(targetTechId).trim(),
+      parseFloat(returned_amount || 0),
+      parseFloat(reimbursed_amount || 0),
+      req.user.name || 'Accounts Desk',
+      notes || 'Tour Balance Settled with Company',
+      tour_advance_id || null
+    ]);
+    return res.json({ success: true, settlement: r.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== NOTIFICATION TEMPLATES ROUTES ====================
 app.get('/api/notifications/templates', async (req, res) => {
   try {
@@ -1485,13 +1800,13 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
       whereClauses.push(`c.product_type = $${params.length}`);
     }
 
-    // Role-based scoping: Technicians only see their assigned tickets
+    // Role-based scoping: Technicians see tickets where they are primary or secondary technician
     if (req.user.role === 'technician') {
       params.push(req.user.technician_id);
-      whereClauses.push(`c.assigned_technician_id = $${params.length}`);
+      whereClauses.push(`(c.assigned_technician_id::text = $${params.length}::text OR c.secondary_technician_id::text = $${params.length}::text)`);
     } else if (technician_id) {
       params.push(technician_id);
-      whereClauses.push(`c.assigned_technician_id = $${params.length}`);
+      whereClauses.push(`(c.assigned_technician_id::text = $${params.length}::text OR c.secondary_technician_id::text = $${params.length}::text)`);
     }
 
     res.setHeader('Cache-Control', 'private, no-cache');
@@ -1505,9 +1820,12 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
     const offsetIdx = params.length;
 
     const dataSql = `
-      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      SELECT c.*, 
+             t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone,
+             t2.name as secondary_technician_name, t2.phone as secondary_technician_phone, t2.area_zone as secondary_technician_zone
       FROM complaints c
-      LEFT JOIN technicians t ON t.id = c.assigned_technician_id
+      LEFT JOIN technicians t ON t.id::text = c.assigned_technician_id::text
+      LEFT JOIN technicians t2 ON t2.id::text = c.secondary_technician_id::text
       ${whereSql}
       ORDER BY c.created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -1624,17 +1942,23 @@ app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
     let compRes;
     if (req.user.role === 'technician') {
       compRes = await query(`
-        SELECT c.*, t.name as technician_name, t.phone as technician_phone
+        SELECT c.*, 
+               t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone,
+               t2.name as secondary_technician_name, t2.phone as secondary_technician_phone, t2.area_zone as secondary_technician_zone
         FROM complaints c
-        LEFT JOIN technicians t ON t.id = c.assigned_technician_id
-        WHERE (c.id::text = $1 OR c.ticket_id = $1) AND c.assigned_technician_id = $2
+        LEFT JOIN technicians t ON t.id::text = c.assigned_technician_id::text
+        LEFT JOIN technicians t2 ON t2.id::text = c.secondary_technician_id::text
+        WHERE (c.id::text = $1 OR c.ticket_id = $1) AND (c.assigned_technician_id::text = $2::text OR c.secondary_technician_id::text = $2::text)
         LIMIT 1
       `, [id, req.user.technician_id]);
     } else {
       compRes = await query(`
-        SELECT c.*, t.name as technician_name, t.phone as technician_phone
+        SELECT c.*, 
+               t.name as technician_name, t.phone as technician_phone, t.area_zone as technician_zone,
+               t2.name as secondary_technician_name, t2.phone as secondary_technician_phone, t2.area_zone as secondary_technician_zone
         FROM complaints c
-        LEFT JOIN technicians t ON t.id = c.assigned_technician_id
+        LEFT JOIN technicians t ON t.id::text = c.assigned_technician_id::text
+        LEFT JOIN technicians t2 ON t2.id::text = c.secondary_technician_id::text
         WHERE c.id::text = $1 OR c.ticket_id = $1
         LIMIT 1
       `, [id]);
@@ -2376,7 +2700,7 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
 app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { technician_id, expected_visit_date, notes } = req.body;
+    const { technician_id, secondary_technician_id, expected_visit_date, notes } = req.body;
 
     if (!technician_id) {
       return res.status(400).json({ error: 'Technician selection is required' });
@@ -2401,16 +2725,23 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     const techRes = await query('SELECT * FROM technicians WHERE id::text = $1::text LIMIT 1', [String(technician_id).trim()]);
     const tech = techRes.rows[0];
 
+    let secTech = null;
+    if (secondary_technician_id && String(secondary_technician_id).trim() !== '' && String(secondary_technician_id).trim() !== String(technician_id).trim()) {
+      const secTechRes = await query('SELECT * FROM technicians WHERE id::text = $1::text LIMIT 1', [String(secondary_technician_id).trim()]);
+      secTech = secTechRes.rows[0] || null;
+    }
+
     const compRes = await query(`
       UPDATE complaints SET
         assigned_technician_id = $1,
-        expected_visit_date = $2,
+        secondary_technician_id = $2,
+        expected_visit_date = $3,
         status = 'Assigned',
         assigned_at = CURRENT_TIMESTAMP,
         status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
+      WHERE id = $4
       RETURNING *
-    `, [technician_id, expected_visit_date || null, prevComp.id]);
+    `, [technician_id, secTech ? secTech.id : null, expected_visit_date || null, prevComp.id]);
 
     const comp = compRes.rows[0];
 
@@ -2418,9 +2749,11 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     const performerRole = req.user?.role || 'staff';
 
     const timelineAction = isReassignment ? 'Reassigned' : 'Assigned';
-    const timelineNote = isReassignment
-      ? `Reassigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`
-      : `Assigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`;
+    const timelineNote = secTech
+      ? `Assigned to 2-Technician Field Team: ${tech?.name || 'Lead Specialist'} & ${secTech.name} (Co-Specialist). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`
+      : (isReassignment
+        ? `Reassigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`
+        : `Assigned to ${tech?.name || 'Technician'}. Expected visit: ${expected_visit_date || 'Within 24 Hours'}`);
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
@@ -2448,8 +2781,6 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
             }
           });
           console.log(`[ASSIGN-PREV-TECH-WA] Result for ${prevTech.phone}:`, JSON.stringify(waPrevTechResult));
-        } else {
-          console.warn(`[ASSIGN-PREV-TECH-WA] PrevTech has no phone number:`, prevTech);
         }
 
         // In-App Notification for Previous Technician (Tech A)
@@ -2481,10 +2812,10 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
     }
 
     // 2. Send WhatsApp to Customer:
-    // If reassignment, use dedicated customer_technician_reassigned template; else technician_assigned
     let waCustomerResult = null;
     const custTemplateName = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
     try {
+      const displayNameForCustomer = secTech ? `${tech?.name} & ${secTech.name} (Field Team)` : (tech?.name || 'Technician');
       waCustomerResult = await sendWhatsApp({
         to: comp.customer_phone,
         templateName: custTemplateName,
@@ -2493,8 +2824,8 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
           ticket_id: comp.ticket_id,
           complaint_id: comp.ticket_id,
           product_type: comp.product_type || 'Solar System',
-          technician_name: tech?.name,
-          technician_phone: tech?.phone || '',
+          technician_name: displayNameForCustomer,
+          technician_phone: tech?.phone || (secTech?.phone || ''),
           expected_visit_date: expected_visit_date || 'Within 24-48 Hours',
           db_complaint_id: comp.id
         }
@@ -2504,16 +2835,22 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       waCustomerResult = { success: false, error: waErr.message };
     }
 
-    // 3. Send WhatsApp to New Assigned Technician (Tech B)
+    // 3. Send WhatsApp to Primary Technician (Tech 1)
     let waTechResult = null;
     if (tech?.phone) {
       try {
-        const techTemplateName = isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order';
+        const techTemplateName = secTech 
+          ? 'technician_team_work_order' 
+          : (isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order');
+
         waTechResult = await sendWhatsApp({
           to: tech.phone,
           templateName: techTemplateName,
           variables: {
             technician_name: tech.name,
+            partner_technician_name: secTech?.name || '',
+            partner_technician_phone: secTech?.phone || '',
+            all_technicians_names: secTech ? `${tech.name} & ${secTech.name}` : tech.name,
             complaint_id: comp.ticket_id,
             ticket_id: comp.ticket_id,
             customer_name: comp.customer_name,
@@ -2533,10 +2870,44 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
       }
     }
 
-    // 4. Insert In-App Notification for New Assigned Technician (Tech B)
+    // 3b. Send WhatsApp to Secondary Technician (Tech 2) if 2-technician team
+    let waSecTechResult = null;
+    if (secTech?.phone) {
+      try {
+        waSecTechResult = await sendWhatsApp({
+          to: secTech.phone,
+          templateName: 'technician_team_work_order',
+          variables: {
+            technician_name: secTech.name,
+            partner_technician_name: tech.name,
+            partner_technician_phone: tech.phone || '',
+            all_technicians_names: `${tech.name} & ${secTech.name}`,
+            complaint_id: comp.ticket_id,
+            ticket_id: comp.ticket_id,
+            customer_name: comp.customer_name,
+            customer_phone: comp.customer_phone,
+            customer_address: comp.customer_address || comp.city || 'Gujarat',
+            product_type: comp.product_type,
+            issue_category: comp.issue_category,
+            notes: comp.issue_description || 'Site inspection',
+            priority: comp.priority || 'Medium',
+            expected_visit_date: expected_visit_date || 'Today',
+            db_complaint_id: comp.id
+          }
+        });
+      } catch (waErr) {
+        console.warn('[Assign WhatsApp SecTech Note]', waErr.message);
+        waSecTechResult = { success: false, error: waErr.message };
+      }
+    }
+
+    // 4. Insert In-App Notification for Primary Technician
     try {
       await ensureInAppTable();
       const notifId = `notif_${Date.now()}_assign_${technician_id}`;
+      const msg = secTech
+        ? `You and ${secTech.name} have been assigned as a 2-member team for complaint ${comp.ticket_id} (${comp.customer_name}). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`
+        : `You have been assigned complaint ${comp.ticket_id} for ${comp.customer_name} (${comp.product_type} - ${comp.issue_category}). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`;
       await query(`
         INSERT INTO in_app_notifications (
           id, type, ticket_id, complaint_id, title, message, customer_name,
@@ -2548,14 +2919,38 @@ app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
         notifId,
         comp.ticket_id,
         comp.id,
-        `New Ticket Assigned: ${comp.ticket_id}`,
-        `You have been assigned complaint ${comp.ticket_id} for ${comp.customer_name} (${comp.product_type} - ${comp.issue_category}). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`,
+        secTech ? `Team Assignment: ${comp.ticket_id}` : `New Ticket Assigned: ${comp.ticket_id}`,
+        msg,
         comp.customer_name,
         technician_id,
         tech?.name || 'Technician',
         performer,
         performerRole
       ]);
+
+      // In-App Notification for Secondary Technician
+      if (secTech) {
+        const secNotifId = `notif_${Date.now()}_assign_sec_${secTech.id}`;
+        await query(`
+          INSERT INTO in_app_notifications (
+            id, type, ticket_id, complaint_id, title, message, customer_name,
+            target_role, target_technician_id, target_technician_name,
+            performed_by_name, performed_by_role
+          ) VALUES ($1, 'assignment', $2, $3, $4, $5, $6, 'technician', $7, $8, $9, $10)
+          ON CONFLICT (id) DO NOTHING
+        `, [
+          secNotifId,
+          comp.ticket_id,
+          comp.id,
+          `Team Assignment: ${comp.ticket_id}`,
+          `You and ${tech.name} have been assigned as a 2-member team for complaint ${comp.ticket_id} (${comp.customer_name}). Expected visit: ${expected_visit_date || 'Within 24 Hours'}`,
+          comp.customer_name,
+          secTech.id,
+          secTech.name,
+          performer,
+          performerRole
+        ]);
+      }
     } catch (notifErr) {
       console.warn('[Assign in-app notification error]', notifErr.message);
     }

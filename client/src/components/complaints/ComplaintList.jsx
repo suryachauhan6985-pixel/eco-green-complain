@@ -144,11 +144,21 @@ export const ComplaintList = ({
   }, [refreshKey]);
 
   const getAssignedTechName = (c) => {
-    if (c?.technician_name) return c.technician_name;
-    const id = c?.assigned_technician_id || c?.technician_id;
-    if (!id) return null;
-    const match = technicians.find(t => t.id === id || String(t.id) === String(id));
-    return match?.name || null;
+    let lead = c?.technician_name;
+    if (!lead) {
+      const id = c?.assigned_technician_id || c?.technician_id;
+      if (id) {
+        const match = technicians.find(t => t.id === id || String(t.id) === String(id));
+        lead = match?.name || null;
+      }
+    }
+    let sec = c?.secondary_technician_name;
+    if (!sec && c?.secondary_technician_id) {
+      const matchSec = technicians.find(t => t.id === c.secondary_technician_id || String(t.id) === String(c.secondary_technician_id));
+      sec = matchSec?.name || null;
+    }
+    if (lead && sec) return `${lead} + ${sec}`;
+    return lead || null;
   };
 
   const handleSearchSubmit = (e) => {
@@ -910,8 +920,12 @@ export const ComplaintList = ({
                               </span>
                             </div>
                           </div>
-                          <span className="text-[10px] font-medium text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded shrink-0">
-                            Assigned
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                            c.secondary_technician_name || c.secondary_technician_id
+                              ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                              : 'text-slate-600 bg-white border border-slate-200'
+                          }`}>
+                            {c.secondary_technician_name || c.secondary_technician_id ? '👥 2 Techs' : 'Assigned'}
                           </span>
                         </div>
                       ) : (

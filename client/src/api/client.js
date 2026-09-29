@@ -376,7 +376,10 @@ class LocalMockStore {
       list = list.filter(c => c.product_type === product_type);
     }
     if (technician_id) {
-      list = list.filter(c => String(c.assigned_technician_id) === String(technician_id));
+      list = list.filter(c => 
+        String(c.assigned_technician_id) === String(technician_id) || 
+        String(c.secondary_technician_id) === String(technician_id)
+      );
     }
     return list;
   }
@@ -519,10 +522,11 @@ class LocalMockStore {
     return comp;
   }
 
-  assignTechnician(id, techId, expectedDate) {
+  assignTechnician(id, techId, expectedDate, secondaryTechId = null) {
     const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
     const techs = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
     const tech = techs.find(t => String(t.id) === String(techId));
+    const secTech = secondaryTechId ? techs.find(t => String(t.id) === String(secondaryTechId)) : null;
     const comp = list.find(c => String(c.id) === String(id));
     if (comp) {
       if (expectedDate) {
@@ -535,6 +539,9 @@ class LocalMockStore {
       comp.assigned_technician_id = techId;
       comp.technician_name = tech?.name;
       comp.technician_phone = tech?.phone;
+      comp.secondary_technician_id = secondaryTechId || null;
+      comp.secondary_technician_name = secTech?.name || null;
+      comp.secondary_technician_phone = secTech?.phone || null;
       comp.expected_visit_date = expectedDate;
       comp.assigned_at = new Date().toISOString();
       comp.status_updated_at = new Date().toISOString();
@@ -664,6 +671,120 @@ class LocalMockStore {
 
     localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
     return { success: true, settledCount, totalAmount };
+  }
+
+  // Tour Ledger & Voucher System Mock Store Methods
+  getTourLedger(params = {}) {
+    const techId = params.technician_id;
+    let advances = JSON.parse(localStorage.getItem('egs_mock_tour_advances') || '[]');
+    let expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
+    let settlements = JSON.parse(localStorage.getItem('egs_mock_tour_settlements') || '[]');
+
+    if (techId) {
+      advances = advances.filter(a => String(a.technician_id) === String(techId));
+      expenses = expenses.filter(e => String(e.technician_id) === String(techId));
+      settlements = settlements.filter(s => String(s.technician_id) === String(techId));
+    }
+
+    const totalAdvance = advances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+    const approvedExpenses = expenses.filter(e => e.status !== 'rejected').reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const totalReturned = settlements.filter(s => s.settlement_type === 'return_to_company').reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const totalReimbursed = settlements.filter(s => s.settlement_type === 'reimbursed_by_company').reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const netBalance = (totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned);
+
+    return {
+      success: true,
+      advances,
+      expenses,
+      settlements,
+      summary: {
+        total_advance: totalAdvance,
+        approved_expenses: approvedExpenses,
+        total_returned: totalReturned,
+        total_reimbursed: totalReimbursed,
+        net_balance: netBalance
+      }
+    };
+  }
+
+  allocateTourAdvance(data = {}) {
+    const advances = JSON.parse(localStorage.getItem('egs_mock_tour_advances') || '[]');
+    const newAdv = {
+      id: Date.now(),
+      technician_id: data.technician_id,
+      technician_name: data.technician_name || 'Technician',
+      amount: Number(data.amount || 0),
+      purpose: data.purpose || 'Tour Advance for Field Tasks',
+      payment_mode: data.payment_mode || 'Cash',
+      reference_no: data.reference_no || '',
+      allocated_by_name: data.allocated_by_name || 'Admin Supervisor',
+      allocated_at: new Date().toISOString()
+    };
+    advances.unshift(newAdv);
+    localStorage.setItem('egs_mock_tour_advances', JSON.stringify(advances));
+    return { success: true, advance: newAdv };
+  }
+
+  addTourExpense(data = {}) {
+    const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
+    const count = expenses.length + 1;
+    const newExp = {
+      id: Date.now(),
+      voucher_no: `VCH-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`,
+      technician_id: data.technician_id,
+      technician_name: data.technician_name,
+      complaint_id: data.complaint_id || null,
+      ticket_id: data.ticket_id || null,
+      expense_date: data.expense_date || new Date().toISOString().split('T')[0],
+      category: data.category || 'Travel',
+      amount: Number(data.amount || 0),
+      title: data.title || data.category || 'Tour Expense',
+      description: data.description || '',
+      receipt_url: data.receipt_url || null,
+      receipt_name: data.receipt_name || null,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    expenses.unshift(newExp);
+    localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
+    return { success: true, expense: newExp };
+  }
+
+  updateTourExpenseStatus(id, status, notes = '') {
+    const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
+    const exp = expenses.find(e => String(e.id) === String(id));
+    if (exp) {
+      exp.status = status;
+      exp.review_notes = notes;
+      localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
+      return { success: true, expense: exp };
+    }
+    return { success: false, error: 'Expense not found' };
+  }
+
+  deleteTourExpense(id) {
+    let expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
+    expenses = expenses.filter(e => String(e.id) !== String(id));
+    localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
+    return { success: true };
+  }
+
+  settleTourBalance(data = {}) {
+    const settlements = JSON.parse(localStorage.getItem('egs_mock_tour_settlements') || '[]');
+    const newSettlement = {
+      id: Date.now(),
+      technician_id: data.technician_id,
+      amount: Number(data.amount || 0),
+      settlement_type: data.settlement_type || 'return_to_company',
+      payment_mode: data.payment_mode || 'Cash',
+      reference_no: data.reference_no || '',
+      notes: data.notes || '',
+      received_by_name: data.received_by_name || 'Admin Supervisor',
+      settled_at: new Date().toISOString()
+    };
+    settlements.unshift(newSettlement);
+    localStorage.setItem('egs_mock_tour_settlements', JSON.stringify(settlements));
+    return { success: true, settlement: newSettlement };
   }
 
   getMetrics() {
@@ -860,7 +981,7 @@ function fallbackHandler(endpoint, options) {
       if (endpoint.includes('/assign')) {
         const id = endpoint.split('/')[2];
         const body = typeof options.body === 'string' ? JSON.parse(options.body) : {};
-        const comp = mockStore.assignTechnician(id, body.technician_id, body.expected_visit_date);
+        const comp = mockStore.assignTechnician(id, body.technician_id, body.expected_visit_date, body.secondary_technician_id);
         saveComplaintPermanently(comp);
         return { message: 'Assigned successfully', complaint: comp };
       }
@@ -1009,6 +1130,41 @@ function fallbackHandler(endpoint, options) {
       return mockStore.createTemplate(body);
     }
     return { templates: mockStore.getTemplates() };
+  }
+
+  // Tour Ledger & Voucher mock routing
+  if (endpoint.startsWith('/tour-ledger')) {
+    const qs = endpoint.includes('?') ? endpoint.split('?')[1] : '';
+    const params = Object.fromEntries(new URLSearchParams(qs));
+    return mockStore.getTourLedger(params);
+  }
+
+  if (endpoint.startsWith('/tour-advances')) {
+    const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+    return mockStore.allocateTourAdvance(body);
+  }
+
+  if (endpoint.startsWith('/tour-expenses')) {
+    if (method === 'POST') {
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+      return mockStore.addTourExpense(body);
+    }
+    if (method === 'PUT' && endpoint.includes('/status')) {
+      const parts = endpoint.split('/');
+      const id = parts[2];
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+      return mockStore.updateTourExpenseStatus(id, body.status, body.review_notes);
+    }
+    if (method === 'DELETE') {
+      const parts = endpoint.split('/');
+      const id = parts[2];
+      return mockStore.deleteTourExpense(id);
+    }
+  }
+
+  if (endpoint.startsWith('/tour-settlements')) {
+    const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+    return mockStore.settleTourBalance(body);
   }
 
   if (endpoint.startsWith('/reports/metrics')) {
@@ -1204,10 +1360,14 @@ export const api = {
     }
     return res;
   },
-  assignTechnician: async (id, technicianId, expectedVisitDate) => {
+  assignTechnician: async (id, technicianId, expectedVisitDate, secondaryTechnicianId = null) => {
     const res = await request(`/complaints/${id}/assign`, {
       method: 'POST',
-      body: JSON.stringify({ technician_id: technicianId, expected_visit_date: expectedVisitDate })
+      body: JSON.stringify({ 
+        technician_id: technicianId, 
+        expected_visit_date: expectedVisitDate,
+        secondary_technician_id: secondaryTechnicianId 
+      })
     });
     if (res && res.complaint) {
       saveComplaintPermanently(res.complaint);
@@ -1274,6 +1434,39 @@ export const api = {
   }),
   settleAllTechnicianComplaints: (techId) => request(`/technicians/${techId}/settle-all`, {
     method: 'POST'
+  }),
+
+  // Tour Ledger & Voucher System
+  getTourLedger: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/tour-ledger${query ? `?${query}` : ''}`);
+  },
+  allocateTourAdvance: (data) => request('/tour-advances', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  addTourExpense: (data) => {
+    if (data instanceof FormData) {
+      return request('/tour-expenses', {
+        method: 'POST',
+        body: data
+      });
+    }
+    return request('/tour-expenses', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+  updateTourExpenseStatus: (id, status, reviewNotes = '') => request(`/tour-expenses/${id}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ status, review_notes: reviewNotes })
+  }),
+  deleteTourExpense: (id) => request(`/tour-expenses/${id}`, {
+    method: 'DELETE'
+  }),
+  settleTourBalance: (data) => request('/tour-settlements', {
+    method: 'POST',
+    body: JSON.stringify(data)
   }),
 
   // Notifications & Outbound Rules

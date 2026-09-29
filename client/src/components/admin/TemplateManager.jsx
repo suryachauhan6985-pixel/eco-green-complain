@@ -19,6 +19,7 @@ export const TRIGGER_OPTIONS = [
   { id: 'complaint_closed', label: 'Ticket Closed & Rating Request', audience: 'customer', desc: 'Fires when ticket is closed to collect 1-5 star review' },
   { id: 'complaint_reopened', label: 'Ticket Reopened Alert', audience: 'customer', desc: 'Fires if customer or supervisor reopens an issue' },
   { id: 'technician_work_order', label: 'Work Order Dispatch (New Job)', audience: 'technician', desc: 'Fires to newly assigned technician with customer address' },
+  { id: 'technician_team_work_order', label: 'Team Work Order (Dual Technicians Assigned)', audience: 'technician', desc: 'Fires to both technicians when a complaint is assigned to 2 technicians with both names' },
   { id: 'technician_reminder', label: 'Pending Visit Reminder', audience: 'technician', desc: 'Fires as schedule reminder for upcoming service visit' },
   { id: 'technician_reopened_work_order', label: 'Technician Reopened Work Order (Reopened Case)', audience: 'technician', desc: 'Fires to assigned technician when a closed complaint is reopened' },
   { id: 'technician_reopen_job_transferred', label: 'Technician Reopened Job Transferred (Previous Tech Notice)', audience: 'technician', desc: 'Fires on reopen to notify previous technician that job was transferred to another specialist' },
@@ -38,9 +39,10 @@ export const isTechnicianTemplate = (t) => {
   // Specifically: technician_assigned and customer_technician_reassigned are ALWAYS customer notifications
   if (key === 'technician_assigned' || key === 'customer_technician_reassigned') return false;
 
-  // Actual technician templates (6 official technician templates):
+  // Actual technician templates:
   if (
     key === 'technician_work_order' ||
+    key === 'technician_team_work_order' ||
     key === 'technician_reassigned_work_order' ||
     key === 'technician_reminder' ||
     key === 'technician_pending_visit_reminder' ||
@@ -58,6 +60,7 @@ export const isTechnicianTemplate = (t) => {
   const trig = (t.trigger_event || '').toLowerCase();
   if (
     trig === 'technician_work_order' || 
+    trig === 'technician_team_work_order' ||
     trig === 'technician_reminder' || 
     trig === 'technician_reopened_work_order' ||
     trig === 'technician_reopen_job_transferred'
@@ -76,8 +79,13 @@ export const ALL_PLACEHOLDERS = [
   { key: '{{product_type}}', desc: 'Solar Rooftop / Water Heater / Heat Pump' },
   { key: '{{issue_category}}', desc: 'Reported Issue Category' },
   { key: '{{priority}}', desc: 'Priority Level (Urgent / High / Medium / Low)' },
-  { key: '{{technician_name}}', desc: 'Assigned Technician Name' },
-  { key: '{{technician_phone}}', desc: 'Technician Contact Number' },
+  { key: '{{technician_name}}', desc: 'Lead / Assigned Technician Name' },
+  { key: '{{technician_phone}}', desc: 'Lead Technician Contact Number' },
+  { key: '{{secondary_technician_name}}', desc: 'Co-Technician / Partner Specialist Name' },
+  { key: '{{secondary_technician_phone}}', desc: 'Co-Technician Mobile Number' },
+  { key: '{{partner_technician_name}}', desc: 'Assigned Partner Specialist Teammate Name' },
+  { key: '{{partner_technician_phone}}', desc: 'Assigned Partner Specialist Teammate Phone' },
+  { key: '{{all_technicians_names}}', desc: 'Both Technicians Names (e.g. Yogesh Teriya & Vijay Patel)' },
   { key: '{{technician_portal_url}}', desc: 'Technician Mobile Portal Web App Link' },
   { key: '{{expected_visit_date}}', desc: 'Scheduled Visit Date' },
   { key: '{{status}}', desc: 'Current Ticket Status' },

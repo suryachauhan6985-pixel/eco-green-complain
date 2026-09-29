@@ -518,7 +518,8 @@ function migrateComplaintsTable() {
         { name: 'payment_mode', type: "TEXT DEFAULT 'Cash'" },
         { name: 'payment_status', type: "TEXT DEFAULT 'Unpaid'" },
         { name: 'collection_reason', type: 'TEXT' },
-        { name: 'status_updated_at', type: 'DATETIME' }
+        { name: 'status_updated_at', type: 'DATETIME' },
+        { name: 'secondary_technician_id', type: 'INTEGER' }
       ];
 
       for (const col of newColumns) {
@@ -528,6 +529,52 @@ function migrateComplaintsTable() {
       }
       db.exec(`UPDATE complaints SET status_updated_at = created_at WHERE status_updated_at IS NULL`);
       db.exec(`UPDATE complaints SET payment_collected_at = status_updated_at WHERE payment_collected > 0 AND payment_collected_at IS NULL`);
+
+      // Tour Advances & Expense Ledger Tables
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS technician_tour_advances (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          technician_id TEXT NOT NULL,
+          amount REAL NOT NULL DEFAULT 0,
+          allocated_by TEXT,
+          allocated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          payment_mode TEXT DEFAULT 'Cash',
+          reference_no TEXT,
+          tour_title TEXT,
+          notes TEXT,
+          status TEXT DEFAULT 'Active',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS technician_tour_expenses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          technician_id TEXT NOT NULL,
+          tour_advance_id INTEGER,
+          expense_date DATE DEFAULT CURRENT_DATE,
+          category TEXT NOT NULL,
+          amount REAL NOT NULL DEFAULT 0,
+          description TEXT,
+          receipt_url TEXT,
+          receipt_data TEXT,
+          receipt_name TEXT,
+          ticket_id TEXT,
+          status TEXT DEFAULT 'Submitted',
+          created_by TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS technician_tour_settlements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          technician_id TEXT NOT NULL,
+          advance_amount REAL NOT NULL DEFAULT 0,
+          expense_amount REAL NOT NULL DEFAULT 0,
+          returned_amount REAL NOT NULL DEFAULT 0,
+          reimbursed_amount REAL NOT NULL DEFAULT 0,
+          settled_by TEXT,
+          settled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          notes TEXT,
+          tour_advance_id INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
 
       // WhatsApp Number Registry (tracks verified vs non-WhatsApp/Invite-required numbers)
       db.exec(`
