@@ -73,6 +73,7 @@ export const ComplaintDetailDrawer = ({
   const [spareParts, setSpareParts] = useState('');
   const [resolutionPhotos, setResolutionPhotos] = useState([]);
   const [resolving, setResolving] = useState(false);
+  const [resolvedByTechId, setResolvedByTechId] = useState('');
 
   const [closureRemarks, setClosureRemarks] = useState('');
   const [closing, setClosing] = useState(false);
@@ -313,6 +314,13 @@ export const ComplaintDetailDrawer = ({
         }
         if (data.complaint.expected_visit_date) {
           setExpectedDate(String(data.complaint.expected_visit_date).split('T')[0]);
+        }
+        if (data.complaint.resolved_by_technician_id) {
+          setResolvedByTechId(String(data.complaint.resolved_by_technician_id));
+        } else if (currentUser?.role === 'technician') {
+          setResolvedByTechId(String(currentUser.id));
+        } else if (data.complaint.assigned_technician_id) {
+          setResolvedByTechId(String(data.complaint.assigned_technician_id));
         }
         setFollowUpStatus(data.complaint.status);
       }
@@ -670,7 +678,31 @@ export const ComplaintDetailDrawer = ({
       data.append('resolution_notes', resolutionNotes);
       if (spareParts) data.append('spare_parts_used', spareParts);
 
-      const activeTechName = ticket.technician_name || ticket.assigned_tech_name || (currentUser?.role === 'technician' ? currentUser?.name : '');
+      // Determine technician who physically resolved/led on site
+      let resolvedTechId = resolvedByTechId;
+      let resolvedTechName = '';
+      if (resolvedTechId) {
+        const found = technicians.find(t => String(t.id) === String(resolvedTechId));
+        if (found) resolvedTechName = found.name;
+        if (!resolvedTechName) {
+          if (String(resolvedTechId) === String(ticket.assigned_technician_id)) resolvedTechName = ticket.technician_name;
+          else if (String(resolvedTechId) === String(ticket.secondary_technician_id)) resolvedTechName = ticket.secondary_technician_name;
+        }
+      }
+      if (!resolvedTechName) {
+        if (currentUser?.role === 'technician') {
+          resolvedTechId = String(currentUser.id);
+          resolvedTechName = currentUser.name;
+        } else if (ticket.technician_name) {
+          resolvedTechId = String(ticket.assigned_technician_id || '');
+          resolvedTechName = ticket.technician_name;
+        }
+      }
+
+      if (resolvedTechId) data.append('resolved_by_technician_id', resolvedTechId);
+      if (resolvedTechName) data.append('resolved_by_technician_name', resolvedTechName);
+
+      const activeTechName = resolvedTechName || ticket.technician_name || ticket.assigned_tech_name || (currentUser?.role === 'technician' ? currentUser?.name : '');
       if (activeTechName) {
         data.append('technician_name', activeTechName);
       }
@@ -2194,6 +2226,36 @@ export const ComplaintDetailDrawer = ({
                         )}
 
                         <form onSubmit={handleResolve} className="space-y-3">
+                          {/* Dual-Technician Resolution Performed By Selector */}
+                          {(ticket.secondary_technician_id || ticket.secondary_technician_name) && (
+                            <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-lg space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[11px] font-bold text-indigo-950 flex items-center gap-1.5">
+                                  <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                                  <span>Action Performed By (On-site Lead) *</span>
+                                </label>
+                                <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100/90 border border-indigo-300 px-2 py-0.5 rounded-full">
+                                  Team Visit ({ticket.technician_name} & {ticket.secondary_technician_name})
+                                </span>
+                              </div>
+                              <select
+                                value={resolvedByTechId || (currentUser?.role === 'technician' ? String(currentUser.id) : String(ticket.assigned_technician_id || ''))}
+                                onChange={(e) => setResolvedByTechId(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 bg-white border border-indigo-300 rounded-lg text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                              >
+                                <option value={String(ticket.assigned_technician_id || '')}>
+                                  {ticket.technician_name || 'Lead Specialist'} (Primary Specialist)
+                                </option>
+                                <option value={String(ticket.secondary_technician_id || '')}>
+                                  {ticket.secondary_technician_name || 'Co-Specialist'} (Co-Specialist)
+                                </option>
+                              </select>
+                              <p className="text-[10px] text-indigo-700">
+                                Both team members are credited on the work order. This specifies which technician completed the physical action on site.
+                              </p>
+                            </div>
+                          )}
+
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                               Resolution Summary & Action Taken *
@@ -2378,6 +2440,34 @@ export const ComplaintDetailDrawer = ({
                               <div className="text-right">
                                 <span className="text-[10px] text-slate-500 font-bold uppercase block">Resolved On:</span>
                                 <span className="text-slate-700 font-medium">{formatIndianDateTime(previousResolution?.resolved_at || ticket.resolved_at)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* If Resolved or Closed: Show Technician & On-Site Action Lead */}
+                        {ticket.status !== 'Reopened' && (ticket.resolved_by_technician_name || ticket.technician_name) && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white/80 rounded-lg border border-emerald-200 text-xs">
+                            <div className="flex items-center gap-2">
+                              <UserCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                              <div>
+                                <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                                  {ticket.secondary_technician_name ? 'Resolved On-Site By (Lead Specialist):' : 'Resolved By Specialist:'}
+                                </span>
+                                <strong className="text-slate-900 font-bold">
+                                  {ticket.resolved_by_technician_name || ticket.technician_name}
+                                </strong>
+                                {ticket.secondary_technician_name && (
+                                  <span className="text-[10px] text-slate-600 ml-1.5 font-medium">
+                                    (Team with {ticket.technician_name === (ticket.resolved_by_technician_name || ticket.technician_name) ? ticket.secondary_technician_name : ticket.technician_name})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {(previousResolution?.resolved_at || ticket.resolved_at) && (
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase block">Resolved On:</span>
+                                <span className="text-slate-700 font-mono font-medium">{formatIndianDateTime(previousResolution?.resolved_at || ticket.resolved_at)}</span>
                               </div>
                             )}
                           </div>

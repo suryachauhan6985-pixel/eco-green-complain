@@ -20,22 +20,20 @@ export const ComplaintList = ({
 }) => {
   const { currentUser } = useAuth();
   const { confirm, alert, showToast } = useDialog();
-  const [complaints, setComplaints] = useState(() => {
+  const getCachedComplaints = () => {
     try {
-      const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
-      return Array.isArray(cached) ? cached : [];
+      const p = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      if (Array.isArray(p) && p.length > 0) return p;
+      const m = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+      if (Array.isArray(m) && m.length > 0) return m;
+      return [];
     } catch {
       return [];
     }
-  });
-  const [allComplaints, setAllComplaints] = useState(() => {
-    try {
-      const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
-      return Array.isArray(cached) ? cached : [];
-    } catch {
-      return [];
-    }
-  });
+  };
+
+  const [complaints, setComplaints] = useState(() => getCachedComplaints());
+  const [allComplaints, setAllComplaints] = useState(() => getCachedComplaints());
   const [technicians, setTechnicians] = useState(() => {
     try {
       const cached = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
@@ -45,12 +43,8 @@ export const ComplaintList = ({
     }
   });
   const [loading, setLoading] = useState(() => {
-    try {
-      const cached = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
-      return !cached || cached.length === 0;
-    } catch {
-      return true;
-    }
+    const cached = getCachedComplaints();
+    return !cached || cached.length === 0;
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExportingCsv, setIsExportingCsv] = useState(false);
@@ -550,7 +544,7 @@ export const ComplaintList = ({
             return true;
           });
 
-          if (loading && listToFilter.length === 0) {
+          if (loading && displayedComplaints.length === 0) {
             return viewMode === 'list' ? (
               <ComplaintTableSkeleton rows={8} />
             ) : (
@@ -559,6 +553,13 @@ export const ComplaintList = ({
           }
 
           if (displayedComplaints.length === 0) {
+            if (loading) {
+              return viewMode === 'list' ? (
+                <ComplaintTableSkeleton rows={8} />
+              ) : (
+                <ComplaintGridSkeleton count={8} />
+              );
+            }
             return (
               <div className="py-16 text-center text-slate-500">
                 <AlertCircle className="w-8 h-8 mx-auto text-slate-400 mb-2" />

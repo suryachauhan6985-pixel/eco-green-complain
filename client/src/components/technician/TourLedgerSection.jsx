@@ -22,6 +22,45 @@ const EXPENSE_CATEGORIES = [
   'Miscellaneous'
 ];
 
+export function numberToIndianWords(amount) {
+  const num = Math.round(Number(amount) || 0);
+  if (num === 0) return 'Zero Rupees Only';
+
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 
+    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function convertTwoDigits(n) {
+    if (n < 20) return a[n];
+    return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '');
+  }
+
+  function convertThreeDigits(n) {
+    let str = '';
+    if (Math.floor(n / 100) > 0) {
+      str += a[Math.floor(n / 100)] + ' Hundred ';
+    }
+    const rem = n % 100;
+    if (rem > 0) {
+      str += (str ? 'and ' : '') + convertTwoDigits(rem);
+    }
+    return str.trim();
+  }
+
+  const crore = Math.floor(num / 10000000);
+  const lakh = Math.floor((num % 10000000) / 100000);
+  const thousand = Math.floor((num % 100000) / 1000);
+  const hundred = num % 1000;
+
+  let result = '';
+  if (crore > 0) result += convertThreeDigits(crore) + ' Crore ';
+  if (lakh > 0) result += convertTwoDigits(lakh) + ' Lakh ';
+  if (thousand > 0) result += convertTwoDigits(thousand) + ' Thousand ';
+  if (hundred > 0) result += convertThreeDigits(hundred) + ' ';
+
+  return (result.trim() + ' Rupees Only').replace(/\s+/g, ' ');
+}
+
 export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], complaints = [] }) => {
   const { currentUser } = useAuth();
   const { showToast, confirm } = useDialog();
@@ -93,6 +132,51 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
   const [receiptLightbox, setReceiptLightbox] = useState(null);
   const [copiedWord, setCopiedWord] = useState(false);
+  const [startingVoucherNo, setStartingVoucherNo] = useState(341);
+
+  // Sync latest global voucher sequence when modal opens
+  useEffect(() => {
+    if (isVoucherModalOpen) {
+      api.getNextVoucherSequence().then(res => {
+        if (res && res.next_seq) {
+          setStartingVoucherNo(res.next_seq);
+        }
+      }).catch(err => console.error(err));
+    }
+  }, [isVoucherModalOpen]);
+
+  // Divide expenses into 6-item vouchers matching the physical printed voucher slip
+  const voucherChunks = useMemo(() => {
+    const exps = ledgerData.expenses || [];
+    if (exps.length === 0) {
+      return [{
+        voucherNo: `TT-${startingVoucherNo}`,
+        date: formatIndianDateOnly(new Date().toISOString()),
+        items: [],
+        total: 0
+      }];
+    }
+
+    const chunks = [];
+    const chunkSize = 6;
+    for (let i = 0; i < exps.length; i += chunkSize) {
+      const chunkItems = exps.slice(i, i + chunkSize);
+      const chunkTotal = chunkItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
+      const assignedNo = chunkItems.find(it => it.voucher_no)?.voucher_no;
+      const vNo = assignedNo || `TT-${startingVoucherNo + chunks.length}`;
+      const latestDate = chunkItems[0]?.expense_date 
+        ? formatIndianDateOnly(chunkItems[0].expense_date)
+        : formatIndianDateOnly(new Date().toISOString());
+
+      chunks.push({
+        voucherNo: vNo,
+        date: latestDate,
+        items: chunkItems,
+        total: chunkTotal
+      });
+    }
+    return chunks;
+  }, [ledgerData.expenses, startingVoucherNo]);
 
   // Active technician details
   const currentTech = useMemo(() => {
@@ -299,129 +383,117 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
   // Format currency
   const formatCur = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 
-  // Export to Microsoft Word (.doc)
+  // Export to Microsoft Word (.doc) - Matching physical Voucher Book (2 vouchers per A4 page)
   const handleExportWord = () => {
     const techName = currentTech.name || 'Technician';
-    const tourAdvances = ledgerData.advances || [];
-    const tourExpenses = ledgerData.expenses || [];
-    const summary = ledgerData.summary || {};
 
-    const rowsHtml = tourExpenses.map((exp, idx) => `
-      <tr>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1;">${exp.expense_date ? formatIndianDateOnly(exp.expense_date) : '-'}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1; font-weight: bold;">${exp.voucher_no || '-'}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1;">${exp.category || 'General'}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1;">${exp.ticket_id || '-'}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1;">${exp.title || ''}${exp.description ? ' - ' + exp.description : ''}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1; text-align: center;">${exp.receipt_url ? 'Yes (Bill Attached)' : 'Self-Voucher'}</td>
-        <td style="padding: 6px 10px; border: 1px solid #cbd5e1; text-align: right; font-weight: bold;">₹${Number(exp.amount || 0).toFixed(2)}</td>
-      </tr>
-    `).join('');
+    let vouchersHtml = '';
+    voucherChunks.forEach((chunk, cIdx) => {
+      // Build 6 rows
+      let rowsHtml = '';
+      const items = chunk.items || [];
+      for (let r = 0; r < 6; r++) {
+        const item = items[r];
+        if (item) {
+          const detail = item.ticket_id 
+            ? `[${item.ticket_id}] ${item.category} - ${item.title}${item.description ? ' (' + item.description + ')' : ''}` 
+            : `${item.category} - ${item.title}${item.description ? ' (' + item.description + ')' : ''}`;
+          rowsHtml += `
+            <tr style="height: 28px;">
+              <td style="padding: 4px 8px; border-right: 1.5px solid #000; font-size: 9.5pt; vertical-align: middle;">${detail}</td>
+              <td style="padding: 4px 8px; text-align: right; font-size: 9.5pt; vertical-align: middle; font-weight: bold;">₹${Number(item.amount || 0).toFixed(2)}</td>
+            </tr>
+          `;
+        } else {
+          rowsHtml += `
+            <tr style="height: 28px;">
+              <td style="padding: 4px 8px; border-right: 1.5px solid #000; font-size: 9.5pt;">&nbsp;</td>
+              <td style="padding: 4px 8px; text-align: right; font-size: 9.5pt;">&nbsp;</td>
+            </tr>
+          `;
+        }
+      }
+
+      vouchersHtml += `
+        <div style="border: 2px solid #000; padding: 14px 18px; margin-bottom: 20px; box-sizing: border-box; background: #fff; page-break-inside: avoid;">
+          <!-- Header: Green Energy Logo + Address + Voucher No & Date -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 6px;">
+            <tr>
+              <td style="width: 25%; vertical-align: middle;">
+                <div style="color: #15803d; font-family: 'Georgia', serif; font-size: 26pt; font-weight: bold; line-height: 0.9;">Green</div>
+                <div style="color: #166534; font-family: 'Arial Black', sans-serif; font-size: 8.5pt; letter-spacing: 2px; font-weight: 900; margin-top: -2px;">ENERGY</div>
+              </td>
+              <td style="width: 45%; vertical-align: middle; font-size: 8.5pt; color: #1e293b; line-height: 1.35; padding-left: 8px;">
+                Plot No. 4, Gajanand Industrial, Near RK Exotica,<br/>
+                Raven Survey No. 183, Vill. - Chhapra, Lodhika-360021
+              </td>
+              <td style="width: 30%; vertical-align: middle; text-align: right; font-size: 9.5pt; line-height: 1.4;">
+                <b>Voucher No :</b> ${chunk.voucherNo}<br/>
+                <b>Date :</b> ${chunk.date}
+              </td>
+            </tr>
+          </table>
+
+          <!-- Name & Account -->
+          <div style="font-size: 9.5pt; margin: 4px 0 2px 0; border-bottom: 1px dotted #cbd5e1; padding-bottom: 2px;">
+            <b>Name :</b> ${techName}
+          </div>
+          <div style="font-size: 9.5pt; margin-bottom: 6px;">
+            <b>Account :</b> TECHNICIAN TOUR EXPENSES
+          </div>
+
+          <!-- Particulars & Amount Table -->
+          <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-bottom: 6px;">
+            <thead>
+              <tr style="border-bottom: 1.5px solid #000; background: #f8fafc;">
+                <th style="padding: 4px 8px; border-right: 1.5px solid #000; text-align: center; font-size: 9.5pt; width: 75%;">Particulars</th>
+                <th style="padding: 4px 8px; text-align: center; font-size: 9.5pt; width: 25%;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr style="border-top: 1.5px solid #000; font-weight: bold; background: #f8fafc;">
+                <td style="padding: 4px 8px; border-right: 1.5px solid #000; text-align: right; font-size: 9.5pt;">Total:</td>
+                <td style="padding: 4px 8px; text-align: right; font-size: 9.5pt;">₹${Number(chunk.total || 0).toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Amount in Word -->
+          <div style="font-size: 9pt; margin: 4px 0 16px 0; border-bottom: 1px dotted #94a3b8; padding-bottom: 3px;">
+            <b>Amount in Word :</b> ${numberToIndianWords(chunk.total)}
+          </div>
+
+          <!-- 4 Signatures -->
+          <table style="width: 100%; margin-top: 26px; border-collapse: collapse;">
+            <tr>
+              <td style="width: 25%; text-align: center; font-size: 8.5pt; border-top: 1px solid #334155; padding-top: 4px;">Authorized Signature</td>
+              <td style="width: 25%; text-align: center; font-size: 8.5pt; border-top: 1px solid #334155; padding-top: 4px;">Checked by</td>
+              <td style="width: 25%; text-align: center; font-size: 8.5pt; border-top: 1px solid #334155; padding-top: 4px;">Paid by</td>
+              <td style="width: 25%; text-align: center; font-size: 8.5pt; border-top: 1px solid #334155; padding-top: 4px;">Receiver's Signature</td>
+            </tr>
+          </table>
+        </div>
+      `;
+
+      // Page break after every 2 vouchers (2 per page)
+      if ((cIdx + 1) % 2 === 0 && (cIdx + 1) < voucherChunks.length) {
+        vouchersHtml += `<div style="page-break-after: always; height: 1px;"></div>`;
+      }
+    });
 
     const wordContent = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
-        <title>Eco Green Solar - Tour Expense Voucher</title>
+        <title>Voucher Book - PRINT - 26-27</title>
         <style>
-          body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; color: #1e293b; margin: 20px; }
-          .header { text-align: center; border-bottom: 2px solid #047857; padding-bottom: 10px; margin-bottom: 20px; }
-          .title { font-size: 16pt; font-weight: bold; color: #065f46; text-transform: uppercase; margin: 0; }
-          .subtitle { font-size: 11pt; color: #475569; margin-top: 4px; }
-          .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-          .info-table td { padding: 5px 8px; font-size: 10.5pt; }
-          .summary-box { background: #f0fdf4; border: 1px solid #86efac; padding: 12px; margin-bottom: 20px; }
-          .table-main { width: 100%; border-collapse: collapse; margin-top: 15px; }
-          .table-main th { background: #065f46; color: white; padding: 8px 10px; border: 1px solid #065f46; font-size: 10pt; text-align: left; }
-          .table-main td { font-size: 9.5pt; }
-          .signatures { margin-top: 50px; width: 100%; }
-          .sign-col { width: 33%; text-align: center; font-size: 10pt; padding-top: 40px; border-top: 1px solid #94a3b8; }
+          @page { size: A4 portrait; margin: 15mm; }
+          body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 10pt; color: #1e293b; margin: 0; padding: 0; }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1 class="title">ECO GREEN SOLAR SOLUTIONS</h1>
-          <p class="subtitle">FIELD TECHNICIAN TOUR EXPENSE VOUCHER & LEDGER STATEMENT</p>
-        </div>
-
-        <table class="info-table">
-          <tr>
-            <td><strong>Technician Name:</strong> ${techName}</td>
-            <td><strong>Mobile Number:</strong> ${currentTech.phone || 'N/A'}</td>
-          </tr>
-          <tr>
-            <td><strong>Service Zone:</strong> ${currentTech.area_zone || 'General Zone'}</td>
-            <td><strong>Statement Date:</strong> ${formatIndianDateOnly(new Date().toISOString())}</td>
-          </tr>
-        </table>
-
-        <div class="summary-box">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="font-size: 11pt;"><strong>1. Total Tour Advance Received:</strong></td>
-              <td style="font-size: 11pt; text-align: right; font-weight: bold; color: #0f172a;">₹${Number(summary.total_advance || 0).toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td style="font-size: 11pt;"><strong>2. Total Tour Expenses Incurred:</strong></td>
-              <td style="font-size: 11pt; text-align: right; font-weight: bold; color: #b91c1c;">₹${Number(summary.approved_expenses || 0).toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td style="font-size: 11pt;"><strong>3. Surplus Cash Balance Deposited to Company:</strong></td>
-              <td style="font-size: 11pt; text-align: right; font-weight: bold; color: #047857;">₹${Number(summary.total_returned || 0).toFixed(2)}</td>
-            </tr>
-            <tr style="border-top: 1px solid #86efac;">
-              <td style="font-size: 12pt; padding-top: 8px;"><strong>4. Net Closing Balance:</strong></td>
-              <td style="font-size: 12pt; text-align: right; font-weight: bold; padding-top: 8px; color: ${summary.net_balance >= 0 ? '#047857' : '#b91c1c'};">
-                ₹${Number(summary.net_balance || 0).toFixed(2)} ${summary.net_balance >= 0 ? '(Safe / In Hand)' : '(Company Reimbursement Due)'}
-              </td>
-            </tr>
-          </table>
-        </div>
-
-        <h3 style="color: #065f46; margin-bottom: 6px;">ITEMIZED EXPENSES & BILL VOUCHERS</h3>
-        <table class="table-main">
-          <thead>
-            <tr>
-              <th style="width: 5%; text-align: center;">#</th>
-              <th style="width: 12%;">Date</th>
-              <th style="width: 14%;">Voucher #</th>
-              <th style="width: 15%;">Category</th>
-              <th style="width: 12%;">Ticket ID</th>
-              <th style="width: 24%;">Particulars / Description</th>
-              <th style="width: 8%; text-align: center;">Bill</th>
-              <th style="width: 10%; text-align: right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml || '<tr><td colspan="8" style="text-align: center; padding: 15px;">No expenses recorded yet.</td></tr>'}
-          </tbody>
-          <tfoot>
-            <tr style="background: #f8fafc; font-weight: bold;">
-              <td colspan="7" style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: right;">Total Tour Claim:</td>
-              <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: right; color: #065f46;">₹${Number(summary.approved_expenses || 0).toFixed(2)}</td>
-            </tr>
-          </tfoot>
-        </table>
-
-        <table style="width: 100%; margin-top: 60px;">
-          <tr>
-            <td class="sign-col">
-              <strong>${techName}</strong><br>
-              Field Specialist / Claimant Signature
-            </td>
-            <td style="width: 5%;"></td>
-            <td class="sign-col">
-              <strong>Accounts Verification</strong><br>
-              Cash & Receipts Checked
-            </td>
-            <td style="width: 5%;"></td>
-            <td class="sign-col">
-              <strong>Director / Supervisor</strong><br>
-              Authorized Signatory
-            </td>
-          </tr>
-        </table>
+        ${vouchersHtml}
       </body>
       </html>
     `;
@@ -432,12 +504,12 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Tour_Expense_Voucher_${techName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.doc`;
+    link.download = `Voucher_Book_${techName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.doc`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('Word document downloaded successfully! Opening in Microsoft Word will show complete formatted voucher.', 'success');
+    showToast('Word Voucher Book downloaded! 2 vouchers per page format matching physical voucher book.', 'success');
   };
 
   // Copy HTML Table for Word / Excel
@@ -1290,12 +1362,24 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
             {/* Modal Actions Bar */}
-            <div className="p-4 bg-slate-800 text-white flex items-center justify-between shrink-0">
+            <div className="p-3 sm:p-4 bg-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 <Printer className="w-5 h-5 text-emerald-400" />
-                <span className="font-bold text-sm">Official Tour Expense Voucher Statement</span>
+                <span className="font-bold text-sm">Voucher Book Print (2 Vouchers per A4 Page)</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Global Sequence Number Controller */}
+                <div className="flex items-center gap-1.5 bg-slate-700/80 px-2.5 py-1 rounded-lg text-xs" title="Adjust the starting global voucher sequence number">
+                  <span className="text-slate-300 font-bold">Voucher No: TT-</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={startingVoucherNo}
+                    onChange={(e) => setStartingVoucherNo(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-16 px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded text-emerald-400 font-mono font-bold text-xs text-center focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
                 <button
                   type="button"
                   onClick={handleExportWord}
@@ -1322,13 +1406,13 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>Print</span>
+                  <span>Print Book</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIsVoucherModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors ml-2"
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors ml-1 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1336,132 +1420,166 @@ export const TourLedgerSection = ({ scopedTechProfile, allTechnicians = [], comp
             </div>
 
             {/* Printable Voucher Paper */}
-            <div className="flex-1 overflow-y-auto p-6 sm:p-10 bg-slate-100">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200">
+              <style>{`
+                @media print {
+                  body * { visibility: hidden !important; }
+                  #tour-voucher-print-area, #tour-voucher-print-area * { visibility: visible !important; }
+                  #tour-voucher-print-area { position: absolute; left: 0; top: 0; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+                  .voucher-page-break { page-break-after: always !important; break-after: page !important; }
+                }
+              `}</style>
               <div 
                 id="tour-voucher-print-area" 
-                className="bg-white max-w-3xl mx-auto p-8 sm:p-10 rounded-xl shadow-md border border-slate-200 text-slate-800"
+                className="max-w-3xl mx-auto space-y-6 text-slate-900"
               >
-                {/* Letterhead Header */}
-                <div className="text-center pb-4 border-b-2 border-emerald-700 mb-6">
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <span className="text-xl font-black text-emerald-800 tracking-wider">ECO GREEN SOLAR SOLUTIONS</span>
-                  </div>
-                  <h2 className="text-sm font-extrabold text-slate-700 uppercase tracking-widest">
-                    FIELD TECHNICIAN TOUR EXPENSE VOUCHER & LEDGER STATEMENT
-                  </h2>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Solar Rooftop Systems • Solar Water Heaters • Heat Pumps
-                  </p>
-                </div>
+                {voucherChunks.map((chunk, cIdx) => {
+                  const items = chunk.items || [];
+                  const emptySlots = Math.max(0, 6 - items.length);
 
-                {/* Technician & Statement Info Table */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-6 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Technician:</span>
-                    <strong className="text-slate-900 font-bold">{currentTech.name}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Mobile:</span>
-                    <strong className="text-slate-900 font-mono font-bold">{currentTech.phone || 'N/A'}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Service Zone:</span>
-                    <strong className="text-slate-900">{currentTech.area_zone || 'General Zone'}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Date of Issue:</span>
-                    <strong className="text-slate-900 font-mono">{formatIndianDateOnly(new Date().toISOString())}</strong>
-                  </div>
-                </div>
+                  return (
+                    <React.Fragment key={chunk.voucherNo + '-' + cIdx}>
+                      {/* Physical Voucher Slip Card */}
+                      <div className="bg-white border-2 border-black p-5 sm:p-6 shadow-sm rounded-none font-sans text-slate-900 relative">
+                        {/* Header: Green Energy Logo + Address + Voucher No & Date */}
+                        <div className="grid grid-cols-12 gap-2 pb-3 mb-2">
+                          {/* Logo */}
+                          <div className="col-span-3 flex flex-col justify-center">
+                            <span className="text-3xl font-black text-emerald-700 tracking-tight leading-none" style={{ fontFamily: 'Georgia, serif' }}>
+                              Green
+                            </span>
+                            <span className="text-[10px] font-black text-emerald-800 tracking-[0.2em] uppercase mt-0.5" style={{ fontFamily: 'Arial Black, sans-serif' }}>
+                              ENERGY
+                            </span>
+                          </div>
 
-                {/* Summary Box */}
-                <div className="p-4 bg-emerald-50/70 border border-emerald-300 rounded-xl mb-6 text-xs space-y-2">
-                  <div className="flex justify-between items-center text-slate-700">
-                    <span className="font-semibold">1. Total Tour Advance Cash Received:</span>
-                    <strong className="text-sm font-mono font-black text-slate-900">{formatCur(summary.total_advance)}</strong>
-                  </div>
-                  <div className="flex justify-between items-center text-slate-700">
-                    <span className="font-semibold">2. Total Tour Expenses Claimed (As per below):</span>
-                    <strong className="text-sm font-mono font-black text-rose-700">{formatCur(summary.approved_expenses)}</strong>
-                  </div>
-                  <div className="flex justify-between items-center text-slate-700">
-                    <span className="font-semibold">3. Surplus Cash Returned / Deposited to Company:</span>
-                    <strong className="text-sm font-mono font-black text-emerald-800">{formatCur(summary.total_returned)}</strong>
-                  </div>
-                  <div className="flex justify-between items-center pt-2 border-t border-emerald-200 text-slate-900">
-                    <span className="font-black text-sm">4. Net Tour Closing Balance:</span>
-                    <strong className={`text-base font-mono font-black ${summary.net_balance >= 0 ? 'text-emerald-800' : 'text-rose-700'}`}>
-                      {formatCur(summary.net_balance)} {summary.net_balance >= 0 ? '(In Hand / Safe)' : '(Company Reimbursement Due)'}
-                    </strong>
-                  </div>
-                </div>
+                          {/* Address */}
+                          <div className="col-span-6 text-[10px] text-slate-700 leading-snug flex flex-col justify-center border-l border-slate-200 pl-3">
+                            <p className="font-semibold text-slate-800">Plot No. 4, Gajanand Industrial, Near RK Exotica,</p>
+                            <p>Raven Survey No. 183, Vill. - Chhapra, Lodhika-360021</p>
+                          </div>
 
-                {/* Detailed Table */}
-                <div className="mb-8">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Itemized Tour Expense Particulars</span>
-                  </h4>
+                          {/* Voucher No & Date */}
+                          <div className="col-span-3 text-right text-xs leading-normal flex flex-col justify-center">
+                            <p className="font-bold text-slate-900">
+                              Voucher No : <span className="font-mono text-emerald-800 text-sm font-black">{chunk.voucherNo}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-700 mt-0.5">
+                              Date : <span className="font-mono font-semibold">{chunk.date}</span>
+                            </p>
+                          </div>
+                        </div>
 
-                  <table className="w-full text-left text-xs border border-slate-300 border-collapse">
-                    <thead>
-                      <tr className="bg-emerald-800 text-white font-bold text-[10px] uppercase">
-                        <th className="p-2 border border-emerald-800 text-center w-8">#</th>
-                        <th className="p-2 border border-emerald-800">Date</th>
-                        <th className="p-2 border border-emerald-800">Voucher #</th>
-                        <th className="p-2 border border-emerald-800">Category</th>
-                        <th className="p-2 border border-emerald-800">Particulars & Description</th>
-                        <th className="p-2 border border-emerald-800 text-center">Bill</th>
-                        <th className="p-2 border border-emerald-800 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {expenses.map((exp, idx) => (
-                        <tr key={exp.id} className="text-slate-800">
-                          <td className="p-2 border border-slate-300 text-center font-semibold text-slate-500">{idx + 1}</td>
-                          <td className="p-2 border border-slate-300 whitespace-nowrap">{exp.expense_date ? formatIndianDateOnly(exp.expense_date) : '-'}</td>
-                          <td className="p-2 border border-slate-300 font-mono font-bold text-emerald-800">{exp.voucher_no || '-'}</td>
-                          <td className="p-2 border border-slate-300 font-semibold">{exp.category}</td>
-                          <td className="p-2 border border-slate-300">
-                            {exp.ticket_id && <span className="text-[10px] text-blue-700 font-mono font-bold block">[{exp.ticket_id}]</span>}
-                            <span>{exp.title}</span>
-                            {exp.description && <span className="text-slate-500 text-[10px] block">{exp.description}</span>}
-                          </td>
-                          <td className="p-2 border border-slate-300 text-center">
-                            {exp.receipt_url ? '✓ Attached' : 'Self'}
-                          </td>
-                          <td className="p-2 border border-slate-300 text-right font-mono font-bold">
-                            {formatCur(exp.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
-                        <td colSpan={6} className="p-2 border border-slate-300 text-right">Total Tour Claim:</td>
-                        <td className="p-2 border border-slate-300 text-right font-mono text-emerald-800 text-sm">
-                          {formatCur(summary.approved_expenses)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                        {/* Name & Account */}
+                        <div className="text-xs space-y-1 mb-3 pt-1 border-t border-slate-300">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-bold text-slate-900 shrink-0">Name :</span>
+                            <span className="font-semibold text-slate-800 border-b border-dotted border-slate-400 flex-1 pb-0.5">
+                              {currentTech.name} {currentTech.phone ? `(${currentTech.phone})` : ''}
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-bold text-slate-900 shrink-0">Account :</span>
+                            <span className="font-bold text-slate-900 uppercase tracking-wide">
+                              TECHNICIAN TOUR EXPENSES
+                            </span>
+                          </div>
+                        </div>
 
-                {/* Signatures */}
-                <div className="grid grid-cols-3 gap-6 pt-10 text-center text-xs text-slate-700">
-                  <div className="border-t border-slate-400 pt-2">
-                    <strong className="block text-slate-900 font-bold">{currentTech.name}</strong>
-                    <span className="text-[10px] text-slate-500">Technician Signature</span>
-                  </div>
-                  <div className="border-t border-slate-400 pt-2">
-                    <strong className="block text-slate-900 font-bold">Accounts Officer</strong>
-                    <span className="text-[10px] text-slate-500">Verified & Reconciled</span>
-                  </div>
-                  <div className="border-t border-slate-400 pt-2">
-                    <strong className="block text-slate-900 font-bold">Director / Operations</strong>
-                    <span className="text-[10px] text-slate-500">Authorized Approval</span>
-                  </div>
-                </div>
+                        {/* Particulars & Amount Table (6 Rows) */}
+                        <div className="border-[1.5px] border-black mb-3">
+                          <div className="grid grid-cols-12 bg-slate-50 border-b-[1.5px] border-black text-xs font-bold text-center">
+                            <div className="col-span-9 p-1.5 border-r-[1.5px] border-black uppercase text-[11px]">
+                              Particulars
+                            </div>
+                            <div className="col-span-3 p-1.5 uppercase text-[11px]">
+                              Amount
+                            </div>
+                          </div>
+
+                          {/* Item Rows */}
+                          <div className="divide-y divide-slate-300 text-xs">
+                            {items.map((item, iIdx) => (
+                              <div key={item.id || iIdx} className="grid grid-cols-12 min-h-[30px] items-center">
+                                <div className="col-span-9 px-3 py-1.5 border-r-[1.5px] border-black font-medium text-slate-800">
+                                  {item.ticket_id && (
+                                    <span className="font-mono font-bold text-blue-800 mr-1.5">[{item.ticket_id}]</span>
+                                  )}
+                                  <span className="font-semibold">{item.category}</span>
+                                  {item.title && <span className="text-slate-600 ml-1">- {item.title}</span>}
+                                  {item.description && <span className="text-slate-500 text-[10px] ml-1">({item.description})</span>}
+                                </div>
+                                <div className="col-span-3 px-3 py-1.5 text-right font-mono font-bold text-slate-900">
+                                  ₹{Number(item.amount || 0).toFixed(2)}
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Blank padding rows to fit 6 logs perfectly */}
+                            {Array.from({ length: emptySlots }).map((_, bIdx) => (
+                              <div key={'blank-' + bIdx} className="grid grid-cols-12 min-h-[30px] items-center">
+                                <div className="col-span-9 px-3 py-1.5 border-r-[1.5px] border-black text-slate-300 select-none">
+                                  &nbsp;
+                                </div>
+                                <div className="col-span-3 px-3 py-1.5 text-right font-mono text-slate-300 select-none">
+                                  &nbsp;
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Total Row */}
+                          <div className="grid grid-cols-12 bg-slate-50 border-t-[1.5px] border-black font-bold text-xs">
+                            <div className="col-span-9 px-3 py-1.5 border-r-[1.5px] border-black text-right uppercase">
+                              Total:
+                            </div>
+                            <div className="col-span-3 px-3 py-1.5 text-right font-mono text-sm text-emerald-900 font-black">
+                              ₹{Number(chunk.total || 0).toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Amount in Word */}
+                        <div className="text-xs mb-6">
+                          <span className="font-bold text-slate-900">Amount in Word : </span>
+                          <span className="font-semibold text-slate-800 border-b border-dotted border-slate-400 pb-0.5 italic">
+                            {numberToIndianWords(chunk.total)}
+                          </span>
+                        </div>
+
+                        {/* 4 Signatures */}
+                        <div className="grid grid-cols-4 gap-2 pt-6 text-center text-[10px] text-slate-700">
+                          <div className="border-t border-slate-700 pt-1 font-semibold">
+                            Authorized Signature
+                          </div>
+                          <div className="border-t border-slate-700 pt-1 font-semibold">
+                            Checked by
+                          </div>
+                          <div className="border-t border-slate-700 pt-1 font-semibold">
+                            Paid by
+                          </div>
+                          <div className="border-t border-slate-700 pt-1 font-semibold">
+                            Receiver's Signature
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cut line between 2 vouchers on the same page */}
+                      {(cIdx + 1) % 2 !== 0 && (cIdx + 1) < voucherChunks.length && (
+                        <div className="flex items-center justify-center gap-2 py-2 text-slate-400 print:py-3">
+                          <span className="text-xs">✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</span>
+                        </div>
+                      )}
+
+                      {/* Page Break after every 2 vouchers for printing */}
+                      {(cIdx + 1) % 2 === 0 && (cIdx + 1) < voucherChunks.length && (
+                        <div className="voucher-page-break my-4 border-b-2 border-dashed border-slate-400 print:hidden text-center text-[11px] text-slate-500 py-1 font-bold">
+                          --- Next A4 Sheet (2 Vouchers per Page) ---
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           </div>

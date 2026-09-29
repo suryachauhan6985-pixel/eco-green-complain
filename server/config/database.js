@@ -519,7 +519,9 @@ function migrateComplaintsTable() {
         { name: 'payment_status', type: "TEXT DEFAULT 'Unpaid'" },
         { name: 'collection_reason', type: 'TEXT' },
         { name: 'status_updated_at', type: 'DATETIME' },
-        { name: 'secondary_technician_id', type: 'INTEGER' }
+        { name: 'secondary_technician_id', type: 'INTEGER' },
+        { name: 'resolved_by_technician_id', type: 'TEXT' },
+        { name: 'resolved_by_technician_name', type: 'TEXT' }
       ];
 
       for (const col of newColumns) {
@@ -549,6 +551,7 @@ function migrateComplaintsTable() {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           technician_id TEXT NOT NULL,
           tour_advance_id INTEGER,
+          voucher_no TEXT,
           expense_date DATE DEFAULT CURRENT_DATE,
           category TEXT NOT NULL,
           amount REAL NOT NULL DEFAULT 0,
@@ -575,6 +578,14 @@ function migrateComplaintsTable() {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
       `);
+
+      // Ensure voucher_no column exists in technician_tour_expenses if already created
+      try {
+        const expCols = db.pragma('table_info(technician_tour_expenses)').map(c => c.name);
+        if (!expCols.includes('voucher_no')) {
+          db.exec(`ALTER TABLE technician_tour_expenses ADD COLUMN voucher_no TEXT`);
+        }
+      } catch (_) {}
 
       // WhatsApp Number Registry (tracks verified vs non-WhatsApp/Invite-required numbers)
       db.exec(`
@@ -773,6 +784,21 @@ function migrateNotificationTemplates() {
         whatsapp_body: `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`,
         email_subject: `[Eco Green Solar] Work Order: Ticket #{{complaint_id}} - {{customer_name}}`,
         email_body: `Dear {{technician_name}},\n\nYou have been assigned to service complaint ticket #{{complaint_id}}.\n\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue Category: {{issue_category}}\nDetails: {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease log in to your Technician Portal to view complete details, update progress, and record spare parts or payment collections.`
+      },
+      {
+        key: 'technician_team_work_order',
+        name: 'Technician Team Work Order (Dual Technicians Assigned)',
+        audience: 'technician',
+        trigger_event: 'technician_team_work_order',
+        meta_template_name: 'technician_work_order',
+        meta_language: 'en_US',
+        meta_category: 'UTILITY',
+        meta_status: 'APPROVED',
+        is_active: 1,
+        channel: 'whatsapp',
+        whatsapp_body: `🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello {{technician_name}}, you and *{{partner_technician_name}}* have been assigned as a 2-member service team for Ticket *{{complaint_id}}*.\n\n👥 *Assigned Team:* {{technician_name}} & {{partner_technician_name}}\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease coordinate with {{partner_technician_name}} and call the customer before visiting the site.`,
+        email_subject: `[Eco Green Solar] Team Work Order: Ticket #{{complaint_id}} - {{customer_name}}`,
+        email_body: `Dear {{technician_name}},\n\nYou and {{partner_technician_name}} have been assigned as a joint service team for complaint ticket #{{complaint_id}}.\n\nAssigned Team: {{technician_name}} & {{partner_technician_name}} (Phone: {{partner_technician_phone}})\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue: {{issue_category}} - {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease coordinate with your partner specialist and log into the Technician Portal to update progress.`
       },
       {
         key: 'technician_reminder',

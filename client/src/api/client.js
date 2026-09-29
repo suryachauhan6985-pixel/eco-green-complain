@@ -215,7 +215,31 @@ class LocalMockStore {
   }
 
   getTemplates() {
-    return JSON.parse(localStorage.getItem('egs_mock_templates') || JSON.stringify(INITIAL_TEMPLATES));
+    const stored = localStorage.getItem('egs_mock_templates');
+    if (!stored) {
+      localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
+      return INITIAL_TEMPLATES;
+    }
+    try {
+      const list = JSON.parse(stored);
+      if (Array.isArray(list)) {
+        let changed = false;
+        for (const defaultTmpl of INITIAL_TEMPLATES) {
+          const exists = list.some(t => t.template_key === defaultTmpl.template_key);
+          if (!exists) {
+            list.push(defaultTmpl);
+            changed = true;
+          }
+        }
+        if (changed) {
+          localStorage.setItem('egs_mock_templates', JSON.stringify(list));
+        }
+        return list;
+      }
+      return INITIAL_TEMPLATES;
+    } catch {
+      return INITIAL_TEMPLATES;
+    }
   }
 
   updateTemplate(id, data) {
@@ -725,12 +749,26 @@ class LocalMockStore {
     return { success: true, advance: newAdv };
   }
 
+  getGlobalNextVoucherNumber() {
+    let currentSeq = parseInt(localStorage.getItem('egs_global_voucher_seq') || '340', 10);
+    const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
+    for (const e of expenses) {
+      if (e.voucher_no && e.voucher_no.startsWith('TT-')) {
+        const num = parseInt(e.voucher_no.replace('TT-', ''), 10);
+        if (!isNaN(num) && num > currentSeq) currentSeq = num;
+      }
+    }
+    const nextSeq = currentSeq + 1;
+    localStorage.setItem('egs_global_voucher_seq', String(nextSeq));
+    return `TT-${nextSeq}`;
+  }
+
   addTourExpense(data = {}) {
     const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
-    const count = expenses.length + 1;
+    const nextVoucher = data.voucher_no || this.getGlobalNextVoucherNumber();
     const newExp = {
       id: Date.now(),
-      voucher_no: `VCH-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`,
+      voucher_no: nextVoucher,
       technician_id: data.technician_id,
       technician_name: data.technician_name,
       complaint_id: data.complaint_id || null,
@@ -749,6 +787,7 @@ class LocalMockStore {
     localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
     return { success: true, expense: newExp };
   }
+
 
   updateTourExpenseStatus(id, status, notes = '') {
     const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
@@ -1468,6 +1507,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+  getNextVoucherSequence: () => request('/tour-vouchers/next-sequence').catch(() => ({
+    success: true,
+    next_voucher_no: `TT-${parseInt(localStorage.getItem('egs_global_voucher_seq') || '341', 10)}`
+  })),
 
   // Notifications & Outbound Rules
   getTemplates: () => request('/notifications/templates'),

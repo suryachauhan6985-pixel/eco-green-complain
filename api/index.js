@@ -3237,7 +3237,12 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
 app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closing_photo'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { resolution_notes, spare_parts_used } = req.body;
+    const { 
+      resolution_notes, 
+      spare_parts_used,
+      resolved_by_technician_id,
+      resolved_by_technician_name
+    } = req.body;
 
     const findComp = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (findComp.rows.length === 0) {
@@ -3249,6 +3254,11 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
     if (['Resolved', 'Closed'].includes(compRecord.status)) {
       return res.status(400).json({ error: `Complaint is already marked as "${compRecord.status}". It cannot be resolved again.` });
     }
+
+    const performer = req.user ? req.user.name : 'Technician';
+    const role = req.user ? req.user.role : 'technician';
+    const resolvedByTechId = resolved_by_technician_id || (req.user?.role === 'technician' ? req.user.technicianId : compRecord.assigned_technician_id) || null;
+    const resolvedByTechName = resolved_by_technician_name || (req.user?.role === 'technician' ? req.user.name : null) || compRecord.technician_name || performer;
 
     let closingPhotoUrl = compRecord.closing_photo_url || null;
 
@@ -3299,22 +3309,29 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
       }
     }
 
+    try {
+      await query(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS resolved_by_technician_id TEXT;`);
+      await query(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS resolved_by_technician_name TEXT;`);
+    } catch (_) {}
+
     const compRes = await query(`
       UPDATE complaints SET
         status = 'Resolved',
         resolution_notes = $1,
         spare_parts_used = $2,
         closing_photo_url = COALESCE($3, closing_photo_url),
+        resolved_by_technician_id = $4,
+        resolved_by_technician_name = $5,
         resolved_at = CURRENT_TIMESTAMP,
         status_updated_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
+      WHERE id = $6
       RETURNING *
-    `, [resolution_notes || 'Resolved on site', spare_parts_used || 'None', closingPhotoUrl, compId]);
+    `, [resolution_notes || 'Resolved on site', spare_parts_used || 'None', closingPhotoUrl, resolvedByTechId, resolvedByTechName, compId]);
 
     const comp = compRes.rows[0];
 
-    let timelineNotes = `Issue resolved: ${resolution_notes || 'All checks passed.'}`;
+    let timelineNotes = `Issue resolved by ${resolvedByTechName}: ${resolution_notes || 'All checks passed.'}`;
     if (spare_parts_used && String(spare_parts_used).trim() && spare_parts_used !== 'None') {
       timelineNotes += ` • Spare parts used: ${spare_parts_used}`;
     }
@@ -6338,6 +6355,414 @@ app.post('/api/customers/sync', authenticateToken, async (req, res) => {
   }
 });
 
+// ================= NOTIFICATION TEMPLATES API =================
+async function ensureNotificationTemplatesTable() {
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS notification_templates (
+        id SERIAL PRIMARY KEY,
+        template_key VARCHAR(100) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        whatsapp_body TEXT NOT NULL,
+        email_subject VARCHAR(255),
+        email_body TEXT,
+        audience VARCHAR(50) DEFAULT 'customer',
+        trigger_event VARCHAR(100) DEFAULT 'manual',
+        meta_template_name VARCHAR(100),
+        meta_language VARCHAR(20) DEFAULT 'en_US',
+        meta_category VARCHAR(50) DEFAULT 'UTILITY',
+        meta_status VARCHAR(50) DEFAULT 'APPROVED',
+        is_active INTEGER DEFAULT 1,
+        channel VARCHAR(50) DEFAULT 'whatsapp',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Seed default templates if empty or missing technician_team_work_order
+    const check = await query('SELECT template_key FROM notification_templates');
+    const existingKeys = new Set(check.rows.map(r => r.template_key));
+
+    const defaults = [
+      {
+        key: 'complaint_registered',
+        name: 'Ticket Lodged (With Quoted Charges)',
+        audience: 'customer',
+        trigger: 'complaint_registered',
+        metaName: 'complaint_registered',
+        body: '☀️ *Eco Green Solar - Complaint Registered*\n\nDear {{customer_name}}, your service complaint has been registered successfully.\n\n📋 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n🚨 *Priority:* {{priority}}\n💰 *Estimated Charges:* {{charges_line}}\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur service engineer will contact you shortly.\n- Eco Green Solar Care'
+      },
+      {
+        key: 'complaint_registered_no_charges',
+        name: 'Ticket Lodged (Standard / No Charges)',
+        audience: 'customer',
+        trigger: 'complaint_registered_no_charges',
+        metaName: 'complaint_registered_no_charges',
+        body: '☀️ *Eco Green Solar - Complaint Registered*\n\nDear {{customer_name}}, your service complaint has been registered under ticket *{{complaint_id}}*.\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n\n🔗 *Track Live:* {{feedback_url}}\n\nOur team will attend to your request promptly.\n- Eco Green Solar Care'
+      },
+      {
+        key: 'technician_assigned',
+        name: 'Technician Assigned Notification',
+        audience: 'customer',
+        trigger: 'technician_assigned',
+        metaName: 'technician_assigned',
+        body: '☀️ *Eco Green Solar - Technician Assigned*\n\nDear {{customer_name}}, technician *{{technician_name}}* has been assigned to your ticket *{{complaint_id}}*.\n\n📞 *Technician Phone:* {{technician_phone}}\n📅 *Scheduled Visit:* {{expected_visit_date}}\n\n🔗 *Track Live:* {{feedback_url}}\n\nPlease keep the installation site accessible.\n- Eco Green Solar Care'
+      },
+      {
+        key: 'customer_technician_reassigned',
+        name: 'Customer Notification - Technician Reassigned',
+        audience: 'customer',
+        trigger: 'technician_reassigned',
+        metaName: 'technician_reassigned',
+        body: '☀️ *Eco Green Solar - Update*\n\nDear {{customer_name}}, technician *{{technician_name}}* is now assigned to ticket *{{complaint_id}}*.\n\n📞 *Phone:* {{technician_phone}}\n📅 *Visit Date:* {{expected_visit_date}}\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      {
+        key: 'status_update',
+        name: 'Status & Follow-up Note Update',
+        audience: 'customer',
+        trigger: 'status_update',
+        metaName: 'status__followup_note_update',
+        body: '☀️ *Eco Green Solar Alert*\n\nUpdate on Complaint *{{complaint_id}}* ({{product_type}}):\nStatus: *{{status}}*\n\n📝 *Notes:* {{notes}}\n\n🔗 *Track Live:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      {
+        key: 'complaint_resolved',
+        name: 'Complaint Resolved Notification',
+        audience: 'customer',
+        trigger: 'complaint_resolved',
+        metaName: 'complaint_resolved',
+        body: '☀️ *Eco Green Solar Resolution*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been marked as *RESOLVED* by technician {{technician_name}}.\n\n✅ *Resolution Notes:* {{notes}}\n\n🔗 *View Details:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      {
+        key: 'complaint_closed',
+        name: 'Complaint Closed & Feedback Request',
+        audience: 'customer',
+        trigger: 'complaint_closed',
+        metaName: 'complaint_closed__feedback_request',
+        body: '☀️ *Eco Green Solar Closure*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been resolved and closed.\n\n⭐ *Please rate your service experience (1-5 Stars):*\n{{feedback_url}}\n\nThank you for choosing Eco Green Solar!'
+      },
+      {
+        key: 'complaint_reopened',
+        name: 'Complaint Reopened Notification',
+        audience: 'customer',
+        trigger: 'complaint_reopened',
+        metaName: 'complaint_reopened_notification',
+        body: '☀️ *Eco Green Solar Priority Alert*\n\nDear {{customer_name}}, your complaint *{{complaint_id}}* has been *REOPENED* upon your request.\n\nA senior service supervisor will review the case and arrange an expedited follow-up.\n\n🔗 *Track:* {{feedback_url}}\n- Eco Green Solar'
+      },
+      {
+        key: 'technician_work_order',
+        name: 'Technician Work Order (Job Assignment)',
+        audience: 'technician',
+        trigger: 'technician_work_order',
+        metaName: 'technician_work_order',
+        body: '🛠️ *Eco Green Solar - New Job Assignment*\n\nHello {{technician_name}}, you have been assigned ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.'
+      },
+      {
+        key: 'technician_team_work_order',
+        name: 'Technician Team Work Order (Dual Technicians Assigned)',
+        audience: 'technician',
+        trigger: 'technician_team_work_order',
+        metaName: 'technician_work_order',
+        body: '🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello {{technician_name}}, you and *{{partner_technician_name}}* have been assigned as a 2-member service team for Ticket *{{complaint_id}}*.\n\n👥 *Assigned Team:* {{technician_name}} & {{partner_technician_name}}\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease coordinate with {{partner_technician_name}} and call the customer before visiting the site.'
+      },
+      {
+        key: 'technician_reminder',
+        name: 'Technician Pending Visit Reminder',
+        audience: 'technician',
+        trigger: 'technician_reminder',
+        metaName: 'technician_pending_visit_reminder',
+        body: '⏰ *Eco Green Solar - Job Reminder*\n\nHello {{technician_name}}, this is a friendly reminder for scheduled ticket *{{complaint_id}}*.\n\n👤 *Customer:* {{customer_name}}\n📞 *Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n📅 *Visit Date:* {{expected_visit_date}}\n\nPlease contact the customer before visiting and ensure the service is updated in your portal.'
+      },
+      {
+        key: 'technician_reach_out_customer',
+        name: 'Technician Direct Customer WhatsApp (Quick Chat)',
+        audience: 'customer',
+        trigger: 'technician_direct_reachout',
+        metaName: 'technician_reach_out_customer',
+        body: 'Namaste {{customer_name}} ji,\n\nI am {{technician_name}} from *Eco Green Solar Care*. I have received your service request for your {{product_type}} (Ticket: {{complaint_id}}).\n\nI am planning to visit your site at {{customer_address}} on {{expected_visit_date}}.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n{{technician_name}}\nEco Green Solar Team'
+      }
+    ];
+
+    for (const d of defaults) {
+      if (!existingKeys.has(d.key)) {
+        await query(`
+          INSERT INTO notification_templates (
+            template_key, name, whatsapp_body, audience, trigger_event, meta_template_name, meta_status, is_active
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'APPROVED', 1)
+          ON CONFLICT (template_key) DO NOTHING
+        `, [d.key, d.name, d.body, d.audience, d.trigger, d.metaName]);
+      }
+    }
+  } catch (err) {
+    console.warn('Notice while ensuring notification templates table:', err.message);
+  }
+}
+
+app.get('/api/notifications/templates', async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const rows = await query(`
+      SELECT * FROM notification_templates 
+      ORDER BY 
+        CASE audience 
+          WHEN 'customer' THEN 1 
+          WHEN 'technician' THEN 2 
+          WHEN 'staff' THEN 3 
+          ELSE 4 
+        END ASC, 
+        id ASC
+    `);
+    return res.json({ success: true, templates: rows.rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/notifications/templates/:id', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const { id } = req.params;
+    const { name, whatsapp_body, email_subject, email_body, is_active } = req.body;
+    const updateRes = await query(`
+      UPDATE notification_templates 
+      SET name = COALESCE($1, name),
+          whatsapp_body = COALESCE($2, whatsapp_body),
+          email_subject = COALESCE($3, email_subject),
+          email_body = COALESCE($4, email_body),
+          is_active = COALESCE($5, is_active),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $6 OR template_key = $6
+      RETURNING *
+    `, [name, whatsapp_body, email_subject, email_body, is_active, id]);
+    return res.json({ success: true, template: updateRes.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notifications/templates', authenticateToken, async (req, res) => {
+  try {
+    await ensureNotificationTemplatesTable();
+    const { name, template_key, whatsapp_body, audience = 'customer', trigger_event = 'manual' } = req.body;
+    const cleanKey = (template_key || name.toLowerCase().replace(/[^a-z0-9_]/g, '_')).replace(/_+/g, '_').slice(0, 50);
+    const insRes = await query(`
+      INSERT INTO notification_templates (template_key, name, whatsapp_body, audience, trigger_event, meta_status, is_active)
+      VALUES ($1, $2, $3, $4, $5, 'APPROVED', 1)
+      RETURNING *
+    `, [cleanKey, name, whatsapp_body, audience, trigger_event]);
+    return res.status(201).json({ success: true, template: insRes.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= TOUR LEDGER & VOUCHERS API =================
+async function ensureTourLedgerTables() {
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS technician_tour_advances (
+        id SERIAL PRIMARY KEY,
+        technician_id TEXT NOT NULL,
+        amount NUMERIC NOT NULL DEFAULT 0,
+        allocated_by TEXT,
+        allocated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        payment_mode TEXT DEFAULT 'Cash',
+        reference_no TEXT,
+        tour_title TEXT,
+        notes TEXT,
+        status TEXT DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS technician_tour_expenses (
+        id SERIAL PRIMARY KEY,
+        technician_id TEXT NOT NULL,
+        tour_advance_id INTEGER,
+        voucher_no TEXT,
+        expense_date DATE DEFAULT CURRENT_DATE,
+        category TEXT NOT NULL,
+        amount NUMERIC NOT NULL DEFAULT 0,
+        description TEXT,
+        receipt_url TEXT,
+        receipt_data TEXT,
+        receipt_name TEXT,
+        ticket_id TEXT,
+        status TEXT DEFAULT 'Submitted',
+        created_by TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS technician_tour_settlements (
+        id SERIAL PRIMARY KEY,
+        technician_id TEXT NOT NULL,
+        advance_amount NUMERIC NOT NULL DEFAULT 0,
+        expense_amount NUMERIC NOT NULL DEFAULT 0,
+        returned_amount NUMERIC NOT NULL DEFAULT 0,
+        reimbursed_amount NUMERIC NOT NULL DEFAULT 0,
+        settled_by TEXT,
+        settled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT,
+        tour_advance_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    try {
+      await query(`ALTER TABLE technician_tour_expenses ADD COLUMN IF NOT EXISTS voucher_no TEXT;`);
+    } catch (_) {}
+  } catch (err) {
+    console.warn('Notice while ensuring tour ledger tables:', err.message);
+  }
+}
+
+async function getNextPostgresVoucherNo() {
+  try {
+    const rows = await query(`
+      SELECT voucher_no FROM technician_tour_expenses 
+      WHERE voucher_no LIKE 'TT-%' 
+      ORDER BY id DESC LIMIT 100
+    `);
+    let maxSeq = 340;
+    for (const r of rows.rows) {
+      if (r.voucher_no) {
+        const num = parseInt(r.voucher_no.replace('TT-', ''), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+    return `TT-${maxSeq + 1}`;
+  } catch (_) {
+    return 'TT-341';
+  }
+}
+
+app.get('/api/tour-vouchers/next-sequence', authenticateToken, async (req, res) => {
+  await ensureTourLedgerTables();
+  const nextSeq = await getNextPostgresVoucherNo();
+  res.json({ success: true, next_voucher_no: nextSeq });
+});
+
+app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerTables();
+    const { technician_id } = req.query;
+    let targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
+
+    let advSql = `SELECT a.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_advances a LEFT JOIN technicians t ON a.technician_id::text = t.id::text `;
+    let expSql = `SELECT e.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_expenses e LEFT JOIN technicians t ON e.technician_id::text = t.id::text `;
+    let stlSql = `SELECT s.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_settlements s LEFT JOIN technicians t ON s.technician_id::text = t.id::text `;
+    let params = [];
+
+    if (targetTechId && String(targetTechId).trim() !== '' && targetTechId !== 'all') {
+      advSql += `WHERE a.technician_id::text = $1 `;
+      expSql += `WHERE e.technician_id::text = $1 `;
+      stlSql += `WHERE s.technician_id::text = $1 `;
+      params.push(String(targetTechId).trim());
+    }
+
+    advSql += `ORDER BY a.allocated_at DESC`;
+    expSql += `ORDER BY e.expense_date DESC, e.created_at DESC`;
+    stlSql += `ORDER BY s.settled_at DESC`;
+
+    const advances = (await query(advSql, params)).rows;
+    const expenses = (await query(expSql, params)).rows;
+    const settlements = (await query(stlSql, params)).rows;
+
+    const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || 0), 0);
+    const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
+    const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
+
+    res.json({
+      success: true,
+      advances,
+      expenses,
+      settlements,
+      summary: { totalAdvance, totalExpenses, totalReturned, totalReimbursed, currentBalance }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tour-advances', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerTables();
+    const { technician_id, amount, tour_title, payment_mode, reference_no, notes, allocated_at } = req.body;
+    if (!technician_id || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Technician and valid amount are required' });
+    }
+    const ins = await query(`
+      INSERT INTO technician_tour_advances (technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes)
+      VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8)
+      RETURNING *
+    `, [String(technician_id).trim(), parseFloat(amount), req.user ? req.user.name : 'Admin', allocated_at || null, payment_mode || 'Cash', reference_no || null, tour_title || 'Service Tour', notes || null]);
+    res.json({ success: true, advance: ins.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tour-expenses', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerTables();
+    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no } = req.body;
+    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
+    if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Category, amount and technician are required' });
+    }
+    const finalVoucherNo = voucher_no || await getNextPostgresVoucherNo();
+    const ins = await query(`
+      INSERT INTO technician_tour_expenses (
+        technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+        receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
+      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, 'Submitted', $12)
+      RETURNING *
+    `, [String(targetTechId).trim(), tour_advance_id || null, finalVoucherNo, expense_date || null, category, parseFloat(amount), description || '', receipt_url || null, receipt_data || null, receipt_name || null, ticket_id || null, req.user ? req.user.name : 'Technician']);
+    res.json({ success: true, expense: ins.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tour-expenses/:id/status', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerTables();
+    const { id } = req.params;
+    const { status } = req.body;
+    const upd = await query('UPDATE technician_tour_expenses SET status = $1 WHERE id::text = $2 RETURNING *', [status, id]);
+    res.json({ success: true, expense: upd.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tour-expenses/:id', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerTables();
+    const { id } = req.params;
+    await query('DELETE FROM technician_tour_expenses WHERE id::text = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tour-settlements', authenticateToken, async (req, res) => {
+  try {
+    await ensureTourLedgerTables();
+    const { technician_id, returned_amount, reimbursed_amount, notes, tour_advance_id } = req.body;
+    const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
+    if (!targetTechId) {
+      return res.status(400).json({ error: 'Technician is required' });
+    }
+    const ins = await query(`
+      INSERT INTO technician_tour_settlements (technician_id, returned_amount, reimbursed_amount, settled_by, notes, tour_advance_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [String(targetTechId).trim(), parseFloat(returned_amount || 0), parseFloat(reimbursed_amount || 0), req.user ? req.user.name : 'Admin', notes || null, tour_advance_id || null]);
+    res.json({ success: true, settlement: ins.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Fallback status check
 app.get('/api', (req, res) => {
   res.json({
@@ -6349,3 +6774,4 @@ app.get('/api', (req, res) => {
 });
 
 module.exports = app;
+

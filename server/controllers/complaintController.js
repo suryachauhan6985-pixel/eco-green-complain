@@ -1263,7 +1263,13 @@ async function addTimelineNote(req, res) {
 async function resolveComplaint(req, res) {
   try {
     const { id } = req.params;
-    const { resolution_notes, spare_parts_used, closing_photo_url } = req.body;
+    const { 
+      resolution_notes, 
+      spare_parts_used, 
+      closing_photo_url,
+      resolved_by_technician_id,
+      resolved_by_technician_name
+    } = req.body;
 
     if (!resolution_notes) {
       return res.status(400).json({ error: 'Resolution notes are required' });
@@ -1280,6 +1286,8 @@ async function resolveComplaint(req, res) {
 
     const performer = req.user ? req.user.name : 'Technician';
     const role = req.user ? req.user.role : 'technician';
+    const resolvedByTechId = resolved_by_technician_id || (req.user?.role === 'technician' ? req.user.technicianId : complaint.assigned_technician_id) || null;
+    const resolvedByTechName = resolved_by_technician_name || (req.user?.role === 'technician' ? req.user.name : null) || complaint.technician_name || performer;
 
     let photoUrl = closing_photo_url || null;
 
@@ -1335,18 +1343,20 @@ async function resolveComplaint(req, res) {
           resolution_notes = ?,
           spare_parts_used = ?,
           closing_photo_url = COALESCE(?, closing_photo_url),
+          resolved_by_technician_id = ?,
+          resolved_by_technician_name = ?,
           resolved_at = CURRENT_TIMESTAMP,
           status_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(resolution_notes, spare_parts_used || null, photoUrl, id);
+    `).run(resolution_notes, spare_parts_used || null, photoUrl, resolvedByTechId, resolvedByTechName, id);
 
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
       VALUES (?, 'Resolved', ?, ?, ?, 1)
     `).run(
       id,
-      `Issue resolved. Summary: ${resolution_notes}${spare_parts_used ? ' | Spares: ' + spare_parts_used : ''}`,
+      `Issue resolved by ${resolvedByTechName}. Summary: ${resolution_notes}${spare_parts_used ? ' | Spares: ' + spare_parts_used : ''}`,
       performer,
       role
     );

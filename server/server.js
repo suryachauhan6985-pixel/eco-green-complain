@@ -456,21 +456,47 @@ app.post('/api/tour-advances', authenticateToken, requireRole('admin', 'staff'),
   }
 });
 
+function getNextGlobalVoucherNo() {
+  try {
+    const rows = db.prepare(`
+      SELECT voucher_no FROM technician_tour_expenses 
+      WHERE voucher_no LIKE 'TT-%' 
+      ORDER BY id DESC LIMIT 100
+    `).all();
+    let maxSeq = 340;
+    for (const r of rows) {
+      if (r.voucher_no) {
+        const num = parseInt(r.voucher_no.replace('TT-', ''), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+    return `TT-${maxSeq + 1}`;
+  } catch (_) {
+    return 'TT-341';
+  }
+}
+
+app.get('/api/tour-vouchers/next-sequence', authenticateToken, (req, res) => {
+  res.json({ success: true, next_voucher_no: getNextGlobalVoucherNo() });
+});
+
 app.post('/api/tour-expenses', authenticateToken, (req, res) => {
   try {
-    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id } = req.body;
+    const { technician_id, tour_advance_id, expense_date, category, amount, description, receipt_url, receipt_data, receipt_name, ticket_id, voucher_no } = req.body;
     const targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
     if (!targetTechId || !category || !amount || parseFloat(amount) <= 0) {
       return res.status(400).json({ error: 'Category, amount and technician are required' });
     }
+    const finalVoucherNo = voucher_no || getNextGlobalVoucherNo();
     const info = db.prepare(`
       INSERT INTO technician_tour_expenses (
-        technician_id, tour_advance_id, expense_date, category, amount, description,
+        technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
         receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-      ) VALUES (?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
+      ) VALUES (?, ?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
     `).run(
       String(targetTechId).trim(),
       tour_advance_id || null,
+      finalVoucherNo,
       expense_date || null,
       category,
       parseFloat(amount),
