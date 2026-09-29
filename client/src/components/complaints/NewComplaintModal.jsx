@@ -491,19 +491,23 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     }
 
     // Dynamic 5-Year Warranty verification: plants installed > 5 years ago are Out of Warranty
-    let computedWarranty = c.is_in_warranty !== undefined ? Number(c.is_in_warranty) : 1;
+    let computedWarranty = c.is_in_warranty !== undefined && c.is_in_warranty !== null ? Number(c.is_in_warranty) : 1;
+    let isDateMissing = false;
     if (cleanDate) {
       const [year, month, day] = cleanDate.split('-').map(Number);
       const installDate = new Date(year, month - 1, day);
       const expiryDate = new Date(installDate);
       expiryDate.setFullYear(expiryDate.getFullYear() + 5);
       computedWarranty = new Date() <= expiryDate ? 1 : 0;
+    } else {
+      isDateMissing = true;
     }
 
     setSelectedCustomer({
       ...c,
       invoice_date: cleanDate || c.invoice_date,
-      is_in_warranty: computedWarranty
+      is_in_warranty: computedWarranty,
+      isDateMissing
     });
     setCustomerSearchResults([]);
     setCustomerSearchQuery('');
@@ -1107,14 +1111,21 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                           </div>
 
                           <div className="shrink-0 flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
-                              c.is_in_warranty 
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                : 'bg-rose-100 text-rose-800 border border-rose-200'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${c.is_in_warranty ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                              {c.is_in_warranty ? 'In Warranty' : 'Out of Warranty'}
-                            </span>
+                            {(!c.invoice_date && !c.installation_date) ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300">
+                                <span>⚠️</span>
+                                Date N/A
+                              </span>
+                            ) : (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
+                                c.is_in_warranty 
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${c.is_in_warranty ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                {c.is_in_warranty ? 'In Warranty' : 'Out of Warranty'}
+                              </span>
+                            )}
                             <span className="text-[10px] text-emerald-700 font-bold group-hover:translate-x-0.5 transition-transform">
                               Select →
                             </span>
@@ -1137,24 +1148,36 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         <strong className="text-xs text-slate-900">{selectedCustomer.customer_name}</strong>
                       </div>
                       <p className="text-[11px] text-slate-600">
-                        {selectedCustomer.city_village} • Consumer No: <strong className="font-mono text-slate-800">{selectedCustomer.consumer_no || 'N/A'}</strong> • Invoice: <strong className="font-mono text-slate-800">{selectedCustomer.invoice_no || 'N/A'}</strong> ({selectedCustomer.invoice_date || 'N/A'})
+                        {selectedCustomer.city_village} • Consumer No: <strong className="font-mono text-slate-800">{selectedCustomer.consumer_no || 'N/A'}</strong> • Invoice: <strong className="font-mono text-slate-800">{selectedCustomer.invoice_no || 'N/A'}</strong> ({selectedCustomer.invoice_date || 'Date N/A'})
                       </p>
                     </div>
 
-                    <div className="shrink-0">
-                      <span className={`px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-2xs ${
-                        selectedCustomer.is_in_warranty 
-                          ? 'bg-emerald-600 text-white' 
-                          : 'bg-rose-600 text-white'
-                      }`}>
-                        <span>{selectedCustomer.is_in_warranty ? '🟢' : '🔴'}</span>
-                        <span>{selectedCustomer.is_in_warranty ? 'IN WARRANTY' : 'OUT OF WARRANTY'}</span>
-                        {selectedCustomer.warranty_expiry_date && (
-                          <span className="opacity-90 text-[10px] font-normal">
-                            ({selectedCustomer.is_in_warranty ? `Till ${selectedCustomer.warranty_expiry_date}` : `Expired ${selectedCustomer.warranty_expiry_date}`})
+                    <div className="shrink-0 flex flex-col sm:items-end gap-1">
+                      {(!selectedCustomer.invoice_date && !selectedCustomer.installation_date) ? (
+                        <div className="flex flex-col sm:items-end gap-1">
+                          <span className="px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-2xs bg-amber-500 text-white">
+                            <AlertTriangle className="w-3.5 h-3.5 text-white" />
+                            <span>Date / Invoice Not Available</span>
                           </span>
-                        )}
-                      </span>
+                          <span className="text-[10px] text-amber-900 font-semibold bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
+                            ⚠️ Please select In/Out of Warranty manually below
+                          </span>
+                        </div>
+                      ) : (
+                        <span className={`px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-2xs ${
+                          selectedCustomer.is_in_warranty 
+                            ? 'bg-emerald-600 text-white' 
+                            : 'bg-rose-600 text-white'
+                        }`}>
+                          <span>{selectedCustomer.is_in_warranty ? '🟢' : '🔴'}</span>
+                          <span>{selectedCustomer.is_in_warranty ? 'IN WARRANTY' : 'OUT OF WARRANTY'}</span>
+                          {selectedCustomer.warranty_expiry_date && (
+                            <span className="opacity-90 text-[10px] font-normal">
+                              ({selectedCustomer.is_in_warranty ? `Till ${selectedCustomer.warranty_expiry_date}` : `Expired ${selectedCustomer.warranty_expiry_date}`})
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1222,6 +1245,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                                 <span>📍 {c.city_village || 'N/A'}</span>
                                 {c.dealer_name && <span>• Dealer: {c.dealer_name}</span>}
                                 {c.consumer_no && <span>• Consumer No: {c.consumer_no}</span>}
+                                {(!c.invoice_date && !c.installation_date) ? (
+                                  <span className="text-amber-900 font-bold bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded text-[10px]">
+                                    ⚠️ Date N/A
+                                  </span>
+                                ) : (
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${c.is_in_warranty ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                    {c.is_in_warranty ? 'In Warranty' : 'Out of Warranty'}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <span className="shrink-0 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded shadow-2xs">
@@ -1674,16 +1706,27 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
                   {/* Manual Warranty Override Toggle */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      Warranty Status (Manual Selection / Override)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-700">
+                        Warranty Status *
+                      </label>
+                      {formData.is_in_warranty === 1 ? (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md">
+                          🟢 In Warranty
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-rose-800 bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-md">
+                          🔴 Out of Warranty
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, is_in_warranty: 1 })}
                         className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
                           formData.is_in_warranty === 1
-                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-400/40'
                             : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
                         }`}
                       >
@@ -1696,7 +1739,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         onClick={() => setFormData({ ...formData, is_in_warranty: 0 })}
                         className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
                           formData.is_in_warranty === 0
-                            ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                            ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-400/40'
                             : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300'
                         }`}
                       >
@@ -1704,6 +1747,30 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                         Out of Warranty
                       </button>
                     </div>
+
+                    {/* Notice if Date / Invoice No is missing */}
+                    {(!formData.invoice_date || !formData.invoice_no) && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-300/90 text-amber-950 flex items-start gap-2 shadow-2xs animate-in fade-in">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5 text-xs">
+                          <p className="font-bold text-amber-900 text-[11px] flex items-center gap-1.5">
+                            <span>
+                              {!formData.invoice_date && !formData.invoice_no 
+                                ? 'Invoice Date & Invoice Number Not Available' 
+                                : !formData.invoice_date 
+                                  ? 'Invoice Date Not Available' 
+                                  : 'Invoice Number Not Available'}
+                            </span>
+                            <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.2 rounded">
+                              Manual Selection
+                            </span>
+                          </p>
+                          <p className="text-amber-800 text-[11px] leading-relaxed">
+                            रिकॉर्ड में इनवॉइस डेट या नंबर उपलब्ध नहीं है, इसलिए सिस्टम ने वारंटी स्वतः तय नहीं की है। कृपया ग्राहक की पर्ची / बिल देखकर ऊपर <strong>In Warranty</strong> या <strong>Out of Warranty</strong> का बटन मैन्युअली सेलेक्ट करें।
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
