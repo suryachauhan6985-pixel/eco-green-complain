@@ -3423,7 +3423,8 @@ app.post('/api/complaints/:id/send-reminder', authenticateToken, handleRemindTec
 app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { notes, status, notify_customer } = req.body;
+    const { status, notify_customer } = req.body;
+    const actualNotes = req.body.notes || req.body.note || '';
     const compCheck = await query('SELECT status, assigned_technician_id, secondary_technician_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (!compCheck.rows.length) {
       return res.status(404).json({ error: 'Complaint not found' });
@@ -3444,7 +3445,7 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
     }
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, $6)',
-      [id, status ? `Status: ${status}` : 'Note', notes || 'Follow-up update', req.user.name, req.user.role, notify_customer ? 1 : 0]
+      [id, status ? `Status: ${status}` : 'Note', actualNotes || (status ? `Status updated to ${status}` : 'Follow-up update'), req.user.name, req.user.role, notify_customer ? 1 : 0]
     );
     // Insert In-App Notification (reverse flow: tech updates -> staff receives; staff updates -> tech receives)
     try {

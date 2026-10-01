@@ -382,7 +382,37 @@ export const ComplaintDetailDrawer = ({
     } catch (e) {}
   };
 
+  const resetAllDraftInputs = () => {
+    setFollowUpNote('');
+    setResolutionNotes('');
+    setSpareParts('');
+    setResolutionPhotos((prev) => {
+      prev.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
+      return [];
+    });
+    setClosureRemarks('');
+    setReopenReason('');
+    setReopenTechId('');
+    setWaReplyText('');
+    setIsRecordingPayment(false);
+    setIsEditing(false);
+    setIsReassignOpen(false);
+    setShowUnderpaidWarning(false);
+    setPaymentData({
+      payment_collected: '',
+      payment_method: 'Cash',
+      payment_notes: '',
+      collection_reason: ''
+    });
+  };
+
+  const handleDrawerClose = () => {
+    resetAllDraftInputs();
+    if (onClose) onClose();
+  };
+
   useEffect(() => {
+    resetAllDraftInputs();
     if (isOpen && complaintId) {
       setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
       fetchTicketDetails();
@@ -1119,7 +1149,7 @@ export const ComplaintDetailDrawer = ({
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div 
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        onClick={handleDrawerClose}
       />
 
       <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto max-w-full flex w-full sm:w-auto">
@@ -1206,7 +1236,7 @@ export const ComplaintDetailDrawer = ({
               )}
 
               <button 
-                onClick={onClose}
+                onClick={handleDrawerClose}
                 className="p-1.5 sm:p-2 bg-slate-800 hover:bg-slate-700 active:bg-rose-600 border border-slate-700 rounded-xl text-slate-200 hover:text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
                 title="Close Ticket Window"
               >
@@ -3198,7 +3228,7 @@ export const ComplaintDetailDrawer = ({
           {/* Mobile Bottom Quick Close Bar */}
           <div className="p-3 bg-white border-t border-slate-200 sm:hidden shrink-0 flex items-center justify-between gap-2 shadow-lg">
             <button
-              onClick={onClose}
+              onClick={handleDrawerClose}
               className="w-full py-2.5 bg-slate-900 active:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
             >
               <X className="w-4 h-4 text-rose-400" />

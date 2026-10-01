@@ -99,6 +99,7 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
     }
     const uploaderName = user?.name || user?.username || 'Customer';
 
+    const saved = [];
     for (const att of attachmentsList) {
       const insRes = await query(
         `INSERT INTO complaint_attachments (

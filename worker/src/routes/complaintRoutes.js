@@ -669,7 +669,8 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
     const body = await c.req.json().catch(() => ({}));
-    const { note, status, notify_customer } = body;
+    const { note, notes, status, notify_customer } = body;
+    const actualNote = (notes !== undefined && notes !== null ? notes : note) || '';
 
     const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id], c.env, c.executionCtx);
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
@@ -703,7 +704,14 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
     const author = user?.name || user?.username || 'Technician';
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, $6)',
-      [complaint.id, normalizedStatus ? `Status: ${normalizedStatus}` : 'Visit Note Added', note || 'Follow-up update recorded', author, user?.role || 'staff', notify_customer ? 1 : 0],
+      [
+        complaint.id, 
+        normalizedStatus ? `Status: ${normalizedStatus}` : 'Visit Note Added', 
+        actualNote || (normalizedStatus ? `Status updated to ${normalizedStatus}` : 'Follow-up update recorded'), 
+        author, 
+        user?.role || 'staff', 
+        notify_customer ? 1 : 0
+      ],
       c.env,
       c.executionCtx
     );
@@ -712,7 +720,7 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
       c.executionCtx?.waitUntil?.(
         sendWhatsApp({
           to: complaint.customer_phone,
-          message: `*Eco Green Solar Alert*\n\nUpdate on Complaint *${complaint.ticket_id}* (${complaint.product_type}):\nStatus: *${status || complaint.status}*\nNotes: ${note}\n\n- Eco Green Solar Care`,
+          message: `*Eco Green Solar Alert*\n\nUpdate on Complaint *${complaint.ticket_id}* (${complaint.product_type}):\nStatus: *${status || complaint.status}*\nNotes: ${actualNote}\n\n- Eco Green Solar Care`,
           env: c.env
         }).catch(() => {})
       );
@@ -729,8 +737,29 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
   try {
     const id = c.req.param('id');
     const user = c.get('user');
-    const body = await c.req.json().catch(() => ({}));
-    const { resolution_notes, closing_photo_url, performed_by, spare_parts_used } = body;
+    const contentType = c.req.header('content-type') || '';
+    let body = {};
+    if (contentType.includes('multipart/form-data')) {
+      body = await c.req.parseBody().catch(() => ({}));
+    } else {
+      body = await c.req.json().catch(() => ({}));
+    }
+    const resolution_notes = body.resolution_notes || body.notes || '';
+    let closing_photo_url = body.closing_photo_url || '';
+    const spare_parts_used = body.spare_parts_used || body.spareParts || '';
+    const performed_by = body.technician_name || body.resolved_by_technician_name || body.performed_by || user?.name || 'Technician';
+
+    let uploadedAttachments = [];
+    if (body.attachment_urls) {
+      try {
+        uploadedAttachments = typeof body.attachment_urls === 'string'
+          ? JSON.parse(body.attachment_urls)
+          : body.attachment_urls;
+      } catch (_) {}
+    }
+    if (!closing_photo_url && uploadedAttachments.length > 0) {
+      closing_photo_url = uploadedAttachments[0].file_url || uploadedAttachments[0].storage_key || '';
+    }
 
     const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id], c.env, c.executionCtx);
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
@@ -764,13 +793,29 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Resolved', `Marked as Resolved by ${solver}. Notes: ${resolution_notes || 'All checks passed'}`, solver, user?.role || 'technician'],
+      [
+        complaint.id, 
+        'Resolved', 
+        `Marked as Resolved by ${solver}.${resolution_notes ? ` Notes: ${resolution_notes}` : ' Issue resolved and inspected on site.'}`, 
+        solver, 
+        user?.role || 'technician'
+      ],
       c.env,
       c.executionCtx
     );
 
     // Save closing photo in attachments if provided
-    if (closing_photo_url) {
+    if (Array.isArray(uploadedAttachments) && uploadedAttachments.length > 0) {
+      for (const att of uploadedAttachments) {
+        await query(
+          `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [complaint.id, att.file_name || 'Resolution_Proof.jpg', att.file_url || att.storage_key, att.file_type || 'image/jpeg', att.file_url || att.storage_key, solver],
+          c.env,
+          c.executionCtx
+        ).catch(() => {});
+      }
+    } else if (closing_photo_url) {
       await query(
         `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
          VALUES ($1, 'Resolution_Proof.jpg', $2, 'image/jpeg', $2, $3)`,
