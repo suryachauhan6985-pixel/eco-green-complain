@@ -480,9 +480,9 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     setCustomerSearchQuery('');
     const rawMobile = (c.consumer_mobile || c.customer_phone || c.phone || '').toString().trim();
     const digitsOnly = rawMobile.replace(/\D/g, '');
-    const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : (rawMobile || prev.customer_phone);
-    const cleanOrderNo = (c.order_no || '').toString().trim();
-    const cleanDealerName = (c.dealer_name || '').toString().trim();
+    const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : rawMobile;
+    const cleanOrderNo = (c.order_no || c.orderNo || c['Order No'] || '').toString().trim();
+    const cleanDealerName = (c.dealer_name || c.dealerName || '').toString().trim();
 
     setFormData(prev => ({
       ...prev,

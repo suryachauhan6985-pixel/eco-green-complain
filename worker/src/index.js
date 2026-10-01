@@ -60,6 +60,7 @@ app.route('/api/webhook', whatsappRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/complaints', complaintRoutes);
 app.route('/api/whatsapp', whatsappRoutes);
+app.route('/whatsapp', whatsappRoutes);
 app.route('/api', attachmentRoutes);
 app.route('/api', technicianRoutes);
 app.route('/api', commonRoutes);

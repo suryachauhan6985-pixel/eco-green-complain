@@ -28,8 +28,8 @@ function getWhatsAppMediaUrl(msg) {
     return url;
   }
   const base = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
-  if (base && url.startsWith('/api')) {
-    return `${base}${url.replace(/^\/api/, '')}`;
+  if (base) {
+    return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
   }
   return url;
 }

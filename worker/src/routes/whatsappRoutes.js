@@ -317,6 +317,58 @@ whatsappRoutes.get('/chats/:phone', authenticateToken, async (c) => {
   }
 });
 
+// GET /api/whatsapp/media/:mediaId - Secure Meta WhatsApp Media Stream Proxy
+whatsappRoutes.get('/media/:mediaId', async (c) => {
+  const mediaId = c.req.param('mediaId');
+  if (!mediaId) {
+    return c.text('Media ID is required', 400);
+  }
+  const token = c.env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!metaRes.ok) {
+      const errText = await metaRes.text().catch(() => '');
+      console.error('[WhatsApp Media] Meta error for ID', mediaId, errText);
+      return c.text('Failed to locate media on Meta: ' + errText, metaRes.status);
+    }
+
+    const metaData = await metaRes.json();
+    if (!metaData.url) {
+      return c.text('Media URL not provided by Meta', 404);
+    }
+
+    const fileRes = await fetch(metaData.url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!fileRes.ok) {
+      return c.text('Failed to download media binary from Meta CDN', fileRes.status);
+    }
+
+    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
+    const contentLength = metaData.file_size || fileRes.headers.get('content-length');
+
+    const headers = new Headers();
+    headers.set('Content-Type', contentType);
+    if (contentLength) headers.set('Content-Length', String(contentLength));
+    headers.set('Cache-Control', 'public, max-age=604800, immutable');
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+
+    return new Response(fileRes.body, {
+      status: 200,
+      headers
+    });
+  } catch (err) {
+    console.error('[WhatsApp Media Proxy Error]:', err.message);
+    return c.text('Error streaming media: ' + err.message, 500);
+  }
+});
+
 // POST /api/whatsapp/direct-reply - Staff Sends Direct WhatsApp Message
 whatsappRoutes.post('/direct-reply', authenticateToken, async (c) => {
   try {
