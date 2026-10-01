@@ -27,12 +27,24 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
+    <link rel="preload" as="image" href="/support-icon-192.png" type="image/png" fetchpriority="high" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" /></noscript>
   </head>
   <body class="bg-slate-50 text-slate-900 selection:bg-emerald-100 selection:text-emerald-900">
     <div id="root">
       <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #085235;">
-        <img src="/support-icon-512.png" alt="Eco Green Support" style="width: 220px; max-width: 80vw; height: auto; object-fit: contain;" />
+        <img 
+          src="/support-icon-192.png" 
+          srcset="/support-icon-192.png 192w, /support-icon-512.png 512w" 
+          sizes="220px"
+          width="220" 
+          height="220" 
+          alt="Eco Green Support" 
+          fetchpriority="high"
+          style="width: 220px; max-width: 80vw; height: auto; object-fit: contain;" 
+        />
       </div>
     </div>
     <script>

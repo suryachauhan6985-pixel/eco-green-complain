@@ -307,11 +307,153 @@ commonRoutes.get('/categories', async (c) => {
   }
 });
 
+// ==================== NOTIFICATION TEMPLATES ROUTES ====================
 // GET /api/notifications/templates
 commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
   try {
-    const res = await query('SELECT * FROM notification_templates ORDER BY id ASC', [], c.env, c.executionCtx);
-    return c.json({ templates: res.rows });
+    const res = await query(`
+      SELECT * FROM notification_templates 
+      ORDER BY 
+        CASE audience 
+          WHEN 'customer' THEN 1 
+          WHEN 'technician' THEN 2 
+          WHEN 'staff' THEN 3 
+          ELSE 4 
+        END ASC, 
+        id ASC
+    `, [], c.env, c.executionCtx);
+    return c.json({ success: true, templates: res.rows });
+  } catch (err) {
+    return c.json({ error: 'Failed to fetch templates: ' + err.message }, 500);
+  }
+});
+
+// GET /api/notifications/templates/meta-status
+commonRoutes.get('/notifications/templates/meta-status', authenticateToken, async (c) => {
+  try {
+    const res = await query('SELECT id, template_key, meta_status, last_synced_at FROM notification_templates ORDER BY id ASC', [], c.env, c.executionCtx);
+    return c.json({ success: true, templates: res.rows });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// PUT /api/notifications/templates/:id
+commonRoutes.put('/notifications/templates/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const { whatsapp_body, email_subject, email_body, is_active, name } = body;
+
+    const res = await query(`
+      UPDATE notification_templates SET
+        whatsapp_body = COALESCE($1, whatsapp_body),
+        email_subject = COALESCE($2, email_subject),
+        email_body = COALESCE($3, email_body),
+        is_active = COALESCE($4, is_active),
+        name = COALESCE($5, name),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $6 OR template_key = $6
+      RETURNING *
+    `, [whatsapp_body, email_subject, email_body, is_active, name, String(id)], c.env, c.executionCtx);
+
+    if (!res.rows.length) {
+      return c.json({ error: 'Template not found' }, 404);
+    }
+    return c.json({ success: true, message: 'Template updated successfully', template: res.rows[0] });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/notifications/templates/:id/toggle-active
+commonRoutes.post('/notifications/templates/:id/toggle-active', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const res = await query(`
+      UPDATE notification_templates SET
+        is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $1 OR template_key = $1
+      RETURNING is_active
+    `, [String(id)], c.env, c.executionCtx);
+
+    if (!res.rows.length) {
+      return c.json({ error: 'Template not found' }, 404);
+    }
+    return c.json({ success: true, is_active: res.rows[0].is_active, message: 'Status updated' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/notifications/templates
+commonRoutes.post('/notifications/templates', authenticateToken, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const {
+      name,
+      template_key,
+      audience = 'customer',
+      trigger_event = 'manual',
+      whatsapp_body,
+      email_subject = '',
+      email_body = '',
+      is_active = 1
+    } = body;
+
+    if (!name || !whatsapp_body) {
+      return c.json({ error: 'Template name and WhatsApp body are required' }, 400);
+    }
+
+    const cleanKey = (template_key || name.toLowerCase().replace(/[^a-z0-9_]/g, '_')).replace(/_+/g, '_').slice(0, 50);
+
+    const res = await query(`
+      INSERT INTO notification_templates (
+        template_key, name, whatsapp_body, email_subject, email_body,
+        audience, trigger_event, is_active, channel, meta_status, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'whatsapp', 'DIRECT_CHAT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      RETURNING *
+    `, [cleanKey, name.trim(), whatsapp_body, email_subject || name.trim(), email_body || whatsapp_body, audience, trigger_event, is_active], c.env, c.executionCtx);
+
+    return c.json({ success: true, message: 'Template created', template: res.rows[0] }, 201);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// DELETE /api/notifications/templates/:id
+commonRoutes.delete('/notifications/templates/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    await query('DELETE FROM notification_templates WHERE id::text = $1 OR template_key = $1', [String(id)], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'Template deleted' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/notifications/templates/:id/sync-meta
+commonRoutes.post('/notifications/templates/:id/sync-meta', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const manualStatus = body?.manualStatus || 'APPROVED';
+
+    const res = await query(`
+      UPDATE notification_templates SET
+        meta_status = $1,
+        last_synced_at = CURRENT_TIMESTAMP,
+        sync_status = 'SYNCED',
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $2 OR template_key = $2
+      RETURNING *
+    `, [manualStatus, String(id)], c.env, c.executionCtx);
+
+    if (!res.rows.length) {
+      return c.json({ error: 'Template not found' }, 404);
+    }
+    return c.json({ success: true, message: 'Template synced with Meta', template: res.rows[0] });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
