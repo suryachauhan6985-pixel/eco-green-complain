@@ -122,6 +122,22 @@ export async function sendWhatsApp({
           ]
         }]
       };
+    } else if (templateName === 'hello_world') {
+      renderedBody = 'Welcome and congratulations!! This message demonstrates your ability to send a WhatsApp message notification from the Cloud API, hosted by Meta. Thank you for taking the time to test with us.';
+      payload.type = 'template';
+      payload.template = {
+        name: 'hello_world',
+        language: { code: 'en_US' }
+      };
+    } else if (templateName) {
+      payload.type = 'template';
+      payload.template = {
+        name: templateName,
+        language: { code: variables.language_code || 'en_US' }
+      };
+      if (variables.components) {
+        payload.template.components = variables.components;
+      }
     } else if (message) {
       payload.type = 'text';
       payload.text = { body: message };

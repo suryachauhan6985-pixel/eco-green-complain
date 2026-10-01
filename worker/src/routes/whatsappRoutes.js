@@ -321,20 +321,46 @@ whatsappRoutes.get('/chats/:phone', authenticateToken, async (c) => {
 whatsappRoutes.post('/direct-reply', authenticateToken, async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
-    const { phone, message, complaint_id, media_url, media_type, media_caption } = body;
+    const { phone, message, complaint_id, media_url, media_type, media_caption, template_name, variables } = body;
     const user = c.get('user');
 
-    if (!phone || (!message && !media_url)) {
-      return c.json({ error: 'Phone and message/media are required' }, 400);
+    if (!phone || (!message && !media_url && !template_name)) {
+      return c.json({ error: 'Phone and message/media/template are required' }, 400);
     }
 
     const sendRes = await sendWhatsApp({
       to: phone,
       message,
-      variables: { db_complaint_id: complaint_id },
+      templateName: template_name || body.templateName,
+      variables: { ...(variables || {}), db_complaint_id: complaint_id },
       mediaUrl: media_url || null,
       mediaType: media_type || null,
       mediaFileName: media_caption || null,
+      senderName: user?.name || 'Eco Green Staff',
+      env: c.env
+    });
+
+    return c.json({ success: sendRes.success, wamid: sendRes.wamid, error: sendRes.error });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/whatsapp/send-template - Send approved Meta Template directly
+whatsappRoutes.post('/send-template', authenticateToken, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { phone, template_name, variables = {}, complaint_id } = body;
+    const user = c.get('user');
+
+    if (!phone || !template_name) {
+      return c.json({ error: 'Phone and template_name are required' }, 400);
+    }
+
+    const sendRes = await sendWhatsApp({
+      to: phone,
+      templateName: template_name,
+      variables: { ...variables, db_complaint_id: complaint_id },
       senderName: user?.name || 'Eco Green Staff',
       env: c.env
     });
