@@ -36,4 +36,5 @@ server/whatsapp_auth/
 .env*
 *.webm
 *.mp4
-.env*
+scratch/
+scripts/lighthouse-*.json

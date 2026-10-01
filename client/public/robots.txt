@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Allow: /track
+Allow: /register
+Disallow: /api/
+Disallow: /analytics
+Disallow: /team
+Disallow: /templates
+
+Sitemap: https://complain.ecogreensolar.co.in/sitemap.xml

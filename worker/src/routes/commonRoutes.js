@@ -15,6 +15,9 @@ commonRoutes.get('/version', (c) => {
   });
 });
 
+// In-memory LRU cache for pincodes in Worker isolate
+const pincodeMemoryCache = new Map();
+
 // GET /api/location/pincode/:pincode
 commonRoutes.get('/location/pincode/:pincode', async (c) => {
   const pincode = (c.req.param('pincode') || '').replace(/\D/g, '');
@@ -22,14 +25,44 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
     return c.json({ error: 'Valid 6-digit postal pincode required' }, 400);
   }
 
+  // 1. Check in-memory isolate cache
+  if (pincodeMemoryCache.has(pincode)) {
+    c.header('X-Cache', 'HIT-MEMORY');
+    c.header('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+    return c.json(pincodeMemoryCache.get(pincode));
+  }
+
+  // 2. Check Cloudflare Edge Cache API
+  const cacheKey = new Request(c.req.url, c.req.raw);
+  let cache;
   try {
-    const resp = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+    cache = caches.default;
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      const data = await cachedResponse.json();
+      pincodeMemoryCache.set(pincode, data);
+      c.header('X-Cache', 'HIT-CLOUDFLARE-EDGE');
+      c.header('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+      return c.json(data);
+    }
+  } catch (_) {}
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const resp = await fetch(`https://api.postalpincode.in/pincode/${pincode}`, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.0' }
+    });
+    clearTimeout(timeoutId);
+
     const data = await resp.json();
 
     if (Array.isArray(data) && data[0]?.Status === 'Success' && data[0]?.PostOffice?.length > 0) {
       const offices = data[0].PostOffice;
       const primary = offices[0];
-      return c.json({
+      const result = {
         success: true,
         pincode,
         city: primary.Name || primary.Division || '',
@@ -41,7 +74,25 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
           state: o.State,
           deliveryStatus: o.DeliveryStatus
         }))
-      });
+      };
+
+      // Store in memory cache (cap to 500 entries)
+      if (pincodeMemoryCache.size > 500) {
+        const oldestKey = pincodeMemoryCache.keys().next().value;
+        pincodeMemoryCache.delete(oldestKey);
+      }
+      pincodeMemoryCache.set(pincode, result);
+
+      const jsonResp = c.json(result);
+      jsonResp.headers.set('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+      jsonResp.headers.set('X-Cache', 'MISS');
+
+      // Put into Cloudflare Edge Cache asynchronously
+      if (cache) {
+        c.executionCtx?.waitUntil(cache.put(cacheKey, jsonResp.clone()));
+      }
+
+      return jsonResp;
     }
 
     return c.json({ success: false, error: 'Pincode not found in national registry' }, 404);

@@ -379,7 +379,13 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.installation_id || '',
     body.issue_category || 'Service Request',
     body.issue_description || body.description || '',
-    body.priority || 'Medium',
+    (() => {
+      const raw = (body.priority || 'Medium').toString().trim().toLowerCase();
+      if (raw === 'urgent') return 'Urgent';
+      if (raw === 'high') return 'High';
+      if (raw === 'low') return 'Low';
+      return 'Medium';
+    })(),
     body.assigned_technician_id ? 'Assigned' : 'Unassigned',
     body.assigned_technician_id || null,
     body.expected_visit_date || null,
@@ -577,14 +583,28 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
       }
     }
 
-    if (status && status !== complaint.status) {
-      await query('UPDATE complaints SET status = $1, status_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, complaint.id], c.env, c.executionCtx);
+    let normalizedStatus = null;
+    if (status) {
+      const s = status.toString().trim().toLowerCase().replace(/_/g, ' ');
+      if (s === 'registered') normalizedStatus = 'Registered';
+      else if (s === 'unassigned') normalizedStatus = 'Unassigned';
+      else if (s === 'assigned') normalizedStatus = 'Assigned';
+      else if (s === 'in progress') normalizedStatus = 'In Progress';
+      else if (s === 'on hold') normalizedStatus = 'On Hold';
+      else if (s === 'resolved') normalizedStatus = 'Resolved';
+      else if (s === 'closed') normalizedStatus = 'Closed';
+      else if (s === 'reopened') normalizedStatus = 'Reopened';
+      else normalizedStatus = status;
+    }
+
+    if (normalizedStatus && normalizedStatus !== complaint.status) {
+      await query('UPDATE complaints SET status = $1, status_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [normalizedStatus, complaint.id], c.env, c.executionCtx);
     }
 
     const author = user?.name || user?.username || 'Technician';
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, $6)',
-      [complaint.id, status ? `Status: ${status}` : 'Visit Note Added', note || 'Follow-up update recorded', author, user?.role || 'staff', notify_customer ? 1 : 0],
+      [complaint.id, normalizedStatus ? `Status: ${normalizedStatus}` : 'Visit Note Added', note || 'Follow-up update recorded', author, user?.role || 'staff', notify_customer ? 1 : 0],
       c.env,
       c.executionCtx
     );

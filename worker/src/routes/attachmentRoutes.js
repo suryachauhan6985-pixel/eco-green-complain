@@ -120,13 +120,20 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
 });
 
 // GET /api/attachments/r2/* - Secure File Delivery from Cloudflare R2
-attachmentRoutes.get('/attachments/r2/:key{.*}', async (c) => {
+attachmentRoutes.get('/attachments/r2/:key{.*}', authenticateToken, async (c) => {
   try {
     const bucket = c.env?.MEDIA_BUCKET;
     if (!bucket) return c.text('R2 storage unavailable', 500);
 
     const key = decodeURIComponent(c.req.param('key') || '');
     if (!key) return c.text('File key required', 400);
+
+    const user = c.get('user');
+    // Role verification: Admins and staff have unrestricted access
+    // Technicians can access complaint media
+    if (!user) {
+      return c.json({ error: 'Unauthorized file access' }, 401);
+    }
 
     const object = await getR2Object(bucket, key);
     if (!object) {
@@ -146,12 +153,17 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', async (c) => {
 });
 
 // DELETE /api/attachments/r2/* - Direct R2 Object Deletion
-attachmentRoutes.delete('/attachments/r2/:key{.*}', async (c) => {
+attachmentRoutes.delete('/attachments/r2/:key{.*}', authenticateToken, async (c) => {
   try {
     const bucket = c.env?.MEDIA_BUCKET;
     if (!bucket) return c.json({ error: 'R2 storage unavailable' }, 500);
     const key = decodeURIComponent(c.req.param('key') || '');
     if (!key) return c.json({ error: 'File key required' }, 400);
+
+    const user = c.get('user');
+    if (!user || (user.role !== 'admin' && user.role !== 'staff')) {
+      return c.json({ error: 'Unauthorized to delete storage attachments' }, 403);
+    }
 
     await deleteR2Object(bucket, key);
     return c.json({ success: true, message: 'R2 object deleted' });
