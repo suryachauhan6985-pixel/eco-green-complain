@@ -195,6 +195,112 @@ export async function sendWhatsApp({
           ]
         }]
       };
+    } else if (templateName === 'customer_technician_reassigned' || templateName === 'technician_reassigned_customer') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const techName = cleanParam(variables.technician_name, 'Field Technician');
+
+      renderedBody = `*Eco Green Solar - Technician Reassigned*\n\nDear ${custName}, your complaint *${ticketId}* (${prodType}) has been reassigned to a new technician: *${techName}*.\n\nOur service engineer will contact you shortly to coordinate your visit.\n\n🔗 *Track Live:* ${trackingUrl}\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'customer_technician_reassigned',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reassigned' || templateName === 'technician_job_transferred') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+
+      renderedBody = `*Eco Green Solar - Job Transferred*\n\nHello ${techName}, please note that ticket *${ticketId}* (Customer: ${custName}) previously assigned to you has been reassigned/transferred to another technician.\n\nYou are no longer required to visit this site. Please check your technician portal for updated schedules.\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_job_transferred_notice',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'customer_name', text: custName }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reopened_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, '-');
+      const custAddress = cleanParam(variables.customer_address, 'Customer Site Address');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Issue recurring / follow-up requested');
+      const priority = cleanParam(variables.priority, 'High');
+      const portalLink = `${appUrl}/technician?ticket=${encodeURIComponent(ticketId)}`;
+
+      renderedBody = `*Eco Green Solar - Reopened Work Order*\n\nHello ${techName}, ticket *${ticketId}* has been *REOPENED* for service follow-up.\n\n*Customer:* ${custName}\n*Phone:* ${custPhone}\n*Address:* ${custAddress}\n*Product:* ${prodType}\n*Issue:* ${issueCat}\n*Reason for Reopening:* ${reopenReason}\n*Priority:* ${priority}\n\n🔗 *Technician Portal:* ${portalLink}\n\nPlease review previous site visit notes and coordinate with the customer immediately.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_reopened_work_order',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'reopen_reason', text: reopenReason },
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+              { type: 'text', parameter_name: 'customer_address', text: custAddress },
+              { type: 'text', parameter_name: 'issue_category', text: issueCat },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'priority', text: priority },
+              { type: 'text', parameter_name: 'portal_url', text: portalLink }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'technician_reopen_job_transferred' || templateName === 'technician_reopened_transferred') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up requested');
+
+      renderedBody = `*Eco Green Solar - Reopened Job Transferred*\n\nHello ${techName}, please note that ticket *${ticketId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician.\n\n*Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_job_transferred_notice',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'technician_name', text: techName },
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'customer_name', text: custName }
+            ]
+          }
+        ]
+      };
     } else if (templateName === 'technician_work_order_reassigned' || templateName === 'technician_reassigned_work_order') {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');

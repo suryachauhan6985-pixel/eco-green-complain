@@ -522,6 +522,13 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       if (stRes.rows.length) secondaryTech = stRes.rows[0];
     }
 
+    const isReassignment = Boolean(complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(primaryTech.id));
+    let previousTech = null;
+    if (isReassignment) {
+      const prevRes = await query('SELECT id, name, phone FROM technicians WHERE id = $1', [complaint.assigned_technician_id], c.env, c.executionCtx);
+      if (prevRes.rows.length) previousTech = prevRes.rows[0];
+    }
+
     await query(
       `UPDATE complaints
        SET assigned_technician_id = $1,
@@ -538,36 +545,65 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
 
     const user = c.get('user');
     const assigner = user?.name || user?.username || 'Staff';
-    const desc = secondaryTech
+    let desc = secondaryTech
       ? `Assigned to ${primaryTech.name} (Primary) & ${secondaryTech.name} (Co-Partner).`
       : `Assigned to ${primaryTech.name}.`;
+    if (isReassignment && previousTech) {
+      desc = `Reassigned from ${previousTech.name} to ${primaryTech.name}${secondaryTech ? ` & ${secondaryTech.name}` : ''}.`;
+    }
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Assigned', desc + (notes ? ` Note: ${notes}` : ''), assigner, user?.role || 'staff'],
+      [complaint.id, isReassignment ? 'Reassigned' : 'Assigned', desc + (notes ? ` Note: ${notes}` : ''), assigner, user?.role || 'staff'],
       c.env,
       c.executionCtx
     );
 
-    // Send WhatsApp to Customer & Primary Technician (using approved Meta templates)
+    // 1. Send WhatsApp to Customer (customer_technician_reassigned if reassigned, technician_assigned if new)
+    const custTemplate = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
     const custPromise = complaint.customer_phone ? sendWhatsApp({
       to: complaint.customer_phone,
-      templateName: 'technician_assigned',
+      templateName: custTemplate,
       variables: {
         ticket_id: complaint.ticket_id,
+        complaint_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
-        technician_name: primaryTech.name,
+        product_type: complaint.product_type || 'Solar System',
+        technician_name: secondaryTech ? `${primaryTech.name} & ${secondaryTech.name}` : primaryTech.name,
+        technician_phone: primaryTech.phone || '',
+        expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
       },
       env: c.env
     }) : Promise.resolve({ success: false, error: 'Customer has no phone number on file' });
 
+    // 2. If reassigned, notify previous technician about job transfer
+    let prevTechPromise = Promise.resolve(null);
+    if (isReassignment && previousTech && previousTech.phone) {
+      prevTechPromise = sendWhatsApp({
+        to: previousTech.phone,
+        templateName: 'technician_reassigned',
+        variables: {
+          technician_name: previousTech.name,
+          ticket_id: complaint.ticket_id,
+          complaint_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          new_technician_name: primaryTech.name,
+          db_complaint_id: complaint.id
+        },
+        env: c.env
+      }).catch((err) => ({ success: false, error: err.message }));
+    }
+
+    // 3. Send WhatsApp Work Order to Primary Technician
+    const techTemplate = isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order';
     const techPromise = primaryTech.phone ? sendWhatsApp({
       to: primaryTech.phone,
-      templateName: 'technician_work_order',
+      templateName: techTemplate,
       variables: {
         technician_name: primaryTech.name,
         ticket_id: complaint.ticket_id,
+        complaint_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
@@ -581,12 +617,14 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       env: c.env
     }) : Promise.resolve({ success: false, error: `Assigned technician "${primaryTech.name}" has no phone number on file.` });
 
+    // 4. Send WhatsApp to Secondary Technician (if assigned)
     const secTechPromise = (secondaryTech && secondaryTech.phone) ? sendWhatsApp({
       to: secondaryTech.phone,
-      templateName: 'technician_work_order',
+      templateName: techTemplate,
       variables: {
         technician_name: secondaryTech.name,
         ticket_id: complaint.ticket_id,
+        complaint_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
@@ -600,7 +638,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       env: c.env
     }) : Promise.resolve(null);
 
-    const [custResult, techResult, secTechResult] = await Promise.all([custPromise, techPromise, secTechPromise]);
+    const [custResult, prevTechResult, techResult, secTechResult] = await Promise.all([custPromise, prevTechPromise, techPromise, secTechPromise]);
 
     let warningMsg = null;
     if (!techResult?.success) {
@@ -612,9 +650,11 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
 
     return c.json({
       success: true,
-      message: 'Technician assigned successfully',
+      message: isReassignment ? 'Job reassigned and transferred successfully' : 'Technician assigned successfully',
+      is_reassignment: isReassignment,
       warning: warningMsg,
       customer_whatsapp: custResult,
+      previous_technician_whatsapp: prevTechResult,
       technician_whatsapp: techResult,
       secondary_technician_whatsapp: secTechResult
     });
@@ -804,20 +844,31 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
       c.executionCtx
     );
 
+    const isAlreadyCollected = complaint.payment_status === 'Collected' || (Number(complaint.payment_collected || 0) > 0 && Number(complaint.payment_collected || 0) >= estCharges);
+    if (isAlreadyCollected && user.role === 'technician') {
+      return c.json({ error: 'Payment has already been collected in full for this ticket.' }, 400);
+    }
+
     const collector = user?.name || user?.username || 'Staff';
     const isDirectOffice = !complaint.assigned_technician_id;
-    const noteText = isDirectOffice
-      ? `Direct office payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}. Note: Collected without assigned field technician.`
-      : `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.`;
+    const actionName = isAlreadyCollected ? 'Payment Updated' : 'Payment Collected';
+    const noteText = isAlreadyCollected
+      ? `Payment record updated from ₹${complaint.payment_collected || 0} to ₹${collectedAmt} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}`
+      : (isDirectOffice
+        ? `Direct office payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}. Note: Collected without assigned field technician.`
+        : `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.`);
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Payment Collected', noteText, collector, user?.role || 'staff'],
+      [complaint.id, actionName, noteText, collector, user?.role || 'staff'],
       c.env,
       c.executionCtx
     );
 
-    return c.json({ success: true, message: 'Payment recorded' });
+    return c.json({
+      success: true,
+      message: isAlreadyCollected ? 'Payment record updated successfully' : 'Payment recorded successfully'
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -949,7 +1000,7 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
     const body = await c.req.json().catch(() => ({}));
-    const { reason } = body;
+    const { reason, technician_id } = body;
 
     const compRes = await query(`
       SELECT c.*, t.name as technician_name, t.phone as technician_phone
@@ -961,21 +1012,43 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
+    // Determine target technician
+    let targetTech = null;
+    let isReassignedOnReopen = false;
+    if (technician_id) {
+      const techRes = await query('SELECT id, name, phone FROM technicians WHERE id = $1', [technician_id], c.env, c.executionCtx);
+      if (techRes.rows.length) {
+        targetTech = techRes.rows[0];
+        if (complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(targetTech.id)) {
+          isReassignedOnReopen = true;
+        }
+      }
+    }
+    if (!targetTech && complaint.assigned_technician_id) {
+      targetTech = {
+        id: complaint.assigned_technician_id,
+        name: complaint.technician_name,
+        phone: complaint.technician_phone
+      };
+    }
+
     await query(
       `UPDATE complaints
        SET status = 'Reopened',
+           assigned_technician_id = COALESCE($1, assigned_technician_id),
            status_updated_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [complaint.id],
+       WHERE id = $2`,
+      [targetTech ? targetTech.id : null, complaint.id],
       c.env,
       c.executionCtx
     );
 
     const reopener = user?.name || user?.username || 'Customer';
+    const techNoticeText = targetTech ? ` (Assigned to ${targetTech.name})` : '';
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Reopened', `Complaint reopened. Reason: ${reason || 'Issue recurred'}`, reopener, user?.role || 'customer'],
+      [complaint.id, 'Reopened', `Complaint reopened. Reason: ${reason || 'Issue recurred'}${techNoticeText}`, reopener, user?.role || 'customer'],
       c.env,
       c.executionCtx
     );
@@ -991,31 +1064,55 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
           ticket_id: complaint.ticket_id,
           complaint_id: complaint.ticket_id,
           reason: reason || 'Service follow-up required',
+          technician_name: targetTech?.name || complaint.technician_name || 'Field Technician',
           db_complaint_id: complaint.id
         },
         env: c.env
       }).catch((err) => {
-        console.warn('[WhatsApp Reopen Notice Error]', err.message);
+        console.warn('[WhatsApp Reopen Customer Notice Error]', err.message);
         return { success: false, error: err.message };
       });
     }
 
-    // Also notify assigned technician if one exists
-    if (complaint.technician_phone) {
-      sendWhatsApp({
-        to: complaint.technician_phone,
-        templateName: 'technician_work_order',
+    // Notify assigned technician about reopened work order
+    let techWaResult = null;
+    if (targetTech?.phone) {
+      techWaResult = await sendWhatsApp({
+        to: targetTech.phone,
+        templateName: 'technician_reopened_work_order',
         variables: {
-          technician_name: complaint.technician_name || 'Technician',
+          technician_name: targetTech.name,
           ticket_id: complaint.ticket_id,
+          complaint_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
           customer_phone: complaint.customer_phone,
           customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
-          product_type: complaint.product_type || 'Solar Rooftop Systems',
+          product_type: complaint.product_type || 'Solar System',
           issue_category: complaint.issue_category || 'Service Request',
-          notes: `[TICKET REOPENED] Reason: ${reason || 'Customer requested re-inspection'}`,
+          reopen_reason: reason || 'Customer requested re-inspection / service follow-up',
+          reason: reason || 'Customer requested re-inspection / service follow-up',
           priority: 'High',
-          expected_visit_date: 'Immediate',
+          db_complaint_id: complaint.id
+        },
+        env: c.env
+      }).catch((err) => {
+        console.warn('[WhatsApp Reopen Technician Notice Error]', err.message);
+        return { success: false, error: err.message };
+      });
+    }
+
+    // If reassigned to a different technician on reopen, notify previous technician
+    if (isReassignedOnReopen && complaint.technician_phone && complaint.technician_name) {
+      sendWhatsApp({
+        to: complaint.technician_phone,
+        templateName: 'technician_reopen_job_transferred',
+        variables: {
+          technician_name: complaint.technician_name,
+          ticket_id: complaint.ticket_id,
+          complaint_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          new_technician_name: targetTech.name,
+          reopen_reason: reason || 'Customer requested follow-up inspection',
           db_complaint_id: complaint.id
         },
         env: c.env
@@ -1024,8 +1121,62 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
 
     return c.json({
       success: true,
-      message: 'Complaint reopened',
-      whatsapp: waResult
+      message: 'Complaint reopened successfully',
+      whatsapp: waResult,
+      technician_whatsapp: techWaResult
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/complaints/:id/feedback - Customer CSAT Feedback Submission
+complaintRoutes.post('/:id/feedback', optionalAuth, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const { rating, feedback_comments } = body;
+
+    const parsedRating = Number(rating);
+    if (!parsedRating || parsedRating < 1 || parsedRating > 5) {
+      return c.json({ error: 'Rating must be between 1 and 5 stars' }, 400);
+    }
+
+    const compRes = await query(
+      'SELECT id, ticket_id, customer_name FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+      [id],
+      c.env,
+      c.executionCtx
+    );
+    if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
+    const complaint = compRes.rows[0];
+
+    await query(
+      `UPDATE complaints
+       SET rating = $1,
+           feedback_comments = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [parsedRating, (feedback_comments || '').trim() || null, complaint.id],
+      c.env,
+      c.executionCtx
+    );
+
+    await query(
+      `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+       VALUES ($1, 'Feedback Received', $2, $3, 'customer', 0)`,
+      [
+        complaint.id,
+        `Customer submitted ${parsedRating}-Star rating: "${(feedback_comments || '').trim() || 'No comment'}"`,
+        complaint.customer_name || 'Customer'
+      ],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      success: true,
+      message: 'Thank you! Your feedback has been recorded.'
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);

@@ -2627,6 +2627,10 @@ app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array
 // Upload Attachments for Complaint
 app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('attachments', 10), async (req, res) => {
   try {
+    if (req.user && req.user.role !== 'admin' && req.user.role !== 'staff') {
+      return res.status(403).json({ error: 'Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.' });
+    }
+
     const { id } = req.params;
     const compRes = await query('SELECT id, ticket_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (compRes.rows.length === 0) return res.status(404).json({ error: 'Complaint not found' });
@@ -2696,6 +2700,10 @@ app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('att
 // Delete an uploaded attachment (Staff / Admin)
 app.delete(['/api/attachments/:id', '/api/complaints/:complaintId/attachments/:id'], authenticateToken, async (req, res) => {
   try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'staff')) {
+      return res.status(403).json({ error: 'Unauthorized: Only Admin and Staff can delete documents from Issue Description & Diagnostics.' });
+    }
+
     const { id } = req.params;
     const attRes = await query('SELECT * FROM complaint_attachments WHERE id = $1', [id]);
     if (!attRes.rows.length) {
@@ -2724,6 +2732,36 @@ app.delete(['/api/attachments/:id', '/api/complaints/:complaintId/attachments/:i
     return res.json({ success: true, message: 'Attachment deleted successfully', id });
   } catch (err) {
     console.error('Delete attachment error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Customer CSAT Feedback
+app.post('/api/complaints/:id/feedback', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rating, feedback_comments } = req.body;
+    const parsedRating = Number(rating);
+    if (!parsedRating || parsedRating < 1 || parsedRating > 5) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
+    }
+
+    const compRes = await query('SELECT id, ticket_id, customer_name FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    if (!compRes.rows.length) return res.status(404).json({ error: 'Complaint not found' });
+    const complaint = compRes.rows[0];
+
+    await query(
+      'UPDATE complaints SET rating = $1, feedback_comments = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+      [parsedRating, (feedback_comments || '').trim() || null, complaint.id]
+    );
+
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+      [complaint.id, 'Feedback Received', `Customer submitted ${parsedRating}-Star rating: "${(feedback_comments || '').trim() || 'No comment'}"`, complaint.customer_name || 'Customer', 'customer']
+    );
+
+    return res.json({ success: true, message: 'Thank you! Your feedback has been recorded.' });
+  } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });

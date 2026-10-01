@@ -92,8 +92,11 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
         : body.attachment_urls;
     }
 
-    const saved = [];
     const user = c.get('user');
+    // If request has authenticated user, only admin and staff can attach documents to existing complaint
+    if (user && user.role !== 'admin' && user.role !== 'staff') {
+      return c.json({ error: 'Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.' }, 403);
+    }
     const uploaderName = user?.name || user?.username || 'Customer';
 
     for (const att of attachmentsList) {
@@ -278,6 +281,11 @@ attachmentRoutes.get('/attachments/:id', async (c) => {
 // DELETE /api/attachments/:id
 attachmentRoutes.delete('/attachments/:id', authenticateToken, async (c) => {
   try {
+    const user = c.get('user');
+    if (!user || (user.role !== 'admin' && user.role !== 'staff')) {
+      return c.json({ error: 'Unauthorized: Only Admin and Staff can delete documents from Issue Description & Diagnostics.' }, 403);
+    }
+
     const id = c.req.param('id');
     const attRes = await query('SELECT * FROM complaint_attachments WHERE id::text = $1', [id], c.env, c.executionCtx);
     if (!attRes.rows.length) return c.json({ error: 'Attachment not found' }, 404);

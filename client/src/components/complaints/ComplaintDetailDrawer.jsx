@@ -165,8 +165,23 @@ export const ComplaintDetailDrawer = ({
     ? resolutionProofAttachments 
     : (ticket?.closing_photo_url ? [{ id: 'closing_photo', file_url: ticket.closing_photo_url, file_name: 'Technician Closing Proof Photo/Video', uploaded_by: ticket.status === 'Reopened' ? previousTechName : (ticket.technician_name || 'Technician') }] : []);
 
+  const cachedUser = React.useMemo(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('egs_cached_user') || localStorage.getItem('egs_cached_user') || '{}');
+    } catch (_) {
+      return {};
+    }
+  }, []);
+  const effectiveRole = (currentUser?.role || cachedUser?.role || '').toLowerCase();
+  const isAdminOrStaff = effectiveRole === 'admin' || effectiveRole === 'staff';
+
   const handleUploadMoreAttachments = async (e) => {
     if (!e.target.files || e.target.files.length === 0 || !ticket) return;
+    if (!isAdminOrStaff) {
+      showToast('Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.', 'error');
+      e.target.value = '';
+      return;
+    }
     const files = Array.from(e.target.files);
     const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
@@ -212,6 +227,10 @@ export const ComplaintDetailDrawer = ({
 
   const handleDeleteAttachment = async (att) => {
     if (!att || !att.id) return;
+    if (!isAdminOrStaff) {
+      showToast('Unauthorized: Only Admin and Staff can delete documents from Issue Description & Diagnostics.', 'error');
+      return;
+    }
     if (isResolvedOrClosed) {
       showToast('Documents cannot be deleted from a Resolved or Closed complaint. View-only mode is active.', 'warning');
       return;
@@ -256,6 +275,7 @@ export const ComplaintDetailDrawer = ({
     const newItems = validFiles.map((file) => {
       const isImg = file.type.startsWith('image/');
       const isVid = file.type.startsWith('video/');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       return {
         id: Math.random().toString(36).substring(2, 9),
         file,
@@ -265,7 +285,8 @@ export const ComplaintDetailDrawer = ({
           : (file.size / 1024).toFixed(1) + ' KB',
         isImage: isImg,
         isVideo: isVid,
-        preview: (isImg || isVid) ? URL.createObjectURL(file) : null
+        isPdf: isPdf,
+        preview: (isImg || isVid || isPdf) ? URL.createObjectURL(file) : null
       };
     });
 
@@ -930,6 +951,10 @@ export const ComplaintDetailDrawer = ({
     }, 100);
   };
 
+  const isPaymentFullyCollected = Boolean(
+    ticket && (ticket.payment_status === 'Collected' || (Number(ticket.payment_collected || 0) > 0 && Number(ticket.payment_collected || 0) >= Number(ticket.estimated_charges || 0)))
+  );
+
   const openPaymentModal = async () => {
     if (isSecondaryPartnerOnly) {
       showToast('Co-partner view: Only the primary technician can collect or record payment.', 'warning');
@@ -939,8 +964,12 @@ export const ComplaintDetailDrawer = ({
       showToast('Payment collection is locked on Resolved and Closed complaints.', 'warning');
       return;
     }
+    if (isPaymentFullyCollected && !isAdminOrStaff) {
+      showToast('Payment has already been collected in full for this ticket.', 'info');
+      return;
+    }
     if (!ticket.assigned_technician_id) {
-      if (['admin', 'staff'].includes(currentUser?.role)) {
+      if (isAdminOrStaff) {
         const ok = await confirm({
           title: 'Direct Office Payment Collection',
           message: 'No field technician is assigned to this ticket. Do you want to record direct office/staff payment collection without assigning a technician?',
@@ -975,7 +1004,7 @@ export const ComplaintDetailDrawer = ({
       setIsRecordingPayment(false);
       return;
     }
-    if (!ticket.assigned_technician_id && !['admin', 'staff'].includes(currentUser?.role)) {
+    if (!ticket.assigned_technician_id && !isAdminOrStaff) {
       setIsRecordingPayment(false);
       scrollToTechnicianAssignment();
       return;
@@ -1001,12 +1030,13 @@ export const ComplaintDetailDrawer = ({
 
     try {
       setSavingPayment(true);
+      const wasAlreadyCollected = isPaymentFullyCollected;
       await api.recordPayment(ticket.id, paymentData);
       await fetchTicketDetails();
       setIsRecordingPayment(false);
       setShowUnderpaidWarning(false);
       if (onComplaintUpdated) onComplaintUpdated();
-      showToast('Payment collected recorded successfully!', 'success');
+      showToast(wasAlreadyCollected ? 'Payment record updated successfully!' : 'Payment collected recorded successfully!', 'success');
     } catch (err) {
       showToast('Failed to record payment: ' + err.message, 'error');
     } finally {
@@ -1445,7 +1475,24 @@ export const ComplaintDetailDrawer = ({
                               <Lock className="w-3.5 h-3.5 text-amber-700" />
                               <span>Co-Partner View Only</span>
                             </div>
-                          ) : (ticket.assigned_technician_id || ticket.technician_name || currentUser?.role === 'technician') ? (
+                          ) : isPaymentFullyCollected ? (
+                            <div className="w-full py-2 px-2.5 bg-emerald-50 text-emerald-900 rounded-lg text-xs font-bold flex flex-col items-center justify-center border border-emerald-300 shadow-2xs">
+                              <div className="flex items-center gap-1 text-emerald-700 font-extrabold text-[11px]">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Payment Collected</span>
+                              </div>
+                              {isAdminOrStaff && (
+                                <button
+                                  type="button"
+                                  onClick={openPaymentModal}
+                                  className="mt-1 text-[10px] text-emerald-800 hover:text-emerald-950 underline font-medium cursor-pointer"
+                                  title="Admin/Staff: Adjust payment record details"
+                                >
+                                  Adjust / Edit Record
+                                </button>
+                              )}
+                            </div>
+                          ) : (ticket.assigned_technician_id || ticket.technician_name || effectiveRole === 'technician') ? (
                             <button
                               type="button"
                               onClick={openPaymentModal}
@@ -1454,7 +1501,7 @@ export const ComplaintDetailDrawer = ({
                               <CreditCard className="w-3.5 h-3.5" />
                               {Number(ticket.estimated_charges || 0) === 0 ? 'Collect On-Site Payment' : 'Record Payment Collected'}
                             </button>
-                          ) : ['admin', 'staff'].includes(currentUser?.role) ? (
+                          ) : isAdminOrStaff ? (
                             <button
                               type="button"
                               onClick={openPaymentModal}
@@ -1478,7 +1525,7 @@ export const ComplaintDetailDrawer = ({
                       </div>
 
                       {/* Prominent warning if no technician is assigned (only shown to admin/staff) */}
-                      {!(ticket.assigned_technician_id || ticket.technician_name) && currentUser?.role !== 'technician' && (
+                      {!(ticket.assigned_technician_id || ticket.technician_name) && !isAdminOrStaff && (
                         <div className="mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                           <div className="space-y-1 flex-1">
@@ -1526,7 +1573,7 @@ export const ComplaintDetailDrawer = ({
                             </p>
                           </div>
 
-                          {ticket.company_settlement_status !== 'Settled with Company' && ['admin', 'staff'].includes(currentUser?.role) && (
+                          {ticket.company_settlement_status !== 'Settled with Company' && isAdminOrStaff && (
                             <button
                               type="button"
                               disabled={settlingCompany}
@@ -1557,7 +1604,7 @@ export const ComplaintDetailDrawer = ({
                             <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Initial Complaint / Fault Proof ({initialIssueAttachments.length}):
                           </span>
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {!isResolvedOrClosed && ['admin', 'staff'].includes(currentUser?.role) && (
+                            {!isResolvedOrClosed && isAdminOrStaff && (
                               <>
                                 <label className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors" title="Take live photo with camera">
                                   {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
@@ -1692,7 +1739,7 @@ export const ComplaintDetailDrawer = ({
                                       >
                                         <ExternalLink className="w-3 h-3" />
                                       </a>
-                                      {['admin', 'staff'].includes(currentUser?.role) && !isResolvedOrClosed && (
+                                      {isAdminOrStaff && !isResolvedOrClosed && (
                                         <button
                                           type="button"
                                           disabled={deletingAttId === att.id}
@@ -2442,28 +2489,42 @@ export const ComplaintDetailDrawer = ({
                                     </div>
                                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                                       {resolutionPhotos.map((item) => (
-                                        <div key={item.id} className="flex items-center justify-between p-2 bg-emerald-50/90 rounded-lg border border-emerald-300 text-xs shadow-2xs hover:bg-emerald-100/60 transition-colors">
-                                          <div className="flex items-center gap-2 min-w-0">
+                                        <div key={item.id} className="flex items-center justify-between p-2 bg-emerald-50/90 rounded-lg border border-emerald-300 text-xs shadow-2xs hover:bg-emerald-100/60 transition-colors gap-2">
+                                          <div 
+                                            onClick={() => setPreviewDocModal({ url: item.preview, name: item.name, isVideo: item.isVideo, isImage: item.isImage, isPdf: item.isPdf })}
+                                            className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
+                                            title="Click to preview file"
+                                          >
                                             {item.preview && item.isImage ? (
-                                              <img src={item.preview} alt={item.name} className="w-8 h-8 rounded object-cover border border-emerald-300 shrink-0" />
+                                              <img src={item.preview} alt={item.name} className="w-8 h-8 rounded object-cover border border-emerald-300 shrink-0 hover:scale-105 transition-transform" />
                                             ) : (
                                               <div className="w-8 h-8 rounded bg-emerald-200/80 flex items-center justify-center shrink-0 text-emerald-900 font-bold text-[10px]">
-                                                {item.isVideo ? <Video className="w-4 h-4 text-emerald-800" /> : <Camera className="w-4 h-4 text-emerald-800" />}
+                                                {item.isVideo ? <Video className="w-4 h-4 text-emerald-800" /> : item.isPdf ? <FileText className="w-4 h-4 text-emerald-800" /> : <Camera className="w-4 h-4 text-emerald-800" />}
                                               </div>
                                             )}
                                             <div className="truncate">
-                                              <p className="font-semibold text-slate-800 truncate text-[11px]">{item.name}</p>
-                                              <p className="text-[10px] text-slate-500">{item.size} • {item.isVideo ? 'Video' : item.isImage ? 'Photo' : 'Document'}</p>
+                                              <p className="font-semibold text-slate-800 truncate text-[11px] hover:text-emerald-800">{item.name}</p>
+                                              <p className="text-[10px] text-slate-500">{item.size} • {item.isVideo ? 'Video' : item.isPdf ? 'PDF' : item.isImage ? 'Photo' : 'Document'}</p>
                                             </div>
                                           </div>
-                                          <button
-                                            type="button"
-                                            onClick={() => removeResolutionPhoto(item.id)}
-                                            className="text-red-500 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100/60 text-xs font-bold shrink-0 transition-colors cursor-pointer"
-                                            title="Remove this document"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => setPreviewDocModal({ url: item.preview, name: item.name, isVideo: item.isVideo, isImage: item.isImage, isPdf: item.isPdf })}
+                                              className="text-emerald-700 hover:text-emerald-900 p-1.5 rounded-md hover:bg-emerald-200/60 text-xs font-bold transition-colors cursor-pointer"
+                                              title="Preview document / photo"
+                                            >
+                                              <Eye className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeResolutionPhoto(item.id)}
+                                              className="text-red-500 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100/60 text-xs font-bold shrink-0 transition-colors cursor-pointer"
+                                              title="Remove this document"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -3413,7 +3474,7 @@ export const ComplaintDetailDrawer = ({
             <div className="px-5 py-4 bg-emerald-800 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <IndianRupee className="w-5 h-5 text-amber-300" />
-                <h3 className="font-bold text-sm">Record Payment Collected</h3>
+                <h3 className="font-bold text-sm">{isPaymentFullyCollected ? 'Adjust / Edit Payment Record' : 'Record Payment Collected'}</h3>
               </div>
               <button 
                 onClick={() => { setIsRecordingPayment(false); setShowUnderpaidWarning(false); }}
@@ -3621,7 +3682,7 @@ export const ComplaintDetailDrawer = ({
                           savingPayment || 
                           !enteredAmount || 
                           enteredAmount <= 0 ||
-                          !ticket.assigned_technician_id ||
+                          (!ticket.assigned_technician_id && !isAdminOrStaff) ||
                           (isReasonRequired && !hasValidReason)
                         }
                         className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -3638,6 +3699,8 @@ export const ComplaintDetailDrawer = ({
                           </>
                         ) : (isReasonRequired && !hasValidReason) ? (
                           <span>Approval Reason Required</span>
+                        ) : isPaymentFullyCollected ? (
+                          <span>Update Payment Record (₹{enteredAmount || 0})</span>
                         ) : (
                           <span>Record Payment (₹{enteredAmount || 0})</span>
                         )}
