@@ -129,11 +129,11 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
     if (!bucket) return c.text('R2 storage unavailable', 500);
 
     const rawKey = c.req.param('key') || '';
-    const key = decodeURIComponent(rawKey);
-    if (!key) return c.text('File key required', 400);
+    const cleanKey = decodeURIComponent(rawKey).replace(/^\/+/, '');
+    if (!cleanKey) return c.text('File key required', 400);
 
     // Path traversal defense
-    if (key.includes('..') || key.startsWith('/') || key.includes('\\')) {
+    if (cleanKey.includes('..') || cleanKey.includes('\\')) {
       return c.json({ error: 'Invalid object key' }, 400);
     }
 
@@ -153,14 +153,14 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
          SELECT id FROM whatsapp_messages
          WHERE media_url LIKE '%' || $1
          LIMIT 1`,
-        [key],
+        [cleanKey],
         c.env,
         c.executionCtx
       ).catch(() => ({ rows: [] }));
 
       if (matchInDb.rows.length === 0) {
         // Also allow if complaintId part of key exists in complaints table
-        const keyParts = key.split('/');
+        const keyParts = cleanKey.split('/');
         const folderId = keyParts[1];
         const compExists = folderId && folderId !== 'general' ? await query(
           'SELECT id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
@@ -175,7 +175,7 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
       }
     }
 
-    const object = await getR2Object(bucket, key);
+    const object = await getR2Object(bucket, cleanKey);
     if (!object) {
       return c.text('File not found in storage', 404);
     }
@@ -186,11 +186,11 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
     headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
     headers.set('X-Content-Type-Options', 'nosniff');
 
-    const mimeType = object.httpMetadata?.contentType || getMimeTypeFromKey(key);
+    const mimeType = object.httpMetadata?.contentType || getMimeTypeFromKey(cleanKey);
     headers.set('Content-Type', mimeType);
     headers.set('Content-Length', String(object.size));
 
-    const filename = key.split('/').pop() || 'attachment';
+    const filename = cleanKey.split('/').pop() || 'attachment';
     const isDownload = c.req.query('download') === '1';
     headers.set('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${filename}"`);
     headers.set('Access-Control-Allow-Origin', '*');

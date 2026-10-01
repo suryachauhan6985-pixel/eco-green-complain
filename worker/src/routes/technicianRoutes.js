@@ -331,4 +331,58 @@ technicianRoutes.post('/tour-settlements', authenticateToken, requireRole('admin
   }
 });
 
+// POST /api/technicians/:id/settle-all - Batch settle all collected cash for a technician
+technicianRoutes.post('/technicians/:id/settle-all', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const techId = c.req.param('id');
+    const user = c.get('user');
+
+    const techRes = await query('SELECT * FROM technicians WHERE id = $1', [techId], c.env, c.executionCtx);
+    if (!techRes.rows.length) return c.json({ error: 'Technician not found' }, 404);
+    const tech = techRes.rows[0];
+
+    // Find unsettled complaints
+    const compRes = await query(`
+      SELECT id, ticket_id, payment_collected
+      FROM complaints
+      WHERE (assigned_technician_id = $1 OR secondary_technician_id = $1::text OR resolved_by_technician_id = $1::text)
+        AND COALESCE(payment_collected, 0) > 0
+        AND COALESCE(company_settlement_status, '') != 'Settled with Company'
+    `, [techId], c.env, c.executionCtx);
+
+    const unsettledJobs = compRes.rows;
+    if (unsettledJobs.length === 0) {
+      return c.json({ success: true, message: 'No unsettled cash balances for this technician', settledCount: 0, totalAmount: 0 });
+    }
+
+    const totalAmount = unsettledJobs.reduce((sum, j) => sum + Number(j.payment_collected || 0), 0);
+    const settler = user.name || 'Admin';
+
+    for (const job of unsettledJobs) {
+      await query(`
+        UPDATE complaints
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [settler, job.id], c.env, c.executionCtx);
+
+      await query(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+        VALUES ($1, 'Cash Settled with Company', $2, $3, $4, 0)
+      `, [job.id, `Company confirmed receipt of ₹${job.payment_collected} collected by technician ${tech.name} into company account via batch settlement.`, settler, user.role || 'admin'], c.env, c.executionCtx);
+    }
+
+    return c.json({
+      success: true,
+      message: `Successfully settled ₹${totalAmount} across ${unsettledJobs.length} complaints for ${tech.name}`,
+      settledCount: unsettledJobs.length,
+      totalAmount
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 export default technicianRoutes;

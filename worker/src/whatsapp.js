@@ -100,6 +100,134 @@ export async function sendWhatsApp({
           ]
         }]
       };
+    } else if (templateName === 'technician_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Address on file');
+      const prodType = cleanParam(variables.product_type, 'Solar Rooftop Systems');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const notes = cleanParam(variables.notes || variables.issue_description, 'Inspect site and equipment');
+      const priority = cleanParam(variables.priority, 'Medium');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Immediate');
+      const portalLink = `${appUrl}/technician?ticket=${encodeURIComponent(ticketId)}`;
+      renderedBody = `Hello ${techName}, ticket *${ticketId}* has been assigned to you.\n\nCustomer: ${custName} (${custPhone})\nAddress: ${custAddress}\nProduct: ${prodType}\nIssue: ${issueCat}\nNotes: ${notes}\nPriority: ${priority}\nExpected Visit: ${visitDate}\n\nPortal: ${portalLink}`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'notes', text: notes },
+            { type: 'text', parameter_name: 'priority', text: priority },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+          ]
+        }]
+      };
+    } else if (templateName === 'technician_reminder' || templateName === 'technician_pending_visit_reminder') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Address on file');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Today');
+      renderedBody = `Hello ${techName}, this is a reminder for scheduled ticket *${ticketId}*.\n\nCustomer: ${custName} (${custPhone})\nAddress: ${custAddress}\nVisit Date: ${visitDate}`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_pending_visit_reminder',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+          ]
+        }]
+      };
+    } else if (templateName === 'complaint_closed' || templateName === 'complaint_closed__feedback_request') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      renderedBody = `Namaste ${custName}, your complaint *${ticketId}* has been closed. Please rate your service: ${trackingUrl}`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_closed__feedback_request',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (templateName === 'complaint_reopened' || templateName === 'complaint_reopened_notification') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      renderedBody = `Namaste ${custName}, your complaint ticket *${ticketId}* has been reopened for follow-up inspection. Track status: ${trackingUrl}`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'complaint_reopened_notification',
+        language: { code: 'en' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (templateName === 'technician_work_order_reassigned' || templateName === 'technician_reassigned_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Address on file');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const prodType = cleanParam(variables.product_type, 'Solar Rooftop Systems');
+      const priority = cleanParam(variables.priority, 'Medium');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Immediate');
+      const portalUrl = `${appUrl}/technician`;
+      renderedBody = `Hello ${techName}, ticket *${ticketId}* has been reassigned to you.\nCustomer: ${custName} (${custPhone})\nAddress: ${custAddress}\nIssue: ${issueCat}\nProduct: ${prodType}\nPriority: ${priority}\nVisit Date: ${visitDate}`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order_reassigned',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: techName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: custName },
+            { type: 'text', text: custPhone },
+            { type: 'text', text: custAddress },
+            { type: 'text', text: issueCat },
+            { type: 'text', text: prodType },
+            { type: 'text', text: priority },
+            { type: 'text', text: visitDate },
+            { type: 'text', text: portalUrl }
+          ]
+        }]
+      };
     } else if (templateName === 'complaint_resolved') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');

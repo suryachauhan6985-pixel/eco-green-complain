@@ -293,7 +293,9 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
 
     return c.json({
       ticket: fullDetail,
-      complaint: fullDetail
+      complaint: fullDetail,
+      attachments: atts.rows,
+      timeline: timeline.rows
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);
@@ -547,28 +549,75 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       c.executionCtx
     );
 
-    // Send WhatsApp to Customer & Primary Technician
-    c.executionCtx?.waitUntil?.(
-      Promise.allSettled([
-        sendWhatsApp({
-          to: complaint.customer_phone,
-          templateName: 'technician_assigned',
-          variables: {
-            ticket_id: complaint.ticket_id,
-            customer_name: complaint.customer_name,
-            technician_name: primaryTech.name
-          },
-          env: c.env
-        }),
-        primaryTech.phone ? sendWhatsApp({
-          to: primaryTech.phone,
-          message: `*Eco Green Solar - New Service Work Order*\n\nTicket No.: *${complaint.ticket_id}*\nCustomer: ${complaint.customer_name} (${complaint.customer_phone})\nAddress: ${complaint.customer_address}\nProduct: ${complaint.product_type}\nIssue: ${complaint.issue_category}\nExpected Visit: ${expected_visit_date || 'Immediate'}\n\nPlease attend to this ticket promptly.`,
-          env: c.env
-        }) : Promise.resolve()
-      ])
-    );
+    // Send WhatsApp to Customer & Primary Technician (using approved Meta templates)
+    const custPromise = complaint.customer_phone ? sendWhatsApp({
+      to: complaint.customer_phone,
+      templateName: 'technician_assigned',
+      variables: {
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        technician_name: primaryTech.name,
+        db_complaint_id: complaint.id
+      },
+      env: c.env
+    }) : Promise.resolve({ success: false, error: 'Customer has no phone number on file' });
 
-    return c.json({ success: true, message: 'Technician assigned successfully' });
+    const techPromise = primaryTech.phone ? sendWhatsApp({
+      to: primaryTech.phone,
+      templateName: 'technician_work_order',
+      variables: {
+        technician_name: primaryTech.name,
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
+        product_type: complaint.product_type || 'Solar Rooftop Systems',
+        issue_category: complaint.issue_category || 'Service Request',
+        notes: (complaint.issue_description || notes || 'Inspect and diagnose site').slice(0, 1000),
+        priority: complaint.priority || 'Medium',
+        expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
+        db_complaint_id: complaint.id
+      },
+      env: c.env
+    }) : Promise.resolve({ success: false, error: `Assigned technician "${primaryTech.name}" has no phone number on file.` });
+
+    const secTechPromise = (secondaryTech && secondaryTech.phone) ? sendWhatsApp({
+      to: secondaryTech.phone,
+      templateName: 'technician_work_order',
+      variables: {
+        technician_name: secondaryTech.name,
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
+        product_type: complaint.product_type || 'Solar Rooftop Systems',
+        issue_category: complaint.issue_category || 'Service Request',
+        notes: (complaint.issue_description || notes || 'Inspect and diagnose site').slice(0, 1000),
+        priority: complaint.priority || 'Medium',
+        expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
+        db_complaint_id: complaint.id
+      },
+      env: c.env
+    }) : Promise.resolve(null);
+
+    const [custResult, techResult, secTechResult] = await Promise.all([custPromise, techPromise, secTechPromise]);
+
+    let warningMsg = null;
+    if (!techResult?.success) {
+      warningMsg = `Technician assigned, but WhatsApp dispatch to technician failed: ${techResult?.error || 'Meta API error'}`;
+    }
+    if (!custResult?.success) {
+      warningMsg = (warningMsg ? `${warningMsg}. ` : '') + `WhatsApp dispatch to customer failed: ${custResult?.error || 'Meta API error'}`;
+    }
+
+    return c.json({
+      success: true,
+      message: 'Technician assigned successfully',
+      warning: warningMsg,
+      customer_whatsapp: custResult,
+      technician_whatsapp: techResult,
+      secondary_technician_whatsapp: secTechResult
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -731,6 +780,11 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
       }
     }
 
+    // If no technician assigned, allow direct office collection for admin/staff only
+    if (!complaint.assigned_technician_id && !['admin', 'staff'].includes(user.role)) {
+      return c.json({ error: 'Technicians can only collect payments on tickets assigned to them.' }, 403);
+    }
+
     const collectedAmt = Number(payment_collected || 0);
     const estCharges = Number(complaint.estimated_charges || 0);
     const status = collectedAmt >= estCharges ? 'Collected' : 'Partially Paid';
@@ -751,14 +805,75 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
     );
 
     const collector = user?.name || user?.username || 'Staff';
+    const isDirectOffice = !complaint.assigned_technician_id;
+    const noteText = isDirectOffice
+      ? `Direct office payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}. Note: Collected without assigned field technician.`
+      : `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.`;
+
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Payment Collected', `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.`, collector, user?.role || 'staff'],
+      [complaint.id, 'Payment Collected', noteText, collector, user?.role || 'staff'],
       c.env,
       c.executionCtx
     );
 
     return c.json({ success: true, message: 'Payment recorded' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/complaints/:id/settle-company - Settle Collected Cash into Company Account
+complaintRoutes.post('/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const body = await c.req.json().catch(() => ({}));
+    const { notes = '', amount_received } = body;
+
+    const compRes = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1
+    `, [id], c.env, c.executionCtx);
+
+    if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
+    const complaint = compRes.rows[0];
+
+    const settledAmt = amount_received !== undefined ? Number(amount_received) : (Number(complaint.payment_collected) || 0);
+    const actorName = user ? (user.name || user.username) : 'Company Finance/Admin';
+    const actorRole = user ? user.role : 'admin';
+
+    await query(`
+      UPDATE complaints
+      SET company_settlement_status = 'Settled with Company',
+          company_settled_at = CURRENT_TIMESTAMP,
+          company_settled_by = $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [actorName, complaint.id], c.env, c.executionCtx);
+
+    const techLabel = complaint.technician_name || (complaint.assigned_technician_id ? `Technician #${complaint.assigned_technician_id}` : 'Direct Office Collection');
+    const timelineMsg = `Company confirmed receipt of ₹${settledAmt} (${techLabel}) into company account.${notes ? ` • Note: ${notes}` : ''}`;
+
+    await query(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES ($1, 'Cash Settled with Company', $2, $3, $4, 0)
+    `, [complaint.id, timelineMsg, actorName, actorRole], c.env, c.executionCtx);
+
+    const updated = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = $1
+    `, [complaint.id], c.env, c.executionCtx);
+
+    return c.json({
+      success: true,
+      message: 'Payment settled with company successfully',
+      complaint: updated.rows[0]
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -798,7 +913,31 @@ complaintRoutes.post('/:id/close', authenticateToken, requireRole('admin', 'staf
       c.executionCtx
     );
 
-    return c.json({ success: true, message: 'Complaint closed successfully' });
+    // Send WhatsApp notification to customer using approved template
+    let waResult = null;
+    if (complaint.customer_phone) {
+      waResult = await sendWhatsApp({
+        to: complaint.customer_phone,
+        templateName: 'complaint_closed',
+        variables: {
+          customer_name: complaint.customer_name,
+          ticket_id: complaint.ticket_id,
+          complaint_id: complaint.ticket_id,
+          closure_remarks: closure_remarks || 'Issue resolved and verified.',
+          db_complaint_id: complaint.id
+        },
+        env: c.env
+      }).catch((err) => {
+        console.warn('[WhatsApp Closure Notice Error]', err.message);
+        return { success: false, error: err.message };
+      });
+    }
+
+    return c.json({
+      success: true,
+      message: 'Complaint closed successfully',
+      whatsapp: waResult
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -812,7 +951,13 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { reason } = body;
 
-    const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id], c.env, c.executionCtx);
+    const compRes = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1
+    `, [id], c.env, c.executionCtx);
+
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
@@ -835,11 +980,224 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
       c.executionCtx
     );
 
-    return c.json({ success: true, message: 'Complaint reopened' });
+    // Send WhatsApp notification to customer using approved template
+    let waResult = null;
+    if (complaint.customer_phone) {
+      waResult = await sendWhatsApp({
+        to: complaint.customer_phone,
+        templateName: 'complaint_reopened',
+        variables: {
+          customer_name: complaint.customer_name,
+          ticket_id: complaint.ticket_id,
+          complaint_id: complaint.ticket_id,
+          reason: reason || 'Service follow-up required',
+          db_complaint_id: complaint.id
+        },
+        env: c.env
+      }).catch((err) => {
+        console.warn('[WhatsApp Reopen Notice Error]', err.message);
+        return { success: false, error: err.message };
+      });
+    }
+
+    // Also notify assigned technician if one exists
+    if (complaint.technician_phone) {
+      sendWhatsApp({
+        to: complaint.technician_phone,
+        templateName: 'technician_work_order',
+        variables: {
+          technician_name: complaint.technician_name || 'Technician',
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          customer_phone: complaint.customer_phone,
+          customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
+          product_type: complaint.product_type || 'Solar Rooftop Systems',
+          issue_category: complaint.issue_category || 'Service Request',
+          notes: `[TICKET REOPENED] Reason: ${reason || 'Customer requested re-inspection'}`,
+          priority: 'High',
+          expected_visit_date: 'Immediate',
+          db_complaint_id: complaint.id
+        },
+        env: c.env
+      }).catch(() => {});
+    }
+
+    return c.json({
+      success: true,
+      message: 'Complaint reopened',
+      whatsapp: waResult
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
 });
+
+// Helper for Resending Technician Work Order
+async function handleResendTechnicianWorkOrder(c) {
+  try {
+    const id = c.req.param('id');
+    const user = c.get('user');
+
+    const compRes = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone,
+             st.name as secondary_technician_name, st.phone as secondary_technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      LEFT JOIN technicians st ON c.secondary_technician_id = st.id::text
+      WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1
+    `, [id], c.env, c.executionCtx);
+
+    if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
+    const complaint = compRes.rows[0];
+
+    if (!complaint.assigned_technician_id && !complaint.technician_name) {
+      return c.json({ error: 'No technician is assigned to this complaint. Please assign a technician first.' }, 400);
+    }
+    if (!complaint.technician_phone) {
+      return c.json({ error: `Assigned technician "${complaint.technician_name || 'Technician'}" has no phone number on file.` }, 400);
+    }
+
+    const techRes = await sendWhatsApp({
+      to: complaint.technician_phone,
+      templateName: 'technician_work_order',
+      variables: {
+        technician_name: complaint.technician_name || 'Technician',
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
+        product_type: complaint.product_type || 'Solar Rooftop Systems',
+        issue_category: complaint.issue_category || 'Service Request',
+        notes: (complaint.issue_description || 'Inspect and diagnose site').slice(0, 1000),
+        priority: complaint.priority || 'Medium',
+        expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
+        db_complaint_id: complaint.id
+      },
+      env: c.env
+    });
+
+    if (complaint.secondary_technician_phone) {
+      sendWhatsApp({
+        to: complaint.secondary_technician_phone,
+        templateName: 'technician_work_order',
+        variables: {
+          technician_name: complaint.secondary_technician_name || 'Co-Specialist',
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          customer_phone: complaint.customer_phone,
+          customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
+          product_type: complaint.product_type || 'Solar Rooftop Systems',
+          issue_category: complaint.issue_category || 'Service Request',
+          notes: (complaint.issue_description || 'Inspect and diagnose site').slice(0, 1000),
+          priority: complaint.priority || 'Medium',
+          expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
+          db_complaint_id: complaint.id
+        },
+        env: c.env
+      }).catch(() => {});
+    }
+
+    const sender = user?.name || user?.username || 'Staff';
+    await query(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES ($1, 'Work Order Resent', $2, $3, $4, 0)
+    `, [
+      complaint.id,
+      `Work order resent to technician ${complaint.technician_name} (${complaint.technician_phone}) via WhatsApp. Status: ${techRes.success ? 'Delivered' : 'Failed: ' + (techRes.error || 'Meta Error')}`,
+      sender,
+      user?.role || 'staff'
+    ], c.env, c.executionCtx);
+
+    if (!techRes.success) {
+      return c.json({
+        success: false,
+        error: `Failed to deliver WhatsApp template to ${complaint.technician_name} (${complaint.technician_phone}): ${techRes.error || 'Meta API error'}`
+      }, 400);
+    }
+
+    return c.json({
+      success: true,
+      message: `Work order dispatched to ${complaint.technician_name} via WhatsApp!`,
+      wamid: techRes.wamid
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+}
+
+// POST /api/complaints/:id/resend-technician and alias /resend-work-order
+complaintRoutes.post('/:id/resend-technician', authenticateToken, requireRole('admin', 'staff'), handleResendTechnicianWorkOrder);
+complaintRoutes.post('/:id/resend-work-order', authenticateToken, requireRole('admin', 'staff'), handleResendTechnicianWorkOrder);
+
+// Helper for Sending Technician Reminder
+async function handleSendTechnicianReminder(c) {
+  try {
+    const id = c.req.param('id');
+    const user = c.get('user');
+
+    const compRes = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1
+    `, [id], c.env, c.executionCtx);
+
+    if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
+    const complaint = compRes.rows[0];
+
+    if (!complaint.assigned_technician_id && !complaint.technician_name) {
+      return c.json({ error: 'No technician is assigned to this complaint. Please assign a technician first.' }, 400);
+    }
+    if (!complaint.technician_phone) {
+      return c.json({ error: `Assigned technician "${complaint.technician_name || 'Technician'}" has no phone number on file.` }, 400);
+    }
+
+    const techRes = await sendWhatsApp({
+      to: complaint.technician_phone,
+      templateName: 'technician_reminder',
+      variables: {
+        technician_name: complaint.technician_name || 'Technician',
+        ticket_id: complaint.ticket_id,
+        customer_name: complaint.customer_name,
+        customer_phone: complaint.customer_phone,
+        customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
+        expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Today',
+        db_complaint_id: complaint.id
+      },
+      env: c.env
+    });
+
+    const sender = user?.name || user?.username || 'Staff';
+    await query(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES ($1, 'Visit Reminder Sent', $2, $3, $4, 0)
+    `, [
+      complaint.id,
+      `Pending visit reminder sent to technician ${complaint.technician_name} (${complaint.technician_phone}) via WhatsApp.`,
+      sender,
+      user?.role || 'staff'
+    ], c.env, c.executionCtx);
+
+    if (!techRes.success) {
+      return c.json({
+        success: false,
+        error: `Failed to deliver WhatsApp reminder to ${complaint.technician_name}: ${techRes.error || 'Meta API error'}`
+      }, 400);
+    }
+
+    return c.json({
+      success: true,
+      message: `Reminder WhatsApp sent to ${complaint.technician_name}!`,
+      wamid: techRes.wamid
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+}
+
+// POST /api/complaints/:id/send-reminder and alias /remind-tech
+complaintRoutes.post('/:id/send-reminder', authenticateToken, handleSendTechnicianReminder);
+complaintRoutes.post('/:id/remind-tech', authenticateToken, handleSendTechnicianReminder);
 
 // PUT /api/complaints/:id - Update Complaint
 complaintRoutes.put('/:id', authenticateToken, async (c) => {

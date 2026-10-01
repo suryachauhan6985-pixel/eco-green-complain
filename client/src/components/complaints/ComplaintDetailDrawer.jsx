@@ -307,8 +307,8 @@ export const ComplaintDetailDrawer = ({
       const data = await api.getComplaint(complaintId);
       if (data && data.complaint) {
         setTicket(data.complaint);
-        setAttachments(data.attachments || []);
-        setTimeline(data.timeline || []);
+        setAttachments(data.attachments || data.complaint.attachments || data.ticket?.attachments || []);
+        setTimeline(data.timeline || data.complaint.timeline || data.ticket?.timeline || []);
         setNotifications(data.notifications || []);
         if (data.complaint.assigned_technician_id) {
           setSelectedTechId(String(data.complaint.assigned_technician_id));
@@ -354,8 +354,8 @@ export const ComplaintDetailDrawer = ({
       const data = await api.getComplaint(complaintId);
       if (data && data.complaint) {
         setTicket(data.complaint);
-        setAttachments(data.attachments || []);
-        setTimeline(data.timeline || []);
+        setAttachments(data.attachments || data.complaint.attachments || data.ticket?.attachments || []);
+        setTimeline(data.timeline || data.complaint.timeline || data.ticket?.timeline || []);
         setNotifications(data.notifications || []);
       }
     } catch (e) {}
@@ -414,6 +414,12 @@ export const ComplaintDetailDrawer = ({
       setIsReassignOpen(false);
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+
+      if (res?.warning) {
+        showToast(res.warning, 'warning');
+      } else {
+        showToast('Technician assigned and WhatsApp work order dispatched successfully!', 'success');
+      }
 
       // Find assigned technician details
       const assignedTech = technicians.find(t => String(t.id) === String(selectedTechId));
@@ -924,7 +930,7 @@ export const ComplaintDetailDrawer = ({
     }, 100);
   };
 
-  const openPaymentModal = () => {
+  const openPaymentModal = async () => {
     if (isSecondaryPartnerOnly) {
       showToast('Co-partner view: Only the primary technician can collect or record payment.', 'warning');
       return;
@@ -934,8 +940,19 @@ export const ComplaintDetailDrawer = ({
       return;
     }
     if (!ticket.assigned_technician_id) {
-      scrollToTechnicianAssignment();
-      return;
+      if (['admin', 'staff'].includes(currentUser?.role)) {
+        const ok = await confirm({
+          title: 'Direct Office Payment Collection',
+          message: 'No field technician is assigned to this ticket. Do you want to record direct office/staff payment collection without assigning a technician?',
+          type: 'confirm',
+          confirmText: 'Yes, Proceed with Office Collection',
+          cancelText: 'Cancel'
+        });
+        if (!ok) return;
+      } else {
+        scrollToTechnicianAssignment();
+        return;
+      }
     }
     setPaymentData({
       payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
@@ -958,7 +975,7 @@ export const ComplaintDetailDrawer = ({
       setIsRecordingPayment(false);
       return;
     }
-    if (!ticket.assigned_technician_id) {
+    if (!ticket.assigned_technician_id && !['admin', 'staff'].includes(currentUser?.role)) {
       setIsRecordingPayment(false);
       scrollToTechnicianAssignment();
       return;
@@ -1000,27 +1017,40 @@ export const ComplaintDetailDrawer = ({
   const handleSettleWithCompany = async () => {
     if (!ticket) return;
     if (!ticket.assigned_technician_id) {
-      await alert({
-        title: 'Technician Assignment Required',
-        message: 'Cannot settle technician cash on an unassigned complaint. Please assign a technician first.',
-        type: 'warning'
+      if (['admin', 'staff'].includes(currentUser?.role)) {
+        const ok = await confirm({
+          title: 'Confirm Office Payment Settlement',
+          message: `No field technician was assigned to this ticket. Confirm direct settlement of ₹${ticket.payment_collected} into Eco Green Solar Company account?`,
+          type: 'payment',
+          confirmText: `Settle ₹${ticket.payment_collected}`,
+          cancelText: 'Cancel'
+        });
+        if (!ok) return;
+      } else {
+        await alert({
+          title: 'Technician Assignment Required',
+          message: 'Cannot settle technician cash on an unassigned complaint. Please assign a technician first.',
+          type: 'warning'
+        });
+        return;
+      }
+    } else {
+      const techName = ticket.assigned_tech_name || ticket.technician_name || 'the technician';
+      const ok = await confirm({
+        title: 'Confirm Company Cash Deposit',
+        message: `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`,
+        type: 'payment',
+        confirmText: `Receive ₹${ticket.payment_collected}`,
+        cancelText: 'Cancel'
       });
-      return;
+      if (!ok) return;
     }
-    const techName = ticket.assigned_tech_name || ticket.technician_name || 'the technician';
-    const ok = await confirm({
-      title: 'Confirm Company Cash Deposit',
-      message: `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`,
-      type: 'payment',
-      confirmText: `Receive ₹${ticket.payment_collected}`,
-      cancelText: 'Cancel'
-    });
-    if (!ok) return;
 
     try {
       setSettlingCompany(true);
+      const techName = ticket.assigned_tech_name || ticket.technician_name || 'Direct Office Collection';
       await api.settleCompanyPayment(ticket.id, {
-        notes: `Cash received from technician ${techName} by ${currentUser?.name || 'Staff'}`
+        notes: `Cash received from ${techName} by ${currentUser?.name || 'Staff'}`
       });
       await fetchTicketDetails();
       if (onComplaintUpdated) onComplaintUpdated();
@@ -1424,6 +1454,15 @@ export const ComplaintDetailDrawer = ({
                               <CreditCard className="w-3.5 h-3.5" />
                               {Number(ticket.estimated_charges || 0) === 0 ? 'Collect On-Site Payment' : 'Record Payment Collected'}
                             </button>
+                          ) : ['admin', 'staff'].includes(currentUser?.role) ? (
+                            <button
+                              type="button"
+                              onClick={openPaymentModal}
+                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                            >
+                              <CreditCard className="w-3.5 h-3.5" />
+                              Collect Direct Office Payment
+                            </button>
                           ) : (
                             <button
                               type="button"
@@ -1443,9 +1482,9 @@ export const ComplaintDetailDrawer = ({
                         <div className="mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                           <div className="space-y-1 flex-1">
-                            <strong className="block font-bold text-amber-950">Technician Assignment Required</strong>
+                            <strong className="block font-bold text-amber-950">Technician Unassigned</strong>
                             <p className="text-[11px] text-amber-800 leading-relaxed">
-                              A technician must be assigned to this ticket before service charges can be collected or recorded.
+                              No technician is currently assigned to this ticket. Admin/staff can collect payments directly at the office with confirmation, or assign a field technician.
                             </p>
                             <button
                               type="button"
@@ -1490,17 +1529,13 @@ export const ComplaintDetailDrawer = ({
                           {ticket.company_settlement_status !== 'Settled with Company' && ['admin', 'staff'].includes(currentUser?.role) && (
                             <button
                               type="button"
-                              disabled={settlingCompany || !ticket.assigned_technician_id}
+                              disabled={settlingCompany}
                               onClick={handleSettleWithCompany}
-                              title={!ticket.assigned_technician_id ? 'Assign technician first before collecting' : 'Receive cash from technician into company account'}
-                              className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5 ${
-                                !ticket.assigned_technician_id
-                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                              }`}
+                              title="Receive cash into company account"
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                             >
                               <IndianRupee className="w-3.5 h-3.5" />
-                              {settlingCompany ? 'Settling...' : 'Collect from Tech'}
+                              {settlingCompany ? 'Settling...' : (ticket.assigned_technician_id ? 'Collect from Tech' : 'Settle Office Payment')}
                             </button>
                           )}
                         </div>
@@ -1522,7 +1557,7 @@ export const ComplaintDetailDrawer = ({
                             <Paperclip className="w-3.5 h-3.5 text-emerald-600" /> Attached Initial Complaint / Fault Proof ({initialIssueAttachments.length}):
                           </span>
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {!isResolvedOrClosed && (
+                            {!isResolvedOrClosed && ['admin', 'staff'].includes(currentUser?.role) && (
                               <>
                                 <label className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors" title="Take live photo with camera">
                                   {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
@@ -1567,7 +1602,12 @@ export const ComplaintDetailDrawer = ({
                         {initialIssueAttachments.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {initialIssueAttachments.map((att) => {
-                              const fileUrl = att.file_data || att.file_url || `/api/attachments/${att.id}`;
+                              const rawUrl = att.file_url || att.file_data || '';
+                              const fileUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:') || rawUrl.startsWith('/api')
+                                ? rawUrl
+                                : rawUrl.includes('complaints/')
+                                  ? `/api/attachments/r2/${rawUrl.replace(/^\/+/, '')}`
+                                  : rawUrl ? `/api/attachments/r2/${rawUrl.replace(/^\/+/, '')}` : `/api/attachments/${att.id}`;
                               const isPdf = att.file_type === 'application/pdf' || 
                                             (att.file_name && att.file_name.toLowerCase().endsWith('.pdf')) || 
                                             (fileUrl && fileUrl.startsWith('data:application/pdf'));
