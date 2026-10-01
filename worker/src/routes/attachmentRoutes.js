@@ -3,6 +3,8 @@ import { query } from '../db.js';
 import { authenticateToken, optionalAuth } from '../auth.js';
 import {
   validateFileMetadata,
+  validateFileBinary,
+  getMimeTypeFromKey,
   generateStorageKey,
   putR2Object,
   getR2Object,
@@ -46,11 +48,12 @@ attachmentRoutes.post('/upload', optionalAuth, async (c) => {
     }
 
     validateFileMetadata(filename, mimeType, fileBuffer.byteLength);
+    validateFileBinary(fileBuffer, mimeType, filename);
 
     const storageKey = generateStorageKey(complaintId, filename);
     await putR2Object(bucket, storageKey, fileBuffer, mimeType);
 
-    const publicServeUrl = `/api/attachments/r2/${encodeURIComponent(storageKey)}`;
+    const publicServeUrl = `/api/attachments/r2/${storageKey}`;
 
     return c.json({
       success: true,
@@ -120,19 +123,56 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
 });
 
 // GET /api/attachments/r2/* - Secure File Delivery from Cloudflare R2
-attachmentRoutes.get('/attachments/r2/:key{.*}', authenticateToken, async (c) => {
+attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
   try {
     const bucket = c.env?.MEDIA_BUCKET;
     if (!bucket) return c.text('R2 storage unavailable', 500);
 
-    const key = decodeURIComponent(c.req.param('key') || '');
+    const rawKey = c.req.param('key') || '';
+    const key = decodeURIComponent(rawKey);
     if (!key) return c.text('File key required', 400);
 
+    // Path traversal defense
+    if (key.includes('..') || key.startsWith('/') || key.includes('\\')) {
+      return c.json({ error: 'Invalid object key' }, 400);
+    }
+
     const user = c.get('user');
-    // Role verification: Admins and staff have unrestricted access
-    // Technicians can access complaint media
+
+    // Access control:
+    // If authenticated user (admin, staff, technician, customer): allowed
+    // If no token in header or query, verify that key is a legitimate complaint attachment or whatsapp media in PostgreSQL
     if (!user) {
-      return c.json({ error: 'Unauthorized file access' }, 401);
+      const matchInDb = await query(
+        `SELECT id FROM complaint_attachments 
+         WHERE file_url LIKE '%' || $1 OR file_data LIKE '%' || $1
+         UNION 
+         SELECT id FROM complaints 
+         WHERE closing_photo_url LIKE '%' || $1
+         UNION
+         SELECT id FROM whatsapp_messages
+         WHERE media_url LIKE '%' || $1
+         LIMIT 1`,
+        [key],
+        c.env,
+        c.executionCtx
+      ).catch(() => ({ rows: [] }));
+
+      if (matchInDb.rows.length === 0) {
+        // Also allow if complaintId part of key exists in complaints table
+        const keyParts = key.split('/');
+        const folderId = keyParts[1];
+        const compExists = folderId && folderId !== 'general' ? await query(
+          'SELECT id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+          [folderId],
+          c.env,
+          c.executionCtx
+        ).catch(() => ({ rows: [] })) : { rows: [] };
+
+        if (compExists.rows.length === 0) {
+          return c.json({ error: 'Unauthorized file access' }, 401);
+        }
+      }
     }
 
     const object = await getR2Object(bucket, key);
@@ -143,8 +183,17 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', authenticateToken, async (c) =>
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'private, max-age=86400');
+    headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
     headers.set('X-Content-Type-Options', 'nosniff');
+
+    const mimeType = object.httpMetadata?.contentType || getMimeTypeFromKey(key);
+    headers.set('Content-Type', mimeType);
+    headers.set('Content-Length', String(object.size));
+
+    const filename = key.split('/').pop() || 'attachment';
+    const isDownload = c.req.query('download') === '1';
+    headers.set('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${filename}"`);
+    headers.set('Access-Control-Allow-Origin', '*');
 
     return new Response(object.body, { headers });
   } catch (err) {

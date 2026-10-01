@@ -80,7 +80,7 @@ export async function compressImageFile(file, maxWidth = 1920, maxHeight = 1920,
   });
 }
 
-export async function uploadFileToSupabase(file) {
+export async function uploadFileToSupabase(file, complaintId = 'temp') {
   if (!file) return null;
   
   if (file.size > 50 * 1024 * 1024) {
@@ -90,6 +90,42 @@ export async function uploadFileToSupabase(file) {
   // Auto-compress large camera photos before sending over mobile networks
   const optimizedFile = await compressImageFile(file);
 
+  // 1. Primary: Cloudflare R2 Direct Upload via Cloudflare Worker API
+  try {
+    const formData = new FormData();
+    formData.append('file', optimizedFile);
+    formData.append('complaint_id', complaintId);
+
+    const token = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token'))
+      : null;
+
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const r2Res = await fetch('/api/upload', {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    if (r2Res.ok) {
+      const data = await r2Res.json();
+      if (data && data.success) {
+        return {
+          file_name: data.file_name || optimizedFile.name,
+          file_type: data.file_type || optimizedFile.type || 'application/octet-stream',
+          file_size: data.file_size || optimizedFile.size,
+          file_url: data.file_url,
+          storage_key: data.storage_key
+        };
+      }
+    }
+  } catch (r2Err) {
+    console.warn('[Cloudflare R2 Direct Upload Fallback Triggered]', r2Err);
+  }
+
+  // 2. Secondary Fallback: Supabase Storage
   const ext = (optimizedFile.name.split('.').pop() || 'bin').toLowerCase();
   const cleanBase = optimizedFile.name
     .replace(/\.[^.]+$/, '')

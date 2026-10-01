@@ -114,7 +114,11 @@ async function runSuite() {
     {
       name: '19. Cloudflare R2 Direct Upload (Image file)',
       fn: async () => {
-        const res = await req('POST', '/api/upload?complaint_id=999', Buffer.from('BINARY_IMAGE_DATA_FOR_R2_REGRESSION_TEST'), {
+        const validJpeg = Buffer.from(
+          '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
+          'base64'
+        );
+        const res = await req('POST', '/api/upload?complaint_id=999', validJpeg, {
           'Content-Type': 'image/jpeg',
           'X-Filename': 'solar_roof_inspection.jpg'
         });

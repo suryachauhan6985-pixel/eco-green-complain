@@ -53,7 +53,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Lightweight In-Memory Rate Limiter (Protects against Brute-Force and DoS)
 const rateLimitMap = new Map();
-function createRateLimiter({ windowMs = 60 * 1000, max = 30, message = 'Too many requests. Please try again later.' } = {}) {
+function createRateLimiter({ windowMs = 60 * 1000, max = 300, message = 'Too many requests. Please try again later.' } = {}) {
   return (req, res, next) => {
     const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
     const ip = String(rawIp).split(',')[0].trim();
@@ -1130,12 +1130,16 @@ app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) =
       return res.status(403).json({ error: 'Only administrators are authorized to reset passwords' });
     }
 
-    const { userId, technicianId, newPassword } = req.body;
-    if (!newPassword || newPassword.trim().length < 4) {
+    const userId = req.body.userId || req.body.user_id;
+    const technicianId = req.body.technicianId || req.body.technician_id;
+    const rawNewPass = req.body.newPassword || req.body.new_password || '';
+    const newPassword = rawNewPass.trim();
+
+    if (!newPassword || newPassword.length < 4) {
       return res.status(400).json({ error: 'Password must be at least 4 characters long' });
     }
 
-    const hash = await bcrypt.hash(newPassword.trim(), 10);
+    const hash = await bcrypt.hash(newPassword, 10);
     let targetUserId = userId;
 
     if (!targetUserId && technicianId) {
@@ -1198,32 +1202,34 @@ app.post('/api/auth/admin-reset-password', authenticateToken, async (req, res) =
 
 app.post('/api/auth/change-my-password', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only administrators are authorized to update or change passwords. Staff and technicians cannot modify passwords.' });
+    const currentPassword = (req.body.currentPassword || req.body.current_password || '').trim();
+    const newPassword = (req.body.newPassword || req.body.new_password || '').trim();
+
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required' });
     }
-    const { currentPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.trim().length < 4) {
+    if (!newPassword || newPassword.length < 4) {
       return res.status(400).json({ error: 'New password must be at least 4 characters long' });
+    }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'New password must be different from current password' });
     }
 
     const userRes = await query('SELECT * FROM users WHERE id = $1', [req.user.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ error: 'User account not found' });
     const user = userRes.rows[0];
 
-    // If current password provided, verify it
-    if (currentPassword && currentPassword.trim()) {
-      const valid = await bcrypt.compare(currentPassword.trim(), user.password_hash);
-      if (!valid) {
-        return res.status(400).json({ error: 'Current password does not match' });
-      }
+    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!valid) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
     }
 
-    const hash = await bcrypt.hash(newPassword.trim(), 10);
+    const hash = await bcrypt.hash(newPassword, 10);
     await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, req.user.id]);
 
     return res.json({
       success: true,
-      message: `Password updated successfully for ${user.name}`
+      message: 'Password changed successfully'
     });
   } catch (err) {
     console.error('Change password error:', err);

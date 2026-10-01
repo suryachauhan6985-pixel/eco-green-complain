@@ -37,6 +37,64 @@ export function validateFileMetadata(filename = '', mimetype = '', size = 0) {
   return { ext, mime };
 }
 
+export function validateFileBinary(buffer, mimeType = '', filename = '') {
+  if (!buffer || buffer.byteLength === 0) {
+    throw new Error('Empty file content payload.');
+  }
+
+  const bytes = new Uint8Array(buffer.slice(0, 16));
+  const mime = (mimeType || '').toLowerCase();
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+
+  // JPEG magic bytes: FF D8 FF
+  if (mime === 'image/jpeg' || ext === 'jpg' || ext === 'jpeg') {
+    if (bytes.length < 3 || bytes[0] !== 0xFF || bytes[1] !== 0xD8 || bytes[2] !== 0xFF) {
+      throw new Error('Corrupted or invalid JPEG image: missing JPEG file signature (FF D8 FF).');
+    }
+  }
+
+  // PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+  if (mime === 'image/png' || ext === 'png') {
+    if (bytes.length < 8 || bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4E || bytes[3] !== 0x47) {
+      throw new Error('Corrupted or invalid PNG image: missing PNG file signature.');
+    }
+  }
+
+  // PDF magic bytes: %PDF- (25 50 44 46 2D)
+  if (mime === 'application/pdf' || ext === 'pdf') {
+    if (bytes.length < 5 || bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46 || bytes[4] !== 0x2D) {
+      throw new Error('Corrupted or invalid PDF document: missing %PDF- file signature.');
+    }
+  }
+
+  // WebP magic bytes: RIFF....WEBP
+  if (mime === 'image/webp' || ext === 'webp') {
+    if (bytes.length < 12 || bytes[0] !== 0x52 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x46) {
+      throw new Error('Corrupted or invalid WebP image: missing RIFF header.');
+    }
+  }
+
+  return true;
+}
+
+export function getMimeTypeFromKey(key = '') {
+  const ext = (key.split('.').pop() || '').toLowerCase();
+  const map = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    pdf: 'application/pdf',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    '3gp': 'video/3gpp',
+    avi: 'video/x-msvideo'
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
 export function generateStorageKey(complaintId, filename = 'attachment') {
   const ext = (filename.split('.').pop() || 'bin').toLowerCase();
   const cleanBase = filename

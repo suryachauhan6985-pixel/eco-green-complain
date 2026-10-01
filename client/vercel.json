@@ -1,16 +1,20 @@
 {
   "rewrites": [
     {
+      "source": "/version.json",
+      "destination": "https://eco-green-solar-cms-api.eco-green-solar-cms-api.workers.dev/version.json"
+    },
+    {
       "source": "/api/(.*)",
-      "destination": "/api/index.js"
+      "destination": "https://eco-green-solar-cms-api.eco-green-solar-cms-api.workers.dev/api/$1"
     },
     {
       "source": "/api",
-      "destination": "/api/index.js"
+      "destination": "https://eco-green-solar-cms-api.eco-green-solar-cms-api.workers.dev/api"
     },
     {
       "source": "/uploads/(.*)",
-      "destination": "/api/index.js"
+      "destination": "https://eco-green-solar-cms-api.eco-green-solar-cms-api.workers.dev/api/attachments/r2/$1"
     },
     {
       "source": "/(.*)",

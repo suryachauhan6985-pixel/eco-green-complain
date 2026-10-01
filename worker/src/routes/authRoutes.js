@@ -22,7 +22,17 @@ authRoutes.post('/login', async (c) => {
        WHERE LOWER(email) = LOWER($1) 
           OR LOWER(username) = LOWER($1) 
           OR ($2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%'))
-       ORDER BY is_active DESC, id DESC`,
+          OR ($2 != '' AND id IN (SELECT user_id FROM technicians WHERE user_id IS NOT NULL AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%')))
+       ORDER BY 
+         CASE 
+           WHEN LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) THEN 0
+           WHEN $2 != '' AND phone = $2 THEN 1
+           WHEN $2 != '' AND phone LIKE '%' || $2 THEN 2
+           ELSE 3
+         END ASC,
+         is_active DESC,
+         id DESC
+       LIMIT 2`,
       [loginId, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : ''],
       c.env,
       c.executionCtx
@@ -36,7 +46,10 @@ authRoutes.post('/login', async (c) => {
     let anyActive = false;
     for (const candidate of userRes.rows) {
       if (candidate.is_active !== 0) anyActive = true;
-      const valid = await bcrypt.compare(password, candidate.password_hash);
+      let valid = await bcrypt.compare(password, candidate.password_hash);
+      if (!valid && password.trim() !== password) {
+        valid = await bcrypt.compare(password.trim(), candidate.password_hash);
+      }
       if (valid) {
         user = candidate;
         break;
@@ -225,13 +238,94 @@ authRoutes.put('/users/:id', authenticateToken, async (c) => {
 authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin'), async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
-    const { user_id, new_password } = body;
-    if (!user_id || !new_password || new_password.length < 6) {
-      return c.json({ error: 'User ID and new password (min 6 characters) required' }, 400);
+    const userId = body.userId || body.user_id;
+    const technicianId = body.technicianId || body.technician_id;
+    const newPassword = (body.newPassword || body.new_password || '').trim();
+
+    if (!newPassword || newPassword.length < 4) {
+      return c.json({ error: 'New password must be at least 4 characters long' }, 400);
     }
-    const hash = await bcrypt.hash(new_password, 10);
-    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, user_id], c.env, c.executionCtx);
-    return c.json({ success: true, message: 'Password updated successfully' });
+
+    let targetUserId = userId;
+    if (!targetUserId && technicianId) {
+      const techRes = await query(
+        'SELECT id, user_id, name, email, phone FROM technicians WHERE id = $1',
+        [technicianId],
+        c.env,
+        c.executionCtx
+      );
+      if (techRes.rows.length === 0) {
+        return c.json({ error: 'Technician not found' }, 404);
+      }
+      const tech = techRes.rows[0];
+      if (tech.user_id) {
+        targetUserId = tech.user_id;
+      } else {
+        const cleanPhone = (tech.phone || '').replace(/\D/g, '');
+        const userRes = await query(
+          `SELECT id FROM users 
+           WHERE (email IS NOT NULL AND LOWER(email) = LOWER($1)) 
+              OR ($2 != '' AND phone LIKE '%' || $2) 
+           LIMIT 1`,
+          [tech.email || '', cleanPhone.length >= 10 ? cleanPhone.slice(-10) : ''],
+          c.env,
+          c.executionCtx
+        );
+        if (userRes.rows.length > 0) {
+          targetUserId = userRes.rows[0].id;
+          await query('UPDATE technicians SET user_id = $1 WHERE id = $2', [targetUserId, technicianId], c.env, c.executionCtx);
+        } else {
+          const username = cleanPhone || (tech.name ? tech.name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + tech.id : 'tech_' + Date.now());
+          const email = tech.email || `${cleanPhone || 'tech_' + tech.id}@ecogreensolar.internal`;
+          const hash = await bcrypt.hash(newPassword, 8);
+          const created = await query(
+            'INSERT INTO users (name, username, email, password_hash, role, phone, is_active, created_at) VALUES ($1, $2, $3, $4, $5, $6, 1, CURRENT_TIMESTAMP) RETURNING id',
+            [tech.name, username, email, hash, 'technician', cleanPhone || null],
+            c.env,
+            c.executionCtx
+          );
+          targetUserId = created.rows[0].id;
+          await query('UPDATE technicians SET user_id = $1 WHERE id = $2', [targetUserId, technicianId], c.env, c.executionCtx);
+          return c.json({
+            success: true,
+            message: `User account created and password securely set for ${tech.name}`
+          });
+        }
+      }
+    }
+
+    if (!targetUserId) {
+      return c.json({ error: 'Target user ID or technician ID is required' }, 400);
+    }
+
+    const hash = await bcrypt.hash(newPassword, 8);
+    const updRes = await query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id, name, username, phone',
+      [hash, targetUserId],
+      c.env,
+      c.executionCtx
+    );
+    if (updRes.rows.length === 0) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    const updatedUser = updRes.rows[0];
+    if (updatedUser.phone) {
+      const cleanP = updatedUser.phone.replace(/[^0-9]/g, '');
+      if (cleanP.length >= 10) {
+        await query(
+          'UPDATE users SET password_hash = $1 WHERE phone LIKE \'%\' || $2 AND id != $3',
+          [hash, cleanP.slice(-10), updatedUser.id],
+          c.env,
+          c.executionCtx
+        ).catch(() => {});
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `Password updated successfully for ${updatedUser.name}`
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -241,19 +335,30 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
 authRoutes.post('/change-my-password', authenticateToken, async (c) => {
   try {
     const user = c.get('user');
+    if (!user || !user.id) {
+      return c.json({ error: 'Unauthorized session' }, 401);
+    }
     const body = await c.req.json().catch(() => ({}));
-    const { current_password, new_password } = body;
-    if (!current_password || !new_password || new_password.length < 6) {
-      return c.json({ error: 'Current password and new password (min 6 characters) required' }, 400);
+    const currentPassword = (body.currentPassword || body.current_password || '').trim();
+    const newPassword = (body.newPassword || body.new_password || '').trim();
+
+    if (!currentPassword) {
+      return c.json({ error: 'Current password is required' }, 400);
+    }
+    if (!newPassword || newPassword.length < 4) {
+      return c.json({ error: 'New password must be at least 4 characters long' }, 400);
+    }
+    if (currentPassword === newPassword) {
+      return c.json({ error: 'New password must be different from current password' }, 400);
     }
 
     const r = await query('SELECT password_hash FROM users WHERE id = $1', [user.id], c.env, c.executionCtx);
     if (r.rows.length === 0) return c.json({ error: 'User not found' }, 404);
 
-    const valid = await bcrypt.compare(current_password, r.rows[0].password_hash);
+    const valid = await bcrypt.compare(currentPassword, r.rows[0].password_hash);
     if (!valid) return c.json({ error: 'Current password is incorrect' }, 400);
 
-    const hash = await bcrypt.hash(new_password, 10);
+    const hash = await bcrypt.hash(newPassword, 8);
     await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, user.id], c.env, c.executionCtx);
     return c.json({ success: true, message: 'Password changed successfully' });
   } catch (err) {
