@@ -1,0 +1,5 @@
+{
+  "name": "cloudflare-mcp",
+  "version": "1.0.0",
+  "description": "Official Cloudflare MCP integration for managing Workers, R2, and Zones"
+}
