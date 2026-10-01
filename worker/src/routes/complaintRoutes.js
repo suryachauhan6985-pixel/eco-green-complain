@@ -92,7 +92,8 @@ complaintRoutes.get('/', authenticateToken, async (c) => {
         c.customer_phone LIKE $${params.length} OR
         LOWER(COALESCE(c.city, '')) LIKE $${params.length} OR
         LOWER(COALESCE(c.consumer_no, '')) LIKE $${params.length} OR
-        LOWER(COALESCE(c.order_no, '')) LIKE $${params.length}
+        LOWER(COALESCE(c.order_no, '')) LIKE $${params.length} OR
+        LOWER(COALESCE(c.dealer_name, '')) LIKE $${params.length}
       )`;
     }
 
@@ -301,12 +302,20 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
 
 // Helper for Complaint Creation
 async function handleCreateComplaint(c, isPublic = false) {
-  const body = await c.req.json().catch(() => ({}));
+  let body = {};
+  const cType = c.req.header('content-type') || '';
+  if (cType.includes('multipart/form-data') || cType.includes('application/x-www-form-urlencoded')) {
+    body = await c.req.parseBody().catch(() => ({}));
+  } else {
+    body = await c.req.json().catch(() => ({}));
+  }
+
   const customer_name = (body.customer_name || '').trim();
   const raw_phone = (body.customer_phone || '').trim();
   const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
   const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
   const product_type = (body.product_type || '').trim();
+  const dealer_name = (body.dealer_name || '').trim();
 
   if (!customer_name || !last10) {
     return c.json({ error: 'Customer name and a valid 10-digit mobile number are required' }, 400);
@@ -346,14 +355,14 @@ async function handleCreateComplaint(c, isPublic = false) {
       is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
       product_type, product_serial, installation_id, issue_category, issue_description,
       priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
-      created_at, updated_at
+      dealer_name, created_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9, $10, $11,
       $12, $13, $14, $15, $16,
       $17, $18, $19, $20, $21,
       $22, $23, $24, $25, $26,
-      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      $27, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     ) RETURNING *
   `;
 
@@ -389,7 +398,8 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.assigned_technician_id ? 'Assigned' : 'Unassigned',
     body.assigned_technician_id || null,
     body.expected_visit_date || null,
-    user?.id || null
+    user?.id || null,
+    dealer_name
   ];
 
   const r = await query(insertSql, values, c.env, c.executionCtx);
@@ -826,6 +836,106 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
     );
 
     return c.json({ success: true, message: 'Complaint reopened' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// PUT /api/complaints/:id - Update Complaint
+complaintRoutes.put('/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const existingComp = await query(
+      'SELECT id, status, is_in_warranty, estimated_charges, notify_charges FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+      [id],
+      c.env,
+      c.executionCtx
+    );
+    if (!existingComp.rows.length) {
+      return c.json({ error: 'Complaint not found' }, 404);
+    }
+    const current = existingComp.rows[0];
+    if (['Resolved', 'Closed'].includes(current.status)) {
+      return c.json({ error: `Complaint cannot be edited while in "${current.status}" status. Please reopen the complaint first to make changes.` }, 400);
+    }
+
+    let b = {};
+    const cType = c.req.header('content-type') || '';
+    if (cType.includes('multipart/form-data') || cType.includes('application/x-www-form-urlencoded')) {
+      b = await c.req.parseBody().catch(() => ({}));
+    } else {
+      b = await c.req.json().catch(() => ({}));
+    }
+
+    const cleanIsInWarranty = b.is_in_warranty !== undefined
+      ? ((b.is_in_warranty === 'true' || b.is_in_warranty === 1 || b.is_in_warranty === true || b.is_in_warranty === '1') ? 1 : 0)
+      : current.is_in_warranty;
+
+    const cleanEstimatedCharges = b.estimated_charges !== undefined
+      ? (parseFloat(b.estimated_charges) || 0)
+      : current.estimated_charges;
+
+    const cleanNotifyCharges = b.notify_charges !== undefined
+      ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
+      : current.notify_charges;
+
+    await query(`
+      UPDATE complaints SET
+        customer_name = COALESCE($1, customer_name),
+        customer_phone = COALESCE($2, customer_phone),
+        customer_email = COALESCE($3, customer_email),
+        customer_address = COALESCE($4, customer_address),
+        city = COALESCE($5, city),
+        consumer_no = COALESCE($6, consumer_no),
+        order_no = COALESCE($7, order_no),
+        product_type = COALESCE($8, product_type),
+        product_serial = COALESCE($9, product_serial),
+        issue_category = COALESCE($10, issue_category),
+        issue_description = COALESCE($11, issue_description),
+        priority = COALESCE($12, priority),
+        status = COALESCE($13, status),
+        is_in_warranty = $14,
+        estimated_charges = $15,
+        notify_charges = $16,
+        invoice_no = COALESCE($17, invoice_no),
+        invoice_date = COALESCE($18, invoice_date),
+        location_url = COALESCE($19, location_url),
+        installation_id = COALESCE($20, installation_id),
+        dealer_name = COALESCE($21, dealer_name),
+        updated_at = CURRENT_TIMESTAMP,
+        status_updated_at = CURRENT_TIMESTAMP
+      WHERE id = $22
+    `, [
+      b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
+      b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
+      b.customer_email !== undefined ? (b.customer_email ? b.customer_email.trim() : null) : null,
+      b.customer_address !== undefined ? (b.customer_address ? b.customer_address.trim() : null) : null,
+      b.city !== undefined ? (b.city ? b.city.trim() : null) : null,
+      b.consumer_no !== undefined ? (b.consumer_no ? b.consumer_no.trim() : null) : null,
+      b.order_no !== undefined ? (b.order_no ? b.order_no.trim() : null) : null,
+      b.product_type !== undefined ? (b.product_type ? b.product_type.trim() : null) : null,
+      b.product_serial !== undefined ? (b.product_serial ? b.product_serial.trim() : null) : null,
+      b.issue_category !== undefined ? (b.issue_category ? b.issue_category.trim() : null) : null,
+      b.issue_description !== undefined ? (b.issue_description ? b.issue_description.trim() : null) : null,
+      b.priority !== undefined ? (b.priority ? b.priority.trim() : null) : null,
+      b.status !== undefined ? (b.status ? b.status.trim() : null) : null,
+      cleanIsInWarranty,
+      cleanEstimatedCharges,
+      cleanNotifyCharges,
+      b.invoice_no !== undefined ? (b.invoice_no ? b.invoice_no.trim() : null) : null,
+      b.invoice_date !== undefined ? (b.invoice_date ? b.invoice_date.trim() : null) : null,
+      b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
+      b.installation_id !== undefined ? (b.installation_id ? b.installation_id.trim() : null) : null,
+      b.dealer_name !== undefined ? (b.dealer_name ? b.dealer_name.trim() : null) : null,
+      current.id
+    ], c.env, c.executionCtx);
+
+    const updated = await query('SELECT * FROM complaints WHERE id = $1', [current.id], c.env, c.executionCtx);
+    return c.json({
+      message: 'Complaint updated successfully',
+      complaint: updated.rows[0],
+      ticket: updated.rows[0]
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

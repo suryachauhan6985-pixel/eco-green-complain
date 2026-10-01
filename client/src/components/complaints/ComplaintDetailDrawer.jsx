@@ -861,6 +861,7 @@ export const ComplaintDetailDrawer = ({
       city: ticket.city || '',
       consumer_no: ticket.consumer_no || '',
       order_no: ticket.order_no || '',
+      dealer_name: ticket.dealer_name || '',
       invoice_no: ticket.invoice_no || '',
       invoice_date: ticket.invoice_date || '',
       location_url: ticket.location_url || '',
@@ -1356,6 +1357,12 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-slate-400 block text-[11px]">Installation ID:</span>
                           <span className="font-mono text-slate-800">{ticket.installation_id || 'N/A'}</span>
                         </div>
+                        {ticket.dealer_name && (
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Dealer Name:</span>
+                            <span className="font-semibold text-slate-800">{ticket.dealer_name}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -3211,6 +3218,17 @@ export const ComplaintDetailDrawer = ({
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">Dealer Name (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Solar Dealer / Agency"
+                    value={editFormData.dealer_name || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, dealer_name: e.target.value })}
+                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

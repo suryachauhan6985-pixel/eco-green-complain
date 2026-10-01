@@ -88,6 +88,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     post_office: '',
     consumer_no: '',
     order_no: '',
+    dealer_name: '',
     invoice_no: '',
     invoice_date: '',
     location_url: '',
@@ -100,6 +101,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     issue_category: 'No Power Output',
     issue_description: '',
     priority: 'Medium'
+  });
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({
+    isUploading: false,
+    progress: 0,
+    currentFile: '',
+    currentIndex: 0,
+    totalFiles: 0
   });
 
   // Populate from initialData (e.g. from WhatsApp conversion)
@@ -466,10 +476,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     setFormData(prev => ({
       ...prev,
       customer_name: c.customer_name || prev.customer_name,
+      customer_phone: c.consumer_mobile || c.customer_phone || c.phone || prev.customer_phone,
       customer_address: c.site_address || c.address || c.city_village || prev.customer_address,
-      city: c.city_village || prev.city,
+      city: c.city_village || c.city || prev.city,
       consumer_no: c.consumer_no || prev.consumer_no,
       order_no: c.order_no || prev.order_no || '',
+      dealer_name: c.dealer_name || prev.dealer_name || '',
       invoice_no: c.invoice_no || prev.invoice_no || '',
       invoice_date: cleanDate || prev.invoice_date || '',
       is_in_warranty: computedWarranty,
@@ -537,35 +549,63 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     });
   };
 
-  const handleFileChange = async (e) => {
-    if (e.target.files) {
-      const selected = Array.from(e.target.files);
-      const oversized = selected.filter(f => f.size > 50 * 1024 * 1024);
-      if (oversized.length > 0) {
-        showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
-      }
-      const validFiles = selected.filter(f => f.size <= 50 * 1024 * 1024);
-      if (validFiles.length === 0) return;
+  const processFiles = async (selected) => {
+    if (!selected || selected.length === 0) return;
+    const oversized = selected.filter(f => f.size > 50 * 1024 * 1024);
+    if (oversized.length > 0) {
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+    }
+    const validFiles = selected.filter(f => f.size <= 50 * 1024 * 1024);
+    if (validFiles.length === 0) return;
 
-      const newItems = await Promise.all(
-        validFiles.map(async (file) => {
-          const isImg = file.type.startsWith('image/');
-          const isVid = file.type.startsWith('video/');
-          const optimized = isImg ? await compressImageFile(file) : file;
-          return {
-            id: Math.random().toString(36).substring(2, 9),
-            file: optimized,
-            name: optimized.name,
-            size: optimized.size > 1024 * 1024
-              ? (optimized.size / (1024 * 1024)).toFixed(1) + ' MB'
-              : (optimized.size / 1024).toFixed(1) + ' KB',
-            isImage: isImg,
-            isVideo: isVid,
-            preview: (isImg || isVid) ? URL.createObjectURL(optimized) : null
-          };
-        })
-      );
-      setFileList(prev => [...prev, ...newItems].slice(0, 5));
+    const newItems = await Promise.all(
+      validFiles.map(async (file) => {
+        const isImg = file.type.startsWith('image/');
+        const isVid = file.type.startsWith('video/');
+        const optimized = isImg ? await compressImageFile(file) : file;
+        return {
+          id: Math.random().toString(36).substring(2, 9),
+          file: optimized,
+          name: optimized.name,
+          size: optimized.size > 1024 * 1024
+            ? (optimized.size / (1024 * 1024)).toFixed(1) + ' MB'
+            : (optimized.size / 1024).toFixed(1) + ' KB',
+          isImage: isImg,
+          isVideo: isVid,
+          preview: (isImg || isVid) ? URL.createObjectURL(optimized) : null
+        };
+      })
+    );
+    setFileList(prev => [...prev, ...newItems].slice(0, 5));
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files) {
+      processFiles(Array.from(e.target.files));
+      e.target.value = '';
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -606,8 +646,24 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
       // Direct Cloud Storage Upload (bypasses Vercel 4.5MB limit, supports up to 50MB files!)
       if (fileList.length > 0) {
+        setUploadProgress({
+          isUploading: true,
+          progress: 5,
+          currentFile: fileList[0].name,
+          currentIndex: 1,
+          totalFiles: fileList.length
+        });
         const uploadedAttachments = [];
-        for (const item of fileList) {
+        for (let idx = 0; idx < fileList.length; idx++) {
+          const item = fileList[idx];
+          const pct = Math.round(((idx + 0.3) / fileList.length) * 100);
+          setUploadProgress({
+            isUploading: true,
+            progress: pct,
+            currentFile: item.name,
+            currentIndex: idx + 1,
+            totalFiles: fileList.length
+          });
           try {
             const uploaded = await uploadFileToSupabase(item.file);
             if (uploaded) uploadedAttachments.push(uploaded);
@@ -617,6 +673,14 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
               data.append('attachments', item.file);
             }
           }
+          const finishedPct = Math.round(((idx + 1) / fileList.length) * 100);
+          setUploadProgress({
+            isUploading: true,
+            progress: finishedPct,
+            currentFile: item.name,
+            currentIndex: idx + 1,
+            totalFiles: fileList.length
+          });
         }
         if (uploadedAttachments.length > 0) {
           data.append('attachment_urls', JSON.stringify(uploadedAttachments));
@@ -649,6 +713,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       showToast('Failed to create complaint: ' + err.message, 'error');
     } finally {
       setSubmitting(false);
+      setUploadProgress({ isUploading: false, progress: 0, currentFile: '', currentIndex: 0, totalFiles: 0 });
     }
   };
 
@@ -1486,7 +1551,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   System Identification & Warranty Status
                 </h4>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">Consumer No. (Optional)</label>
                     <input
@@ -1506,6 +1571,17 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       value={formData.order_no}
                       onChange={(e) => setFormData({ ...formData, order_no: e.target.value })}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Dealer Name (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Solar Dealer Agency"
+                      value={formData.dealer_name || ''}
+                      onChange={(e) => setFormData({ ...formData, dealer_name: e.target.value })}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
                 </div>
@@ -1725,49 +1801,90 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                 />
               </div>
 
-              {/* Attachments with Live Preview & Remove */}
+              {/* Attachments with Drag & Drop, Live Preview & Remove */}
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                   Upload Photo/Video Proof (Optional, Max 5)
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:bg-emerald-50/30 transition-colors">
-                    <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                    <span className="text-xs text-slate-700 font-semibold">Browse Gallery / Files</span>
-                    <span className="text-[10px] text-slate-400">Photos, videos, PDFs (Max 5)</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*,video/*,.pdf"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </label>
-                  <label className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
-                    <Camera className="w-5 h-5 text-emerald-600 mb-1" />
-                    <span className="text-xs text-emerald-800 font-bold">Take Live Photo</span>
-                    <span className="text-[10px] text-emerald-600/80">Direct camera photo</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </label>
-                  <label className="border-2 border-dashed border-teal-300 hover:border-teal-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-teal-50/40 hover:bg-teal-50/70 transition-colors">
-                    <Video className="w-5 h-5 text-teal-600 mb-1" />
-                    <span className="text-xs text-teal-800 font-bold">Record Live Video</span>
-                    <span className="text-[10px] text-teal-600/80">Direct camera recording</span>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      capture="environment"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </label>
+                <div 
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-2xl p-3 transition-all duration-200 ${
+                    isDragging 
+                      ? 'border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-400/50 scale-[1.01]' 
+                      : 'border-slate-200/90 bg-slate-50/50 hover:border-emerald-300'
+                  }`}
+                >
+                  {isDragging ? (
+                    <div className="py-6 flex flex-col items-center justify-center text-center space-y-1.5 pointer-events-none">
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <p className="text-xs font-bold text-emerald-800">Drop files here to upload</p>
+                      <p className="text-[10px] text-emerald-600">Supports images, videos, and PDF documents (Max 50MB)</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-white hover:bg-emerald-50/40 transition-colors">
+                        <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                        <span className="text-xs text-slate-700 font-semibold">Browse Gallery / Files</span>
+                        <span className="text-[10px] text-slate-400">Drag & drop or click (Max 5)</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,video/*,.pdf"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                      <label className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
+                        <Camera className="w-5 h-5 text-emerald-600 mb-1" />
+                        <span className="text-xs text-emerald-800 font-bold">Take Live Photo</span>
+                        <span className="text-[10px] text-emerald-600/80">Direct camera photo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                      <label className="border-2 border-dashed border-teal-300 hover:border-teal-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-teal-50/40 hover:bg-teal-50/70 transition-colors">
+                        <Video className="w-5 h-5 text-teal-600 mb-1" />
+                        <span className="text-xs text-teal-800 font-bold">Record Live Video</span>
+                        <span className="text-[10px] text-teal-600/80">Direct camera recording</span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          capture="environment"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
+
+                {/* Upload Progress Animation */}
+                {uploadProgress.isUploading && (
+                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-emerald-900 flex items-center gap-1.5 truncate">
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin shrink-0" />
+                        <span>Uploading attachment {uploadProgress.currentIndex} of {uploadProgress.totalFiles}: <strong className="font-mono">{uploadProgress.currentFile}</strong></span>
+                      </span>
+                      <span className="font-bold text-emerald-700 font-mono ml-2 shrink-0">{uploadProgress.progress}%</span>
+                    </div>
+                    <div className="w-full bg-emerald-200/60 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-emerald-600 h-full rounded-full transition-all duration-300 ease-out" 
+                        style={{ width: `${uploadProgress.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Live Preview List */}
                 {fileList.length > 0 && (
@@ -1847,9 +1964,13 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   }`}
                   title={activeComplaintWarning ? `Cannot register: Ticket #${activeComplaintWarning.ticket_id} for "${activeComplaintWarning.product_type || formData.product_type}" is still open (${activeComplaintWarning.status})` : ''}
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  {submitting ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
                   {submitting
-                    ? 'Registering & Dispatching...'
+                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : 'Registering & Dispatching...')
                     : activeComplaintWarning
                     ? `Cannot Register: Open Ticket for ${activeComplaintWarning.product_type || formData.product_type}`
                     : 'Register Complaint & Send Alerts'}

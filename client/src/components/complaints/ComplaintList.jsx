@@ -432,6 +432,7 @@ export const ComplaintList = ({
           </span>
 
           <select
+            aria-label="Filter by Product Category"
             value={productFilter}
             onChange={(e) => setProductFilter(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
@@ -445,6 +446,7 @@ export const ComplaintList = ({
           </select>
 
           <select
+            aria-label="Filter by Priority Level"
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
@@ -457,6 +459,7 @@ export const ComplaintList = ({
 
           {['admin', 'staff'].includes(currentUser?.role) && (
             <select
+              aria-label="Filter by Assigned Technician"
               value={technicianFilter}
               onChange={(e) => setTechnicianFilter(e.target.value)}
               className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"

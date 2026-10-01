@@ -248,7 +248,7 @@ export const Navbar = ({
               onClick={onToggleNotificationDrawer}
               title={`Notification Center (${unreadCount} unread)`}
               className="relative p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors shrink-0"
-              aria-label="Notification Center"
+              aria-label={unreadCount > 0 ? `Notification Center (${unreadCount > 9 ? '9+' : unreadCount})` : "Notification Center"}
             >
               <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
               {unreadCount > 0 && (
@@ -266,6 +266,7 @@ export const Navbar = ({
                   currentUser?.role === 'technician' ? 'Tech' :
                   currentUser?.role === 'customer' ? 'User' :
                   currentUser?.role === 'admin' ? 'Admin' : 'Staff';
+                const displayName = currentUser?.name?.split(' ')[0] || shortRoleLabel;
 
                 return (
                   <>
@@ -285,7 +286,7 @@ export const Navbar = ({
                       onClick={() => setRoleMenuOpen(!roleMenuOpen)}
                       className="sm:hidden flex items-center gap-1 pl-1 pr-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-full border border-slate-200 shadow-2xs active:scale-95 transition-all shrink-0"
                       title="Active Account & Profile"
-                      aria-label="Active Account & Profile"
+                      aria-label={`Active Account: ${displayName}`}
                     >
                       <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-2xs shrink-0">
                         <RoleIcon className="w-3.5 h-3.5 text-amber-200" />

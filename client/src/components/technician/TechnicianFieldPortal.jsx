@@ -64,6 +64,19 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     if (onSectionChange) onSectionChange(newSec);
   };
 
+  const getStageBorderClass = (status, isOverdue) => {
+    if (isOverdue) return 'border-t-rose-500 sm:border-t-transparent sm:border-l-rose-500';
+    switch (status) {
+      case 'Resolved': return 'border-t-emerald-600 sm:border-t-transparent sm:border-l-emerald-600';
+      case 'Closed': return 'border-t-slate-500 sm:border-t-transparent sm:border-l-slate-500';
+      case 'In Progress': return 'border-t-blue-600 sm:border-t-transparent sm:border-l-blue-600';
+      case 'On Hold': return 'border-t-purple-500 sm:border-t-transparent sm:border-l-purple-500';
+      case 'Assigned': return 'border-t-blue-500 sm:border-t-transparent sm:border-l-blue-500';
+      case 'Reopened': return 'border-t-rose-500 sm:border-t-transparent sm:border-l-rose-500';
+      default: return 'border-t-amber-500 sm:border-t-transparent sm:border-l-amber-500';
+    }
+  };
+
   // Cash Reconciliation UI States
   const [expandedTechId, setExpandedTechId] = useState(null);
   const [settlingAction, setSettlingAction] = useState(false);
@@ -1135,9 +1148,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                 <div
                   key={job.id}
                   onClick={() => onSelectComplaint && onSelectComplaint(job.ticket_id || job.id)}
-                  className={`bg-white rounded-2xl border p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                  className={`bg-white rounded-2xl border p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 border-t-4 sm:border-t-0 sm:border-l-4 ${getStageBorderClass(job.status, ageInfo.isOverdue)} ${
                     ageInfo.isOverdue
-                      ? 'border-rose-300 ring-1 ring-rose-200 border-l-4 border-l-rose-500'
+                      ? 'border-rose-300 ring-1 ring-rose-200'
                       : 'border-slate-200 hover:border-emerald-500'
                   }`}
                 >
@@ -1254,9 +1267,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               return (
                 <div
                   key={job.id}
-                  className={`bg-white rounded-2xl border shadow-2xs hover:shadow-md transition-all overflow-hidden flex flex-col justify-between ${
+                  className={`bg-white rounded-2xl border shadow-2xs hover:shadow-md transition-all overflow-hidden flex flex-col justify-between border-t-4 sm:border-t-0 sm:border-l-4 ${getStageBorderClass(job.status, ageInfo.isOverdue)} ${
                     ageInfo.isOverdue
-                      ? 'border-rose-300 ring-1 ring-rose-200 border-l-4 border-l-rose-500'
+                      ? 'border-rose-300 ring-1 ring-rose-200'
                       : 'border-slate-200 hover:border-emerald-500'
                   }`}
                 >

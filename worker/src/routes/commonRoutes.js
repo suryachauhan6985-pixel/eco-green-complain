@@ -108,7 +108,7 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
     if (!q || q.length < 2) {
       const sample = await query(`
         SELECT 
-          id, customer_name, consumer_mobile, consumer_no, city_village, 
+          id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
           dealer_name, invoice_no, invoice_date, installation_date,
           warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty
         FROM installed_customers 
@@ -133,13 +133,14 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
         OR inverter_serial ILIKE $${paramIdx}
         OR invoice_no ILIKE $${paramIdx}
         OR dealer_name ILIKE $${paramIdx}
+        OR order_no ILIKE $${paramIdx}
       )`);
     });
 
     const whereClause = conditions.join(' AND ');
     const r = await query(`
       SELECT 
-        id, customer_name, consumer_mobile, consumer_no, city_village, 
+        id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
         dealer_name, invoice_no, invoice_date, installation_date,
         warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty
       FROM installed_customers 
@@ -454,6 +455,132 @@ commonRoutes.post('/notifications/templates/:id/sync-meta', authenticateToken, a
       return c.json({ error: 'Template not found' }, 404);
     }
     return c.json({ success: true, message: 'Template synced with Meta', template: res.rows[0] });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/in-app-notifications
+commonRoutes.get('/in-app-notifications', optionalAuth, async (c) => {
+  try {
+    const r = await query('SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 200', [], c.env, c.executionCtx);
+    const mapped = (r.rows || []).map(row => ({
+      id: row.id,
+      type: row.type,
+      ticketId: row.ticket_id,
+      complaintId: row.complaint_id,
+      title: row.title,
+      message: row.message,
+      customerName: row.customer_name,
+      targetRole: row.target_role || 'all',
+      targetTechnicianId: row.target_technician_id,
+      targetTechnicianName: row.target_technician_name,
+      performedByName: row.performed_by_name,
+      performedByRole: row.performed_by_role,
+      readBy: Array.isArray(row.read_by) ? row.read_by : (typeof row.read_by === 'string' ? JSON.parse(row.read_by || '[]') : []),
+      acknowledgedBy: Array.isArray(row.acknowledged_by) ? row.acknowledged_by : (typeof row.acknowledged_by === 'string' ? JSON.parse(row.acknowledged_by || '[]') : []),
+      createdAt: row.created_at
+    }));
+    return c.json({ notifications: mapped });
+  } catch (err) {
+    return c.json({ notifications: [] });
+  }
+});
+
+// POST /api/in-app-notifications
+commonRoutes.post('/in-app-notifications', optionalAuth, async (c) => {
+  try {
+    const b = await c.req.json().catch(() => ({}));
+    const id = b.id || `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const user = c.get('user');
+    await query(`
+      INSERT INTO in_app_notifications (
+        id, type, ticket_id, complaint_id, title, message, customer_name,
+        target_role, target_technician_id, target_technician_name,
+        performed_by_name, performed_by_role, read_by, acknowledged_by, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO NOTHING
+    `, [
+      id,
+      b.type || 'info',
+      b.ticketId || '',
+      b.complaintId || null,
+      b.title || 'System Notification',
+      b.message || '',
+      b.customerName || '',
+      b.targetRole || 'all',
+      b.targetTechnicianId || null,
+      b.targetTechnicianName || '',
+      b.performedByName || user?.name || 'Staff',
+      b.performedByRole || user?.role || 'staff',
+      JSON.stringify(b.readBy || []),
+      JSON.stringify(b.acknowledgedBy || [])
+    ], c.env, c.executionCtx);
+    return c.json({ success: true, id }, 201);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// PUT /api/in-app-notifications/:id/read
+commonRoutes.put('/in-app-notifications/:id/read', optionalAuth, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const userKeys = [
+      user?.id ? String(user.id) : null,
+      user?.username || null,
+      user?.email || null,
+      user?.name || null,
+      user?.role || null,
+      'read'
+    ].filter(Boolean);
+
+    await query(`
+      UPDATE in_app_notifications
+      SET read_by = CASE
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || $1::jsonb
+        ELSE $1::jsonb
+      END
+      WHERE id = $2 OR ticket_id = $2
+    `, [JSON.stringify(userKeys), id], c.env, c.executionCtx);
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// PUT /api/in-app-notifications/read-all
+commonRoutes.put('/in-app-notifications/read-all', optionalAuth, async (c) => {
+  try {
+    const user = c.get('user');
+    const userKeys = [
+      user?.id ? String(user.id) : null,
+      user?.username || null,
+      user?.email || null,
+      user?.name || null,
+      user?.role || null,
+      'read'
+    ].filter(Boolean);
+
+    await query(`
+      UPDATE in_app_notifications
+      SET read_by = CASE
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || $1::jsonb
+        ELSE $1::jsonb
+      END
+    `, [JSON.stringify(userKeys)], c.env, c.executionCtx);
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// DELETE /api/in-app-notifications
+commonRoutes.delete('/in-app-notifications', optionalAuth, async (c) => {
+  try {
+    await query('DELETE FROM in_app_notifications', [], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'All in-app notifications cleared' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

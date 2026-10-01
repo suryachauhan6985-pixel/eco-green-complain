@@ -2266,13 +2266,15 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
         city, consumer_no, order_no, invoice_no, invoice_date, location_url,
         is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
         product_type, product_serial, installation_id, issue_category, issue_description,
-        priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id
+        priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
+        dealer_name
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10, $11,
         $12, $13, $14, $15, $16,
         $17, $18, $19, $20, $21,
-        $22, $23, $24, $25, $26
+        $22, $23, $24, $25, $26,
+        $27
       ) RETURNING *
     `;
 
@@ -2302,7 +2304,8 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
       body.assigned_technician_id ? 'Assigned' : 'Unassigned',
       body.assigned_technician_id || null,
       body.expected_visit_date || null,
-      req.user?.id || null
+      req.user?.id || null,
+      (body.dealer_name || '').trim()
     ];
 
     const r = await query(insertSql, values);
