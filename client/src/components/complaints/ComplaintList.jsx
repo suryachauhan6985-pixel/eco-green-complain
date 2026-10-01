@@ -273,15 +273,15 @@ export const ComplaintList = ({
 
   const getStageBorderClass = (status) => {
     switch (status) {
-      case 'Resolved': return 'border-l-emerald-500';
-      case 'Closed': return 'border-l-slate-400';
-      case 'In Progress': return 'border-l-indigo-600';
-      case 'On Hold': return 'border-l-purple-500';
-      case 'Assigned': return 'border-l-blue-500';
-      case 'Reopened': return 'border-l-rose-500';
+      case 'Resolved': return 'border-t-emerald-500 sm:border-t-transparent sm:border-l-emerald-500';
+      case 'Closed': return 'border-t-slate-400 sm:border-t-transparent sm:border-l-slate-400';
+      case 'In Progress': return 'border-t-indigo-600 sm:border-t-transparent sm:border-l-indigo-600';
+      case 'On Hold': return 'border-t-purple-500 sm:border-t-transparent sm:border-l-purple-500';
+      case 'Assigned': return 'border-t-blue-500 sm:border-t-transparent sm:border-l-blue-500';
+      case 'Reopened': return 'border-t-rose-500 sm:border-t-transparent sm:border-l-rose-500';
       case 'Registered':
       case 'Unassigned':
-      default: return 'border-l-amber-500';
+      default: return 'border-t-amber-500 sm:border-t-transparent sm:border-l-amber-500';
     }
   };
 
@@ -821,7 +821,7 @@ export const ComplaintList = ({
                 <div
                   key={c.id}
                   onClick={() => onSelectComplaint(c.ticket_id || c.id)}
-                  className={`bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden border-l-[4px] ${getStageBorderClass(displayStatus)} p-4`}
+                  className={`bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden border-t-4 sm:border-t-0 sm:border-l-4 ${getStageBorderClass(displayStatus)} p-4`}
                 >
                   {/* Top: Ticket ID, Stage Badge, Priority */}
                   <div>

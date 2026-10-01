@@ -216,6 +216,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           customer_name: customerName,
           consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim(),
           consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim(),
+          order_no: String(getExcelVal(r, ['Order No', 'Order No.', 'Order Number', 'Order_No', 'order_no', 'SO No', 'SO Number', 'SO No.', 'Order#'])).trim() || null,
           city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim(),
           dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim(),
           invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim(),

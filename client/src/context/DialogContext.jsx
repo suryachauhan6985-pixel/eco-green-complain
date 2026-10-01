@@ -78,13 +78,16 @@ export function DialogProvider({ children }) {
     });
   }, []);
 
-  // Toast notification
-  const showToast = useCallback((message, type = 'success') => {
+  // Toast notification with enhanced duration for errors and swipe/click dismiss
+  const showToast = useCallback((message, type = 'success', customDuration = null) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, type }]);
+
+    // Errors stay visible for 9 seconds so the user can read the complete details; success/info stay 4.5s
+    const duration = customDuration || (type === 'error' ? 9000 : 4500);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, duration);
   }, []);
 
   const handleCloseDialog = (confirmed) => {
@@ -187,28 +190,41 @@ export function DialogProvider({ children }) {
         </div>
       )}
 
-      {/* TOASTS CONTAINER */}
-      <div className="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+      {/* TOASTS CONTAINER WITH TAP & SWIPE DISMISS */}
+      <div className="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-3 sm:px-0">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto p-3.5 rounded-2xl shadow-xl flex items-start gap-2.5 text-xs font-medium border animate-in slide-in-from-bottom-3 duration-200 ${
-              t.type === 'error' ? 'bg-rose-900 text-white border-rose-700' :
-              t.type === 'info' ? 'bg-slate-900 text-white border-slate-700' :
-              'bg-emerald-900 text-white border-emerald-700'
+            onClick={() => removeToast(t.id)}
+            onTouchStart={(e) => { t._touchX = e.touches[0].clientX; }}
+            onTouchEnd={(e) => {
+              if (t._touchX !== undefined && Math.abs(e.changedTouches[0].clientX - t._touchX) > 40) {
+                removeToast(t.id);
+              }
+            }}
+            className={`pointer-events-auto p-3.5 rounded-2xl shadow-2xl flex items-start gap-2.5 text-xs font-medium border cursor-pointer select-none transition-all active:scale-98 animate-in slide-in-from-bottom-3 duration-200 ${
+              t.type === 'error' ? 'bg-rose-900/95 text-white border-rose-700 ring-2 ring-rose-500/30' :
+              t.type === 'warning' ? 'bg-amber-900/95 text-amber-50 border-amber-700 ring-2 ring-amber-500/30' :
+              t.type === 'info' ? 'bg-slate-900/95 text-white border-slate-700' :
+              'bg-emerald-900/95 text-white border-emerald-700'
             }`}
+            title="Click or swipe to close immediately"
           >
             <div className="shrink-0 mt-0.5">
               {t.type === 'error' ? (
                 <AlertCircle className="w-4 h-4 text-rose-300" />
+              ) : t.type === 'warning' ? (
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
               ) : (
                 <CheckCircle className="w-4 h-4 text-emerald-300" />
               )}
             </div>
             <div className="flex-1 leading-snug">{t.message}</div>
             <button 
-              onClick={() => removeToast(t.id)}
-              className="text-white/60 hover:text-white p-0.5 rounded"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); removeToast(t.id); }}
+              className="text-white/70 hover:text-white p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0"
+              title="Close notification"
             >
               <X className="w-3.5 h-3.5" />
             </button>

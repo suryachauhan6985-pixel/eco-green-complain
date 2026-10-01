@@ -143,7 +143,7 @@ export const TourLedgerSection = ({
   const [advanceForm, setAdvanceForm] = useState({
     technician_id: '',
     amount: '',
-    purpose: 'Tour Advance for Field Tasks',
+    purpose: '',
     payment_mode: 'Cash',
     reference_no: ''
   });
@@ -177,7 +177,7 @@ export const TourLedgerSection = ({
     setAdvanceForm({
       technician_id: initialTechId,
       amount: '',
-      purpose: 'Tour Advance for Field Tasks',
+      purpose: '',
       payment_mode: 'Cash',
       reference_no: ''
     });
@@ -1133,21 +1133,22 @@ export const TourLedgerSection = ({
   }, [expenses]);
 
   const computedTotalAdvance = useMemo(() => advances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), [advances]);
-  const computedApprovedExpenses = useMemo(() => expenses.filter(e => e.status !== 'Rejected' && e.status !== 'rejected').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
+  // Strictly count only vouchers approved by admin/staff (not submitted or pending)
+  const computedApprovedExpenses = useMemo(() => expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
   const computedTotalReturned = useMemo(() => settlements.filter(s => s.settlement_type === 'return_to_company').reduce((s, s1) => s + (parseFloat(s1.returned_amount || s1.amount) || 0), 0), [settlements]);
   const computedTotalReimbursed = useMemo(() => settlements.filter(s => s.settlement_type === 'reimbursed_by_company').reduce((s, s1) => s + (parseFloat(s1.reimbursed_amount || s1.amount) || 0), 0), [settlements]);
   const computedNetBalance = useMemo(() => (computedTotalAdvance + computedTotalReimbursed) - (computedApprovedExpenses + computedTotalReturned), [computedTotalAdvance, computedTotalReimbursed, computedApprovedExpenses, computedTotalReturned]);
 
   const summary = useMemo(() => {
     const rawAdv = ledgerData.summary?.total_advance ?? ledgerData.summary?.totalAdvance;
-    const rawExp = ledgerData.summary?.approved_expenses ?? ledgerData.summary?.totalExpenses ?? ledgerData.summary?.total_expenses;
+    const rawExp = ledgerData.summary?.approved_expenses;
     const rawRet = ledgerData.summary?.total_returned ?? ledgerData.summary?.totalReturned;
     const rawReimb = ledgerData.summary?.total_reimbursed ?? ledgerData.summary?.totalReimbursed;
     const rawBal = ledgerData.summary?.net_balance ?? ledgerData.summary?.currentBalance;
 
     return {
       total_advance: (rawAdv !== undefined && rawAdv !== null && Number(rawAdv) > 0) ? Number(rawAdv) : computedTotalAdvance,
-      approved_expenses: (rawExp !== undefined && rawExp !== null && Number(rawExp) > 0) ? Number(rawExp) : computedApprovedExpenses,
+      approved_expenses: (rawExp !== undefined && rawExp !== null && Number(rawExp) >= 0) ? Number(rawExp) : computedApprovedExpenses,
       total_returned: (rawRet !== undefined && rawRet !== null && Number(rawRet) > 0) ? Number(rawRet) : computedTotalReturned,
       total_reimbursed: (rawReimb !== undefined && rawReimb !== null && Number(rawReimb) > 0) ? Number(rawReimb) : computedTotalReimbursed,
       net_balance: (rawBal !== undefined && rawBal !== null && (rawAdv || rawExp || rawRet)) ? Number(rawBal) : computedNetBalance
@@ -1162,9 +1163,7 @@ export const TourLedgerSection = ({
       settlement_type: isReimbursement ? 'reimbursed_by_company' : 'return_to_company',
       payment_mode: isReimbursement ? 'UPI / Bank Transfer' : 'Cash',
       reference_no: '',
-      notes: isReimbursement 
-        ? 'Reimbursement paid to specialist for out-of-pocket tour expenses' 
-        : 'Tour surplus cash returned back to company'
+      notes: ''
     });
     setIsSettleModalOpen(true);
   };
@@ -1767,8 +1766,9 @@ export const TourLedgerSection = ({
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">Purpose</th>
+                      <th className="py-2.5 px-3">Date & Time</th>
+                      <th className="py-2.5 px-3">Specialist (Recipient)</th>
+                      <th className="py-2.5 px-3">Purpose / Remarks</th>
                       <th className="py-2.5 px-3">Payment Mode</th>
                       <th className="py-2.5 px-3">Ref No</th>
                       <th className="py-2.5 px-3">Allocated By</th>
@@ -1778,11 +1778,21 @@ export const TourLedgerSection = ({
                   <tbody className="divide-y divide-slate-100">
                     {advances.map((adv) => (
                       <tr key={adv.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-2.5 px-3 font-semibold text-slate-700">
-                          {adv.allocated_at ? formatIndianDateOnly(adv.allocated_at) : '-'}
+                        <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
+                          {adv.allocated_at ? formatIndianDateTime(adv.allocated_at) : '-'}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-bold text-slate-800 block">
+                            {adv.technician_name || 'Assigned Specialist'}
+                          </span>
+                          {adv.technician_phone && (
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {adv.technician_phone}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-slate-800 font-medium">
-                          {adv.purpose || 'Tour Advance'}
+                          {adv.purpose || adv.tour_title || adv.notes || 'Tour Advance'}
                         </td>
                         <td className="py-2.5 px-3">
                           <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold">
@@ -1792,10 +1802,10 @@ export const TourLedgerSection = ({
                         <td className="py-2.5 px-3 font-mono text-slate-500">
                           {adv.reference_no || '-'}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-600">
-                          {adv.allocated_by_name || 'Admin'}
+                        <td className="py-2.5 px-3 text-slate-600 font-medium">
+                          {adv.allocated_by || adv.allocated_by_name || 'Admin'}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900 text-sm">
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900 text-sm whitespace-nowrap">
                           {formatCur(adv.amount)}
                         </td>
                       </tr>
@@ -2461,6 +2471,7 @@ export const TourLedgerSection = ({
                 </label>
                 <input
                   type="text"
+                  placeholder="e.g. Tour surplus cash returned / reimbursement note"
                   value={settleForm.notes}
                   onChange={(e) => setSettleForm(prev => ({ ...prev, notes: e.target.value }))}
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"

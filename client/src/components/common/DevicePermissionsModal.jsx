@@ -158,23 +158,31 @@ export const DevicePermissionsModal = () => {
     }
   };
 
-  // Request all permissions concurrently
+  // Request missing permissions sequentially without colliding browser prompts
   const handleRequestAllPermissions = async () => {
     setRequesting(true);
 
-    await Promise.allSettled([
-      requestNotificationPermission(),
-      requestLocationPermission(),
-      requestCameraPermission()
-    ]);
+    try {
+      if (permissionStates.notification !== 'granted') {
+        await requestNotificationPermission();
+      }
+      if (permissionStates.geolocation !== 'granted') {
+        await requestLocationPermission();
+      }
+      if (permissionStates.camera !== 'granted') {
+        await requestCameraPermission();
+      }
+    } catch (err) {
+      console.warn('Batch permission request notice:', err);
+    } finally {
+      setRequesting(false);
+      localStorage.setItem(PERMISSIONS_STORAGE_KEY, Date.now().toString());
+    }
 
-    setRequesting(false);
-    localStorage.setItem(PERMISSIONS_STORAGE_KEY, Date.now().toString());
-
-    // Auto-close after 2 seconds
+    // Auto-close smoothly after 1.5 seconds so user sees the green checkmark
     setTimeout(() => {
       setIsOpen(false);
-    }, 2000);
+    }, 1500);
   };
 
   const handleDismiss = () => {

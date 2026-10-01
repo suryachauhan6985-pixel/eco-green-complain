@@ -105,6 +105,12 @@ export const ComplaintDetailDrawer = ({
   const isResolved = ticket?.status === 'Resolved';
   const isClosed = ticket?.status === 'Closed';
 
+  const currentTechId = String(currentUser?.technicianId || currentUser?.technician_id || currentUser?.id || '');
+  const isSecondaryPartnerOnly = currentUser?.role === 'technician' &&
+    Boolean(ticket?.secondary_technician_id) &&
+    String(ticket.secondary_technician_id) === currentTechId &&
+    String(ticket.assigned_technician_id) !== currentTechId;
+
   // Previous resolution history extraction for reopened tickets
   const previousResolution = React.useMemo(() => {
     if (!ticket?.previous_resolution_history) return null;
@@ -512,6 +518,10 @@ export const ComplaintDetailDrawer = ({
 
   const handleQuickStatusChange = async (newStatus, defaultNote) => {
     if (!ticket?.id) return;
+    if (isSecondaryPartnerOnly) {
+      showToast('Co-partner view: Only the primary technician can update the complaint status.', 'warning');
+      return;
+    }
     if (isResolvedOrClosed) {
       showToast(`Stage updates are locked for ${ticket.status} complaints. Reopen the ticket to make changes.`, 'warning');
       return;
@@ -661,6 +671,11 @@ export const ComplaintDetailDrawer = ({
       (collectedAmt > 0 && normalizedStatus === 'partially paid')
     );
 
+    if (isSecondaryPartnerOnly) {
+      showToast('Co-partner view: Only the primary technician can mark this complaint as resolved.', 'warning');
+      return;
+    }
+
     if (estimatedAmt > 0 && !isPaid) {
       const proceed = await confirm({
         title: '⚠️ Uncollected Service Charges Alert',
@@ -710,21 +725,18 @@ export const ComplaintDetailDrawer = ({
       let fallbackFiles = [];
       if (resolutionPhotos.length > 0) {
         showToast(`Uploading ${resolutionPhotos.length} resolution file(s) to cloud storage...`, 'info');
-        const uploadedAttachments = [];
-
-        for (const item of resolutionPhotos) {
+        const uploadPromises = resolutionPhotos.map(async (item) => {
           try {
             const uploaded = await uploadFileToSupabase(item.file);
-            if (uploaded && uploaded.file_url) {
-              uploadedAttachments.push(uploaded);
-            }
+            return { success: true, uploaded };
           } catch (storageErr) {
             console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
-            if (item.file.size <= 4 * 1024 * 1024) {
-              fallbackFiles.push(item.file);
-            }
+            return { success: false, file: item.file };
           }
-        }
+        });
+        const uploadResults = await Promise.all(uploadPromises);
+        const uploadedAttachments = uploadResults.filter(r => r.success && r.uploaded?.file_url).map(r => r.uploaded);
+        fallbackFiles = uploadResults.filter(r => !r.success && r.file && r.file.size <= 4 * 1024 * 1024).map(r => r.file);
 
         if (uploadedAttachments.length > 0) {
           data.append('attachment_urls', JSON.stringify(uploadedAttachments));
@@ -912,6 +924,10 @@ export const ComplaintDetailDrawer = ({
   };
 
   const openPaymentModal = () => {
+    if (isSecondaryPartnerOnly) {
+      showToast('Co-partner view: Only the primary technician can collect or record payment.', 'warning');
+      return;
+    }
     if (isResolvedOrClosed) {
       showToast('Payment collection is locked on Resolved and Closed complaints.', 'warning');
       return;
@@ -931,6 +947,11 @@ export const ComplaintDetailDrawer = ({
   };
 
   const handleRecordPaymentSubmit = async () => {
+    if (isSecondaryPartnerOnly) {
+      showToast('Co-partner view: Only the primary technician can collect or record payment.', 'warning');
+      setIsRecordingPayment(false);
+      return;
+    }
     if (isResolvedOrClosed) {
       showToast('Payment collection is locked on Resolved and Closed complaints.', 'warning');
       setIsRecordingPayment(false);
@@ -1381,6 +1402,11 @@ export const ComplaintDetailDrawer = ({
                             <div className="w-full py-2 bg-slate-100 text-slate-500 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-200 select-none">
                               <Lock className="w-3.5 h-3.5 text-slate-400" />
                               <span>Collection Locked ({ticket.status})</span>
+                            </div>
+                          ) : isSecondaryPartnerOnly ? (
+                            <div className="w-full py-2 bg-amber-50 text-amber-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border border-amber-300 select-none text-center">
+                              <Lock className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Co-Partner View Only</span>
                             </div>
                           ) : (ticket.assigned_technician_id || ticket.technician_name || currentUser?.role === 'technician') ? (
                             <button
@@ -2062,59 +2088,68 @@ export const ComplaintDetailDrawer = ({
                         </p>
 
                         <div className="flex items-center gap-2 flex-wrap pt-1">
-                          {ticket.status === 'Assigned' && (
-                            <button
-                              type="button"
-                              onClick={() => handleQuickStatusChange('In Progress', 'Technician reached site and commenced inspection & service')}
-                              disabled={quickUpdatingStatus}
-                              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer disabled:opacity-50"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              <span>{quickUpdatingStatus ? 'Updating...' : '🚀 Start Work / Mark "In Progress"'}</span>
-                            </button>
-                          )}
-
-                          {ticket.status === 'In Progress' && (
+                          {isSecondaryPartnerOnly ? (
+                            <div className="p-2.5 bg-amber-500/20 border border-amber-400/40 rounded-lg text-amber-200 text-xs flex items-center gap-2 w-full">
+                              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Co-Partner View: Quick stage actions and ticket updates are restricted to the primary technician ({ticket.technician_name}).</span>
+                            </div>
+                          ) : (
                             <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFollowUpStatus('On Hold');
-                                  document.getElementById('log-visit-note-section')?.scrollIntoView({ behavior: 'smooth' });
-                                  setTimeout(() => {
-                                    const textarea = document.getElementById('visit-note-textarea');
-                                    if (textarea) textarea.focus();
-                                  }, 150);
-                                  showToast('Please enter the mandatory reason below and click "Update Status & Save Note" to put ticket on hold.', 'info');
-                                }}
-                                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
-                              >
-                                <Pause className="w-3.5 h-3.5 fill-current" />
-                                <span>⏸️ Put "On Hold" (Parts / Access)</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  document.getElementById('technician-resolution-section')?.scrollIntoView({ behavior: 'smooth' });
-                                }}
-                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                <span>✅ Ready to Resolve? (Fill Form Below) 👇</span>
-                              </button>
-                            </>
-                          )}
+                              {ticket.status === 'Assigned' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStatusChange('In Progress', 'Technician reached site and commenced inspection & service')}
+                                  disabled={quickUpdatingStatus}
+                                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>{quickUpdatingStatus ? 'Updating...' : '🚀 Start Work / Mark "In Progress"'}</span>
+                                </button>
+                              )}
 
-                          {ticket.status === 'On Hold' && (
-                            <button
-                              type="button"
-                              onClick={() => handleQuickStatusChange('In Progress', 'Resumed on-site service work')}
-                              disabled={quickUpdatingStatus}
-                              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer disabled:opacity-50"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              <span>{quickUpdatingStatus ? 'Updating...' : '▶️ Resume Work ("In Progress")'}</span>
-                            </button>
+                              {ticket.status === 'In Progress' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFollowUpStatus('On Hold');
+                                      document.getElementById('log-visit-note-section')?.scrollIntoView({ behavior: 'smooth' });
+                                      setTimeout(() => {
+                                        const textarea = document.getElementById('visit-note-textarea');
+                                        if (textarea) textarea.focus();
+                                      }, 150);
+                                      showToast('Please enter the mandatory reason below and click "Update Status & Save Note" to put ticket on hold.', 'info');
+                                    }}
+                                    className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                  >
+                                    <Pause className="w-3.5 h-3.5 fill-current" />
+                                    <span>⏸️ Put "On Hold" (Parts / Access)</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      document.getElementById('technician-resolution-section')?.scrollIntoView({ behavior: 'smooth' });
+                                    }}
+                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                  >
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    <span>✅ Ready to Resolve? (Fill Form Below) 👇</span>
+                                  </button>
+                                </>
+                              )}
+
+                              {ticket.status === 'On Hold' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStatusChange('In Progress', 'Resumed on-site service work')}
+                                  disabled={quickUpdatingStatus}
+                                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>{quickUpdatingStatus ? 'Updating...' : '▶️ Resume Work ("In Progress")'}</span>
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -2225,6 +2260,17 @@ export const ComplaintDetailDrawer = ({
                           </div>
                         )}
 
+                        {isSecondaryPartnerOnly ? (
+                          <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1">
+                            <div className="flex items-center gap-2 font-bold text-amber-950">
+                              <AlertTriangle className="w-4 h-4 text-amber-600" />
+                              <span>Co-Partner Access (View Only)</span>
+                            </div>
+                            <p className="text-[11px] text-amber-800 leading-relaxed">
+                              You are assigned as the secondary co-partner on this ticket. Resolution submission, stage changes, and closing proofs can only be submitted by the primary technician (<strong>{ticket.technician_name}</strong>).
+                            </p>
+                          </div>
+                        ) : (
                         <form onSubmit={handleResolve} className="space-y-3">
                           {/* Dual-Technician Resolution Performed By Selector */}
                           {(ticket.secondary_technician_id || ticket.secondary_technician_name) && (
@@ -2388,6 +2434,7 @@ export const ComplaintDetailDrawer = ({
                             {resolving ? 'Submitting Resolution...' : 'Mark Complaint as Resolved'}
                           </button>
                         </form>
+                        )}
                       </div>
                     )}
 

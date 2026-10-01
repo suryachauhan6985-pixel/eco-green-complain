@@ -667,6 +667,15 @@ async function recordPayment(req, res) {
       return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${complaint.status}".` });
     }
 
+    if (req.user?.role === 'technician') {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const assignedTechId = String(complaint.assigned_technician_id || '');
+      const secondaryTechId = String(complaint.secondary_technician_id || '');
+      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can record payment collection.' });
+      }
+    }
+
     const { 
       payment_collected, 
       payment_mode = 'Cash', 
@@ -1218,6 +1227,12 @@ async function addTimelineNote(req, res) {
 
     // Requirement 10: Role-based status transition restrictions for field visits
     if (role === 'technician' && status) {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const assignedTechId = String(complaint.assigned_technician_id || '');
+      const secondaryTechId = String(complaint.secondary_technician_id || '');
+      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can update complaint stage.' });
+      }
       if (!['In Progress', 'On Hold'].includes(status)) {
         return res.status(400).json({ error: 'Technicians can only update status to In Progress or On Hold in visit notes' });
       }
@@ -1282,6 +1297,15 @@ async function resolveComplaint(req, res) {
 
     if (['Resolved', 'Closed'].includes(complaint.status)) {
       return res.status(400).json({ error: `Complaint is already marked as "${complaint.status}". It cannot be resolved again.` });
+    }
+
+    if (req.user?.role === 'technician') {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const assignedTechId = String(complaint.assigned_technician_id || '');
+      const secondaryTechId = String(complaint.secondary_technician_id || '');
+      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can mark this complaint as resolved.' });
+      }
     }
 
     const performer = req.user ? req.user.name : 'Technician';

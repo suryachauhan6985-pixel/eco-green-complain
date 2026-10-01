@@ -171,7 +171,7 @@ async function syncCustomersFromExcel(sourcePathOrBuffer = null) {
 
       insertStmt.run({
         sr_no: r['Sr No.'] || r['Sr. No.'] || null,
-        order_no: (r['Order No'] || '').toString().trim() || null,
+        order_no: (r['Order No'] || r['Order No.'] || r['Order Number'] || r['Order_No'] || r['order_no'] || r['SO No'] || r['SO Number'] || r['SO No.'] || r['Order#'] || '').toString().trim() || null,
         scheme: (r['Scheme'] || '').toString().trim() || null,
         pv_capacity: parseFloat(r['PV Capacity']) || null,
         consumer_no: consumerNo || null,

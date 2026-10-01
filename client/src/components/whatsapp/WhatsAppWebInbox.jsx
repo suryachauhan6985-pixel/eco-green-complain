@@ -14,7 +14,6 @@ import {
   Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
-import { GlobalLoadingOverlay } from '../common/GlobalLoadingOverlay';
 
 // Helper: Resolve relative or proxy WhatsApp media URLs
 function getWhatsAppMediaUrl(msg) {
@@ -1321,9 +1320,6 @@ export const WhatsAppWebInbox = ({
 
   return (
     <div className="w-full flex-1 h-full flex overflow-hidden bg-[#efeae2] select-none">
-      {/* 3 Static Green Bouncing Dots Loading Overlay while chats are loading */}
-      <GlobalLoadingOverlay isVisible={loadingConversations} />
-
       {/* ================= ECO GREEN SOLAR INBOX PANE ================= */}
       <div className={`w-full md:w-[380px] lg:w-[410px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {/* Header: Eco Green Solar Brand & Action Buttons */}

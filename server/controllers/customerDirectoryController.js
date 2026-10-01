@@ -110,11 +110,11 @@ async function syncFromExcel(req, res) {
       if (customers.length > 0) {
         const insertStmt = db.prepare(`
           INSERT INTO installed_customers (
-            customer_name, consumer_mobile, consumer_no, city_village, 
+            customer_name, consumer_mobile, consumer_no, order_no, city_village, 
             dealer_name, invoice_no, invoice_date, installation_date,
             inverter_serial, is_in_warranty, warranty_expiry_date
           ) VALUES (
-            @customer_name, @consumer_mobile, @consumer_no, @city_village,
+            @customer_name, @consumer_mobile, @consumer_no, @order_no, @city_village,
             @dealer_name, @invoice_no, @invoice_date, @installation_date,
             @inverter_serial, @is_in_warranty, @warranty_expiry_date
           )
@@ -126,6 +126,7 @@ async function syncFromExcel(req, res) {
               customer_name: String(c.customer_name).trim().slice(0, 250),
               consumer_mobile: c.consumer_mobile ? String(c.consumer_mobile).trim().slice(0, 50) : null,
               consumer_no: c.consumer_no ? String(c.consumer_no).trim().slice(0, 100) : null,
+              order_no: c.order_no ? String(c.order_no).trim().slice(0, 100) : null,
               city_village: c.city_village ? String(c.city_village).trim().slice(0, 250) : null,
               dealer_name: c.dealer_name ? String(c.dealer_name).trim().slice(0, 250) : null,
               invoice_no: c.invoice_no ? String(c.invoice_no).trim().slice(0, 100) : null,

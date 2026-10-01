@@ -8,6 +8,78 @@ const SUPABASE_STORAGE_URL = 'https://pirlkhjljjnwuunpqwbb.supabase.co/storage/v
 const SUPABASE_PUBLIC_URL = 'https://pirlkhjljjnwuunpqwbb.supabase.co/storage/v1/object/public/attachments';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBpcmxraGpsampud3V1bnBxd2JiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4OTA5NjAsImV4cCI6MjEwNTQ2Njk2MH0.A1_AoY2tR6i4Y9A4zw5jsRSXGg-4H7EKH2dA8Q2L8Wg';
 
+/**
+ * Compress an image file in the browser using HTML Canvas before upload.
+ * Reduces 8MB-15MB smartphone camera photos down to crisp ~300KB-600KB JPEGs.
+ * Non-image files (PDFs, videos) pass through untouched.
+ */
+export async function compressImageFile(file, maxWidth = 1920, maxHeight = 1920, quality = 0.82) {
+  if (!file) return file;
+  if (!file.type || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+    return file;
+  }
+  // If already very small (< 250KB), no need to compress
+  if (file.size < 250 * 1024) {
+    return file;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth || height > maxHeight) {
+              if (width / height > maxWidth / maxHeight) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              } else {
+                width = Math.round((width * maxHeight) / height);
+                height = maxHeight;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob(
+              (blob) => {
+                if (!blob || blob.size >= file.size) {
+                  resolve(file);
+                } else {
+                  const compressedFile = new File(
+                    [blob],
+                    file.name.replace(/\.[^.]+$/, '.jpg'),
+                    { type: 'image/jpeg', lastModified: Date.now() }
+                  );
+                  resolve(compressedFile);
+                }
+              },
+              'image/jpeg',
+              quality
+            );
+          } catch (_) {
+            resolve(file);
+          }
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    } catch (_) {
+      resolve(file);
+    }
+  });
+}
+
 export async function uploadFileToSupabase(file) {
   if (!file) return null;
   
@@ -15,8 +87,11 @@ export async function uploadFileToSupabase(file) {
     throw new Error(`File "${file.name}" exceeds the 50MB limit.`);
   }
 
-  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  const cleanBase = file.name
+  // Auto-compress large camera photos before sending over mobile networks
+  const optimizedFile = await compressImageFile(file);
+
+  const ext = (optimizedFile.name.split('.').pop() || 'bin').toLowerCase();
+  const cleanBase = optimizedFile.name
     .replace(/\.[^.]+$/, '')
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .slice(0, 30);
@@ -27,10 +102,10 @@ export async function uploadFileToSupabase(file) {
     headers: {
       'apikey': SUPABASE_ANON_KEY,
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Type': optimizedFile.type || 'application/octet-stream',
       'x-upsert': 'true'
     },
-    body: file
+    body: optimizedFile
   });
 
   if (!res.ok) {
@@ -41,21 +116,32 @@ export async function uploadFileToSupabase(file) {
 
   const publicUrl = `${SUPABASE_PUBLIC_URL}/${uniqueName}`;
   return {
-    file_name: file.name,
-    file_type: file.type || 'application/octet-stream',
-    file_size: file.size,
+    file_name: optimizedFile.name,
+    file_type: optimizedFile.type || 'application/octet-stream',
+    file_size: optimizedFile.size,
     file_url: publicUrl
   };
 }
 
 export async function uploadMultipleFilesToSupabase(files, onProgress) {
   if (!files || files.length === 0) return [];
+  
+  // Parallel batch upload (up to 4 concurrent uploads) for high speed
+  const concurrency = 4;
   const results = [];
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    if (onProgress) onProgress(i + 1, files.length, f.name);
-    const uploaded = await uploadFileToSupabase(f);
-    results.push(uploaded);
+  let completed = 0;
+
+  for (let i = 0; i < files.length; i += concurrency) {
+    const batch = files.slice(i, i + concurrency);
+    const batchPromises = batch.map(async (f) => {
+      const uploaded = await uploadFileToSupabase(f);
+      completed++;
+      if (onProgress) onProgress(completed, files.length, f.name);
+      return uploaded;
+    });
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
   }
+
   return results;
 }

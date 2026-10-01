@@ -433,7 +433,7 @@ app.get('/api/tour-ledger', authenticateToken, (req, res) => {
     const { technician_id } = req.query;
     let targetTechId = req.user.role === 'technician' ? req.user.technicianId : technician_id;
 
-    let advSql = `SELECT a.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_advances a LEFT JOIN technicians t ON a.technician_id = t.id `;
+    let advSql = `SELECT a.*, a.allocated_by as allocated_by_name, t.name as technician_name, t.phone as technician_phone FROM technician_tour_advances a LEFT JOIN technicians t ON a.technician_id = t.id `;
     let expSql = `SELECT e.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_expenses e LEFT JOIN technicians t ON e.technician_id = t.id `;
     let stlSql = `SELECT s.*, t.name as technician_name, t.phone as technician_phone FROM technician_tour_settlements s LEFT JOIN technicians t ON s.technician_id = t.id `;
     let params = [];
@@ -454,10 +454,11 @@ app.get('/api/tour-ledger', authenticateToken, (req, res) => {
     const settlements = params.length > 0 ? db.prepare(stlSql).all(params[0]) : db.prepare(stlSql).all();
 
     const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+    const approvedExpenses = expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || 0), 0);
     const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
-    const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
+    const currentBalance = (totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned);
 
     res.json({
       success: true,
@@ -466,12 +467,13 @@ app.get('/api/tour-ledger', authenticateToken, (req, res) => {
       settlements,
       summary: {
         total_advance: totalAdvance,
-        approved_expenses: totalExpenses,
+        approved_expenses: approvedExpenses,
         total_expenses: totalExpenses,
         total_returned: totalReturned,
         total_reimbursed: totalReimbursed,
         net_balance: currentBalance,
         totalAdvance,
+        approvedExpenses,
         totalExpenses,
         totalReturned,
         totalReimbursed,

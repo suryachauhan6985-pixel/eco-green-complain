@@ -169,52 +169,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     return () => clearTimeout(timer);
   }, [formData.customer_phone]);
 
-  // Automatic customer field filling if phone matches an existing customer in DB
-  useEffect(() => {
-    if (phoneVerification && phoneVerification.valid && phoneVerification.isExistingCustomer && phoneVerification.customerName) {
-      setFormData(prev => {
-        const shouldFillName = !prev.customer_name || prev.customer_name.trim().length < 2;
-        if (!shouldFillName) return prev;
-
-        const rawDate = phoneVerification.invoiceDate || phoneVerification.installationDate || '';
-        let cleanDate = '';
-        if (rawDate) {
-          if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
-            cleanDate = rawDate.substring(0, 10);
-          } else {
-            const d = new Date(rawDate);
-            if (!isNaN(d.getTime())) {
-              cleanDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            }
-          }
-        }
-
-        let computedWarranty = phoneVerification.isInWarranty !== null && phoneVerification.isInWarranty !== undefined 
-          ? (phoneVerification.isInWarranty ? 1 : 0) 
-          : 1;
-
-        if (cleanDate) {
-          const [y, m, d] = cleanDate.split('-').map(Number);
-          const installD = new Date(y, m - 1, d);
-          const expD = new Date(installD);
-          expD.setFullYear(expD.getFullYear() + 5);
-          computedWarranty = new Date() <= expD ? 1 : 0;
-        }
-
-        return {
-          ...prev,
-          customer_name: phoneVerification.customerName,
-          city: phoneVerification.city || prev.city,
-          consumer_no: phoneVerification.consumerNo || prev.consumer_no,
-          order_no: phoneVerification.orderNo || prev.order_no,
-          invoice_no: phoneVerification.invoiceNo || prev.invoice_no,
-          invoice_date: cleanDate || prev.invoice_date,
-          product_serial: phoneVerification.inverterSerial || prev.product_serial,
-          is_in_warranty: computedWarranty
-        };
-      });
-    }
-  }, [phoneVerification]);
+  // Phone verification status only (does NOT auto-override user inputs without user action)
 
   // Real-time active complaint duplicate detection
   useEffect(() => {
@@ -444,7 +399,6 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [searchingCustomer, setSearchingCustomer] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [searchTimeout, setSearchTimeout] = useState(null);
-  const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
 
   const handleCustomerSearch = (val) => {
     setCustomerSearchQuery(val);
@@ -512,11 +466,10 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     setFormData(prev => ({
       ...prev,
       customer_name: c.customer_name || prev.customer_name,
-      customer_phone: c.consumer_mobile || prev.customer_phone,
-      customer_address: c.city_village ? `${c.city_village}${c.dealer_name ? ` (Dealer: ${c.dealer_name})` : ''}` : prev.customer_address,
+      customer_address: c.site_address || c.address || c.city_village || prev.customer_address,
       city: c.city_village || prev.city,
       consumer_no: c.consumer_no || prev.consumer_no,
-      order_no: c.order_no || prev.order_no,
+      order_no: c.order_no || prev.order_no || '',
       invoice_no: c.invoice_no || prev.invoice_no || '',
       invoice_date: cleanDate || prev.invoice_date || '',
       is_in_warranty: computedWarranty,
@@ -1216,75 +1169,15 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                   <div className="relative">
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[11px] font-semibold text-slate-600">Customer Full Name *</label>
-                      {searchingCustomer && (
-                        <span className="text-[10px] text-emerald-600 flex items-center gap-1 font-medium">
-                          <RefreshCw className="w-3 h-3 animate-spin" /> Searching directory...
-                        </span>
-                      )}
                     </div>
                     <input
                       type="text"
                       required
                       placeholder="e.g., MAYA BAVA VAGHELA"
                       value={formData.customer_name}
-                      onFocus={() => {
-                        if (customerSearchResults.length > 0) setNameDropdownOpen(true);
-                      }}
-                      onBlur={() => {
-                        setTimeout(() => setNameDropdownOpen(false), 300);
-                      }}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setFormData(prev => ({ ...prev, customer_name: val }));
-                        handleCustomerSearch(val);
-                        setNameDropdownOpen(true);
-                      }}
+                      onChange={(e) => setFormData(prev => ({ ...prev, customer_name: e.target.value }))}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
-
-                    {/* Auto-matching dropdown from database/Excel */}
-                    {nameDropdownOpen && customerSearchResults.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 max-h-64 overflow-y-auto divide-y divide-slate-100">
-                        <div className="p-2 bg-emerald-50 text-[10px] font-bold text-emerald-800 uppercase tracking-wider flex items-center justify-between">
-                          <span>Matching Excel / Database Customers ({customerSearchResults.length})</span>
-                          <span className="text-emerald-700 font-normal">Click to autofill</span>
-                        </div>
-                        {customerSearchResults.map((c) => (
-                          <div
-                            key={c.id}
-                            onMouseDown={() => {
-                              handleSelectCustomer(c);
-                              setNameDropdownOpen(false);
-                            }}
-                            className="p-2.5 hover:bg-emerald-50/70 cursor-pointer transition-colors text-left flex items-center justify-between gap-2"
-                          >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-xs text-slate-900">{c.customer_name}</span>
-                                <span className="text-[11px] text-slate-600 font-mono">📞 {c.consumer_mobile}</span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
-                                <span>📍 {c.city_village || 'N/A'}</span>
-                                {c.dealer_name && <span>• Dealer: {c.dealer_name}</span>}
-                                {c.consumer_no && <span>• Consumer No: {c.consumer_no}</span>}
-                                {(!c.invoice_date && !c.installation_date) ? (
-                                  <span className="text-amber-900 font-bold bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded text-[10px]">
-                                    ⚠️ Date N/A
-                                  </span>
-                                ) : (
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${c.is_in_warranty ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                                    {c.is_in_warranty ? 'In Warranty' : 'Out of Warranty'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <span className="shrink-0 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded shadow-2xs">
-                              Autofill ↵
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
                   <div>
@@ -1317,68 +1210,12 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       )}
                     </div>
 
-                    {/* Simple Customer Match & Auto-fill */}
-                    {phoneVerification && (
+                    {phoneVerification && !phoneVerification.valid && (
                       <div className="mt-1.5 animate-in fade-in duration-150">
-                        {phoneVerification.valid ? (
-                          phoneVerification.isExistingCustomer && (
-                            <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
-                              <div className="flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>Registered Customer: <strong className="text-emerald-950">{phoneVerification.customerName}</strong> ({phoneVerification.city || 'Gujarat'})</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const rawDate = phoneVerification.invoiceDate || phoneVerification.installationDate || '';
-                                  let cleanDate = '';
-                                  if (rawDate) {
-                                    if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
-                                      cleanDate = rawDate.substring(0, 10);
-                                    } else {
-                                      const d = new Date(rawDate);
-                                      if (!isNaN(d.getTime())) {
-                                        cleanDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                                      }
-                                    }
-                                  }
-
-                                  let computedWarranty = phoneVerification.isInWarranty !== null && phoneVerification.isInWarranty !== undefined 
-                                    ? (phoneVerification.isInWarranty ? 1 : 0) 
-                                    : 1;
-
-                                  if (cleanDate) {
-                                    const [y, m, d] = cleanDate.split('-').map(Number);
-                                    const installD = new Date(y, m - 1, d);
-                                    const expD = new Date(installD);
-                                    expD.setFullYear(expD.getFullYear() + 5);
-                                    computedWarranty = new Date() <= expD ? 1 : 0;
-                                  }
-
-                                  setFormData(prev => ({
-                                    ...prev,
-                                    customer_name: phoneVerification.customerName || prev.customer_name,
-                                    city: phoneVerification.city || prev.city,
-                                    consumer_no: phoneVerification.consumerNo || prev.consumer_no,
-                                    order_no: phoneVerification.orderNo || prev.order_no,
-                                    invoice_no: phoneVerification.invoiceNo || prev.invoice_no,
-                                    invoice_date: cleanDate || prev.invoice_date,
-                                    product_serial: phoneVerification.inverterSerial || prev.product_serial,
-                                    is_in_warranty: computedWarranty
-                                  }));
-                                }}
-                                className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-0.5 rounded shadow-2xs transition-all cursor-pointer ml-auto"
-                              >
-                                Auto-fill Details
-                              </button>
-                            </div>
-                          )
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                            <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                            <span>{phoneVerification.message || 'Please enter a genuine 10-digit Indian mobile number.'}</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                          <span>{phoneVerification.message || 'Please enter a genuine 10-digit Indian mobile number.'}</span>
+                        </div>
                       </div>
                     )}
                   </div>

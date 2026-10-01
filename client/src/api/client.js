@@ -744,10 +744,10 @@ class LocalMockStore {
       technician_id: data.technician_id,
       technician_name: data.technician_name || 'Technician',
       amount: Number(data.amount || 0),
-      purpose: data.purpose || 'Tour Advance for Field Tasks',
+      purpose: data.purpose || 'Tour Advance',
       payment_mode: data.payment_mode || 'Cash',
       reference_no: data.reference_no || '',
-      allocated_by_name: data.allocated_by_name || 'Admin Supervisor',
+      allocated_by_name: data.allocated_by_name || 'Admin',
       allocated_at: new Date().toISOString()
     };
     advances.unshift(newAdv);

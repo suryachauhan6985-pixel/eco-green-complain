@@ -1530,7 +1530,7 @@ app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
 
     const [advRes, expRes, stlRes] = await Promise.all([
       query(`
-        SELECT a.*, t.name as technician_name, t.phone as technician_phone
+        SELECT a.*, a.allocated_by as allocated_by_name, t.name as technician_name, t.phone as technician_phone
         FROM technician_tour_advances a
         LEFT JOIN technicians t ON t.id::text = a.technician_id::text
         ${advWhere}
@@ -1557,10 +1557,11 @@ app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
     const settlements = stlRes.rows;
 
     const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+    const approvedExpenses = expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || s.amount || 0), 0);
     const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
-    const currentBalance = (totalAdvance + totalReimbursed) - (totalExpenses + totalReturned);
+    const currentBalance = (totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned);
 
     return res.json({
       success: true,
@@ -1569,12 +1570,13 @@ app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
       settlements,
       summary: {
         total_advance: totalAdvance,
-        approved_expenses: totalExpenses,
+        approved_expenses: approvedExpenses,
         total_expenses: totalExpenses,
         total_returned: totalReturned,
         total_reimbursed: totalReimbursed,
         net_balance: currentBalance,
         totalAdvance,
+        approvedExpenses,
         totalExpenses,
         totalReturned,
         totalReimbursed,
@@ -3375,12 +3377,20 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { notes, status, notify_customer } = req.body;
-    const compCheck = await query('SELECT status FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    const compCheck = await query('SELECT status, assigned_technician_id, secondary_technician_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
     if (!compCheck.rows.length) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
     if (['Resolved', 'Closed'].includes(compCheck.rows[0].status)) {
       return res.status(400).json({ error: `Site visit notes and stage updates are locked because this complaint is already marked as "${compCheck.rows[0].status}".` });
+    }
+    if (req.user?.role === 'technician') {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const assignedTechId = String(compCheck.rows[0].assigned_technician_id || '');
+      const secondaryTechId = String(compCheck.rows[0].secondary_technician_id || '');
+      if (status && secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can update complaint stage.' });
+      }
     }
     if (status) {
       await query('UPDATE complaints SET status = $1, status_updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
@@ -3442,6 +3452,15 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
 
     if (['Resolved', 'Closed'].includes(compRecord.status)) {
       return res.status(400).json({ error: `Complaint is already marked as "${compRecord.status}". It cannot be resolved again.` });
+    }
+
+    if (req.user?.role === 'technician') {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const assignedTechId = String(compRecord.assigned_technician_id || '');
+      const secondaryTechId = String(compRecord.secondary_technician_id || '');
+      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can mark this complaint as resolved.' });
+      }
     }
 
     const performer = req.user ? req.user.name : 'Technician';
@@ -3588,26 +3607,22 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
     }
     resolvedTechName = resolvedTechName || 'Service Engineer';
 
-    // Send Feedback Request WhatsApp
-    let waResult = null;
-    try {
-      waResult = await sendWhatsApp({
-        to: comp.customer_phone,
-        templateName: 'complaint_resolved',
-        variables: {
-          customer_name: comp.customer_name,
-          ticket_id: comp.ticket_id,
-          technician_name: resolvedTechName,
-          resolution_notes: resolution_notes || 'All checks passed',
-          db_complaint_id: comp.id
-        }
-      });
-    } catch (waErr) {
-      console.warn('[Resolve WhatsApp Note]', waErr.message);
-      waResult = { success: false, error: waErr.message };
-    }
+    // Send Feedback Request WhatsApp in background so resolving returns instantly without hanging
+    sendWhatsApp({
+      to: comp.customer_phone,
+      templateName: 'complaint_resolved',
+      variables: {
+        customer_name: comp.customer_name,
+        ticket_id: comp.ticket_id,
+        technician_name: resolvedTechName,
+        resolution_notes: resolution_notes || 'All checks passed',
+        db_complaint_id: comp.id
+      }
+    }).catch(waErr => {
+      console.warn('[Resolve WhatsApp Note Async]', waErr.message);
+    });
 
-    return res.json({ message: 'Complaint resolved', complaint: comp, whatsapp: waResult });
+    return res.json({ message: 'Complaint resolved', complaint: comp, whatsapp: { success: true, queued: true } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -3629,6 +3644,15 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
 
     if (['Resolved', 'Closed'].includes(comp.status)) {
       return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${comp.status}".` });
+    }
+
+    if (req.user?.role === 'technician') {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const assignedTechId = String(comp.assigned_technician_id || '');
+      const secondaryTechId = String(comp.secondary_technician_id || '');
+      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can record payment collection.' });
+      }
     }
 
     // If no service charges were allocated (est === 0) and payment is being collected (amt > 0),
