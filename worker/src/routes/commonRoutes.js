@@ -149,7 +149,49 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
       LIMIT 25
     `, params, c.env, c.executionCtx);
 
-    return c.json({ customers: r.rows, totalMatches: r.rows.length });
+    let results = [...r.rows];
+
+    // Also search past complaints to find customers who may have registered tickets with phone/order_no/dealer_name
+    if (results.length < 25) {
+      const complaintConditions = [];
+      tokens.forEach((token, idx) => {
+        const paramIdx = idx + 1;
+        complaintConditions.push(`(
+          customer_name ILIKE $${paramIdx} 
+          OR customer_phone ILIKE $${paramIdx} 
+          OR consumer_no ILIKE $${paramIdx} 
+          OR city ILIKE $${paramIdx} 
+          OR order_no ILIKE $${paramIdx}
+          OR dealer_name ILIKE $${paramIdx}
+        )`);
+      });
+      const compWhere = complaintConditions.join(' AND ');
+      const compRes = await query(`
+        SELECT DISTINCT ON (customer_phone, customer_name)
+          id, customer_name, customer_phone as consumer_mobile, consumer_no, city as city_village, order_no,
+          dealer_name, invoice_no, invoice_date, NULL as installation_date,
+          NULL as warranty_expiry_date, NULL as panel_make, NULL as inverter_make,
+          product_serial as inverter_serial, is_in_warranty, customer_address
+        FROM complaints
+        WHERE ${compWhere}
+        ORDER BY customer_phone, customer_name, id DESC
+        LIMIT ${25 - results.length}
+      `, params, c.env, c.executionCtx).catch(() => ({ rows: [] }));
+
+      if (compRes.rows && compRes.rows.length > 0) {
+        // Only append if not already in results by mobile or name
+        const existingMobiles = new Set(results.map(x => (x.consumer_mobile || '').replace(/\D/g, '').slice(-10)).filter(Boolean));
+        for (const row of compRes.rows) {
+          const mob = (row.consumer_mobile || '').replace(/\D/g, '').slice(-10);
+          if (!mob || !existingMobiles.has(mob)) {
+            results.push(row);
+            if (mob) existingMobiles.add(mob);
+          }
+        }
+      }
+    }
+
+    return c.json({ customers: results, totalMatches: results.length });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -219,13 +261,14 @@ commonRoutes.post('/customers/sync', authenticateToken, requireRole('admin', 'st
         const mobile = (row.consumer_mobile || row.phone || '').trim();
         await query(`
           INSERT INTO installed_customers (
-            customer_name, consumer_mobile, consumer_no, city_village, dealer_name,
+            customer_name, consumer_mobile, consumer_no, order_no, city_village, dealer_name,
             invoice_no, invoice_date, installation_date, inverter_serial, is_in_warranty, warranty_expiry_date
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         `, [
           name.slice(0, 250),
           mobile ? mobile.slice(0, 50) : null,
           row.consumer_no ? String(row.consumer_no).slice(0, 100) : null,
+          row.order_no ? String(row.order_no).slice(0, 100) : null,
           row.city_village ? String(row.city_village).slice(0, 250) : null,
           row.dealer_name ? String(row.dealer_name).slice(0, 250) : null,
           row.invoice_no ? String(row.invoice_no).slice(0, 100) : null,

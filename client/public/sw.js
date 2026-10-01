@@ -79,9 +79,16 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
-          // If network is completely offline, fall back to cached shell
-          return caches.match('/');
+        .catch(async () => {
+          // If network is completely offline, fall back to cached shell safely
+          const cached = await caches.match('/');
+          if (cached) return cached;
+          const indexCached = await caches.match('/index.html');
+          if (indexCached) return indexCached;
+          return new Response('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Eco Green Support - Offline</title></head><body style="font-family:sans-serif;text-align:center;padding:40px;"><h2>Eco Green Solar Support</h2><p>You appear to be offline. Please reconnect to the internet.</p></body></html>', {
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+            status: 200
+          });
         })
     );
     return;

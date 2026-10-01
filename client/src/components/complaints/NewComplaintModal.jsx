@@ -473,21 +473,27 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     });
     setCustomerSearchResults([]);
     setCustomerSearchQuery('');
+    const rawMobile = (c.consumer_mobile || c.customer_phone || c.phone || '').toString().trim();
+    const digitsOnly = rawMobile.replace(/\D/g, '');
+    const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : (rawMobile || prev.customer_phone);
+    const cleanOrderNo = (c.order_no || '').toString().trim();
+    const cleanDealerName = (c.dealer_name || '').toString().trim();
+
     setFormData(prev => ({
       ...prev,
       customer_name: c.customer_name || prev.customer_name,
-      customer_phone: c.consumer_mobile || c.customer_phone || c.phone || prev.customer_phone,
-      customer_address: c.site_address || c.address || c.city_village || prev.customer_address,
+      customer_phone: cleanMobile || prev.customer_phone,
+      customer_address: c.site_address || c.customer_address || c.address || c.city_village || prev.customer_address,
       city: c.city_village || c.city || prev.city,
       consumer_no: c.consumer_no || prev.consumer_no,
-      order_no: c.order_no || prev.order_no || '',
-      dealer_name: c.dealer_name || prev.dealer_name || '',
+      order_no: cleanOrderNo || prev.order_no || '',
+      dealer_name: cleanDealerName || prev.dealer_name || '',
       invoice_no: c.invoice_no || prev.invoice_no || '',
       invoice_date: cleanDate || prev.invoice_date || '',
       is_in_warranty: computedWarranty,
       product_type: prev.product_type || 'Solar Rooftop Systems',
       installation_id: c.consumer_no || c.order_no || prev.installation_id,
-      product_serial: c.inverter_serial || prev.product_serial
+      product_serial: c.inverter_serial || c.product_serial || prev.product_serial
     }));
   };
 
@@ -1134,17 +1140,33 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                           className="p-3 hover:bg-emerald-50/60 cursor-pointer transition-colors text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2 group"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-xs text-slate-900 group-hover:text-emerald-800">
                                 {c.customer_name}
                               </span>
-                              <span className="text-[11px] text-slate-500 font-mono">
-                                📞 {c.consumer_mobile}
-                              </span>
+                              {(c.consumer_mobile || c.customer_phone || c.phone) && (
+                                <span className="text-[11px] text-emerald-800 font-mono font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  📞 {c.consumer_mobile || c.customer_phone || c.phone}
+                                </span>
+                              )}
+                              {c.order_no && (
+                                <span className="text-[10px] text-indigo-800 font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                  Order #{c.order_no}
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
-                              <span>📍 {c.city_village || 'N/A'}</span>
-                              {c.dealer_name && <span>• Dealer: <strong className="text-slate-700">{c.dealer_name}</strong></span>}
+                            <div className="text-[11px] text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                              <span>📍 {c.city_village || c.city || 'N/A'}</span>
+                              {c.dealer_name && (
+                                <span className="bg-amber-50 text-amber-900 px-1.5 py-0.5 rounded text-[10px] font-medium border border-amber-200">
+                                  Dealer: <strong className="font-bold text-amber-950">{c.dealer_name}</strong>
+                                </span>
+                              )}
+                              {c.consumer_no && (
+                                <span className="text-[10px] text-slate-600 font-mono">
+                                  Cons: {c.consumer_no}
+                                </span>
+                              )}
                               {c.pv_capacity && <span>• {c.pv_capacity} kW</span>}
                               {c.inverter_serial && <span>• Inv: <code className="bg-slate-100 px-1 rounded text-slate-700">{c.inverter_serial}</code></span>}
                             </div>

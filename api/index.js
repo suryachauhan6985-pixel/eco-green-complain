@@ -6874,6 +6874,66 @@ async function ensureTourLedgerTables() {
 
 
 
+// In-App Notification Center Endpoints
+app.get('/api/in-app-notifications', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 200');
+    const mapped = (r.rows || []).map(row => ({
+      id: row.id,
+      type: row.type,
+      ticketId: row.ticket_id,
+      complaintId: row.complaint_id,
+      title: row.title,
+      message: row.message,
+      customerName: row.customer_name,
+      targetRole: row.target_role || 'all',
+      targetTechnicianId: row.target_technician_id,
+      targetTechnicianName: row.target_technician_name,
+      performedByName: row.performed_by_name,
+      performedByRole: row.performed_by_role,
+      readBy: Array.isArray(row.read_by) ? row.read_by : (typeof row.read_by === 'string' ? JSON.parse(row.read_by || '[]') : []),
+      acknowledgedBy: Array.isArray(row.acknowledged_by) ? row.acknowledged_by : (typeof row.acknowledged_by === 'string' ? JSON.parse(row.acknowledged_by || '[]') : []),
+      createdAt: row.created_at
+    }));
+    res.json({ notifications: mapped });
+  } catch (err) {
+    res.json({ notifications: [] });
+  }
+});
+
+app.post('/api/in-app-notifications', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const id = b.id || `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    await pool.query(`
+      INSERT INTO in_app_notifications (
+        id, type, ticket_id, complaint_id, title, message, customer_name,
+        target_role, target_technician_id, target_technician_name,
+        performed_by_name, performed_by_role, read_by, acknowledged_by, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO NOTHING
+    `, [
+      id,
+      b.type || 'info',
+      b.ticketId || '',
+      b.complaintId || null,
+      b.title || 'System Notification',
+      b.message || '',
+      b.customerName || '',
+      b.targetRole || 'all',
+      b.targetTechnicianId || null,
+      b.targetTechnicianName || '',
+      b.performedByName || req.user?.name || 'Staff',
+      b.performedByRole || req.user?.role || 'staff',
+      JSON.stringify(b.readBy || []),
+      JSON.stringify(b.acknowledgedBy || [])
+    ]);
+    res.status(201).json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Fallback status check
 app.get('/api', (req, res) => {
   res.json({
