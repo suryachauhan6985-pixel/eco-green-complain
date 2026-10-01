@@ -1814,30 +1814,69 @@ export const api = {
   // Customer Directory & 5-Year Warranty Engine
   searchCustomers: async (query) => {
     const q = (query || '').trim().toLowerCase();
+    let serverCustomers = [];
     try {
       const res = await request(`/customers/search?q=${encodeURIComponent(query || '')}`);
-      if (res && Array.isArray(res.customers) && res.customers.length > 0) {
-        return res;
+      if (res && Array.isArray(res.customers)) {
+        serverCustomers = res.customers;
       }
     } catch (err) {
       console.warn('Server customer search notice, checking local directory cache:', err.message);
     }
-    // Fallback to local stored Excel uploaded directory
+
+    // Always merge & enrich with local Excel cache if available (e.g. order_no, dealer_name)
     try {
       const localCustomers = JSON.parse(localStorage.getItem('egs_uploaded_customers') || '[]');
-      if (localCustomers.length > 0 && q) {
-        const matches = localCustomers.filter(c => 
-          (c.customer_name && c.customer_name.toLowerCase().includes(q)) ||
-          (c.consumer_mobile && c.consumer_mobile.includes(q)) ||
-          (c.consumer_no && c.consumer_no.toLowerCase().includes(q)) ||
-          (c.city_village && c.city_village.toLowerCase().includes(q)) ||
-          (c.invoice_no && c.invoice_no.toLowerCase().includes(q)) ||
-          (c.inverter_serial && c.inverter_serial.toLowerCase().includes(q))
-        ).slice(0, 25);
-        return { customers: matches, totalMatches: matches.length };
+      if (localCustomers.length > 0) {
+        const localByConsumerNo = new Map();
+        const localByName = new Map();
+        const localByMobile = new Map();
+
+        localCustomers.forEach(lc => {
+          if (lc.consumer_no) localByConsumerNo.set(String(lc.consumer_no).trim(), lc);
+          if (lc.customer_name) localByName.set(String(lc.customer_name).trim().toLowerCase(), lc);
+          if (lc.consumer_mobile) {
+            const m = String(lc.consumer_mobile).replace(/\D/g, '').slice(-10);
+            if (m) localByMobile.set(m, lc);
+          }
+        });
+
+        // Enrich server customers with local fields (especially order_no)
+        serverCustomers = serverCustomers.map(sc => {
+          const scMob = String(sc.consumer_mobile || sc.customer_phone || '').replace(/\D/g, '').slice(-10);
+          const match = (sc.consumer_no && localByConsumerNo.get(String(sc.consumer_no).trim())) ||
+                        (sc.customer_name && localByName.get(String(sc.customer_name).trim().toLowerCase())) ||
+                        (scMob && localByMobile.get(scMob));
+          if (match) {
+            return {
+              ...match,
+              ...sc,
+              order_no: sc.order_no || match.order_no || match.orderNo || '',
+              dealer_name: sc.dealer_name || match.dealer_name || '',
+              consumer_mobile: sc.consumer_mobile || match.consumer_mobile || match.phone || ''
+            };
+          }
+          return sc;
+        });
+
+        // If server had no matches, fallback to filtering localCustomers
+        if (serverCustomers.length === 0 && q) {
+          const matches = localCustomers.filter(c => 
+            (c.customer_name && c.customer_name.toLowerCase().includes(q)) ||
+            (c.consumer_mobile && c.consumer_mobile.includes(q)) ||
+            (c.consumer_no && c.consumer_no.toLowerCase().includes(q)) ||
+            (c.city_village && c.city_village.toLowerCase().includes(q)) ||
+            (c.invoice_no && c.invoice_no.toLowerCase().includes(q)) ||
+            (c.order_no && c.order_no.toLowerCase().includes(q)) ||
+            (c.dealer_name && c.dealer_name.toLowerCase().includes(q)) ||
+            (c.inverter_serial && c.inverter_serial.toLowerCase().includes(q))
+          ).slice(0, 25);
+          return { customers: matches, totalMatches: matches.length };
+        }
       }
     } catch (_) {}
-    return { customers: [] };
+
+    return { customers: serverCustomers, totalMatches: serverCustomers.length };
   },
   getCustomerStats: async () => {
     try {

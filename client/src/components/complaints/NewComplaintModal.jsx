@@ -155,28 +155,33 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   const [activeComplaintWarning, setActiveComplaintWarning] = useState(null);
   const [checkingActiveComplaint, setCheckingActiveComplaint] = useState(false);
 
-  // Debounced real-time WhatsApp phone verification
+  // Real-time genuine 10-digit Indian mobile number validation
   useEffect(() => {
     const raw = (formData.customer_phone || '').replace(/\D/g, '');
-    if (!raw || raw.length < 5) {
+    if (!raw) {
       setPhoneVerification(null);
       setVerifyingPhone(false);
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setVerifyingPhone(true);
-      try {
-        const res = await api.verifyWhatsAppNumber(formData.customer_phone);
-        setPhoneVerification(res);
-      } catch (e) {
-        setPhoneVerification(null);
-      } finally {
-        setVerifyingPhone(false);
-      }
-    }, 400);
+    const last10 = raw.length >= 10 ? raw.slice(-10) : raw;
 
-    return () => clearTimeout(timer);
+    if (last10.length === 10) {
+      if (/^[6-9]\d{9}$/.test(last10)) {
+        setPhoneVerification({ valid: true, message: 'Valid 10-digit Indian mobile number.' });
+      } else {
+        setPhoneVerification({ valid: false, message: 'Indian mobile numbers must start with 6, 7, 8, or 9.' });
+      }
+    } else if (raw.length > 0 && raw.length < 10) {
+      if (!/^[6-9]/.test(last10)) {
+        setPhoneVerification({ valid: false, message: 'Indian mobile numbers must start with 6, 7, 8, or 9.' });
+      } else {
+        setPhoneVerification(null);
+      }
+    } else {
+      setPhoneVerification({ valid: false, message: 'Please enter a genuine 10-digit Indian mobile number.' });
+    }
+    setVerifyingPhone(false);
   }, [formData.customer_phone]);
 
   // Phone verification status only (does NOT auto-override user inputs without user action)
@@ -499,6 +504,35 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
   const handleClearCustomer = () => {
     setSelectedCustomer(null);
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+    setFormData(prev => ({
+      ...prev,
+      customer_name: '',
+      customer_phone: '',
+      customer_email: '',
+      customer_address: '',
+      city: '',
+      pincode: '',
+      district: '',
+      state: '',
+      post_office: '',
+      consumer_no: '',
+      order_no: '',
+      dealer_name: '',
+      invoice_no: '',
+      invoice_date: '',
+      location_url: '',
+      installation_id: '',
+      product_serial: '',
+      is_in_warranty: 1
+    }));
+    setPincodeStatus(null);
+    setPincodeMessage('');
+    setPincodePostOffices([]);
+    setPincodeVerifiedData(null);
+    setPhoneVerification(null);
+    setActiveComplaintWarning(null);
   };
 
   const handleProductChange = (prod) => {
@@ -769,8 +803,13 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       customer_email: '',
       customer_address: '',
       city: '',
+      pincode: '',
+      district: '',
+      state: '',
+      post_office: '',
       consumer_no: '',
       order_no: '',
+      dealer_name: '',
       invoice_no: '',
       invoice_date: '',
       location_url: '',
@@ -784,6 +823,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       issue_description: '',
       priority: 'Medium'
     });
+    setPincodeStatus(null);
+    setPincodeMessage('');
+    setPincodePostOffices([]);
+    setPincodeVerifiedData(null);
+    setActiveComplaintWarning(null);
     onClose();
   };
 
@@ -803,15 +847,10 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          resetAndClose();
-        }
-      }}
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 cursor-default"
+        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

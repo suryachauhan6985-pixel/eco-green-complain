@@ -216,7 +216,12 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           customer_name: customerName,
           consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim(),
           consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim(),
-          order_no: String(getExcelVal(r, ['Order No', 'Order No.', 'Order Number', 'Order_No', 'order_no', 'SO No', 'SO Number', 'SO No.', 'Order#'])).trim() || null,
+          order_no: String(getExcelVal(r, [
+            'Order No', 'Order No.', 'Order Number', 'Order_No', 'order_no', 'Order', 'Order Id', 'Order ID',
+            'SO No', 'SO Number', 'SO No.', 'SO#', 'Order#', 'Sales Order', 'Sales Order No', 'Sales Order Number',
+            'Work Order', 'Work Order No', 'WO No', 'Application No', 'Application Number', 'App No', 'App No.',
+            'Registration No', 'Reg No', 'Ref No', 'Reference No'
+          ])).trim() || null,
           city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim(),
           dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim(),
           invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim(),
