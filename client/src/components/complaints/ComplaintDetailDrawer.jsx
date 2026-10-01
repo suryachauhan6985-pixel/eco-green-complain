@@ -100,6 +100,8 @@ export const ComplaintDetailDrawer = ({
   const [previewDocModal, setPreviewDocModal] = useState(null);
   const [uploadingAtt, setUploadingAtt] = useState(false);
   const [deletingAttId, setDeletingAttId] = useState(null);
+  const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
+  const [isResolutionDragging, setIsResolutionDragging] = useState(false);
 
   const isResolvedOrClosed = ['Resolved', 'Closed'].includes(ticket?.status);
   const isResolved = ticket?.status === 'Resolved';
@@ -175,18 +177,15 @@ export const ComplaintDetailDrawer = ({
   const effectiveRole = (currentUser?.role || cachedUser?.role || '').toLowerCase();
   const isAdminOrStaff = effectiveRole === 'admin' || effectiveRole === 'staff';
 
-  const handleUploadMoreAttachments = async (e) => {
-    if (!e.target.files || e.target.files.length === 0 || !ticket) return;
+  const uploadFilesList = async (files) => {
+    if (!files || files.length === 0 || !ticket) return;
     if (!isAdminOrStaff) {
       showToast('Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.', 'error');
-      e.target.value = '';
       return;
     }
-    const files = Array.from(e.target.files);
     const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
       showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
-      e.target.value = '';
       return;
     }
     try {
@@ -221,8 +220,14 @@ export const ComplaintDetailDrawer = ({
       showToast('Failed to upload attachment: ' + err.message, 'error');
     } finally {
       setUploadingAtt(false);
-      e.target.value = '';
     }
+  };
+
+  const handleUploadMoreAttachments = async (e) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    e.target.value = '';
+    await uploadFilesList(files);
   };
 
   const handleDeleteAttachment = async (att) => {
@@ -257,9 +262,8 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
-  const handleResolutionPhotoChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const processResolutionFiles = (files) => {
+    if (!files || files.length === 0) return;
 
     const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
@@ -267,10 +271,7 @@ export const ComplaintDetailDrawer = ({
     }
 
     const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
-    if (validFiles.length === 0) {
-      e.target.value = '';
-      return;
-    }
+    if (validFiles.length === 0) return;
 
     const newItems = validFiles.map((file) => {
       const isImg = file.type.startsWith('image/');
@@ -291,7 +292,12 @@ export const ComplaintDetailDrawer = ({
     });
 
     setResolutionPhotos(prev => [...prev, ...newItems]);
-    e.target.value = '';
+  };
+
+  const handleResolutionPhotoChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    processResolutionFiles(files);
+    if (e.target) e.target.value = '';
   };
 
   const removeResolutionPhoto = (id) => {
@@ -1676,6 +1682,42 @@ export const ComplaintDetailDrawer = ({
                             )}
                           </div>
                         </div>
+
+                        {!isResolvedOrClosed && isAdminOrStaff && (
+                          <div
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDiagnosticsDragging(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDiagnosticsDragging(false); }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDiagnosticsDragging(false);
+                              if (e.dataTransfer?.files?.length > 0) {
+                                uploadFilesList(Array.from(e.dataTransfer.files));
+                              }
+                            }}
+                            className={`mb-3 p-3 rounded-xl border-2 border-dashed transition-all duration-200 text-center ${
+                              isDiagnosticsDragging
+                                ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/50 scale-[1.01]'
+                                : 'border-slate-200 hover:border-emerald-400 bg-slate-50/60'
+                            }`}
+                          >
+                            {isDiagnosticsDragging ? (
+                              <div className="py-2 flex flex-col items-center justify-center space-y-1 pointer-events-none">
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
+                                  <Upload className="w-4 h-4" />
+                                </div>
+                                <p className="text-xs font-bold text-emerald-800">Drop files here to attach to complaint</p>
+                                <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 50MB</p>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center gap-2 text-slate-500 py-0.5">
+                                <Upload className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="text-[11px] font-medium text-slate-600">Drag & drop photos, videos or documents here to upload</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {initialIssueAttachments.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {initialIssueAttachments.map((att) => {
@@ -2465,42 +2507,73 @@ export const ComplaintDetailDrawer = ({
                                   </span>
                                 )}
                               </div>
-                              <div className="space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Take photo with camera">
-                                    <Camera className="w-3.5 h-3.5 text-emerald-700" />
-                                    <span>Take Photo</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      capture="environment"
-                                      onChange={handleResolutionPhotoChange}
-                                      className="hidden"
-                                    />
-                                  </label>
-                                  <label className="cursor-pointer px-2.5 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Record video with camera">
-                                    <Video className="w-3.5 h-3.5 text-teal-700" />
-                                    <span>Record Video</span>
-                                    <input
-                                      type="file"
-                                      accept="video/*"
-                                      capture="environment"
-                                      onChange={handleResolutionPhotoChange}
-                                      className="hidden"
-                                    />
-                                  </label>
-                                  <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
-                                    <Upload className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Browse Files / Gallery</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*,video/*,application/pdf"
-                                      multiple
-                                      onChange={handleResolutionPhotoChange}
-                                      className="hidden"
-                                    />
-                                  </label>
-                                </div>
+                              <div
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsResolutionDragging(true); }}
+                                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsResolutionDragging(false); }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setIsResolutionDragging(false);
+                                  if (e.dataTransfer?.files?.length > 0) {
+                                    processResolutionFiles(Array.from(e.dataTransfer.files));
+                                  }
+                                }}
+                                className={`rounded-xl border-2 border-dashed p-3 transition-all duration-200 ${
+                                  isResolutionDragging
+                                    ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/50 scale-[1.01]'
+                                    : 'border-slate-200 bg-slate-50/50 hover:border-emerald-300'
+                                }`}
+                              >
+                                {isResolutionDragging ? (
+                                  <div className="py-3 flex flex-col items-center justify-center text-center space-y-1 pointer-events-none">
+                                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
+                                      <Upload className="w-4 h-4" />
+                                    </div>
+                                    <p className="text-xs font-bold text-emerald-800">Drop resolution proofs here</p>
+                                    <p className="text-[10px] text-emerald-600">Supports photos, videos, and PDF documents (Max 50MB)</p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Take photo with camera">
+                                        <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                                        <span>Take Photo</span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          capture="environment"
+                                          onChange={handleResolutionPhotoChange}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                      <label className="cursor-pointer px-2.5 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Record video with camera">
+                                        <Video className="w-3.5 h-3.5 text-teal-700" />
+                                        <span>Record Video</span>
+                                        <input
+                                          type="file"
+                                          accept="video/*"
+                                          capture="environment"
+                                          onChange={handleResolutionPhotoChange}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                      <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
+                                        <Upload className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>Browse Files / Gallery</span>
+                                        <input
+                                          type="file"
+                                          accept="image/*,video/*,application/pdf"
+                                          multiple
+                                          onChange={handleResolutionPhotoChange}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 font-medium">Or drag & drop photos/files directly into this box</p>
+                                  </div>
+                                )}
+                              </div>
 
                                 {resolutionPhotos.length > 0 && (
                                   <div className="space-y-1.5 pt-1">
@@ -2562,7 +2635,6 @@ export const ComplaintDetailDrawer = ({
                                 )}
                               </div>
                             </div>
-                          </div>
 
                           <button
                             type="submit"

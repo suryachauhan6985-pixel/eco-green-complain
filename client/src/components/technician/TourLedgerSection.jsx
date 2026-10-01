@@ -340,6 +340,7 @@ export const TourLedgerSection = ({
   };
 
   const [compressingReceipts, setCompressingReceipts] = useState(false);
+  const [isReceiptDragging, setIsReceiptDragging] = useState(false);
 
   const handleAddReceiptFiles = async (files) => {
     if (!files || files.length === 0) return;
@@ -2245,58 +2246,88 @@ export const TourLedgerSection = ({
               </div>
 
               {/* Combined Voucher Bills / Proofs Upload */}
-              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+              <div 
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsReceiptDragging(true); }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsReceiptDragging(false); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsReceiptDragging(false);
+                  if (e.dataTransfer?.files?.length > 0) {
+                    handleAddReceiptFiles(e.dataTransfer.files);
+                  }
+                }}
+                className={`p-3.5 rounded-2xl border-2 transition-all space-y-2 ${
+                  isReceiptDragging
+                    ? 'border-dashed border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/50 scale-[1.01]'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-bold text-slate-800">
                     Voucher Receipts / Bill Proofs (Upload Together)
                   </label>
-                  <span className="text-[10px] text-slate-500">Optional (Camera / Photos / PDF)</span>
+                  <span className="text-[10px] text-slate-500">Optional (Camera / Photos / PDF / Drag & Drop)</span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Direct Camera Capture */}
-                  <label className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
-                    <Camera className="w-4 h-4 text-emerald-600" />
-                    <span>Take Photo (Camera)</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={(e) => {
-                        handleAddReceiptFiles(e.target.files);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                    />
-                  </label>
+                {isReceiptDragging ? (
+                  <div className="py-3 flex flex-col items-center justify-center text-center space-y-1 pointer-events-none">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
+                      <Upload className="w-4 h-4" />
+                    </div>
+                    <p className="text-xs font-bold text-emerald-800">Drop voucher receipts here</p>
+                    <p className="text-[10px] text-emerald-600">Supports bills, receipt photos & PDF files</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Direct Camera Capture */}
+                      <label className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
+                        <Camera className="w-4 h-4 text-emerald-600" />
+                        <span>Take Photo (Camera)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(e) => {
+                            handleAddReceiptFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
 
-                  {/* Choose multiple from Gallery / Files */}
-                  <label className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
-                    <Upload className="w-4 h-4 text-slate-500" />
-                    <span>Upload from Gallery / Files</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*,application/pdf"
-                      onChange={(e) => {
-                        handleAddReceiptFiles(e.target.files);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                    />
-                  </label>
+                      {/* Choose multiple from Gallery / Files */}
+                      <label className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-300 font-bold flex items-center gap-1.5 cursor-pointer text-xs transition-colors shadow-2xs">
+                        <Upload className="w-4 h-4 text-slate-500" />
+                        <span>Upload from Gallery / Files</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,application/pdf"
+                          onChange={(e) => {
+                            handleAddReceiptFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
 
-                  {compressingReceipts ? (
-                    <span className="text-xs text-amber-600 font-bold flex items-center gap-1.5 animate-pulse">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Optimizing photos...
-                    </span>
-                  ) : (expenseForm.receipt_previews || []).length > 0 ? (
-                    <span className="text-xs text-emerald-700 font-bold">
-                      ✓ {expenseForm.receipt_previews.length} bill(s) attached
-                    </span>
-                  ) : null}
-                </div>
+                      {compressingReceipts ? (
+                        <span className="text-xs text-amber-600 font-bold flex items-center gap-1.5 animate-pulse">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Optimizing photos...
+                        </span>
+                      ) : (expenseForm.receipt_previews || []).length > 0 ? (
+                        <span className="text-xs text-emerald-700 font-bold">
+                          ✓ {expenseForm.receipt_previews.length} bill(s) attached
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium">Or drag & drop receipts / invoices anywhere inside this box</p>
+                  </div>
+                )}
 
                 {/* Attached Photos Preview Grid */}
                 {(expenseForm.receipt_previews || []).length > 0 && (

@@ -261,6 +261,7 @@ export const WhatsAppWebInbox = ({
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [isChatDragging, setIsChatDragging] = useState(false);
 
   // Synthesize notification chime using Web Audio API
   const playNotificationChime = () => {
@@ -483,8 +484,7 @@ export const WhatsAppWebInbox = ({
   }, [messages, selectedPhone]);
 
   // Handle file selection (Images, Videos & Documents)
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0];
+  const processWhatsAppFile = (file) => {
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
@@ -504,6 +504,12 @@ export const WhatsAppWebInbox = ({
     } else {
       setFilePreview(null);
     }
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    processWhatsAppFile(file);
+    if (e.target) e.target.value = '';
   };
 
   const handleClearSelectedFile = () => {
@@ -1601,7 +1607,29 @@ export const WhatsAppWebInbox = ({
       </div>
 
       {/* ================= RIGHT MAIN CHAT AREA (AUTHENTIC WHATSAPP WEB REPLICA) ================= */}
-      <div className={`flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden md:flex' : 'flex'}`}>
+      <div 
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (selectedPhone) setIsChatDragging(true); }}
+        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsChatDragging(false); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsChatDragging(false);
+          if (selectedPhone && e.dataTransfer?.files?.[0]) {
+            processWhatsAppFile(e.dataTransfer.files[0]);
+          }
+        }}
+        className={`flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden md:flex' : 'flex'}`}
+      >
+        {isChatDragging && (
+          <div className="absolute inset-0 bg-[#008069]/90 z-50 flex flex-col items-center justify-center text-white space-y-3 pointer-events-none animate-in fade-in backdrop-blur-2xs">
+            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center animate-bounce">
+              <Upload className="w-8 h-8 text-white" />
+            </div>
+            <p className="text-base font-bold">Drop file to attach to WhatsApp</p>
+            <p className="text-xs text-white/85">Supports photos, videos & PDF documents up to 50MB</p>
+          </div>
+        )}
         {selectedPhone ? (
           <>
             {/* Top WhatsApp Conversation Header */}

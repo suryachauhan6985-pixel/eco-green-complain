@@ -14,6 +14,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [syncingExcel, setSyncingExcel] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
+  const [isExcelDragging, setIsExcelDragging] = useState(false);
 
   const fetchCustomerStats = async () => {
     try {
@@ -24,8 +25,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
     }
   };
 
-  const handleUploadExcelFile = async (e) => {
-    const file = e.target.files?.[0];
+  const processExcelUpload = async (file) => {
     if (!file) return;
 
     try {
@@ -294,8 +294,13 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       setTimeout(() => setSyncToast(null), 6000);
     } finally {
       setUploadingExcel(false);
-      e.target.value = '';
     }
+  };
+
+  const handleUploadExcelFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (file) await processExcelUpload(file);
+    if (e.target) e.target.value = '';
   };
 
   const handleSyncExcel = async () => {
@@ -419,7 +424,31 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       </div>
 
       {/* Hero Section: Customer Directory & 5-Year Warranty Database */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 border border-emerald-900/50 shadow-xl relative overflow-hidden">
+      <div 
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsExcelDragging(true); }}
+        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsExcelDragging(false); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsExcelDragging(false);
+          if (e.dataTransfer?.files?.[0]) {
+            processExcelUpload(e.dataTransfer.files[0]);
+          }
+        }}
+        className={`bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 border shadow-xl relative overflow-hidden transition-all duration-200 ${
+          isExcelDragging ? 'border-emerald-400 ring-4 ring-emerald-500/50 scale-[1.005]' : 'border-emerald-900/50'
+        }`}
+      >
+        {isExcelDragging && (
+          <div className="absolute inset-0 bg-slate-950/90 z-50 flex flex-col items-center justify-center text-center p-6 space-y-3 pointer-events-none animate-in fade-in backdrop-blur-xs">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center animate-bounce border border-emerald-400">
+              <Upload className="w-8 h-8" />
+            </div>
+            <p className="text-base font-bold text-white">Drop Excel file (.xlsx / .xls) to upload & sync</p>
+            <p className="text-xs text-emerald-300">All customer records and warranty dates will be updated automatically</p>
+          </div>
+        )}
         {/* Ambient Glow */}
         <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
