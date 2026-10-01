@@ -3,14 +3,17 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { 
   Sun, Shield, Users, Wrench, Search, Plus, 
-  BarChart3, Settings, Bell, ChevronDown, Check, LogOut,
-  Compass, RotateCcw, Sparkles, X, MessageCircle, QrCode, Key
+  BarChart3, Settings, Bell, ChevronDown, ChevronRight, Check, LogOut,
+  Compass, RotateCcw, Sparkles, X, MessageCircle, QrCode, Key,
+  Menu, IndianRupee
 } from 'lucide-react';
 import { AccountSettingsModal } from '../admin/AccountSettingsModal';
 
 export const Navbar = ({ 
   currentTab, 
   setCurrentTab, 
+  techSection = 'field_ops',
+  onSelectTechSection,
   onOpenNewComplaint, 
   onToggleNotificationDrawer,
   onOpenTour,
@@ -19,7 +22,39 @@ export const Navbar = ({
   const { currentUser, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const [roleMenuOpen, setRoleMenuOpen] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [accountModalOpen, setAccountModalOpen] = React.useState(false);
+
+  // Close mobile drawer on Escape key press
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileMenuOpen]);
+
+  // Lock background scroll when mobile sidebar is open
+  React.useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
+
+  const handleNavClick = (tab, section = null) => {
+    if (section && onSelectTechSection) {
+      onSelectTechSection(section);
+    }
+    setCurrentTab(tab);
+    setMobileMenuOpen(false);
+  };
 
   const currentRoleName = 
     currentUser?.role === 'technician' ? 'Technician' :
@@ -47,16 +82,30 @@ export const Navbar = ({
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
       <div className="max-w-[1780px] w-full mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-2">
-          {/* Brand & Logo */}
-          <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 min-w-0">
+          {/* Brand & Logo + Mobile Hamburger Menu */}
+          <div className="flex items-center gap-1.5 sm:gap-4 lg:gap-6 min-w-0">
+            {/* Mobile Hamburger Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2 -ml-1 rounded-xl text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 active:scale-95 transition-all shrink-0 cursor-pointer focus:outline-hidden"
+              aria-label="Open Navigation Menu"
+              title="Open Navigation Menu"
+            >
+              <Menu className="w-6 h-6 text-slate-700" />
+            </button>
+
             <div 
-              onClick={() => setCurrentTab('complaints')}
-              className="flex items-center gap-2.5 cursor-pointer group shrink-0"
+              onClick={() => {
+                setCurrentTab('complaints');
+                setMobileMenuOpen(false);
+              }}
+              className="flex items-center gap-2 cursor-pointer group shrink-0"
             >
               <img 
                 src="/company-logo.png" 
                 alt="Eco Green Support" 
-                className="h-11 sm:h-12 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity" 
+                className="h-10 sm:h-12 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity" 
               />
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0 hidden sm:inline-block">
                 SUPPORT
@@ -419,6 +468,379 @@ export const Navbar = ({
           </div>
         </div>
       </div>
+
+      {/* Mobile Slide-out Navigation Drawer & Backdrop */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-300 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside 
+        className={`fixed top-0 bottom-0 left-0 z-50 w-[84vw] max-w-[320px] bg-white shadow-2xl flex flex-col md:hidden transform transition-transform duration-300 ease-in-out border-r border-slate-200 ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
+        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mobile Navigation Menu"
+      >
+        {/* Drawer Header */}
+        <div className="p-4 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/80 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <img 
+              src="/company-logo.png" 
+              alt="Eco Green Support" 
+              className="h-9 w-auto object-contain" 
+            />
+            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider">
+              SUPPORT
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 active:scale-95 transition-all cursor-pointer"
+            aria-label="Close Navigation Menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Quick Action: Register Ticket */}
+        {['admin', 'staff'].includes(currentUser?.role) && (
+          <div className="p-3 pb-1 shrink-0">
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenNewComplaint();
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold py-2.5 px-3 rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Register New Ticket</span>
+            </button>
+          </div>
+        )}
+
+        {currentUser?.role === 'customer' && (
+          <div className="p-3 pb-1 shrink-0">
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenNewComplaint();
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold py-2.5 px-3 rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Raise New Complaint</span>
+            </button>
+          </div>
+        )}
+
+        {/* Drawer Scrollable Navigation Area */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-4">
+          {/* Main Navigation Group */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-1.5">
+              Main Navigation
+            </p>
+            <div className="space-y-1">
+              {/* Complaints Desk */}
+              {['admin', 'staff'].includes(currentUser?.role) && (
+                <button
+                  onClick={() => handleNavClick('complaints')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'complaints'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className={`w-4 h-4 shrink-0 ${currentTab === 'complaints' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'complaints' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Complaints Desk</p>
+                      <p className="text-[10px] text-slate-400 font-normal">All service tickets & status</p>
+                    </div>
+                  </div>
+                  {currentTab === 'complaints' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+              )}
+
+              {/* Field Operations */}
+              {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
+                <button
+                  onClick={() => handleNavClick('technician', 'field_ops')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'technician' && techSection === 'field_ops'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Wrench className={`w-4 h-4 shrink-0 ${currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>
+                        {currentUser?.role === 'technician' ? 'My Field Tasks' : 'Field Operations'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-normal">Technician jobs & dispatch</p>
+                    </div>
+                  </div>
+                  {currentTab === 'technician' && techSection === 'field_ops' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+              )}
+
+              {/* Cash Collection */}
+              {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
+                <button
+                  onClick={() => handleNavClick('technician', 'collection')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'technician' && techSection === 'collection'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <IndianRupee className={`w-4 h-4 shrink-0 ${currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Cash Collection</p>
+                      <p className="text-[10px] text-slate-400 font-normal">Verify payments & receipts</p>
+                    </div>
+                  </div>
+                  {currentTab === 'technician' && techSection === 'collection' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+              )}
+
+              {/* WhatsApp Web */}
+              {['admin', 'staff'].includes(currentUser?.role) && (
+                <button
+                  onClick={() => handleNavClick('whatsapp-inbox')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'whatsapp-inbox'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <MessageCircle className={`w-4 h-4 shrink-0 ${currentTab === 'whatsapp-inbox' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'whatsapp-inbox' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>WhatsApp Web</p>
+                      <p className="text-[10px] text-slate-400 font-normal">Live chat & automated alerts</p>
+                    </div>
+                  </div>
+                  {currentTab === 'whatsapp-inbox' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+              )}
+
+              {/* Customer Public View */}
+              {currentUser?.role === 'customer' && (
+                <button
+                  onClick={() => handleNavClick('customer')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'customer'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Search className={`w-4 h-4 shrink-0 ${currentTab === 'customer' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'customer' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Track & Raise Complaints</p>
+                      <p className="text-[10px] text-slate-400 font-normal">Public self-service tracking</p>
+                    </div>
+                  </div>
+                  {currentTab === 'customer' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Admin Management & System Group */}
+          {currentUser?.role === 'admin' && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-1.5">
+                Management & System
+              </p>
+              <div className="space-y-1">
+                {/* Staff & Technicians */}
+                <button
+                  onClick={() => handleNavClick('team')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'team'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Shield className={`w-4 h-4 shrink-0 ${currentTab === 'team' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'team' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Staff & Technicians</p>
+                      <p className="text-[10px] text-slate-400 font-normal">Manage accounts & assignments</p>
+                    </div>
+                  </div>
+                  {currentTab === 'team' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+
+                {/* Analytics */}
+                <button
+                  onClick={() => handleNavClick('analytics')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'analytics'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <BarChart3 className={`w-4 h-4 shrink-0 ${currentTab === 'analytics' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'analytics' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Analytics & Reports</p>
+                      <p className="text-[10px] text-slate-400 font-normal">KPIs, trends & sync customer data</p>
+                    </div>
+                  </div>
+                  {currentTab === 'analytics' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+
+                {/* Templates */}
+                <button
+                  onClick={() => handleNavClick('templates')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    currentTab === 'templates'
+                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
+                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Settings className={`w-4 h-4 shrink-0 ${currentTab === 'templates' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <div className="text-left">
+                      <p className={currentTab === 'templates' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Notification Templates</p>
+                      <p className="text-[10px] text-slate-400 font-normal">WhatsApp & system messaging</p>
+                    </div>
+                  </div>
+                  {currentTab === 'templates' ? (
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Shortcuts & Utilities Group */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-1.5">
+              Utilities
+            </p>
+            <div className="space-y-1">
+              {/* Notification Center */}
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onToggleNotificationDrawer();
+                }}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl text-xs text-slate-700 hover:bg-slate-100 font-medium transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Bell className="w-4 h-4 text-slate-500" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-slate-800 font-semibold">Notification Center</p>
+                    <p className="text-[10px] text-slate-400 font-normal">
+                      {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'No unread notifications'}
+                    </p>
+                  </div>
+                </div>
+                {unreadCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Feature Tour (Admin only) */}
+              {currentUser?.role === 'admin' && onOpenTour && (
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenTour();
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl text-xs text-amber-800 bg-amber-50/70 hover:bg-amber-100/70 border border-amber-200/60 font-semibold transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <Compass className="w-4 h-4 text-amber-600 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-amber-900 font-bold">Feature Tour Guide</p>
+                      <p className="text-[10px] text-amber-700 font-normal">Interactive step-by-step walkthrough</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-amber-500 shrink-0" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Drawer Footer with User Profile & Logout */}
+        <div className="p-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 space-y-2.5">
+          <div className="flex items-center gap-3 px-1">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
+              {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-800 truncate leading-tight">
+                {currentUser?.name || 'Authorized User'}
+              </p>
+              <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                {dynamicRoleLabel}
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setMobileMenuOpen(false);
+              logout();
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 transition-all active:scale-98 cursor-pointer shadow-2xs"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Log Out</span>
+          </button>
+        </div>
+      </aside>
 
       {/* Admin Credentials & Profile Modal */}
       <AccountSettingsModal 
