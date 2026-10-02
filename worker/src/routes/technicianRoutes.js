@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, requireRole } from '../auth.js';
+import { deleteR2Object } from '../r2.js';
 
 const technicianRoutes = new Hono();
 
@@ -380,8 +381,58 @@ technicianRoutes.put('/technicians/:id', authenticateToken, async (c) => {
 technicianRoutes.delete('/technicians/:id', authenticateToken, requireRole('admin'), async (c) => {
   try {
     const id = c.req.param('id');
-    await query('DELETE FROM technicians WHERE id = $1', [id], c.env, c.executionCtx);
-    return c.json({ success: true, message: 'Technician deleted' });
+
+    // 1. Delete and clean receipts from Cloudflare R2 for technician tour expenses
+    const expRes = await query(
+      'SELECT receipt_url FROM technician_tour_expenses WHERE technician_id::text = $1',
+      [String(id)],
+      c.env,
+      c.executionCtx
+    ).catch(() => ({ rows: [] }));
+
+    if (expRes.rows && expRes.rows.length > 0 && c.env.MEDIA_BUCKET) {
+      for (const exp of expRes.rows) {
+        if (exp.receipt_url) {
+          const match = exp.receipt_url.match(/\/api\/attachments\/r2\/(.+)$/);
+          if (match && match[1]) {
+            await deleteR2Object(c.env.MEDIA_BUCKET, decodeURIComponent(match[1])).catch(() => {});
+          }
+        }
+      }
+    }
+
+    // 2. Cascade delete tour expenses, advances, and settlements for this technician
+    await query('DELETE FROM technician_tour_expenses WHERE technician_id::text = $1', [String(id)], c.env, c.executionCtx).catch(() => {});
+    await query('DELETE FROM technician_tour_advances WHERE technician_id::text = $1', [String(id)], c.env, c.executionCtx).catch(() => {});
+    await query('DELETE FROM technician_tour_settlements WHERE technician_id::text = $1', [String(id)], c.env, c.executionCtx).catch(() => {});
+
+    // 3. Unassign this technician from any active complaints
+    await query(
+      'UPDATE complaints SET assigned_technician_id = NULL, technician_name = NULL WHERE assigned_technician_id::text = $1',
+      [String(id)],
+      c.env,
+      c.executionCtx
+    ).catch(() => {});
+
+    // 4. Delete the technician profile
+    await query('DELETE FROM technicians WHERE id::text = $1', [String(id)], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'Technician profile and all associated tour advances, vouchers, and settlements deleted permanently' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/tour-ledger/clear-all - Reset all tour advances, vouchers, and settlements (Admin Only)
+technicianRoutes.post('/tour-ledger/clear-all', authenticateToken, requireRole('admin'), async (c) => {
+  try {
+    // Delete all tour records cleanly
+    await query('DELETE FROM technician_tour_settlements', [], c.env, c.executionCtx);
+    await query('DELETE FROM technician_tour_expenses', [], c.env, c.executionCtx);
+    await query('DELETE FROM technician_tour_advances', [], c.env, c.executionCtx);
+    return c.json({ 
+      success: true, 
+      message: 'All tour advances, expense vouchers, and settlements cleared successfully. Account balances reset to zero.' 
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

@@ -1330,9 +1330,12 @@ app.put('/api/technicians/:id', authenticateToken, async (req, res) => {
 app.delete('/api/technicians/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
-    await query('UPDATE complaints SET assigned_technician_id = NULL WHERE assigned_technician_id = $1', [id]);
-    await query('DELETE FROM technicians WHERE id = $1', [id]);
-    return res.json({ success: true, message: 'Technician deleted' });
+    await query('DELETE FROM technician_tour_expenses WHERE technician_id::text = $1', [String(id)]).catch(() => {});
+    await query('DELETE FROM technician_tour_advances WHERE technician_id::text = $1', [String(id)]).catch(() => {});
+    await query('DELETE FROM technician_tour_settlements WHERE technician_id::text = $1', [String(id)]).catch(() => {});
+    await query('UPDATE complaints SET assigned_technician_id = NULL, technician_name = NULL WHERE assigned_technician_id::text = $1', [String(id)]).catch(() => {});
+    await query('DELETE FROM technicians WHERE id::text = $1', [String(id)]);
+    return res.json({ success: true, message: 'Technician deleted permanently' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -4230,11 +4233,24 @@ app.post('/api/complaints/:id/reopen', authenticateToken, requireRole('admin', '
 app.delete('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
   try {
     const { id } = req.params;
+    const compRes = await query('SELECT * FROM complaints WHERE id = $1', [id]);
+    const comp = compRes.rows && compRes.rows[0] ? compRes.rows[0] : null;
+    const ticketId = comp ? comp.ticket_id : null;
+
+    if (ticketId) {
+      await query('DELETE FROM technician_tour_expenses WHERE complaint_id = $1 OR ticket_id = $2', [id, ticketId]).catch(() => {});
+      await query('DELETE FROM technician_tour_advances WHERE complaint_id = $1 OR ticket_id = $2', [id, ticketId]).catch(() => {});
+      await query('DELETE FROM technician_tour_settlements WHERE ticket_id = $1', [ticketId]).catch(() => {});
+    } else {
+      await query('DELETE FROM technician_tour_expenses WHERE complaint_id = $1', [id]).catch(() => {});
+      await query('DELETE FROM technician_tour_advances WHERE complaint_id = $1', [id]).catch(() => {});
+    }
+
     await query('DELETE FROM complaint_timelines WHERE complaint_id = $1', [id]);
     await query('DELETE FROM complaint_attachments WHERE complaint_id = $1', [id]);
-    await query('DELETE FROM in_app_notifications WHERE complaint_id = $1', [String(id)]);
+    await query('DELETE FROM in_app_notifications WHERE complaint_id = $1', [String(id)]).catch(() => {});
     await query('DELETE FROM complaints WHERE id = $1', [id]);
-    return res.json({ success: true, message: 'Complaint deleted permanently' });
+    return res.json({ success: true, message: 'Complaint and related tour records deleted permanently' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

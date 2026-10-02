@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { sendWhatsApp } from '../whatsapp.js';
+import { deleteR2Object } from '../r2.js';
 
 const complaintRoutes = new Hono();
 
@@ -1499,10 +1500,59 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
 complaintRoutes.delete('/:id', authenticateToken, requireRole('admin'), async (c) => {
   try {
     const id = c.req.param('id');
+    
+    // 1. Fetch complaint to get ticket_id
+    const compRes = await query('SELECT * FROM complaints WHERE id = $1', [id], c.env, c.executionCtx);
+    const comp = compRes.rows && compRes.rows[0] ? compRes.rows[0] : null;
+    const ticketId = comp ? comp.ticket_id : null;
+
+    // 2. Cascade delete and remove files from Cloudflare R2 for attachments
+    const attRes = await query('SELECT file_url FROM complaint_attachments WHERE complaint_id = $1', [id], c.env, c.executionCtx);
+    if (attRes.rows && attRes.rows.length > 0 && c.env.MEDIA_BUCKET) {
+      for (const att of attRes.rows) {
+        if (att.file_url) {
+          const match = att.file_url.match(/\/api\/attachments\/r2\/(.+)$/);
+          if (match && match[1]) {
+            await deleteR2Object(c.env.MEDIA_BUCKET, decodeURIComponent(match[1])).catch(() => {});
+          }
+        }
+      }
+    }
+
+    // 3. Cascade delete and remove receipts from Cloudflare R2 for tour expenses
+    const expQuery = ticketId 
+      ? 'SELECT receipt_url FROM technician_tour_expenses WHERE complaint_id = $1 OR ticket_id = $2'
+      : 'SELECT receipt_url FROM technician_tour_expenses WHERE complaint_id = $1';
+    const expParams = ticketId ? [id, ticketId] : [id];
+    const expRes = await query(expQuery, expParams, c.env, c.executionCtx).catch(() => ({ rows: [] }));
+    if (expRes.rows && expRes.rows.length > 0 && c.env.MEDIA_BUCKET) {
+      for (const exp of expRes.rows) {
+        if (exp.receipt_url) {
+          const match = exp.receipt_url.match(/\/api\/attachments\/r2\/(.+)$/);
+          if (match && match[1]) {
+            await deleteR2Object(c.env.MEDIA_BUCKET, decodeURIComponent(match[1])).catch(() => {});
+          }
+        }
+      }
+    }
+
+    // 4. Delete related tour expenses, advances, and settlements referencing this complaint or ticket
+    if (ticketId) {
+      await query('DELETE FROM technician_tour_expenses WHERE complaint_id = $1 OR ticket_id = $2', [id, ticketId], c.env, c.executionCtx).catch(() => {});
+      await query('DELETE FROM technician_tour_advances WHERE complaint_id = $1 OR ticket_id = $2', [id, ticketId], c.env, c.executionCtx).catch(() => {});
+      await query('DELETE FROM technician_tour_settlements WHERE ticket_id = $1', [ticketId], c.env, c.executionCtx).catch(() => {});
+    } else {
+      await query('DELETE FROM technician_tour_expenses WHERE complaint_id = $1', [id], c.env, c.executionCtx).catch(() => {});
+      await query('DELETE FROM technician_tour_advances WHERE complaint_id = $1', [id], c.env, c.executionCtx).catch(() => {});
+    }
+
+    // 5. Delete attachments, timelines, in-app notifications, and the complaint itself
     await query('DELETE FROM complaint_attachments WHERE complaint_id = $1', [id], c.env, c.executionCtx);
     await query('DELETE FROM complaint_timelines WHERE complaint_id = $1', [id], c.env, c.executionCtx);
+    await query('DELETE FROM in_app_notifications WHERE complaint_id = $1', [String(id)], c.env, c.executionCtx).catch(() => {});
     await query('DELETE FROM complaints WHERE id = $1', [id], c.env, c.executionCtx);
-    return c.json({ success: true, message: 'Complaint deleted' });
+
+    return c.json({ success: true, message: 'Complaint and all associated attachments, tour records, and vouchers deleted permanently' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
