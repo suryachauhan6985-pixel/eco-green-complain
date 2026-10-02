@@ -264,6 +264,23 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     periodCredit += ev.credit;
   }
 
+  let totalAdvances = 0;
+  let totalApprovedExpenses = 0;
+  let totalReturns = 0;
+  let totalReimbursements = 0;
+
+  for (const ev of filteredEvents) {
+    if (ev.entity_type === 'advance') {
+      totalAdvances += (ev.debit || 0);
+    } else if (ev.entity_type === 'expense_voucher' && (ev.status === 'Approved' || ev.status === 'Verified')) {
+      totalApprovedExpenses += (ev.credit || 0);
+    } else if (ev.entity_type === 'settlement_return') {
+      totalReturns += (ev.credit || 0);
+    } else if (ev.entity_type === 'settlement_reimbursement') {
+      totalReimbursements += (ev.debit || 0);
+    }
+  }
+
   const closingBalance = currentRunning;
   const displayTransactions = [...filteredEvents].reverse();
 
@@ -282,6 +299,12 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     period_debit: periodDebit,
     period_credit: periodCredit,
     closing_balance: closingBalance,
+    total_advances: totalAdvances,
+    total_approved_expenses: totalApprovedExpenses,
+    total_returns: totalReturns,
+    total_reimbursements: totalReimbursements,
+    status_label: finalPositionLabel,
+    position_label: finalPositionLabel.toUpperCase(),
     final_position: {
       type: finalPositionType,
       amount: Math.abs(closingBalance),
@@ -718,10 +741,14 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
       }
 
       return {
+        id: t.id,
         technician_id: t.id,
+        name: t.name,
         technician_name: t.name,
+        phone: t.phone,
         technician_phone: t.phone,
-        area_zone: t.area_zone,
+        area_zone: t.area_zone || 'General Zone',
+        total_advance: advSum,
         total_advances: advSum,
         total_expenses: expTotal,
         approved_expenses: expApproved,
@@ -729,7 +756,9 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
         total_reimbursed: reimSum,
         net_balance: tNet,
         recoverable_amount: tNet > 0 ? tNet : 0,
+        recoverable_from_tech: tNet > 0 ? tNet : 0,
         payable_amount: tNet < 0 ? Math.abs(tNet) : 0,
+        payable_to_tech: tNet < 0 ? Math.abs(tNet) : 0,
         status: tStatus,
         status_label: tStatusLabel
       };
@@ -737,10 +766,13 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
 
     // Company-level financial KPIs
     const companyKPIs = {
-      total_advances_outstanding: techniciansSummary.reduce((sum, t) => sum + t.recoverable_amount, 0),
+      total_advances_issued: techniciansSummary.reduce((sum, t) => sum + t.total_advance, 0),
+      total_advances_outstanding: techniciansSummary.reduce((sum, t) => sum + t.total_advance, 0),
+      total_approved_expenses: techniciansSummary.reduce((sum, t) => sum + t.approved_expenses, 0),
       total_returnable: techniciansSummary.reduce((sum, t) => sum + t.recoverable_amount, 0),
       total_reimbursement_payable: techniciansSummary.reduce((sum, t) => sum + t.payable_amount, 0),
       total_settled_accounts: techniciansSummary.filter(t => t.net_balance === 0).length,
+      total_settled_tours: techniciansSummary.filter(t => t.net_balance === 0).length,
       total_pending_accounts: techniciansSummary.filter(t => t.net_balance !== 0).length
     };
 

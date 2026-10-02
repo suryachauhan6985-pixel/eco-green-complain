@@ -463,8 +463,10 @@ export const TourLedgerSection = ({
     return (expenseForm.items || []).reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
   }, [expenseForm.items]);
 
+  const [showAllDisbursements, setShowAllDisbursements] = useState(false);
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleForm, setSettleForm] = useState({
+    technician_id: '',
     amount: '',
     settlement_type: 'return_to_company',
     payment_mode: 'Cash',
@@ -839,34 +841,40 @@ export const TourLedgerSection = ({
   // Handle Settle / Return Balance / Reimbursement
   const handleSettleBalance = async (e) => {
     e.preventDefault();
-    const effectiveTechId = (!isAdminOrStaff && scopedTechProfile?.id) ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null);
+    const effectiveTechId = settleForm.technician_id 
+      || (!isAdminOrStaff && scopedTechProfile?.id ? scopedTechProfile.id : (selectedTechId !== 'all' ? selectedTechId : null));
     if (!effectiveTechId) return showToast('Please select a specific technician first', 'error');
     const amt = parseFloat(settleForm.amount);
     if (!amt || amt <= 0) return showToast('Please enter a valid settlement amount', 'error');
 
-    const isReimbursement = (summary.net_balance || 0) < 0;
+    const chosenTech = loadedTechs.find(t => String(t.id) === String(effectiveTechId)) || currentTech;
+    const techSummary = (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(effectiveTechId));
+    const effectiveNetBal = techSummary ? Number(techSummary.net_balance || 0) : Number(summary.net_balance || 0);
+    const isReimbursement = effectiveNetBal < 0;
 
     try {
       setSubmittingSettle(true);
       await api.settleTourBalance({
         technician_id: effectiveTechId,
+        technician_name: chosenTech?.name || 'Technician',
         amount: amt,
         returned_amount: isReimbursement ? 0 : amt,
         reimbursed_amount: isReimbursement ? amt : 0,
         settlement_type: isReimbursement ? 'reimbursed_by_company' : 'return_to_company',
         payment_mode: settleForm.payment_mode,
         reference_no: settleForm.reference_no,
-        notes: settleForm.notes,
+        notes: settleForm.notes || (isReimbursement ? 'Reimbursement paid to specialist for out-of-pocket tour expenses' : 'Tour surplus cash returned to company'),
         received_by_name: currentUser?.name || 'Admin Supervisor'
       });
 
       showToast(isReimbursement 
-        ? `₹${amt} reimbursement to specialist recorded successfully!` 
-        : `₹${amt} cash return to company recorded successfully!`, 
+        ? `₹${amt} reimbursement to ${chosenTech?.name || 'specialist'} recorded successfully!` 
+        : `₹${amt} cash return from ${chosenTech?.name || 'specialist'} recorded successfully!`, 
         'success'
       );
       setIsSettleModalOpen(false);
       setSettleForm({
+        technician_id: '',
         amount: '',
         settlement_type: 'return_to_company',
         payment_mode: 'Cash',
@@ -1360,17 +1368,99 @@ export const TourLedgerSection = ({
     return 0;
   }, [selectedTechSummary, selectedTechId, summary.net_balance]);
 
-  const openSettleModal = () => {
-    const isReimbursement = (summary.net_balance || 0) < 0;
-    const absBal = Math.abs(summary.net_balance || 0);
+  const advancesSummaryInfo = useMemo(() => {
+    const advAmt = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+    const reimList = settlements.filter(s => parseFloat(s.reimbursed_amount || 0) > 0 && (s.status || '').toLowerCase() !== 'cancelled');
+    const reimAmt = reimList.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
+    return {
+      advAmt,
+      reimAmt,
+      reimCount: reimList.length,
+      totalCashDisbursed: advAmt + reimAmt
+    };
+  }, [advances, settlements]);
+
+  const displayedDisbursements = useMemo(() => {
+    const advList = advances.map(a => ({
+      ...a,
+      is_reimbursement: false,
+      disbursement_type: 'Tour Advance'
+    }));
+
+    if (!showAllDisbursements) return advList;
+
+    const reimList = settlements
+      .filter(s => parseFloat(s.reimbursed_amount || 0) > 0 && (s.status || '').toLowerCase() !== 'cancelled')
+      .map(s => ({
+        id: `reim_${s.id}`,
+        allocated_at: s.settled_at || s.created_at,
+        technician_name: s.technician_name || currentTech.name,
+        technician_phone: s.technician_phone || currentTech.phone,
+        purpose: s.notes || 'Out-of-Pocket Expense Reimbursement Paid to Specialist',
+        payment_mode: s.payment_mode || 'Cash',
+        reference_no: s.reference_no || `REIM-${s.id}`,
+        allocated_by: s.settled_by || 'Admin',
+        amount: s.reimbursed_amount,
+        status: s.status || 'Settled',
+        is_reimbursement: true,
+        disbursement_type: 'Reimbursement Payout'
+      }));
+
+    return [...advList, ...reimList].sort((a, b) => new Date(b.allocated_at || 0) - new Date(a.allocated_at || 0));
+  }, [advances, settlements, showAllDisbursements, currentTech]);
+
+  const openSettleModal = (targetTechId = null) => {
+    let effectiveTechId = targetTechId;
+    if (!effectiveTechId && selectedTechId !== 'all') {
+      effectiveTechId = selectedTechId;
+    }
+    // If on consolidated view and no tech passed, find the first tech with an active balance (e.g. Hardev Vaghela)
+    if (!effectiveTechId && isAdminOrStaff) {
+      const pendingTech = (ledgerData.technicians_summary || []).find(t => (t.payable_amount || t.payable_to_tech) > 0 || (t.recoverable_amount || t.recoverable_from_tech) > 0);
+      if (pendingTech) {
+        effectiveTechId = String(pendingTech.technician_id);
+      } else if (loadedTechs.length > 0) {
+        effectiveTechId = String(loadedTechs[0].id);
+      }
+    }
+    if (!effectiveTechId && scopedTechProfile?.id) {
+      effectiveTechId = scopedTechProfile.id;
+    }
+
+    const techSummary = (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(effectiveTechId));
+    const bal = techSummary ? Number(techSummary.net_balance ?? 0) : Number(summary.net_balance ?? 0);
+    const isReimbursement = bal < 0;
+    const absBal = Math.abs(bal);
+
     setSettleForm({
+      technician_id: effectiveTechId ? String(effectiveTechId) : '',
       amount: absBal > 0 ? String(absBal) : '',
       settlement_type: isReimbursement ? 'reimbursed_by_company' : 'return_to_company',
       payment_mode: isReimbursement ? 'UPI / Bank Transfer' : 'Cash',
       reference_no: '',
-      notes: ''
+      notes: isReimbursement 
+        ? 'Reimbursement payout for out-of-pocket tour expenses' 
+        : 'Tour surplus cash returned to company'
     });
     setIsSettleModalOpen(true);
+  };
+
+  const handleSettleTechChange = (techId) => {
+    const techSummary = (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(techId));
+    const bal = techSummary ? Number(techSummary.net_balance ?? 0) : 0;
+    const isReimbursement = bal < 0;
+    const absBal = Math.abs(bal);
+
+    setSettleForm(prev => ({
+      ...prev,
+      technician_id: techId,
+      amount: absBal > 0 ? String(absBal) : '',
+      settlement_type: isReimbursement ? 'reimbursed_by_company' : 'return_to_company',
+      payment_mode: isReimbursement ? 'UPI / Bank Transfer' : 'Cash',
+      notes: isReimbursement 
+        ? 'Reimbursement payout for out-of-pocket tour expenses' 
+        : 'Tour surplus cash returned to company'
+    }));
   };
 
   const toggleSelectVoucher = (key) => {
@@ -2002,7 +2092,33 @@ export const TourLedgerSection = ({
         {/* ================= 2. ADVANCES TAB ================= */}
         {subTab === 'advances' && (
           <div className="p-4 sm:p-5">
-            {advances.length === 0 ? (
+            {/* Disbursements Overview Card if Reimbursements Exist */}
+            {advancesSummaryInfo.reimCount > 0 && (
+              <div className="mb-3.5 p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                <div className="flex items-start sm:items-center gap-2">
+                  <span className="text-base shrink-0">ℹ️</span>
+                  <div>
+                    <span className="font-bold text-blue-950 block">
+                      Total Cash Given to Specialist: {formatCur(advancesSummaryInfo.totalCashDisbursed)}
+                    </span>
+                    <span className="text-[11px] text-blue-800">
+                      Advances Allocated: <strong className="text-blue-950 font-mono">{formatCur(advancesSummaryInfo.advAmt)}</strong> ({advances.length} record) + Out-of-Pocket Reimbursements: <strong className="text-blue-950 font-mono">{formatCur(advancesSummaryInfo.reimAmt)}</strong> ({advancesSummaryInfo.reimCount} record in Deposits & Reimbursements)
+                    </span>
+                  </div>
+                </div>
+                <label className="flex items-center gap-1.5 font-bold text-blue-900 cursor-pointer self-start sm:self-auto bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-2xs text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={showAllDisbursements}
+                    onChange={(e) => setShowAllDisbursements(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>Show All Cash Disbursed ({advances.length + advancesSummaryInfo.reimCount})</span>
+                </label>
+              </div>
+            )}
+
+            {displayedDisbursements.length === 0 ? (
               <div className="text-center py-12 px-4 text-slate-400">
                 <ArrowDownLeft className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                 <p className="text-xs">No tour advances have been recorded yet for this specialist.</p>
@@ -2014,6 +2130,7 @@ export const TourLedgerSection = ({
                     <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
                       <th className="py-2.5 px-3">Date & Time</th>
                       <th className="py-2.5 px-3">Specialist (Recipient)</th>
+                      <th className="py-2.5 px-3">Disbursement Type</th>
                       <th className="py-2.5 px-3">Purpose / Remarks</th>
                       <th className="py-2.5 px-3">Payment Mode</th>
                       <th className="py-2.5 px-3">Ref No</th>
@@ -2023,7 +2140,7 @@ export const TourLedgerSection = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {advances.map((adv) => (
+                    {displayedDisbursements.map((adv) => (
                       <tr key={adv.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
                           {adv.allocated_at ? formatIndianDateTime(adv.allocated_at) : '-'}
@@ -2038,11 +2155,18 @@ export const TourLedgerSection = ({
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-800 font-medium">
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            adv.is_reimbursement ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-blue-100 text-blue-800 border border-blue-200'
+                          }`}>
+                            {adv.disbursement_type || 'Tour Advance'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-800 font-medium max-w-xs truncate" title={adv.purpose || adv.tour_title || adv.notes}>
                           {adv.purpose || adv.tour_title || adv.notes || 'Tour Advance'}
                         </td>
                         <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700 border border-slate-200 font-bold">
                             {adv.payment_mode || 'Cash'}
                           </span>
                         </td>
@@ -2056,7 +2180,11 @@ export const TourLedgerSection = ({
                           {formatCur(adv.amount)}
                         </td>
                         <td className="py-2.5 px-3 text-center">
-                          {adv.status === 'Cancelled' ? (
+                          {adv.is_reimbursement ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                              Disbursed
+                            </span>
+                          ) : adv.status === 'Cancelled' ? (
                             <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-500 font-bold border border-slate-200" title={adv.cancellation_reason || 'Cancelled'}>
                               Cancelled
                             </span>
@@ -2675,12 +2803,12 @@ export const TourLedgerSection = ({
                     {(ledgerData.technicians_summary || []).map((t) => (
                       <tr key={t.technician_id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2.5 px-3">
-                          <strong className="text-slate-900 block font-bold">{t.name}</strong>
-                          <span className="text-[10px] text-slate-500 font-mono">{t.phone || '-'}</span>
+                          <strong className="text-slate-900 block font-bold">{t.name || t.technician_name || 'Specialist'}</strong>
+                          <span className="text-[10px] text-slate-500 font-mono">{t.phone || t.technician_phone || '-'}</span>
                           <span className="text-[10px] text-slate-400 block">{t.area_zone || 'Field'}</span>
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
-                          {formatCur(t.total_advance)}
+                          {formatCur(t.total_advance ?? t.total_advances)}
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-900">
                           {formatCur(t.approved_expenses)}
@@ -2692,31 +2820,53 @@ export const TourLedgerSection = ({
                           {formatCur(t.total_reimbursed)}
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-950">
-                          {t.recoverable_from_tech > 0 ? formatCur(t.recoverable_from_tech) : '-'}
+                          {(t.recoverable_from_tech ?? t.recoverable_amount) > 0 ? formatCur(t.recoverable_from_tech ?? t.recoverable_amount) : '-'}
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-950">
-                          {t.payable_to_tech > 0 ? formatCur(t.payable_to_tech) : '-'}
+                          {(t.payable_to_tech ?? t.payable_amount) > 0 ? formatCur(t.payable_to_tech ?? t.payable_amount) : '-'}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            t.status_label === 'SETTLED' ? 'bg-emerald-100 text-emerald-800' :
-                            t.status_label === 'PAYABLE BY TECHNICIAN' ? 'bg-amber-100 text-amber-800' :
+                            (t.status_label || '').toLowerCase().includes('settled') ? 'bg-emerald-100 text-emerald-800' :
+                            (t.status_label || '').toLowerCase().includes('recoverable') ? 'bg-amber-100 text-amber-800' :
                             'bg-blue-100 text-blue-800'
                           }`}>
                             {t.status_label}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleTechChange(String(t.technician_id));
-                              setSubTab('statement');
-                            }}
-                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
-                          >
-                            View Statement
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleTechChange(String(t.technician_id));
+                                setSubTab('statement');
+                              }}
+                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                            >
+                              View Statement
+                            </button>
+                            {(t.payable_to_tech ?? t.payable_amount) > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => openSettleModal(String(t.technician_id))}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                                title="Reimburse specialist out-of-pocket expenses"
+                              >
+                                Reimburse ({formatCur(t.payable_to_tech ?? t.payable_amount)})
+                              </button>
+                            )}
+                            {(t.recoverable_from_tech ?? t.recoverable_amount) > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => openSettleModal(String(t.technician_id))}
+                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                                title="Collect surplus cash return from specialist"
+                              >
+                                Collect Return ({formatCur(t.recoverable_from_tech ?? t.recoverable_amount)})
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -3266,143 +3416,189 @@ export const TourLedgerSection = ({
       )}
 
       {/* ================= MODAL: DEPOSIT / RETURN BALANCE TO COMPANY ================= */}
-      {isSettleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <IndianRupee className={`w-4 h-4 ${summary.net_balance < 0 ? 'text-blue-600' : 'text-emerald-600'}`} />
-                <span>
-                  {summary.net_balance < 0 
-                    ? 'Reimburse Specialist (Company Payout)' 
-                    : 'Return Surplus Advance to Company'}
-                </span>
-              </h4>
-              <button 
-                type="button" 
-                onClick={() => setIsSettleModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {isSettleModalOpen && (() => {
+        const currentTargetTech = loadedTechs.find(t => String(t.id) === String(settleForm.technician_id)) 
+          || (selectedTechId !== 'all' ? loadedTechs.find(t => String(t.id) === String(selectedTechId)) : null)
+          || currentTech;
+        const targetSummary = (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(settleForm.technician_id || currentTargetTech?.id));
+        const targetNetBal = targetSummary ? Number(targetSummary.net_balance ?? 0) : Number(summary.net_balance ?? 0);
+        const isTargetReimb = targetNetBal < 0;
+        const targetDue = Math.abs(targetNetBal);
 
-            <form onSubmit={handleSettleBalance} className="space-y-3 text-xs">
-              {summary.net_balance < 0 ? (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-blue-800">Amount Company Owes Specialist:</span>
-                    <strong className="font-mono font-bold text-blue-950 text-sm">{formatCur(Math.abs(summary.net_balance))}</strong>
-                  </div>
-                  <p className="text-[10px] text-blue-700">
-                    Specialist ne tour par apni jeb se advance se zyada kharch kiya hai. Company yeh amount specialist ko pay / reimburse karegi.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-emerald-800">Current Tour Surplus Cash:</span>
-                    <strong className="font-mono font-bold text-emerald-950 text-sm">{formatCur(summary.net_balance)}</strong>
-                  </div>
-                  <p className="text-[10px] text-emerald-700">
-                    Specialist tour complete hone ke baad bacha hua company cash return kar raha hai.
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {summary.net_balance < 0 ? 'Reimbursement / Payout Amount (₹) *' : 'Deposit / Return Amount (₹) *'}
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  step="any"
-                  value={settleForm.amount}
-                  onChange={(e) => setSettleForm(prev => ({ ...prev, amount: e.target.value }))}
-                  className="w-full text-base font-bold font-mono px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Payment Mode
-                </label>
-                <select
-                  value={settleForm.payment_mode}
-                  onChange={(e) => setSettleForm(prev => ({ ...prev, payment_mode: e.target.value }))}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
-                >
-                  {summary.net_balance < 0 ? (
-                    <>
-                      <option value="UPI / Bank Transfer">UPI / Online Bank Transfer to Specialist</option>
-                      <option value="Cash">Cash Handover from Accounts</option>
-                      <option value="Company Cheque">Company Cheque</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="Cash">Cash in Hand to Office</option>
-                      <option value="Bank Transfer">Bank Transfer / Direct Deposit</option>
-                      <option value="UPI">UPI to Company Account</option>
-                    </>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Ref / Transaction ID (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. UTR / Receipt / Cash Voucher No."
-                  value={settleForm.reference_no}
-                  onChange={(e) => setSettleForm(prev => ({ ...prev, reference_no: e.target.value }))}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Remarks / Notes
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Tour surplus cash returned / reimbursement note"
-                  value={settleForm.notes}
-                  onChange={(e) => setSettleForm(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSettleModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingSettle}
-                  className={`px-4 py-2 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
-                    summary.net_balance < 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                  }`}
-                >
-                  {submittingSettle && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <IndianRupee className={`w-4 h-4 ${isTargetReimb ? 'text-blue-600' : 'text-emerald-600'}`} />
                   <span>
-                    {submittingSettle 
-                      ? 'Saving...' 
-                      : (summary.net_balance < 0 ? 'Confirm Payout to Specialist' : 'Confirm Cash Return')}
+                    {isTargetReimb 
+                      ? 'Reimburse Specialist (Company Payout)' 
+                      : 'Return Surplus Advance to Company'}
                   </span>
+                </h4>
+                <button 
+                  type="button" 
+                  onClick={() => setIsSettleModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleSettleBalance} className="space-y-3 text-xs">
+                {/* Specialist Selection / Display */}
+                {isAdminOrStaff ? (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Select Specialist / Technician *
+                    </label>
+                    <select
+                      required
+                      value={settleForm.technician_id}
+                      onChange={(e) => handleSettleTechChange(e.target.value)}
+                      className="w-full text-xs px-3 py-2 bg-blue-50/70 border border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-blue-950 cursor-pointer"
+                    >
+                      <option value="">-- Choose Specialist to Settle --</option>
+                      {loadedTechs.map(t => {
+                        const tSummary = (ledgerData.technicians_summary || []).find(s => String(s.technician_id) === String(t.id));
+                        const bal = tSummary ? Number(tSummary.net_balance ?? 0) : 0;
+                        let badge = 'Settled (₹0)';
+                        if (bal < 0) badge = `₹${Math.abs(bal).toLocaleString('en-IN')} Reimbursement Due`;
+                        else if (bal > 0) badge = `₹${bal.toLocaleString('en-IN')} Returnable`;
+                        return (
+                          <option key={t.id} value={t.id}>
+                            👤 {t.name} ({t.area_zone || 'Field'}) — [{badge}]
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900">
+                    <span className="block text-[11px] font-semibold text-blue-700">Specialist:</span>
+                    <strong className="text-sm font-bold text-blue-950">{currentTech.name}</strong>
+                    <span className="text-[11px] text-blue-600 block mt-0.5">{currentTech.area_zone || 'Field Zone'}</span>
+                  </div>
+                )}
+
+                {/* Outstanding Balance Explanation Banner in Enterprise English */}
+                {isTargetReimb ? (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-blue-800">Amount Company Owes Specialist:</span>
+                      <strong className="font-mono font-bold text-blue-950 text-sm">{formatCur(targetDue)}</strong>
+                    </div>
+                    <p className="text-[10px] text-blue-700">
+                      The specialist incurred approved tour expenses exceeding the advance. The company is issuing this reimbursement payout to settle the specialist's account balance.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-emerald-800">Current Tour Surplus Cash:</span>
+                      <strong className="font-mono font-bold text-emerald-950 text-sm">{formatCur(targetDue)}</strong>
+                    </div>
+                    <p className="text-[10px] text-emerald-700">
+                      The specialist is returning unused tour advance cash back to the company after completing field tasks.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    {isTargetReimb ? 'Reimbursement / Payout Amount (₹) *' : 'Deposit / Return Amount (₹) *'}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    value={settleForm.amount}
+                    onChange={(e) => setSettleForm(prev => ({ ...prev, amount: e.target.value }))}
+                    className="w-full text-base font-bold font-mono px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Payment Mode
+                  </label>
+                  <select
+                    value={settleForm.payment_mode}
+                    onChange={(e) => setSettleForm(prev => ({ ...prev, payment_mode: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
+                  >
+                    {isTargetReimb ? (
+                      <>
+                        <option value="UPI / Online Bank Transfer to Specialist">UPI / Online Bank Transfer to Specialist</option>
+                        <option value="Cash">Cash Handover from Accounts</option>
+                        <option value="Company Cheque">Company Cheque</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Cash">Cash in Hand to Office</option>
+                        <option value="Bank Transfer">Bank Transfer / Direct Deposit</option>
+                        <option value="UPI">UPI to Company Account</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Ref / Transaction ID (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. UTR / Receipt / Cash Voucher No."
+                    value={settleForm.reference_no}
+                    onChange={(e) => setSettleForm(prev => ({ ...prev, reference_no: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Remarks / Notes
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Tour surplus cash returned / reimbursement note"
+                    value={settleForm.notes}
+                    onChange={(e) => setSettleForm(prev => ({ ...prev, notes: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSettleModalOpen(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingSettle}
+                    className={`px-4 py-2 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
+                      isTargetReimb ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    {submittingSettle && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>
+                      {submittingSettle 
+                        ? 'Saving...' 
+                        : (isTargetReimb ? 'Confirm Payout to Specialist' : 'Confirm Cash Return')}
+                    </span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ================= MODAL: PRINT & WORD EXPORT VOUCHER ================= */}
       {isVoucherModalOpen && (
