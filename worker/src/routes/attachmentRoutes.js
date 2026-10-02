@@ -8,7 +8,8 @@ import {
   generateStorageKey,
   putR2Object,
   getR2Object,
-  deleteR2Object
+  deleteR2Object,
+  moveR2Object
 } from '../r2.js';
 
 const attachmentRoutes = new Hono();
@@ -80,6 +81,7 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
     );
     if (compRes.rows.length === 0) return c.json({ error: 'Complaint not found' }, 404);
     const complaintId = compRes.rows[0].id;
+    const ticketFolder = compRes.rows[0].ticket_id || compRes.rows[0].id;
 
     const user = c.get('user');
     // If request has authenticated user, only admin and staff can attach documents to existing complaint
@@ -135,7 +137,7 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
             const mimeType = file.type || 'application/octet-stream';
             validateFileMetadata(filename, mimeType, fileBuffer.byteLength);
             validateFileBinary(fileBuffer, mimeType, filename);
-            const storageKey = generateStorageKey(complaintId, filename);
+            const storageKey = generateStorageKey(ticketFolder, filename);
             await putR2Object(bucket, storageKey, fileBuffer, mimeType);
             attachmentsList.push({
               file_name: filename,
@@ -153,8 +155,22 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
 
     const saved = [];
     for (const att of attachmentsList) {
-      const fileUrl = att.file_url || (att.storage_key ? `/api/attachments/r2/${att.storage_key}` : '');
+      let fileUrl = att.file_url || (att.storage_key ? `/api/attachments/r2/${att.storage_key}` : '');
       if (!fileUrl && !att.file_name) continue;
+
+      if (fileUrl && fileUrl.includes('complaints/temp/') && bucket && ticketFolder) {
+        const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+        const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${ticketFolder}/`);
+        try {
+          const moved = await moveR2Object(bucket, oldKey, newKey);
+          if (moved) {
+            fileUrl = `/api/attachments/r2/${newKey}`;
+          }
+        } catch (e) {
+          console.error('Failed to relocate temp attachment in R2:', e);
+        }
+      }
+
       const insRes = await query(
         `INSERT INTO complaint_attachments (
           complaint_id, file_name, file_url, file_type, file_data, uploaded_by
@@ -252,7 +268,24 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
       }
     }
 
-    const object = await getR2Object(bucket, cleanKey);
+    const rangeHeader = c.req.header('range');
+    let getOptions = {};
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+      if (match) {
+        const start = match[1] !== '' ? parseInt(match[1], 10) : undefined;
+        const end = match[2] !== '' ? parseInt(match[2], 10) : undefined;
+        if (start !== undefined && end !== undefined) {
+          getOptions.range = { offset: start, length: end - start + 1 };
+        } else if (start !== undefined) {
+          getOptions.range = { offset: start };
+        } else if (end !== undefined) {
+          getOptions.range = { suffix: end };
+        }
+      }
+    }
+
+    const object = await getR2Object(bucket, cleanKey, getOptions);
     if (!object) {
       return c.text('File not found in storage', 404);
     }
@@ -262,19 +295,73 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
     headers.set('etag', object.httpEtag);
     headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
     headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('Accept-Ranges', 'bytes');
 
     const mimeType = object.httpMetadata?.contentType || getMimeTypeFromKey(cleanKey);
     headers.set('Content-Type', mimeType);
-    headers.set('Content-Length', String(object.size));
 
     const filename = cleanKey.split('/').pop() || 'attachment';
     const isDownload = c.req.query('download') === '1';
     headers.set('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${filename}"`);
     headers.set('Access-Control-Allow-Origin', '*');
 
-    return new Response(object.body, { headers });
+    if (rangeHeader && object.range) {
+      const offset = object.range.offset ?? 0;
+      const length = object.range.length ?? (object.size - offset);
+      headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
+      headers.set('Content-Length', String(length));
+      return new Response(object.body, { headers, status: 206 });
+    }
+
+    headers.set('Content-Length', String(object.size));
+    return new Response(object.body, { headers, status: 200 });
   } catch (err) {
     return c.text('Storage retrieval error: ' + err.message, 500);
+  }
+});
+
+// POST /api/attachments/sync-temp - Relocate all temp attachments to their complaint ticket folders in R2 and database
+attachmentRoutes.post('/sync-temp', authenticateToken, async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) return c.json({ error: 'R2 storage unavailable' }, 500);
+
+    const res = await query(
+      `SELECT a.id, a.complaint_id, a.file_name, a.file_url, c.ticket_id 
+       FROM complaint_attachments a
+       JOIN complaints c ON a.complaint_id = c.id
+       WHERE a.file_url LIKE '%complaints/temp/%'`,
+      [],
+      c.env,
+      c.executionCtx
+    );
+
+    const migrated = [];
+    for (const row of res.rows) {
+      if (!row.ticket_id) continue;
+      const oldKey = row.file_url.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+      const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${row.ticket_id}/`);
+      
+      const moved = await moveR2Object(bucket, oldKey, newKey);
+      if (moved) {
+        const newUrl = `/api/attachments/r2/${newKey}`;
+        await query(
+          'UPDATE complaint_attachments SET file_url = $1, file_data = $1 WHERE id = $2',
+          [newUrl, row.id],
+          c.env,
+          c.executionCtx
+        );
+        migrated.push({ id: row.id, oldKey, newKey, newUrl });
+      }
+    }
+
+    return c.json({
+      success: true,
+      migrated_count: migrated.length,
+      migrated
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
   }
 });
 

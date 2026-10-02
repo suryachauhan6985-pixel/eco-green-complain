@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { sendWhatsApp } from '../whatsapp.js';
-import { deleteR2Object } from '../r2.js';
+import { deleteR2Object, moveR2Object } from '../r2.js';
 
 const complaintRoutes = new Hono();
 
@@ -278,6 +278,32 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
       c.env,
       c.executionCtx
     );
+
+    // Auto-relocate any legacy attachments stuck in complaints/temp/ to complaints/${complaint.ticket_id}/ in R2
+    if (c.env?.MEDIA_BUCKET && complaint.ticket_id && atts.rows.length > 0) {
+      for (const row of atts.rows) {
+        if (row.file_url && row.file_url.includes('complaints/temp/')) {
+          const oldKey = row.file_url.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+          const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${complaint.ticket_id}/`);
+          try {
+            const moved = await moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey);
+            if (moved) {
+              const newUrl = `/api/attachments/r2/${newKey}`;
+              row.file_url = newUrl;
+              await query(
+                'UPDATE complaint_attachments SET file_url = $1, file_data = $1 WHERE id = $2',
+                [newUrl, row.id],
+                c.env,
+                c.executionCtx
+              ).catch(() => {});
+            }
+          } catch (e) {
+            console.error('Failed to auto-relocate legacy temp attachment in R2:', e);
+          }
+        }
+      }
+    }
+
     const timeline = await query(
       'SELECT id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at FROM complaint_timelines WHERE complaint_id = $1 ORDER BY created_at ASC',
       [complaint.id],
@@ -420,6 +446,21 @@ async function handleCreateComplaint(c, isPublic = false) {
 
   if (Array.isArray(directAttachments) && directAttachments.length > 0) {
     for (const att of directAttachments) {
+      let fileUrl = att.file_url || att.storage_key || '';
+      // If file was uploaded to complaints/temp/ prior to ticket registration, relocate to complaints/${newComp.ticket_id}/ in R2!
+      if (fileUrl && fileUrl.includes('complaints/temp/') && c.env?.MEDIA_BUCKET && newComp.ticket_id) {
+        const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+        const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${newComp.ticket_id}/`);
+        try {
+          const moved = await moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey);
+          if (moved) {
+            fileUrl = `/api/attachments/r2/${newKey}`;
+          }
+        } catch (e) {
+          console.error('Failed to relocate temp attachment in R2 during ticket creation:', e);
+        }
+      }
+
       await query(`
         INSERT INTO complaint_attachments (
           complaint_id, file_name, file_url, file_type, file_data, uploaded_by
@@ -427,9 +468,9 @@ async function handleCreateComplaint(c, isPublic = false) {
       `, [
         newComp.id,
         att.file_name || 'Document',
-        att.file_url || att.storage_key || '',
+        fileUrl,
         att.file_type || 'application/octet-stream',
-        att.file_url || att.storage_key || '',
+        fileUrl,
         user?.name || 'Helpdesk'
       ], c.env, c.executionCtx).catch(() => {});
     }
@@ -1495,9 +1536,24 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
     if (newAttachments.length > 0) {
       const user = c.get('user');
       const uploaderName = user?.name || user?.username || 'Helpdesk';
+      const targetFolder = current.ticket_id || current.id;
       for (const att of newAttachments) {
-        const fileUrl = att.file_url || (att.storage_key ? `/api/attachments/r2/${att.storage_key}` : '');
+        let fileUrl = att.file_url || (att.storage_key ? `/api/attachments/r2/${att.storage_key}` : '');
         if (!fileUrl && !att.file_name) continue;
+
+        if (fileUrl && fileUrl.includes('complaints/temp/') && c.env?.MEDIA_BUCKET && targetFolder) {
+          const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+          const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${targetFolder}/`);
+          try {
+            const moved = await moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey);
+            if (moved) {
+              fileUrl = `/api/attachments/r2/${newKey}`;
+            }
+          } catch (e) {
+            console.error('Failed to relocate temp attachment in R2 during ticket update:', e);
+          }
+        }
+
         await query(
           `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
            VALUES ($1, $2, $3, $4, $5, $6)`,

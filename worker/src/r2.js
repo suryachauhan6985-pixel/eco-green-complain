@@ -116,12 +116,26 @@ export async function putR2Object(bucket, key, data, contentType) {
   });
 }
 
-export async function getR2Object(bucket, key) {
+export async function getR2Object(bucket, key, options) {
   if (!bucket) throw new Error('Cloudflare R2 MEDIA_BUCKET binding is missing.');
-  return await bucket.get(key);
+  return await bucket.get(key, options);
 }
 
 export async function deleteR2Object(bucket, key) {
   if (!bucket) throw new Error('Cloudflare R2 MEDIA_BUCKET binding is missing.');
   return await bucket.delete(key);
 }
+
+export async function moveR2Object(bucket, oldKey, newKey) {
+  if (!bucket) throw new Error('Cloudflare R2 MEDIA_BUCKET binding is missing.');
+  if (oldKey === newKey) return true;
+  const obj = await bucket.get(oldKey);
+  if (!obj) return false;
+  await bucket.put(newKey, obj.body, {
+    httpMetadata: obj.httpMetadata,
+    customMetadata: obj.customMetadata
+  });
+  await bucket.delete(oldKey).catch(() => {});
+  return true;
+}
+
