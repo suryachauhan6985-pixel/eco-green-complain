@@ -33,7 +33,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
   const [techProfile, setTechProfile] = useState(null);
-  const [selectedAdminTechId, setSelectedAdminTechId] = useState('all');
+  const [selectedAdminTechId, setSelectedAdminTechId] = useState('');
 
   // Mobile & Desktop view mode: default 'card'
   const [viewMode, setViewMode] = useState(() => {
@@ -98,6 +98,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const data = await api.getTechnicians();
       const techs = data.technicians || [];
       setTechnicians(techs);
+      if (techs.length > 0) {
+        setSelectedAdminTechId(prev => (prev && prev !== 'all' && techs.some(t => String(t.id) === String(prev))) ? prev : String(techs[0].id));
+      }
       const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);
       const match = techs.find(t => {
         const tPhoneClean = (t.phone || '').replace(/[^0-9]/g, '').slice(-10);
@@ -516,9 +519,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-800">Technician Specialist Filter:</span>
-                {selectedAdminTechId !== 'all' && (
+                {selectedAdminTechId && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    Active Filter
+                    Active Specialist
                   </span>
                 )}
               </div>
@@ -534,30 +537,16 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               onChange={(e) => {
                 const val = e.target.value;
                 setSelectedAdminTechId(val);
-                if (val !== 'all') {
-                  setExpandedTechId(val);
-                }
+                setExpandedTechId(val);
               }}
               className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
             >
-              <option value="all">👥 All Technicians ({technicians.length} Specialists)</option>
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
                   👤 {t.name} ({t.area_zone || t.phone || 'Field'})
                 </option>
               ))}
             </select>
-
-            {selectedAdminTechId !== 'all' && (
-              <button
-                type="button"
-                onClick={() => setSelectedAdminTechId('all')}
-                className="px-2.5 py-1.5 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors cursor-pointer"
-                title="Reset to all technicians"
-              >
-                Reset
-              </button>
-            )}
           </div>
         </div>
       )}

@@ -1605,6 +1605,13 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+  updateTourAdvance: (id, data) => request(`/tour-advances/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  deleteTourAdvance: (id) => request(`/tour-advances/${id}`, {
+    method: 'DELETE'
+  }),
   cancelTourAdvance: (id, cancellation_reason = '') => request(`/tour-advances/${id}/cancel`, {
     method: 'POST',
     body: JSON.stringify({ cancellation_reason })

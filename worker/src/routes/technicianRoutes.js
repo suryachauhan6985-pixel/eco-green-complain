@@ -499,21 +499,27 @@ technicianRoutes.post('/tour-ledger/clear-all', authenticateToken, requireRole('
 // GET /api/tour-vouchers/next-sequence
 technicianRoutes.get('/tour-vouchers/next-sequence', authenticateToken, async (c) => {
   try {
-    const currentYear = new Date().getFullYear();
-    const prefix = `EXP-${currentYear}-`;
     const res = await query(
       `SELECT voucher_no FROM technician_tour_expenses 
-       WHERE voucher_no LIKE $1 
-       ORDER BY voucher_no DESC LIMIT 1`,
-      [`${prefix}%`],
+       WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
+      [],
       c.env,
       c.executionCtx
     );
-    if (!res.rows.length) return c.json({ next_voucher_no: `${prefix}000101`, next_seq: '000101' });
-    const lastNo = res.rows[0].voucher_no;
-    const num = parseInt(lastNo.split('-').pop(), 10) || 100;
-    const nextSeq = String(num + 1).padStart(6, '0');
-    return c.json({ next_voucher_no: `${prefix}${nextSeq}`, next_seq: nextSeq });
+    let maxSeq = 340;
+    for (const row of res.rows) {
+      const v = String(row.voucher_no || '');
+      const match = v.match(/\d+/g);
+      if (match) {
+        const num = parseInt(match[match.length - 1], 10);
+        if (!isNaN(num) && num > maxSeq && num < 100000) {
+          maxSeq = num;
+        }
+      }
+    }
+    const nextSeq = maxSeq + 1;
+    const nextVoucherNo = `TT-${nextSeq}`;
+    return c.json({ success: true, next_voucher_no: nextVoucherNo, next_seq: String(nextSeq) });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -1027,6 +1033,57 @@ technicianRoutes.post('/tour-advances/:id/cancel', authenticateToken, requireRol
   }
 });
 
+// PUT /api/tour-advances/:id - Edit an advance (Amount, Purpose, Date, Mode, Ref)
+technicianRoutes.put('/tour-advances/:id', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const { amount, purpose, notes, payment_mode, reference_no, allocated_at, technician_id } = body;
+
+    const existing = await query('SELECT * FROM technician_tour_advances WHERE id::text = $1 LIMIT 1', [id], c.env, c.executionCtx);
+    if (!existing.rows.length) return c.json({ error: 'Tour advance not found' }, 404);
+
+    const r = await query(`
+      UPDATE technician_tour_advances
+      SET 
+        amount = COALESCE($1, amount),
+        purpose = COALESCE($2, purpose),
+        tour_title = COALESCE($2, tour_title),
+        notes = COALESCE($3, notes),
+        payment_mode = COALESCE($4, payment_mode),
+        reference_no = COALESCE($5, reference_no),
+        allocated_at = COALESCE($6, allocated_at),
+        technician_id = COALESCE($7, technician_id)
+      WHERE id::text = $8
+      RETURNING *
+    `, [
+      amount !== undefined ? parseFloat(amount) : null,
+      purpose !== undefined ? purpose : null,
+      notes !== undefined ? notes : null,
+      payment_mode !== undefined ? payment_mode : null,
+      reference_no !== undefined ? reference_no : null,
+      allocated_at !== undefined ? allocated_at : null,
+      technician_id !== undefined ? String(technician_id) : null,
+      id
+    ], c.env, c.executionCtx);
+
+    return c.json({ success: true, advance: r.rows[0] });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// DELETE /api/tour-advances/:id - Delete an advance
+technicianRoutes.delete('/tour-advances/:id', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    await query('DELETE FROM technician_tour_advances WHERE id::text = $1', [id], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'Tour advance deleted successfully' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // POST /api/tour-expenses
 technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
   try {
@@ -1055,8 +1112,26 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
       return c.json({ error: 'Technician is required' }, 400);
     }
 
-    const currentYear = new Date().getFullYear();
-    const finalVoucherNo = voucher_no || `EXP-${currentYear}-${Date.now().toString().slice(-6)}`;
+    let finalVoucherNo = voucher_no;
+    if (!finalVoucherNo || finalVoucherNo.startsWith('EXP-')) {
+      const res = await query(
+        `SELECT voucher_no FROM technician_tour_expenses 
+         WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
+        [],
+        c.env,
+        c.executionCtx
+      );
+      let maxSeq = 340;
+      for (const row of res.rows) {
+        const v = String(row.voucher_no || '');
+        const match = v.match(/\d+/g);
+        if (match) {
+          const num = parseInt(match[match.length - 1], 10);
+          if (!isNaN(num) && num > maxSeq && num < 100000) maxSeq = num;
+        }
+      }
+      finalVoucherNo = `TT-${maxSeq + 1}`;
+    }
 
     // Support multi-item submission in a single call
     const lineItems = Array.isArray(items) && items.length > 0

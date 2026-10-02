@@ -7,7 +7,7 @@ import {
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, ChevronLeft, ChevronDown, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
-  Camera, Ticket, Edit2, Lock, RotateCcw
+  Camera, Ticket, Edit2, Lock, RotateCcw, XCircle
 } from 'lucide-react';
 import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { GREEN_ENERGY_LOGO_BASE64 } from '../../assets/greenEnergyLogo';
@@ -99,24 +99,29 @@ export const TourLedgerSection = ({
     }
   }, [complaints]);
 
-  // Selected technician filter: default to scoped tech if technician, or activeTechId, or 'all' if admin
+  // Selected technician filter: default to scoped tech if technician, or activeTechId, or first loaded tech
   const [internalTechId, setInternalTechId] = useState(() => {
     if (!isAdminOrStaff && scopedTechProfile?.id) return String(scopedTechProfile.id);
     if (activeTechId && activeTechId !== 'all') return String(activeTechId);
-    return 'all';
+    if (allTechnicians && allTechnicians.length > 0) return String(allTechnicians[0].id);
+    return '';
   });
 
   useEffect(() => {
     if (isAdminOrStaff) {
-      if (activeTechId !== undefined) {
+      if (activeTechId && activeTechId !== 'all') {
         setInternalTechId(String(activeTechId));
+      } else if (loadedTechs.length > 0 && (!internalTechId || internalTechId === 'all')) {
+        const firstId = String(loadedTechs[0].id);
+        setInternalTechId(firstId);
+        if (onTechChange) onTechChange(firstId);
       }
     } else if (scopedTechProfile?.id) {
       setInternalTechId(String(scopedTechProfile.id));
     }
-  }, [activeTechId, isAdminOrStaff, scopedTechProfile]);
+  }, [activeTechId, isAdminOrStaff, scopedTechProfile, loadedTechs]);
 
-  const selectedTechId = internalTechId;
+  const selectedTechId = internalTechId || (loadedTechs[0]?.id ? String(loadedTechs[0].id) : '');
 
   const handleTechChange = (newId) => {
     setInternalTechId(newId);
@@ -207,6 +212,74 @@ export const TourLedgerSection = ({
     reference_no: ''
   });
   const [submittingAdvance, setSubmittingAdvance] = useState(false);
+
+  // Edit Tour Advance Modal State
+  const [isEditAdvanceModalOpen, setIsEditAdvanceModalOpen] = useState(false);
+  const [editAdvanceForm, setEditAdvanceForm] = useState({
+    id: '',
+    technician_id: '',
+    amount: '',
+    purpose: '',
+    payment_mode: 'Cash',
+    reference_no: '',
+    allocated_at: ''
+  });
+  const [submittingEditAdvance, setSubmittingEditAdvance] = useState(false);
+
+  const handleOpenEditAdvance = (adv) => {
+    setEditAdvanceForm({
+      id: adv.id,
+      technician_id: adv.technician_id ? String(adv.technician_id) : '',
+      amount: adv.amount || '',
+      purpose: adv.purpose || adv.tour_title || adv.notes || '',
+      payment_mode: adv.payment_mode || 'Cash',
+      reference_no: adv.reference_no || '',
+      allocated_at: adv.allocated_at ? adv.allocated_at.slice(0, 16) : ''
+    });
+    setIsEditAdvanceModalOpen(true);
+  };
+
+  const handleSaveEditAdvance = async (e) => {
+    e.preventDefault();
+    if (!editAdvanceForm.amount || parseFloat(editAdvanceForm.amount) <= 0) {
+      return showToast('Please enter a valid advance amount', 'error');
+    }
+    try {
+      setSubmittingEditAdvance(true);
+      await api.updateTourAdvance(editAdvanceForm.id, {
+        amount: parseFloat(editAdvanceForm.amount),
+        purpose: editAdvanceForm.purpose,
+        payment_mode: editAdvanceForm.payment_mode,
+        reference_no: editAdvanceForm.reference_no,
+        allocated_at: editAdvanceForm.allocated_at ? new Date(editAdvanceForm.allocated_at).toISOString() : null,
+        technician_id: editAdvanceForm.technician_id
+      });
+      showToast('Tour advance updated successfully!', 'success');
+      setIsEditAdvanceModalOpen(false);
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to update advance: ' + err.message, 'error');
+    } finally {
+      setSubmittingEditAdvance(false);
+    }
+  };
+
+  const handleDeleteAdvance = async (adv) => {
+    const ok = await confirm({
+      title: 'Delete Tour Advance',
+      message: `Are you sure you want to permanently delete Advance ${adv.reference_no || ''} (₹${adv.amount}) for ${adv.technician_name || 'specialist'}? This cannot be undone.`,
+      confirmText: 'Delete Advance',
+      confirmVariant: 'danger'
+    });
+    if (!ok) return;
+    try {
+      await api.deleteTourAdvance(adv.id);
+      showToast(`Advance ${adv.reference_no || ''} deleted successfully`, 'success');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to delete advance: ' + err.message, 'error');
+    }
+  };
 
   // Multi-item row state for Add Tour Expense / Voucher Claim modal (Single Voucher per Ticket/Tour)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -1520,7 +1593,6 @@ export const TourLedgerSection = ({
                   onChange={(e) => handleTechChange(e.target.value)}
                   className="text-xs px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
-                  <option value="all">👥 All Specialists (Consolidated)</option>
                   {loadedTechs.map((t) => (
                     <option key={t.id} value={t.id}>
                       👤 {t.name} ({t.area_zone || 'Field'})
@@ -1706,87 +1778,114 @@ export const TourLedgerSection = ({
 
       {/* Main Ledger Sub-Tabs & Tables */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Sub-tab Navigation */}
-        <div className="flex flex-wrap border-b border-slate-200 bg-slate-50/70 p-1.5 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setSubTab('expenses')}
-            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              subTab === 'expenses'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Tag className="w-3.5 h-3.5" />
-            <span>Expense Vouchers ({voucherLogs.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubTab('advances')}
-            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              subTab === 'advances'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ArrowDownLeft className="w-3.5 h-3.5" />
-            <span>Tour Advances ({advances.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubTab('settlements')}
-            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              subTab === 'settlements'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Deposits & Reimbursements ({settlements.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubTab('statement')}
-            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              subTab === 'statement'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5 text-emerald-700" />
-            <span>Account Statement & Ledger</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubTab('complaints')}
-            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              subTab === 'complaints'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Ticket className="w-3.5 h-3.5 text-blue-700" />
-            <span>Complaint Settlements ({(ledgerData.complaint_settlements || []).length})</span>
-          </button>
-
-          {isAdminOrStaff && (
+        {/* Sub-tab Navigation: Distinct Separated Card Buttons with Borders and Badges */}
+        <div className="p-3 bg-slate-100/90 border-b border-slate-200">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {/* 1. Expense Vouchers */}
             <button
               type="button"
-              onClick={() => setSubTab('admin_summary')}
-              className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                subTab === 'admin_summary'
-                  ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+              onClick={() => setSubTab('expenses')}
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                subTab === 'expenses'
+                  ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
+                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/60 border-slate-300 shadow-2xs'
               }`}
             >
-              <Building className="w-3.5 h-3.5 text-indigo-700" />
-              <span>All Specialists Summary ({(ledgerData.technicians_summary || []).length})</span>
+              <div className="flex items-center gap-2 truncate">
+                <Tag className={`w-4 h-4 shrink-0 ${subTab === 'expenses' ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                <span className="truncate">Expense Vouchers</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                subTab === 'expenses' ? 'bg-emerald-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+              }`}>
+                {voucherLogs.length}
+              </span>
             </button>
-          )}
+
+            {/* 2. Tour Advances */}
+            <button
+              type="button"
+              onClick={() => setSubTab('advances')}
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                subTab === 'advances'
+                  ? 'bg-blue-800 text-white border-blue-900 shadow-md ring-2 ring-blue-500/25'
+                  : 'bg-white text-slate-700 hover:text-blue-800 hover:bg-blue-50/60 border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <ArrowDownLeft className={`w-4 h-4 shrink-0 ${subTab === 'advances' ? 'text-blue-200' : 'text-blue-600'}`} />
+                <span className="truncate">Tour Advances</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                subTab === 'advances' ? 'bg-blue-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+              }`}>
+                {advances.length}
+              </span>
+            </button>
+
+            {/* 3. Deposits & Reimbursements */}
+            <button
+              type="button"
+              onClick={() => setSubTab('settlements')}
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                subTab === 'settlements'
+                  ? 'bg-teal-800 text-white border-teal-900 shadow-md ring-2 ring-teal-500/25'
+                  : 'bg-white text-slate-700 hover:text-teal-800 hover:bg-teal-50/60 border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <CheckCircle2 className={`w-4 h-4 shrink-0 ${subTab === 'settlements' ? 'text-teal-200' : 'text-teal-600'}`} />
+                <span className="truncate">Deposits & Returns</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                subTab === 'settlements' ? 'bg-teal-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+              }`}>
+                {settlements.length}
+              </span>
+            </button>
+
+            {/* 4. Account Statement & Ledger */}
+            <button
+              type="button"
+              onClick={() => setSubTab('statement')}
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                subTab === 'statement'
+                  ? 'bg-slate-900 text-white border-black shadow-md ring-2 ring-slate-500/25'
+                  : 'bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <FileText className={`w-4 h-4 shrink-0 ${subTab === 'statement' ? 'text-emerald-300' : 'text-slate-600'}`} />
+                <span className="truncate">Account Ledger</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                subTab === 'statement' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+              }`}>
+                Statement
+              </span>
+            </button>
+
+            {/* 5. Complaint Settlements */}
+            <button
+              type="button"
+              onClick={() => setSubTab('complaints')}
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                subTab === 'complaints'
+                  ? 'bg-purple-800 text-white border-purple-900 shadow-md ring-2 ring-purple-500/25'
+                  : 'bg-white text-slate-700 hover:text-purple-800 hover:bg-purple-50/60 border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <Ticket className={`w-4 h-4 shrink-0 ${subTab === 'complaints' ? 'text-purple-200' : 'text-purple-600'}`} />
+                <span className="truncate">Job Settlements</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                subTab === 'complaints' ? 'bg-purple-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+              }`}>
+                {(ledgerData.complaint_settlements || []).length}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* ================= 1. EXPENSES TAB ================= */}
@@ -1950,8 +2049,8 @@ export const TourLedgerSection = ({
 
                             <td className="py-2.5 px-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                grp.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                                grp.status === 'rejected' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                                (grp.status || '').toLowerCase() === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                                (grp.status || '').toLowerCase() === 'rejected' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                                 'bg-amber-100 text-amber-900 border border-amber-200'
                               }`}>
                                 {grp.status || 'Submitted'}
@@ -1964,16 +2063,16 @@ export const TourLedgerSection = ({
                                 <button
                                   type="button"
                                   onClick={() => handlePrintSingleVoucher(grp)}
-                                  className="p-1 hover:bg-blue-100 text-blue-700 rounded transition-colors cursor-pointer"
+                                  className="p-1.5 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors cursor-pointer"
                                   title="Print / Preview this Voucher slip"
                                 >
                                   <Printer className="w-3.5 h-3.5" />
                                 </button>
 
-                                {grp.status === 'approved' ? (
+                                {(grp.status || '').toLowerCase() === 'approved' ? (
                                   <>
                                     <span 
-                                      className="p-1 text-emerald-600/70 cursor-not-allowed" 
+                                      className="p-1.5 text-emerald-600/70 cursor-not-allowed" 
                                       title="Approved voucher is locked"
                                     >
                                       <Lock className="w-3.5 h-3.5" />
@@ -1982,38 +2081,40 @@ export const TourLedgerSection = ({
                                       <button
                                         type="button"
                                         onClick={() => handleRevertVoucherGroup(grp)}
-                                        className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer"
-                                        title="Unapprove / Revert to Submitted (Unlock for editing)"
+                                        className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                                        title="Revert / Unapprove Voucher (Unlock for editing)"
                                       >
                                         <RotateCcw className="w-3.5 h-3.5" />
                                       </button>
                                     )}
                                   </>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditExpenseModal(grp)}
-                                    className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer"
-                                    title="Edit Voucher Claim (Before Approval)"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditExpenseModal(grp)}
+                                      className="p-1.5 hover:bg-amber-100 text-amber-700 rounded-lg transition-colors cursor-pointer"
+                                      title="Edit Voucher Claim (Before Approval)"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    {isAdminOrStaff && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApproveVoucherGroup(grp)}
+                                        className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                                        title="Approve all items in voucher"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </>
                                 )}
 
-                                {isAdminOrStaff && grp.status !== 'approved' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleApproveVoucherGroup(grp)}
-                                    className="p-1 hover:bg-emerald-100 text-emerald-700 rounded transition-colors cursor-pointer"
-                                    title="Approve all items in voucher"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteVoucherGroup(grp)}
-                                  className="p-1 hover:bg-rose-100 text-rose-600 rounded transition-colors cursor-pointer"
+                                  className="p-1.5 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
                                   title="Delete Voucher"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -2179,26 +2280,49 @@ export const TourLedgerSection = ({
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900 text-sm whitespace-nowrap">
                           {formatCur(adv.amount)}
                         </td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                           {adv.is_reimbursement ? (
                             <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
                               Disbursed
                             </span>
-                          ) : adv.status === 'Cancelled' ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-500 font-bold border border-slate-200" title={adv.cancellation_reason || 'Cancelled'}>
-                              Cancelled
-                            </span>
                           ) : (
-                            isAdminOrStaff && (
-                              <button
-                                type="button"
-                                onClick={() => handleCancelAdvance(adv)}
-                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
-                                title="Cancel unspent advance with audit trail"
-                              >
-                                Cancel
-                              </button>
-                            )
+                            <div className="flex items-center justify-end gap-1">
+                              {adv.status === 'Cancelled' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-500 font-bold border border-slate-200 mr-1" title={adv.cancellation_reason || 'Cancelled'}>
+                                  Cancelled
+                                </span>
+                              )}
+                              {isAdminOrStaff && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditAdvance(adv)}
+                                    className="p-1.5 hover:bg-amber-100 text-amber-700 rounded-lg transition-colors cursor-pointer"
+                                    title="Edit Tour Advance details (Amount, Purpose, Date, etc.)"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  {adv.status !== 'Cancelled' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCancelAdvance(adv)}
+                                      className="p-1.5 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors cursor-pointer"
+                                      title="Cancel advance with audit trail reason"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAdvance(adv)}
+                                    className="p-1.5 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                    title="Delete Tour Advance completely"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -3035,6 +3159,142 @@ export const TourLedgerSection = ({
                 >
                   {submittingAdvance && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{submittingAdvance ? 'Saving...' : 'Confirm Advance'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: EDIT TOUR ADVANCE ================= */}
+      {isEditAdvanceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">Edit Tour Travel Advance</h4>
+                  <p className="text-[11px] text-slate-500">Update amount, payment method, or purpose</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditAdvanceModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditAdvance} className="space-y-3.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Assigned Specialist / Technician
+                </label>
+                <select
+                  value={editAdvanceForm.technician_id}
+                  onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, technician_id: e.target.value }))}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800"
+                >
+                  {technicians.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.area_zone || 'Field Zone'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Advance Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="any"
+                  placeholder="e.g. 5000"
+                  value={editAdvanceForm.amount}
+                  onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full text-base font-bold font-mono px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Payment Mode
+                  </label>
+                  <select
+                    value={editAdvanceForm.payment_mode}
+                    onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, payment_mode: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="Cash">Cash in Hand</option>
+                    <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                    <option value="UPI / GPay">UPI / GPay</option>
+                    <option value="Company Card">Company Card</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Ref / Voucher No
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Optional ref"
+                    value={editAdvanceForm.reference_no}
+                    onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, reference_no: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Tour Purpose / Destination
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Saurashtra Tour - 5 Complaints"
+                  value={editAdvanceForm.purpose}
+                  onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, purpose: e.target.value }))}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Additional Notes
+                </label>
+                <input
+                  type="text"
+                  placeholder="Optional notes or approvals"
+                  value={editAdvanceForm.notes}
+                  onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditAdvanceModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEditAdvance}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {submittingEditAdvance && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{submittingEditAdvance ? 'Updating...' : 'Update Advance'}</span>
                 </button>
               </div>
             </form>
