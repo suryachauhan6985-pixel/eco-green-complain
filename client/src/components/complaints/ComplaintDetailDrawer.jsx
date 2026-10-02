@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
-import { uploadFileToSupabase } from '../../utils/storageUpload';
+import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUpload';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -86,6 +86,8 @@ export const ComplaintDetailDrawer = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editNewFiles, setEditNewFiles] = useState([]);
+  const [isEditDragging, setIsEditDragging] = useState(false);
 
   // Payment Recording State
   const [isRecordingPayment, setIsRecordingPayment] = useState(false);
@@ -196,7 +198,7 @@ export const ComplaintDetailDrawer = ({
 
       for (const f of files) {
         try {
-          const up = await uploadFileToSupabase(f);
+          const up = await uploadFileToSupabase(f, ticket.ticket_id || ticket.id);
           if (up) uploadedAttachments.push(up);
         } catch (upErr) {
           console.warn('Direct upload fallback:', upErr.message);
@@ -211,11 +213,17 @@ export const ComplaintDetailDrawer = ({
       }
 
       const res = await api.uploadComplaintAttachments(ticket.id, fd);
-      if (res && res.attachments) {
-        setAttachments(prev => [...res.attachments, ...prev]);
-        showToast(`${res.attachments.length || files.length} document/photo(s) attached successfully!`, 'success');
-        if (onComplaintUpdated) onComplaintUpdated();
+      if (res && res.attachments && res.attachments.length > 0) {
+        setAttachments(prev => {
+          const newIds = new Set(res.attachments.map(a => String(a.id)));
+          return [...res.attachments, ...prev.filter(a => !newIds.has(String(a.id)))];
+        });
+        showToast(`${res.attachments.length} document/photo(s) attached successfully!`, 'success');
+      } else {
+        showToast(`${files.length} document/photo(s) attached successfully!`, 'success');
       }
+      await fetchTicketDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
     } catch (err) {
       showToast('Failed to upload attachment: ' + err.message, 'error');
     } finally {
@@ -939,7 +947,48 @@ export const ComplaintDetailDrawer = ({
       priority: ticket.priority || 'Medium',
       status: ticket.status === 'Registered' ? 'Unassigned' : (ticket.status || 'Unassigned')
     });
+    setEditNewFiles([]);
     setIsEditing(true);
+  };
+
+  const processEditFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
+    if (oversized.length > 0) {
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+    }
+    const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
+    if (validFiles.length === 0) return;
+
+    const newItems = await Promise.all(
+      validFiles.map(async (file) => {
+        const isImg = file.type.startsWith('image/');
+        const isVid = file.type.startsWith('video/');
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+        const optimized = isImg ? await compressImageFile(file) : file;
+        return {
+          id: Math.random().toString(36).substring(2, 9),
+          file: optimized,
+          name: optimized.name,
+          size: optimized.size > 1024 * 1024
+            ? (optimized.size / (1024 * 1024)).toFixed(1) + ' MB'
+            : (optimized.size / 1024).toFixed(1) + ' KB',
+          isImg,
+          isVideo: isVid,
+          isPdf,
+          preview: (isImg || isVid || isPdf) ? URL.createObjectURL(optimized) : null
+        };
+      })
+    );
+    setEditNewFiles(prev => [...prev, ...newItems]);
+  };
+
+  const removeEditNewFile = (id) => {
+    setEditNewFiles(prev => {
+      const item = prev.find(p => p.id === id);
+      if (item && item.preview) URL.revokeObjectURL(item.preview);
+      return prev.filter(p => p.id !== id);
+    });
   };
 
   const handleSaveEdit = async (e) => {
@@ -950,6 +999,32 @@ export const ComplaintDetailDrawer = ({
     }
     try {
       setSavingEdit(true);
+
+      let uploadedAtts = [];
+      if (editNewFiles.length > 0) {
+        showToast(`Uploading ${editNewFiles.length} new document/photo(s)...`, 'info');
+        const fallbackFiles = [];
+        for (const item of editNewFiles) {
+          try {
+            const up = await uploadFileToSupabase(item.file, ticket.ticket_id || ticket.id);
+            if (up) uploadedAtts.push(up);
+          } catch (upErr) {
+            console.warn('Edit direct upload error:', upErr);
+            if (item.file.size <= 4 * 1024 * 1024) fallbackFiles.push(item.file);
+          }
+        }
+
+        const fd = new FormData();
+        fallbackFiles.forEach(f => fd.append('attachments', f));
+        if (uploadedAtts.length > 0) {
+          fd.append('attachment_urls', JSON.stringify(uploadedAtts));
+        }
+
+        if (uploadedAtts.length > 0 || fallbackFiles.length > 0) {
+          await api.uploadComplaintAttachments(ticket.id, fd);
+        }
+      }
+
       const payload = {
         ...editFormData,
         is_in_warranty: (editFormData.is_in_warranty === 1 || editFormData.is_in_warranty === true || editFormData.is_in_warranty === '1') ? 1 : 0,
@@ -957,7 +1032,15 @@ export const ComplaintDetailDrawer = ({
         estimated_charges: Number(editFormData.estimated_charges) || 0,
         notify_customer: Boolean(editFormData.notify_charges)
       };
+
       const res = await api.updateComplaint(ticket.id, payload);
+
+      // Clean preview URLs
+      editNewFiles.forEach(item => {
+        if (item.preview) URL.revokeObjectURL(item.preview);
+      });
+      setEditNewFiles([]);
+
       await fetchTicketDetails();
       setIsEditing(false);
       if (onComplaintUpdated) onComplaintUpdated();
@@ -3546,6 +3629,209 @@ export const ComplaintDetailDrawer = ({
                     className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg"
                   />
                 </div>
+              </div>
+
+              {/* Attachments & Proofs Section in Edit Modal */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-emerald-600" />
+                    Complaint Photos & Documents ({initialIssueAttachments.length + editNewFiles.length})
+                  </h4>
+                </div>
+
+                {/* Existing Attachments in Edit Modal */}
+                {initialIssueAttachments.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Attached Documents on Record:</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {initialIssueAttachments.map((att) => {
+                        const rawUrl = att.file_url || att.file_data || '';
+                        const fileUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:') || rawUrl.startsWith('/api')
+                          ? rawUrl
+                          : rawUrl.includes('complaints/')
+                            ? `/api/attachments/r2/${rawUrl.replace(/^\/+/, '')}`
+                            : rawUrl ? `/api/attachments/r2/${rawUrl.replace(/^\/+/, '')}` : `/api/attachments/${att.id}`;
+                        const isPdf = att.file_type === 'application/pdf' || (att.file_name && att.file_name.toLowerCase().endsWith('.pdf'));
+                        const isVid = !isPdf && (att.file_type?.startsWith('video/') || (fileUrl && fileUrl.match(/\.(mp4|webm|mov|3gp|avi|mkv)($|\?)/i)) || att.file_name?.match(/\.(mp4|webm|mov|3gp|avi|mkv)$/i));
+                        const isImg = !isPdf && !isVid;
+                        return (
+                          <div key={att.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {isVid ? (
+                                <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+                                  <Video className="w-4 h-4" />
+                                </div>
+                              ) : isImg ? (
+                                <img
+                                  src={fileUrl}
+                                  alt={att.file_name}
+                                  className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0 cursor-pointer"
+                                  onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isImage: true })}
+                                />
+                              ) : (
+                                <div className="w-9 h-9 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 border border-slate-300">
+                                  <FileText className="w-4 h-4" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-semibold text-slate-800 truncate" title={att.file_name}>{att.file_name}</p>
+                                <span className="text-[9px] text-slate-400 block font-medium">Uploaded Document</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDocModal({ url: fileUrl, name: att.file_name, isVideo: isVid, isImage: isImg, isPdf })}
+                                className="p-1 text-emerald-700 hover:bg-emerald-100 rounded text-[10px] font-bold cursor-pointer"
+                                title="Preview document"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={deletingAttId === att.id}
+                                onClick={() => handleDeleteAttachment(att)}
+                                className="p-1 text-rose-600 hover:bg-rose-100 rounded text-[10px] cursor-pointer"
+                                title="Delete attachment"
+                              >
+                                {deletingAttId === att.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dropzone & Quick Action Upload Buttons */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsEditDragging(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsEditDragging(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsEditDragging(false);
+                    if (e.dataTransfer?.files?.length > 0) {
+                      processEditFiles(Array.from(e.dataTransfer.files));
+                    }
+                  }}
+                  className={`border-2 border-dashed rounded-xl p-3 text-center transition-all ${
+                    isEditDragging ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/50' : 'border-slate-200 bg-slate-50/60 hover:border-emerald-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2 mb-2 text-slate-500 text-xs">
+                    <Upload className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[11px] font-medium text-slate-600">Drag & drop new photos, videos, or documents, or choose:</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[10.5px] font-bold flex items-center gap-1 transition-colors shadow-2xs">
+                      <Plus className="w-3 h-3 text-slate-600" />
+                      <span>Browse Files</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*,video/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.length > 0) {
+                            processEditFiles(Array.from(e.target.files));
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10.5px] font-bold flex items-center gap-1 transition-colors shadow-2xs">
+                      <Camera className="w-3 h-3 text-emerald-600" />
+                      <span>Take Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.length > 0) {
+                            processEditFiles(Array.from(e.target.files));
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="cursor-pointer px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-lg text-[10.5px] font-bold flex items-center gap-1 transition-colors shadow-2xs">
+                      <Video className="w-3 h-3 text-teal-600" />
+                      <span>Record Video</span>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.length > 0) {
+                            processEditFiles(Array.from(e.target.files));
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Newly Added Files Live Previews in Edit Modal */}
+                {editNewFiles.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Newly Selected (Preview & Ready to Save):</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {editNewFiles.map((item) => (
+                        <div key={item.id} className="bg-emerald-50/70 border border-emerald-200 rounded-lg p-2 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {item.isImg && item.preview ? (
+                              <img
+                                src={item.preview}
+                                alt={item.name}
+                                onClick={() => setPreviewDocModal({ url: item.preview, name: item.name, isImage: true })}
+                                className="w-9 h-9 rounded-lg object-cover border border-emerald-300 shrink-0 cursor-pointer hover:opacity-85"
+                              />
+                            ) : item.isVideo ? (
+                              <div className="w-9 h-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200">
+                                <Video className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold text-slate-800 truncate" title={item.name}>{item.name}</p>
+                              <span className="text-[9px] text-emerald-700 font-mono font-medium">{item.size} • Ready</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {item.preview && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDocModal({ url: item.preview, name: item.name, isVideo: item.isVideo, isImage: item.isImg, isPdf: item.isPdf })}
+                                className="p-1 text-emerald-700 hover:bg-emerald-100 rounded text-[10px] font-bold cursor-pointer"
+                                title="Preview"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeEditNewFile(item.id)}
+                              className="p-1 text-rose-600 hover:bg-rose-100 rounded text-[10px] cursor-pointer"
+                              title="Remove"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">

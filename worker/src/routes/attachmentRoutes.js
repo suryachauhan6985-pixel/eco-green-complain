@@ -81,43 +81,116 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
     if (compRes.rows.length === 0) return c.json({ error: 'Complaint not found' }, 404);
     const complaintId = compRes.rows[0].id;
 
-    const body = await c.req.json().catch(() => ({}));
-    let attachmentsList = [];
-
-    if (Array.isArray(body.attachments)) {
-      attachmentsList = body.attachments;
-    } else if (body.attachment_urls) {
-      attachmentsList = typeof body.attachment_urls === 'string'
-        ? JSON.parse(body.attachment_urls)
-        : body.attachment_urls;
-    }
-
     const user = c.get('user');
     // If request has authenticated user, only admin and staff can attach documents to existing complaint
     if (user && user.role !== 'admin' && user.role !== 'staff') {
       return c.json({ error: 'Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.' }, 403);
     }
-    const uploaderName = user?.name || user?.username || 'Customer';
+    const uploaderName = user?.name || user?.username || 'Helpdesk';
+
+    const contentType = c.req.header('content-type') || '';
+    let body = {};
+    let formFiles = [];
+
+    if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
+      body = await c.req.parseBody({ all: true }).catch(() => ({}));
+      if (body.attachments) {
+        formFiles = Array.isArray(body.attachments) ? body.attachments : [body.attachments];
+      }
+      if (body.file) {
+        formFiles.push(body.file);
+      }
+    } else {
+      body = await c.req.json().catch(() => ({}));
+    }
+
+    let attachmentsList = [];
+    if (body.attachment_urls) {
+      try {
+        const parsed = typeof body.attachment_urls === 'string'
+          ? JSON.parse(body.attachment_urls)
+          : body.attachment_urls;
+        if (Array.isArray(parsed)) {
+          attachmentsList.push(...parsed);
+        }
+      } catch (_) {}
+    }
+
+    if (Array.isArray(body.attachments)) {
+      for (const item of body.attachments) {
+        if (typeof item === 'object' && item && (item.file_url || item.storage_key)) {
+          attachmentsList.push(item);
+        }
+      }
+    }
+
+    // Process any binary files submitted directly via multipart form
+    const bucket = c.env?.MEDIA_BUCKET;
+    for (const file of formFiles) {
+      if (file && typeof file === 'object' && typeof file.arrayBuffer === 'function') {
+        try {
+          const fileBuffer = await file.arrayBuffer();
+          if (fileBuffer && fileBuffer.byteLength > 0 && bucket) {
+            const filename = file.name || 'document';
+            const mimeType = file.type || 'application/octet-stream';
+            validateFileMetadata(filename, mimeType, fileBuffer.byteLength);
+            validateFileBinary(fileBuffer, mimeType, filename);
+            const storageKey = generateStorageKey(complaintId, filename);
+            await putR2Object(bucket, storageKey, fileBuffer, mimeType);
+            attachmentsList.push({
+              file_name: filename,
+              file_type: mimeType,
+              file_size: fileBuffer.byteLength,
+              file_url: `/api/attachments/r2/${storageKey}`,
+              storage_key: storageKey
+            });
+          }
+        } catch (fileErr) {
+          console.warn('Binary upload to R2 in attachments failed:', fileErr.message);
+        }
+      }
+    }
 
     const saved = [];
     for (const att of attachmentsList) {
+      const fileUrl = att.file_url || (att.storage_key ? `/api/attachments/r2/${att.storage_key}` : '');
+      if (!fileUrl && !att.file_name) continue;
       const insRes = await query(
         `INSERT INTO complaint_attachments (
           complaint_id, file_name, file_url, file_type, file_data, uploaded_by
         ) VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, file_name, file_url, file_type, created_at`,
+        RETURNING id, file_name, file_url, file_type, file_data, uploaded_by, created_at`,
         [
           complaintId,
           att.file_name || 'Document',
-          att.file_url || att.storage_key || '',
+          fileUrl,
           att.file_type || 'application/octet-stream',
-          att.file_url || att.storage_key || '',
+          fileUrl,
           uploaderName
         ],
         c.env,
         c.executionCtx
       );
-      saved.push(insRes.rows[0]);
+      if (insRes.rows.length > 0) {
+        saved.push(insRes.rows[0]);
+      }
+    }
+
+    // Timeline event
+    if (saved.length > 0) {
+      await query(
+        `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+         VALUES ($1, $2, $3, $4, $5, 0)`,
+        [
+          complaintId,
+          'Document Attached',
+          `${saved.length} document/photo(s) attached by ${uploaderName}: ${saved.map(s => s.file_name).join(', ')}`,
+          uploaderName,
+          user?.role || 'staff'
+        ],
+        c.env,
+        c.executionCtx
+      ).catch(() => {});
     }
 
     return c.json({ success: true, attachments: saved });

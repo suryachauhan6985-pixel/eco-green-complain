@@ -1485,6 +1485,36 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       current.id
     ], c.env, c.executionCtx);
 
+    let newAttachments = [];
+    if (b.attachment_urls) {
+      try {
+        const parsed = typeof b.attachment_urls === 'string' ? JSON.parse(b.attachment_urls) : b.attachment_urls;
+        if (Array.isArray(parsed)) newAttachments = parsed;
+      } catch (_) {}
+    }
+    if (newAttachments.length > 0) {
+      const user = c.get('user');
+      const uploaderName = user?.name || user?.username || 'Helpdesk';
+      for (const att of newAttachments) {
+        const fileUrl = att.file_url || (att.storage_key ? `/api/attachments/r2/${att.storage_key}` : '');
+        if (!fileUrl && !att.file_name) continue;
+        await query(
+          `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            current.id,
+            att.file_name || 'Document',
+            fileUrl,
+            att.file_type || 'application/octet-stream',
+            fileUrl,
+            uploaderName
+          ],
+          c.env,
+          c.executionCtx
+        ).catch(() => {});
+      }
+    }
+
     const updated = await query('SELECT * FROM complaints WHERE id = $1', [current.id], c.env, c.executionCtx);
     return c.json({
       message: 'Complaint updated successfully',
