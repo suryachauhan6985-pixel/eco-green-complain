@@ -227,6 +227,25 @@ export const TourLedgerSection = ({
   });
   const [submittingEditAdvance, setSubmittingEditAdvance] = useState(false);
 
+  // Dedicated in-app modal state for Cancellation / Reversal / Rejection (replacing native browser window prompt)
+  const [cancelModalState, setCancelModalState] = useState({
+    isOpen: false,
+    type: null, // 'advance' | 'settlement' | 'voucher'
+    item: null,
+    title: '',
+    subtitle: '',
+    amount: 0,
+    referenceNo: '',
+    technicianName: '',
+    purpose: '',
+    dateFormatted: '',
+    warningText: '',
+    confirmText: '',
+    presetReasons: [],
+    reason: '',
+    submitting: false
+  });
+
   const handleOpenEditAdvance = (adv) => {
     setEditAdvanceForm({
       id: adv.id,
@@ -1039,47 +1058,122 @@ export const TourLedgerSection = ({
     }
   };
 
-  // Reject all items in a voucher group
-  const handleRejectVoucherGroup = async (group) => {
-    const reason = window.prompt(`Enter reason for rejecting Voucher ${group.voucher_no}:`);
-    if (!reason) return;
-    try {
-      const approverName = currentUser?.name || currentUser?.username || 'Admin';
-      await api.updateTourVoucherStatus(group.voucher_no, {
-        status: 'rejected',
-        approved_by_name: approverName,
-        rejection_reason: reason
-      });
-      showToast(`Voucher ${group.voucher_no} rejected`, 'info');
-      await fetchLedger(true);
-    } catch (err) {
-      showToast('Failed to reject voucher: ' + err.message, 'error');
-    }
+  // Open custom in-app rejection modal for Voucher Group
+  const handleRejectVoucherGroup = (group) => {
+    setCancelModalState({
+      isOpen: true,
+      type: 'voucher',
+      item: group,
+      title: 'Reject Tour Expense Voucher',
+      subtitle: `Voucher: ${group.voucher_no || 'VOUCHER'} • ${group.items?.length || 1} line item(s)`,
+      amount: group.totalAmount || 0,
+      referenceNo: group.voucher_no || 'VOUCHER',
+      technicianName: group.technician_name || currentTech?.name || 'Specialist',
+      purpose: group.items?.[0]?.description || group.items?.[0]?.category || 'Expense claim',
+      dateFormatted: group.expense_date ? formatIndianDateOnly(group.expense_date) : 'Today',
+      warningText: 'Rejecting this voucher will decline the claim and require the specialist to re-submit corrected expense receipts. The claimed amount will not be deducted from advances.',
+      confirmText: 'Confirm & Reject Voucher',
+      presetReasons: [
+        'Receipt / Bill Unclear or Missing',
+        'Non-Policy / Excessive Amount',
+        'Duplicate Expense Claim',
+        'Not Authorized for this Tour',
+        'GST Invoice Required'
+      ],
+      reason: '',
+      submitting: false
+    });
   };
 
-  // Cancel an unspent advance
-  const handleCancelAdvance = async (adv) => {
-    const reason = window.prompt(`Enter reason for cancelling Advance ${adv.reference_no || 'ADV'} (₹${adv.amount}):`);
-    if (!reason) return;
-    try {
-      await api.cancelTourAdvance(adv.id, { reason });
-      showToast(`Advance ${adv.reference_no || ''} cancelled successfully`, 'info');
-      await fetchLedger(true);
-    } catch (err) {
-      showToast('Failed to cancel advance: ' + err.message, 'error');
-    }
+  // Open custom in-app cancellation modal for Advance (NO native Chrome prompt)
+  const handleCancelAdvance = (adv) => {
+    setCancelModalState({
+      isOpen: true,
+      type: 'advance',
+      item: adv,
+      title: 'Cancel Tour Advance',
+      subtitle: `Disbursement: ${adv.reference_no || 'ADV'} • Allocated Cash`,
+      amount: adv.amount || 0,
+      referenceNo: adv.reference_no || 'ADV',
+      technicianName: adv.technician_name || currentTech?.name || 'Specialist',
+      purpose: adv.purpose || adv.tour_title || adv.notes || 'Tour Advance',
+      dateFormatted: adv.allocated_at ? formatIndianDateTime(adv.allocated_at) : 'Today',
+      warningText: "Cancelling this advance will reverse the allocated cash from the specialist's running tour balance. This record will be permanently archived with an audit trail.",
+      confirmText: 'Confirm & Cancel Advance',
+      presetReasons: [
+        'Tour Cancelled by Office',
+        'Wrong Amount Allocated',
+        'Duplicate Advance Entry',
+        'Allocated by Mistake',
+        'Specialist Not Travelling',
+        'Customer Rescheduled Visit'
+      ],
+      reason: '',
+      submitting: false
+    });
   };
 
-  // Reverse a settlement transaction
-  const handleReverseSettlement = async (st) => {
-    const reason = window.prompt(`Enter reason for reversing transaction ${st.reference_no || 'SETTLEMENT'} (₹${st.amount}):`);
-    if (!reason) return;
+  // Open custom in-app reversal modal for Settlement
+  const handleReverseSettlement = (st) => {
+    const isReturn = st.settlement_type === 'return_to_company' || st.settlement_type === 'return';
+    setCancelModalState({
+      isOpen: true,
+      type: 'settlement',
+      item: st,
+      title: 'Reverse Settlement Transaction',
+      subtitle: `Transaction: ${st.reference_no || 'SETTLEMENT'} • ${isReturn ? 'Cash Return' : 'Reimbursement'}`,
+      amount: st.amount || 0,
+      referenceNo: st.reference_no || 'SETTLEMENT',
+      technicianName: st.technician_name || currentTech?.name || 'Specialist',
+      purpose: isReturn ? 'Unused Cash Deposited back to Company' : 'Reimbursement Paid to Specialist',
+      dateFormatted: st.created_at ? formatIndianDateTime(st.created_at) : 'Today',
+      warningText: "Reversing this transaction will restore the specialist's tour ledger balance to the pre-settlement position with an audit trail.",
+      confirmText: 'Confirm & Reverse Transaction',
+      presetReasons: [
+        'Entered Wrong Return Amount',
+        'Duplicate Settlement Entry',
+        'Incorrect Payment Mode',
+        'Payment Not Received in Bank',
+        'Entered Under Wrong Specialist'
+      ],
+      reason: '',
+      submitting: false
+    });
+  };
+
+  // Submit Handler for custom in-app cancellation modal
+  const handleConfirmCancelModal = async (e) => {
+    if (e) e.preventDefault();
+    const trimmedReason = (cancelModalState.reason || '').trim();
+    if (!trimmedReason) {
+      return showToast('Please enter a cancellation reason for the audit trail', 'error');
+    }
+
     try {
-      await api.reverseTourSettlement(st.id, { reason });
-      showToast(`Transaction ${st.reference_no || ''} reversed successfully`, 'info');
+      setCancelModalState(prev => ({ ...prev, submitting: true }));
+      const { type, item } = cancelModalState;
+
+      if (type === 'advance') {
+        await api.cancelTourAdvance(item.id, { reason: trimmedReason });
+        showToast(`Advance ${item.reference_no || ''} cancelled successfully`, 'info');
+      } else if (type === 'settlement') {
+        await api.reverseTourSettlement(item.id, { reason: trimmedReason });
+        showToast(`Transaction ${item.reference_no || ''} reversed successfully`, 'info');
+      } else if (type === 'voucher') {
+        const approverName = currentUser?.name || currentUser?.username || 'Admin';
+        await api.updateTourVoucherStatus(item.voucher_no, {
+          status: 'rejected',
+          approved_by_name: approverName,
+          rejection_reason: trimmedReason
+        });
+        showToast(`Voucher ${item.voucher_no} rejected`, 'info');
+      }
+
+      setCancelModalState(prev => ({ ...prev, isOpen: false, submitting: false }));
       await fetchLedger(true);
     } catch (err) {
-      showToast('Failed to reverse transaction: ' + err.message, 'error');
+      showToast('Action failed: ' + err.message, 'error');
+      setCancelModalState(prev => ({ ...prev, submitting: false }));
     }
   };
 
@@ -4427,6 +4521,166 @@ export const TourLedgerSection = ({
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ================= IN-APP AUDIT CANCELLATION & REVERSAL MODAL (NO NATIVE CHROME PROMPT) ================= */}
+      {cancelModalState.isOpen && (
+        <div 
+          className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => !cancelModalState.submitting && setCancelModalState(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-rose-900 to-slate-900 text-white flex items-center justify-between border-b border-rose-800/40">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-white/10 text-rose-300 border border-white/10 shrink-0">
+                  <XCircle className="w-5 h-5 text-rose-300" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white tracking-tight">{cancelModalState.title}</h3>
+                  <p className="text-[11px] text-rose-200/80 font-mono mt-0.5">{cancelModalState.subtitle}</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                disabled={cancelModalState.submitting}
+                onClick={() => setCancelModalState(prev => ({ ...prev, isOpen: false }))}
+                className="p-1.5 rounded-lg text-rose-200 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleConfirmCancelModal} className="p-5 space-y-4">
+              {/* Transaction Detail Card */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Transaction Details
+                  </span>
+                  <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-full text-[10px] font-bold border border-rose-200 font-mono">
+                    Ref: {cancelModalState.referenceNo}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Amount</span>
+                    <span className="text-base font-black text-slate-900 font-mono flex items-center">
+                      <IndianRupee className="w-4 h-4 text-slate-600 inline" />
+                      {Number(cancelModalState.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Specialist</span>
+                    <span className="text-xs font-bold text-slate-800 truncate block">
+                      {cancelModalState.technicianName}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/60 text-[11px]">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Date & Time</span>
+                    <span className="text-slate-700 font-medium">{cancelModalState.dateFormatted}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Purpose / Notes</span>
+                    <span className="text-slate-700 font-medium truncate block" title={cancelModalState.purpose}>
+                      {cancelModalState.purpose}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Warning Notice */}
+              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-950">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-900 leading-relaxed font-medium">
+                  {cancelModalState.warningText}
+                </p>
+              </div>
+
+              {/* Reason Input with Quick Presets */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <span>Reason for Cancellation</span>
+                    <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <span className="text-[10px] font-semibold text-slate-400">Audit trail logged</span>
+                </div>
+
+                {/* Quick Presets Chips */}
+                {cancelModalState.presetReasons?.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-semibold text-slate-500">Quick suggestions:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cancelModalState.presetReasons.map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setCancelModalState(prev => ({ ...prev, reason: preset }))}
+                          className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                            cancelModalState.reason === preset
+                              ? 'bg-rose-100 text-rose-900 border-rose-300 ring-1 ring-rose-400 shadow-2xs font-bold'
+                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <textarea
+                  rows={3}
+                  required
+                  autoFocus
+                  value={cancelModalState.reason}
+                  onChange={(e) => setCancelModalState(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Enter detailed reason for cancelling this entry (e.g. Tour cancelled due to emergency, wrong cash disbursement, duplicate record)..."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500/25 focus:border-rose-500 text-slate-800 font-medium placeholder:text-slate-400 transition-all resize-none shadow-2xs"
+                />
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={cancelModalState.submitting}
+                  onClick={() => setCancelModalState(prev => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Dismiss / Keep Active
+                </button>
+                <button
+                  type="submit"
+                  disabled={cancelModalState.submitting || !cancelModalState.reason.trim()}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-md shadow-rose-600/20 cursor-pointer"
+                >
+                  {cancelModalState.submitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>{cancelModalState.confirmText || 'Confirm Cancellation'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

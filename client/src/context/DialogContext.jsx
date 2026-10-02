@@ -10,6 +10,7 @@ const DialogContext = createContext(null);
 
 export function DialogProvider({ children }) {
   const [dialog, setDialog] = useState(null);
+  const [promptInputValue, setPromptInputValue] = useState('');
   const [toasts, setToasts] = useState([]);
   const [loadingState, setLoadingState] = useState({ isVisible: false, message: 'Processing...' });
 
@@ -47,11 +48,42 @@ export function DialogProvider({ children }) {
       setDialog({
         isOpen: true,
         isConfirm: true,
+        isPrompt: false,
         title,
         message,
         type,
         confirmText,
         cancelText,
+        resolve
+      });
+    });
+  }, []);
+
+  // Trigger custom in-app prompt modal (Returns Promise<string|null>)
+  const prompt = useCallback(({
+    title = 'Input Required',
+    message = '',
+    placeholder = 'Type here...',
+    defaultValue = '',
+    type = 'warning',
+    confirmText = 'Submit',
+    cancelText = 'Cancel',
+    required = true
+  }) => {
+    return new Promise((resolve) => {
+      setPromptInputValue(defaultValue || '');
+      setDialog({
+        isOpen: true,
+        isConfirm: true,
+        isPrompt: true,
+        title,
+        message,
+        placeholder,
+        defaultValue,
+        type,
+        confirmText,
+        cancelText,
+        required,
         resolve
       });
     });
@@ -68,6 +100,7 @@ export function DialogProvider({ children }) {
       setDialog({
         isOpen: true,
         isConfirm: false,
+        isPrompt: false,
         title,
         message,
         type,
@@ -92,9 +125,14 @@ export function DialogProvider({ children }) {
 
   const handleCloseDialog = (confirmed) => {
     if (dialog && dialog.resolve) {
-      dialog.resolve(confirmed);
+      if (dialog.isPrompt) {
+        dialog.resolve(confirmed ? promptInputValue.trim() : null);
+      } else {
+        dialog.resolve(confirmed);
+      }
     }
     setDialog(null);
+    setPromptInputValue('');
   };
 
   const removeToast = (id) => {
@@ -102,7 +140,7 @@ export function DialogProvider({ children }) {
   };
 
   return (
-    <DialogContext.Provider value={{ confirm, alert, showToast, showLoading, hideLoading }}>
+    <DialogContext.Provider value={{ confirm, prompt, alert, showToast, showLoading, hideLoading }}>
       {children}
 
       {/* GLOBAL SCREEN LOADING OVERLAY (3 GREEN BOUNCING DOTS) */}
@@ -158,8 +196,37 @@ export function DialogProvider({ children }) {
             </div>
 
             {/* Body */}
-            <div className="p-5 text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-              {dialog.message}
+            <div className="p-5 text-xs text-slate-700 space-y-3">
+              {dialog.message && (
+                <div className="whitespace-pre-line leading-relaxed">
+                  {dialog.message}
+                </div>
+              )}
+
+              {dialog.isPrompt && (
+                <div className="space-y-1.5 pt-1">
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    value={promptInputValue}
+                    onChange={(e) => setPromptInputValue(e.target.value)}
+                    placeholder={dialog.placeholder || 'Enter details here...'}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        if (!dialog.required || promptInputValue.trim()) {
+                          handleCloseDialog(true);
+                        }
+                      }
+                    }}
+                    className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 text-slate-800 font-medium placeholder:text-slate-400 transition-all resize-none shadow-2xs bg-slate-50/50"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>{dialog.required ? 'Field is required' : 'Optional'}</span>
+                    <span>Press Ctrl+Enter to submit</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Footer Buttons */}
@@ -168,16 +235,17 @@ export function DialogProvider({ children }) {
                 <button
                   type="button"
                   onClick={() => handleCloseDialog(false)}
-                  className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+                  className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                 >
                   {dialog.cancelText || 'Cancel'}
                 </button>
               )}
               <button
                 type="button"
+                disabled={dialog.isPrompt && dialog.required && !promptInputValue.trim()}
                 onClick={() => handleCloseDialog(true)}
-                autoFocus
-                className={`px-5 py-2 text-white rounded-xl text-xs font-bold transition-all shadow-md ${
+                autoFocus={!dialog.isPrompt}
+                className={`px-5 py-2 text-white rounded-xl text-xs font-bold transition-all shadow-md disabled:opacity-50 cursor-pointer ${
                   dialog.type === 'danger' ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20' :
                   dialog.type === 'warning' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20' :
                   'bg-emerald-700 hover:bg-emerald-800 shadow-emerald-700/20'
