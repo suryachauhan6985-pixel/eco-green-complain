@@ -36,6 +36,76 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, body, icon, badge, data, tag } = event.data;
+    self.registration.showNotification(title || 'Eco Green Support', {
+      body: body || 'New service update received.',
+      icon: icon || '/support-icon-192.png',
+      badge: badge || '/support-icon-192.png',
+      vibrate: [250, 100, 250, 100, 350],
+      tag: tag || (data?.ticketId ? `ticket-${data.ticketId}` : `egs-alert-${Date.now()}`),
+      renotify: true,
+      data: data || { url: '/complaints' }
+    });
+  }
+});
+
+// PWA Background Push Event (Handles incoming push notifications when app is closed)
+self.addEventListener('push', (event) => {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (_) {
+      data = { title: 'Eco Green Support Alert', body: event.data.text() };
+    }
+  }
+
+  const title = data.title || 'Eco Green Support Alert';
+  const options = {
+    body: data.body || 'New complaint or service update received.',
+    icon: data.icon || '/support-icon-192.png',
+    badge: data.badge || '/support-icon-192.png',
+    vibrate: [250, 100, 250, 100, 350],
+    tag: data.tag || (data.ticketId ? `ticket-${data.ticketId}` : `egs-push-${Date.now()}`),
+    renotify: true,
+    data: {
+      url: data.url || (data.ticketId ? `/complaints?ticket=${data.ticketId}` : '/complaints'),
+      ticketId: data.ticketId || null
+    },
+    actions: [
+      { action: 'open', title: 'Open Ticket' },
+      { action: 'close', title: 'Dismiss' }
+    ]
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// User taps on the notification in the phone lock screen or notification drawer
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  if (event.action === 'close') return;
+
+  const targetUrl = event.notification.data?.url || '/complaints';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Focus existing open tab if available
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          if (client.url && client.url.includes(self.origin)) {
+            client.navigate(targetUrl);
+            return client.focus();
+          }
+        }
+      }
+      // Otherwise open new window
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
 });
 
 self.addEventListener('fetch', (event) => {

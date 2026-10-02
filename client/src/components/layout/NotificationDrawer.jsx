@@ -8,7 +8,7 @@ import {
   ExternalLink, Sparkles, Send, ShieldAlert, Wrench, CheckCircle2, 
   AlertCircle, Clock, ArrowRight, UserCheck, Shield,
   ChevronDown, ChevronUp, Layers, RotateCcw, Check,
-  Volume2, VolumeX
+  Volume2, VolumeX, Smartphone
 } from 'lucide-react';
 
 // SwipeableCard Component (Swipe left or right to dismiss / clear)
@@ -139,7 +139,8 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
     isUnread,
     soundEnabled,
     toggleSound,
-    playSound
+    playSound,
+    requestPushPermission
   } = useNotifications();
   const { confirm, showToast } = useDialog();
 
@@ -517,6 +518,37 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                   )}
                 </div>
               </div>
+
+              {/* Native Mobile OS / Lock Screen Push Permission Banner */}
+              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+                <div className="mx-3 mt-2.5 p-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg shrink-0">
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-amber-900 leading-tight">Phone Lock Screen Alerts</p>
+                      <p className="text-[11px] text-amber-700 leading-tight">Get alerts on your phone lock screen even when app is closed.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (typeof requestPushPermission === 'function') {
+                        const res = await requestPushPermission();
+                        if (res === 'granted') {
+                          showToast('Lock screen notifications activated successfully! 🔔', 'success');
+                        } else {
+                          showToast('Notification permission was not enabled.', 'warning');
+                        }
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg shrink-0 shadow-2xs transition-colors text-[11px] cursor-pointer"
+                  >
+                    Enable
+                  </button>
+                </div>
+              )}
 
               {/* In-App Notifications Feed */}
               <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 bg-slate-50">

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useAuth } from './AuthContext';
 import { api } from '../api/client';
 import { playNotificationChime } from '../utils/sound';
+import { showOSNotification, requestPushPermission, getPushPermissionState } from '../utils/pushNotification';
 
 const NotificationContext = createContext();
 
@@ -288,6 +289,7 @@ export const NotificationProvider = ({ children }) => {
             });
 
             let hasNewUnreadForMe = false;
+            let latestAlertForMe = null;
 
             const merged = cleanRemote.map(r => {
               const localReads = localReadMap.get(r.id) || [];
@@ -300,6 +302,7 @@ export const NotificationProvider = ({ children }) => {
               // Check if brand new unread notification for currentUser
               if (!prevIds.has(r.id) && currentUser && isNotificationForUser(notifObj, currentUser) && isUnread(notifObj, currentUser)) {
                 hasNewUnreadForMe = true;
+                latestAlertForMe = notifObj;
               }
 
               return notifObj;
@@ -314,6 +317,14 @@ export const NotificationProvider = ({ children }) => {
 
             if (hasNewUnreadForMe) {
               playNotificationChime();
+              if (latestAlertForMe) {
+                showOSNotification({
+                  title: latestAlertForMe.title || 'Eco Green Support Alert',
+                  body: latestAlertForMe.message || 'New complaint or service update received.',
+                  ticketId: latestAlertForMe.ticketId,
+                  url: latestAlertForMe.ticketId ? `/complaints?ticket=${latestAlertForMe.ticketId}` : '/complaints'
+                });
+              }
             }
 
             try {
@@ -422,10 +433,16 @@ export const NotificationProvider = ({ children }) => {
       window.dispatchEvent(new CustomEvent('egs_in_app_notification_created', { detail: newNotif }));
     } catch (_) {}
 
-    // If targeted to active user, trigger popup and audio chime immediately
+    // If targeted to active user, trigger popup, audio chime, and OS system notification
     if (currentUser && isNotificationForUser(newNotif, currentUser)) {
       setActivePopup(newNotif);
       playNotificationChime();
+      showOSNotification({
+        title: newNotif.title || 'Eco Green Support Alert',
+        body: newNotif.message || 'New complaint or service update received.',
+        ticketId: newNotif.ticketId,
+        url: newNotif.ticketId ? `/complaints?ticket=${newNotif.ticketId}` : '/complaints'
+      });
     }
 
     // Post to backend
@@ -639,6 +656,8 @@ export const NotificationProvider = ({ children }) => {
     playSound,
     soundEnabled,
     toggleSound,
+    requestPushPermission,
+    getPushPermissionState,
     isUnread
   };
 
