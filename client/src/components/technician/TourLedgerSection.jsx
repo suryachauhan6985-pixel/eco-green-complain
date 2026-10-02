@@ -664,18 +664,6 @@ export const TourLedgerSection = ({
     };
   }, [loadedTechs, selectedTechId, scopedTechProfile]);
 
-  const selectedTechSummary = useMemo(() => {
-    const techId = advanceForm.technician_id || (selectedTechId !== 'all' ? selectedTechId : null);
-    if (!techId) return null;
-    return (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(techId));
-  }, [advanceForm.technician_id, selectedTechId, ledgerData.technicians_summary]);
-
-  const existingRecoverable = useMemo(() => {
-    if (selectedTechSummary) return Number(selectedTechSummary.recoverable_from_tech || 0);
-    if (selectedTechId !== 'all' && (summary.net_balance || 0) > 0) return Number(summary.net_balance);
-    return 0;
-  }, [selectedTechSummary, selectedTechId, summary.net_balance]);
-
   const fetchLedger = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -1359,6 +1347,18 @@ export const TourLedgerSection = ({
       net_balance: (rawBal !== undefined && rawBal !== null && (rawAdv || rawExp || rawRet)) ? Number(rawBal) : computedNetBalance
     };
   }, [ledgerData.summary, computedTotalAdvance, computedApprovedExpenses, computedTotalReturned, computedTotalReimbursed, computedNetBalance]);
+
+  const selectedTechSummary = useMemo(() => {
+    const techId = advanceForm.technician_id || (selectedTechId !== 'all' ? selectedTechId : null);
+    if (!techId) return null;
+    return (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(techId));
+  }, [advanceForm.technician_id, selectedTechId, ledgerData.technicians_summary]);
+
+  const existingRecoverable = useMemo(() => {
+    if (selectedTechSummary) return Number(selectedTechSummary.recoverable_from_tech || 0);
+    if (selectedTechId !== 'all' && (summary.net_balance || 0) > 0) return Number(summary.net_balance);
+    return 0;
+  }, [selectedTechSummary, selectedTechId, summary.net_balance]);
 
   const openSettleModal = () => {
     const isReimbursement = (summary.net_balance || 0) < 0;
