@@ -7,7 +7,7 @@ const technicianRoutes = new Hono();
 
 // Helper: Calculate Centralized Financial Ledger & Statement
 function buildLedgerAndStatement(advances, expenses, settlements, options = {}) {
-  const { fromDate, toDate, ticketId, transactionType, statusFilter } = options;
+  const { fromDate, toDate, ticketId, transactionType, statusFilter, technician } = options;
 
   const events = [];
 
@@ -22,14 +22,16 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
       id: `adv_${adv.id}`,
       raw_id: adv.id,
       entity_type: 'advance',
-      date: adv.allocated_at || adv.created_at || new Date().toISOString(),
+      date: adv.allocated_at || adv.advance_date || adv.created_at || new Date().toISOString(),
       reference_no: ref,
       technician_id: String(adv.technician_id),
-      technician_name: adv.technician_name || 'Technician',
+      technician_name: adv.technician_name || technician?.name || 'Technician',
       ticket_id: adv.ticket_id || null,
       complaint_id: adv.complaint_id || null,
-      transaction_type: 'Advance Issued',
-      description: `Tour Advance: ${adv.purpose || adv.tour_title || 'General Tour'}`,
+      tx_type: 'advance',
+      type_label: 'Tour Advance',
+      transaction_type: 'Tour Advance',
+      description: adv.purpose || adv.tour_title || 'Tour Travel Advance',
       payment_mode: adv.payment_mode || 'Cash',
       debit: advAmt,
       credit: 0,
@@ -47,7 +49,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
       voucherMap.set(vNo, {
         voucher_no: vNo,
         technician_id: String(exp.technician_id),
-        technician_name: exp.technician_name || 'Technician',
+        technician_name: exp.technician_name || technician?.name || 'Technician',
         ticket_id: exp.ticket_id || null,
         complaint_id: exp.complaint_id || null,
         expense_date: exp.expense_date || exp.created_at,
@@ -88,8 +90,10 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         technician_name: vch.technician_name,
         ticket_id: vch.ticket_id,
         complaint_id: vch.complaint_id,
-        transaction_type: 'Expense Approved',
-        description: `Approved Tour Expense: ${catDesc} (${vch.items.length} line items)`,
+        tx_type: 'expense',
+        type_label: 'Approved Expense',
+        transaction_type: 'Approved Expense',
+        description: `Approved Tour Expense: ${catDesc} (${vch.items.length} items)`,
         payment_mode: 'Voucher Claim',
         debit: 0,
         credit: vch.approved_amount,
@@ -109,7 +113,9 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         technician_name: vch.technician_name,
         ticket_id: vch.ticket_id,
         complaint_id: vch.complaint_id,
-        transaction_type: 'Expense Rejected',
+        tx_type: 'rejected_expense',
+        type_label: 'Rejected Expense',
+        transaction_type: 'Rejected Expense',
         description: `Rejected Tour Expense: ${catDesc}`,
         payment_mode: 'Voucher Claim',
         debit: 0,
@@ -130,8 +136,10 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         technician_name: vch.technician_name,
         ticket_id: vch.ticket_id,
         complaint_id: vch.complaint_id,
-        transaction_type: 'Expense Submitted',
-        description: `Submitted Tour Expense: ${catDesc} (Pending Approval)`,
+        tx_type: 'pending_expense',
+        type_label: 'Submitted Expense (Pending)',
+        transaction_type: 'Submitted Expense (Pending)',
+        description: `Submitted Tour Expense: ${catDesc} (Pending Verification)`,
         payment_mode: 'Voucher Claim',
         debit: 0,
         credit: 0,
@@ -143,7 +151,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     }
   }
 
-  // 3. Settlement Events (Returns, Reimbursements, Adjustments, Reversals)
+  // 3. Settlement Events (Returns, Reimbursements, Adjustments)
   for (const stl of settlements) {
     if ((stl.status || '').toLowerCase() === 'cancelled') continue;
     const isReversed = (stl.status || '').toLowerCase() === 'reversed';
@@ -159,13 +167,15 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: stl.settled_at || stl.created_at || new Date().toISOString(),
         reference_no: stl.reference_no || `RET-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
-        technician_name: stl.technician_name || 'Technician',
+        technician_name: stl.technician_name || technician?.name || 'Technician',
         ticket_id: stl.ticket_id || null,
         complaint_id: null,
+        tx_type: 'return',
+        type_label: isReversed ? 'Return Reversed' : 'Amount Returned',
         transaction_type: isReversed ? 'Return Reversed' : 'Amount Returned',
         description: isReversed
           ? `Reversal of Return ${stl.reference_no || ''}: ${stl.reversal_reason || 'Reversed'}`
-          : `Amount Returned by Technician (${stl.payment_mode || 'Cash'}) - ${stl.notes || 'Tour settlement return'}`,
+          : `Amount Returned by Technician (${stl.payment_mode || 'Cash'}) - ${stl.notes || 'Tour surplus deposit'}`,
         payment_mode: stl.payment_mode || 'Cash',
         debit: isReversed ? retAmt : 0,
         credit: isReversed ? 0 : retAmt,
@@ -183,9 +193,11 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: stl.settled_at || stl.created_at || new Date().toISOString(),
         reference_no: stl.reference_no || `REIM-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
-        technician_name: stl.technician_name || 'Technician',
+        technician_name: stl.technician_name || technician?.name || 'Technician',
         ticket_id: stl.ticket_id || null,
         complaint_id: null,
+        tx_type: 'reimbursement',
+        type_label: isReversed ? 'Reimbursement Reversed' : 'Reimbursement Paid',
         transaction_type: isReversed ? 'Reimbursement Reversed' : 'Reimbursement Paid',
         description: isReversed
           ? `Reversal of Reimbursement ${stl.reference_no || ''}: ${stl.reversal_reason || 'Reversed'}`
@@ -207,9 +219,11 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: stl.settled_at || stl.created_at || new Date().toISOString(),
         reference_no: stl.reference_no || `ADJ-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
-        technician_name: stl.technician_name || 'Technician',
+        technician_name: stl.technician_name || technician?.name || 'Technician',
         ticket_id: stl.ticket_id || null,
         complaint_id: null,
+        tx_type: 'adjustment',
+        type_label: 'Balance Adjustment',
         transaction_type: 'Adjustment',
         description: `Balance Adjustment: ${stl.notes || 'Tour balance adjustment'}`,
         payment_mode: 'Adjustment',
@@ -222,8 +236,21 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     }
   }
 
-  // 4. Chronological sort (oldest to newest for running balance)
-  events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // 4. Chronological sort (oldest to newest for correct running balance)
+  // Tie-breaker on same timestamp: Advances first (+), then Reimbursements (+), then Expenses (-), then Returns (-), then Adjustments
+  events.sort((a, b) => {
+    const timeA = new Date(a.date).getTime();
+    const timeB = new Date(b.date).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    const priority = {
+      advance: 1,
+      settlement_reimbursement: 2,
+      expense_voucher: 3,
+      settlement_return: 4,
+      settlement_adjustment: 5
+    };
+    return (priority[a.entity_type] || 9) - (priority[b.entity_type] || 9);
+  });
 
   // 5. Compute Opening Balance and Statement for specified date range
   let openingBalance = 0;
@@ -235,12 +262,12 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   for (const ev of events) {
     const evTime = new Date(ev.date).getTime();
 
-    if (ticketId && String(ev.ticket_id || '').toLowerCase() !== String(ticketId).toLowerCase()) {
+    if (ticketId && ticketId !== 'all' && String(ev.ticket_id || '').toLowerCase() !== String(ticketId).toLowerCase()) {
       continue;
     }
 
     if (transactionType && transactionType !== 'all') {
-      if (!ev.transaction_type.toLowerCase().includes(transactionType.toLowerCase())) {
+      if (ev.tx_type !== transactionType && !ev.transaction_type.toLowerCase().includes(transactionType.toLowerCase())) {
         continue;
       }
     }
@@ -254,23 +281,33 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     }
   }
 
+  // 6. Calculate sequential historical running balance after EACH transaction
   let currentRunning = openingBalance;
   let periodDebit = 0;
   let periodCredit = 0;
+  let totalAdvances = 0;
+  let totalApprovedExpenses = 0;
+  let totalReturns = 0;
+  let totalReimbursements = 0;
+  let totalAdjustments = 0;
 
   for (const ev of filteredEvents) {
     currentRunning = currentRunning + ev.debit - ev.credit;
     ev.running_balance = currentRunning;
     periodDebit += ev.debit;
     periodCredit += ev.credit;
-  }
 
-  let totalAdvances = 0;
-  let totalApprovedExpenses = 0;
-  let totalReturns = 0;
-  let totalReimbursements = 0;
+    if (currentRunning > 0) {
+      ev.balance_direction = 'Returnable';
+      ev.balance_label = `₹${currentRunning.toLocaleString('en-IN')} Returnable by Technician`;
+    } else if (currentRunning < 0) {
+      ev.balance_direction = 'Payable';
+      ev.balance_label = `₹${Math.abs(currentRunning).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
+    } else {
+      ev.balance_direction = 'Settled';
+      ev.balance_label = '₹0 Account Settled';
+    }
 
-  for (const ev of filteredEvents) {
     if (ev.entity_type === 'advance') {
       totalAdvances += (ev.debit || 0);
     } else if (ev.entity_type === 'expense_voucher' && (ev.status === 'Approved' || ev.status === 'Verified')) {
@@ -279,16 +316,17 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
       totalReturns += (ev.credit || 0);
     } else if (ev.entity_type === 'settlement_reimbursement') {
       totalReimbursements += (ev.debit || 0);
+    } else if (ev.entity_type === 'settlement_adjustment') {
+      totalAdjustments += (ev.debit - ev.credit);
     }
   }
 
   const closingBalance = currentRunning;
-  const displayTransactions = [...filteredEvents].reverse();
 
   let finalPositionType = 'settled';
-  let finalPositionLabel = 'Settled — ₹0 Outstanding';
+  let finalPositionLabel = '₹0 Account Settled';
   if (closingBalance > 0) {
-    finalPositionType = 'recoverable';
+    finalPositionType = 'returnable';
     finalPositionLabel = `₹${closingBalance.toLocaleString('en-IN')} Returnable by Technician`;
   } else if (closingBalance < 0) {
     finalPositionType = 'payable';
@@ -296,6 +334,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   }
 
   return {
+    technician: technician || null,
     opening_balance: openingBalance,
     period_debit: periodDebit,
     period_credit: periodCredit,
@@ -304,14 +343,16 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     total_approved_expenses: totalApprovedExpenses,
     total_returns: totalReturns,
     total_reimbursements: totalReimbursements,
+    total_adjustments: totalAdjustments,
     status_label: finalPositionLabel,
-    position_label: finalPositionLabel.toUpperCase(),
+    position_label: finalPositionLabel,
     final_position: {
       type: finalPositionType,
       amount: Math.abs(closingBalance),
       label: finalPositionLabel
     },
-    transactions: displayTransactions,
+    // Strictly chronological order (oldest first, newest at bottom) for accurate financial statement
+    transactions: filteredEvents,
     all_chronological_events: events
   };
 }
@@ -639,25 +680,48 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
     const user = c.get('user');
 
     // Strict role check: technician can only access their own financial records
-    let targetTechId = user.role === 'technician'
-      ? (user.technician_id || user.id)
-      : technician_id;
-
-    let advWhere = '';
-    let expWhere = '';
-    let stlWhere = '';
-    const advParams = [];
-    const expParams = [];
-    const stlParams = [];
-
-    if (targetTechId && String(targetTechId).trim() !== '' && targetTechId !== 'all') {
-      advParams.push(String(targetTechId).trim());
-      advWhere = `WHERE a.technician_id::text = $1`;
-      expParams.push(String(targetTechId).trim());
-      expWhere = `WHERE e.technician_id::text = $1`;
-      stlParams.push(String(targetTechId).trim());
-      stlWhere = `WHERE s.technician_id::text = $1`;
+    let targetTechId = null;
+    if (user.role === 'technician') {
+      let tid = user.technician_id;
+      if (!tid) {
+        const tr = await query(`SELECT id FROM technicians WHERE user_id = $1 LIMIT 1`, [user.id], c.env, c.executionCtx);
+        tid = tr.rows[0]?.id;
+      }
+      targetTechId = String(tid || user.id).trim();
+    } else {
+      // Admin / Staff: Require exactly ONE specific technician
+      if (technician_id && String(technician_id).trim() !== '' && technician_id !== 'all') {
+        targetTechId = String(technician_id).trim();
+      } else {
+        // Fallback to the first registered technician
+        const firstTech = await query(`SELECT id FROM technicians ORDER BY name ASC LIMIT 1`, [], c.env, c.executionCtx);
+        targetTechId = firstTech.rows[0]?.id ? String(firstTech.rows[0].id) : null;
+      }
     }
+
+    if (!targetTechId) {
+      return c.json({ error: 'A specific technician must be selected for account statements' }, 400);
+    }
+
+    const techInfoRes = await query(
+      `SELECT id, name, phone, area_zone FROM technicians WHERE id::text = $1 LIMIT 1`,
+      [targetTechId],
+      c.env,
+      c.executionCtx
+    );
+    const targetTechnician = techInfoRes.rows[0] || {
+      id: targetTechId,
+      name: user.role === 'technician' ? user.name : 'Technician',
+      phone: user.phone || '',
+      area_zone: 'General Field Zone'
+    };
+
+    const advParams = [targetTechId];
+    const expParams = [targetTechId];
+    const stlParams = [targetTechId];
+    const advWhere = `WHERE a.technician_id::text = $1`;
+    const expWhere = `WHERE e.technician_id::text = $1`;
+    const stlWhere = `WHERE s.technician_id::text = $1`;
 
     const [advRes, expRes, stlRes, allTechsRes] = await Promise.all([
       query(`
@@ -743,7 +807,8 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
       toDate: to_date,
       ticketId: ticket_id,
       transactionType: transaction_type,
-      statusFilter
+      statusFilter,
+      technician: targetTechnician
     });
 
     // Complaint-wise settlement summary
@@ -905,6 +970,7 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
 
     return c.json({
       success: true,
+      technician: targetTechnician,
       advances: activeAdvances,
       expenses,
       settlements: activeSettlements,
