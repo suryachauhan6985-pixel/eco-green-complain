@@ -71,6 +71,7 @@ export const TourLedgerSection = ({
   onTechChange 
 }) => {
   const { currentUser } = useAuth();
+  const user = currentUser;
   const { showToast, confirm } = useDialog();
 
   const isAdminOrStaff = ['admin', 'staff'].includes(currentUser?.role);
@@ -1087,7 +1088,7 @@ export const TourLedgerSection = ({
     const st = ledgerData.statement;
     if (!st || !st.transactions) return showToast('No statement data to export', 'error');
 
-    const isTech = user?.role === 'technician';
+    const isTech = user?.role === 'technician' || st.perspective === 'technician';
     const titleRows = [
       [`"ECO GREEN SOLAR - ${st.perspective_title || (isTech ? 'MY ACCOUNT STATEMENT' : 'TECHNICIAN ACCOUNT STATEMENT')}"`],
       [`"Specialist: ${currentTech.name} | Phone: ${currentTech.phone || 'N/A'} | Zone: ${currentTech.area_zone || 'General Zone'}"`],
