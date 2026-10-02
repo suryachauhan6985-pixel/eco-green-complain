@@ -1605,6 +1605,18 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+  cancelTourAdvance: (id, cancellation_reason = '') => request(`/tour-advances/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ cancellation_reason })
+  }),
+  reverseTourSettlement: (id, reversal_reason = '') => request(`/tour-settlements/${id}/reverse`, {
+    method: 'POST',
+    body: JSON.stringify({ reversal_reason })
+  }),
+  updateTourVoucherStatus: (voucherNo, status, rejection_reason = '') => request(`/tour-vouchers/${encodeURIComponent(voucherNo)}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ status, rejection_reason })
+  }),
   getNextVoucherSequence: () => request('/tour-vouchers/next-sequence').catch(() => ({
     success: true,
     next_voucher_no: `TT-${parseInt(localStorage.getItem('egs_global_voucher_seq') || '341', 10)}`

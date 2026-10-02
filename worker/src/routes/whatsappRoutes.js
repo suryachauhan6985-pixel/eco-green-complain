@@ -240,6 +240,60 @@ whatsappRoutes.get('/webhook', handleWebhookGet);
 whatsappRoutes.post('/', handleWebhookPost);
 whatsappRoutes.post('/webhook', handleWebhookPost);
 
+async function resolveContactIdentities(activeLast10, env, executionCtx) {
+  if (!activeLast10 || activeLast10.length === 0) {
+    return { techMap: new Map(), userMap: new Map(), custMap: new Map(), regMap: new Map() };
+  }
+
+  const [techRes, userRes, custRes, regRes] = await Promise.all([
+    query('SELECT id, name, phone FROM technicians', [], env, executionCtx).catch(() => ({ rows: [] })),
+    query('SELECT id, name, phone, role FROM users WHERE phone IS NOT NULL', [], env, executionCtx).catch(() => ({ rows: [] })),
+    query(
+      `SELECT customer_name, consumer_mobile 
+       FROM installed_customers 
+       WHERE consumer_mobile IS NOT NULL 
+         AND RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = ANY($1::text[])`,
+      [activeLast10],
+      env,
+      executionCtx
+    ).catch(() => ({ rows: [] })),
+    query(
+      `SELECT phone, customer_name 
+       FROM whatsapp_number_registry 
+       WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = ANY($1::text[])`,
+      [activeLast10],
+      env,
+      executionCtx
+    ).catch(() => ({ rows: [] }))
+  ]);
+
+  const techMap = new Map();
+  (techRes.rows || []).forEach(t => {
+    const clean = (t.phone || '').replace(/\D/g, '').slice(-10);
+    if (clean) techMap.set(clean, t);
+  });
+
+  const userMap = new Map();
+  (userRes.rows || []).forEach(u => {
+    const clean = (u.phone || '').replace(/\D/g, '').slice(-10);
+    if (clean) userMap.set(clean, u);
+  });
+
+  const custMap = new Map();
+  (custRes.rows || []).forEach(c => {
+    const clean = (c.consumer_mobile || '').replace(/\D/g, '').slice(-10);
+    if (clean && !custMap.has(clean)) custMap.set(clean, c.customer_name);
+  });
+
+  const regMap = new Map();
+  (regRes.rows || []).forEach(reg => {
+    const clean = (reg.phone || '').replace(/\D/g, '').slice(-10);
+    if (clean && reg.customer_name) regMap.set(clean, reg.customer_name);
+  });
+
+  return { techMap, userMap, custMap, regMap };
+}
+
 // GET /api/whatsapp/conversations - List Inbox Chats with unified phone grouping
 whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
   try {
@@ -250,7 +304,7 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
           RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10) as last10_phone,
           ROW_NUMBER() OVER(
             PARTITION BY RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10) 
-            ORDER BY m.created_at DESC
+            ORDER BY m.created_at DESC, m.id DESC
           ) as rn
         FROM whatsapp_messages m
         WHERE LENGTH(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g')) >= 5
@@ -267,6 +321,7 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
         nm.created_at as last_activity,
         c.ticket_id,
         c.customer_name as complaint_customer_name,
+        c.customer_phone as complaint_customer_phone,
         c.product_type,
         c.status as complaint_status
       FROM NormalizedMessages nm
@@ -278,17 +333,58 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
       c.executionCtx
     );
 
-    const conversations = (res.rows || []).map(r => ({
-      phone: r.phone,
-      sender_name: r.complaint_customer_name || r.sender_name || 'Customer',
-      ticket_id: r.ticket_id || null,
-      complaint_id: r.complaint_id || null,
-      last_message: r.last_message || '',
-      last_activity: r.last_activity,
-      last_status: r.last_status,
-      last_sender_type: r.last_sender_type,
-      unread_count: 0
-    }));
+    const activeLast10 = Array.from(new Set((res.rows || []).map(r => r.last10_phone).filter(Boolean)));
+    const { techMap, userMap, custMap, regMap } = await resolveContactIdentities(activeLast10, c.env, c.executionCtx);
+
+    const conversations = (res.rows || []).map(r => {
+      const last10 = r.last10_phone || (r.phone || '').replace(/\D/g, '').slice(-10);
+      let senderName = null;
+      let isTechnician = false;
+
+      // 1. Check Technician table first
+      if (techMap.has(last10)) {
+        senderName = techMap.get(last10).name;
+        isTechnician = true;
+      } else if (userMap.has(last10)) {
+        const usr = userMap.get(last10);
+        senderName = usr.name;
+        if (usr.role === 'technician') isTechnician = true;
+      } else if (r.complaint_customer_phone) {
+        // ONLY if phone actually matches the complaint's customer phone!
+        const compPhoneClean = (r.complaint_customer_phone || '').replace(/\D/g, '').slice(-10);
+        if (compPhoneClean === last10 && r.complaint_customer_name && r.complaint_customer_name !== 'Customer') {
+          senderName = r.complaint_customer_name;
+        }
+      }
+
+      // 2. Fallbacks: Installed customers, Registry, message sender_name
+      if (!senderName && custMap.has(last10)) {
+        senderName = custMap.get(last10);
+      }
+      if (!senderName && regMap.has(last10)) {
+        senderName = regMap.get(last10);
+      }
+      if (!senderName && r.sender_name && r.sender_name !== 'Customer' && r.sender_name !== 'Eco Green Support' && !/^[0-9+ ]+$/.test(r.sender_name)) {
+        senderName = r.sender_name;
+      }
+
+      const canonicalPhone = (r.phone || '').startsWith('91') && (r.phone || '').length === 12
+        ? r.phone
+        : (r.phone || '').length === 10 ? `91${r.phone}` : r.phone;
+
+      return {
+        phone: canonicalPhone,
+        sender_name: senderName || 'Customer',
+        is_technician: isTechnician,
+        ticket_id: r.ticket_id || null,
+        complaint_id: r.complaint_id || null,
+        last_message: r.last_message || '',
+        last_activity: r.last_activity,
+        last_status: r.last_status,
+        last_sender_type: r.last_sender_type,
+        unread_count: 0
+      };
+    });
 
     return c.json({ success: true, conversations });
   } catch (err) {
@@ -303,15 +399,58 @@ whatsappRoutes.get('/chats/:phone', authenticateToken, async (c) => {
     const cleanDigits = (phone || '').replace(/\D/g, '');
     const last10 = cleanDigits.slice(-10);
 
-    const res = await query(
-      `SELECT * FROM whatsapp_messages 
-       WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
-       ORDER BY created_at ASC LIMIT 200`,
-      [last10],
-      c.env,
-      c.executionCtx
-    );
-    return c.json({ success: true, messages: res.rows || [] });
+    const [msgRes, identities] = await Promise.all([
+      query(
+        `SELECT * FROM whatsapp_messages 
+         WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
+         ORDER BY created_at ASC LIMIT 200`,
+        [last10],
+        c.env,
+        c.executionCtx
+      ),
+      resolveContactIdentities([last10], c.env, c.executionCtx)
+    ]);
+
+    let senderName = null;
+    let isTechnician = false;
+    let ticketId = null;
+    let complaintId = null;
+
+    if (identities.techMap.has(last10)) {
+      senderName = identities.techMap.get(last10).name;
+      isTechnician = true;
+    } else if (identities.userMap.has(last10)) {
+      const usr = identities.userMap.get(last10);
+      senderName = usr.name;
+      if (usr.role === 'technician') isTechnician = true;
+    } else if (identities.custMap.has(last10)) {
+      senderName = identities.custMap.get(last10);
+    } else if (identities.regMap.has(last10)) {
+      senderName = identities.regMap.get(last10);
+    }
+
+    const messages = msgRes.rows || [];
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.complaint_id) complaintId = lastMsg.complaint_id;
+      if (!senderName && lastMsg.sender_name && lastMsg.sender_name !== 'Customer' && lastMsg.sender_name !== 'Eco Green Support') {
+        senderName = lastMsg.sender_name;
+      }
+    }
+
+    const canonicalPhone = cleanDigits.startsWith('91') && cleanDigits.length === 12
+      ? cleanDigits
+      : cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+
+    const contact = {
+      phone: canonicalPhone,
+      sender_name: senderName || 'Customer',
+      is_technician: isTechnician,
+      ticket_id: ticketId,
+      complaint_id: complaintId
+    };
+
+    return c.json({ success: true, messages, contact });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

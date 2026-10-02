@@ -5130,8 +5130,9 @@ app.get('/api/whatsapp/conversations', authenticateToken, async (req, res) => {
         isTechnician = true;
       }
 
-      // 2. Linked complaint check
-      if (!customerName && row.complaint_customer_name && row.complaint_customer_name !== 'Customer') {
+      // 2. Linked complaint check (ONLY if the message phone actually belongs to the complaint customer!)
+      const compCustPhoneClean = (row.complaint_customer_phone || '').replace(/[^0-9]/g, '').slice(-10);
+      if (!customerName && compCustPhoneClean === last10 && row.complaint_customer_name && row.complaint_customer_name !== 'Customer') {
         customerName = row.complaint_customer_name;
       }
 

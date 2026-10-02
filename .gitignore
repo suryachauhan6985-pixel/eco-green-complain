@@ -38,3 +38,5 @@ server/whatsapp_auth/
 *.mp4
 scratch/
 scripts/lighthouse-*.json
+.wrangler/
+worker/.wrangler/

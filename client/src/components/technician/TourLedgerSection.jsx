@@ -9,7 +9,7 @@ import {
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
   Camera, Ticket, Edit2, Lock, RotateCcw
 } from 'lucide-react';
-import { formatIndianDateOnly } from '../common/TicketAgeBadge';
+import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { GREEN_ENERGY_LOGO_BASE64 } from '../../assets/greenEnergyLogo';
 
 const EXPENSE_CATEGORIES = [
@@ -132,11 +132,70 @@ export const TourLedgerSection = ({
       approved_expenses: 0,
       total_returned: 0,
       total_reimbursed: 0,
-      net_balance: 0
-    }
+      net_balance: 0,
+      net_recoverable: 0,
+      net_payable: 0,
+      status_label: 'Settled'
+    },
+    statement: null,
+    complaint_settlements: [],
+    technicians_summary: [],
+    company_kpis: null,
+    reconciliation: null
   });
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState('expenses'); // 'expenses' | 'advances' | 'settlements'
+  const [subTab, setSubTab] = useState('expenses'); // 'expenses' | 'advances' | 'settlements' | 'statement' | 'complaints' | 'admin_summary'
+
+  // Statement generation & filters
+  const [statementPreset, setStatementPreset] = useState('current_fy');
+  const [statementFromDate, setStatementFromDate] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    return month >= 3 ? `${year}-04-01` : `${year - 1}-04-01`;
+  });
+  const [statementToDate, setStatementToDate] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    return month >= 3 ? `${year + 1}-03-31` : `${year}-03-31`;
+  });
+  const [statementTicketId, setStatementTicketId] = useState('all');
+  const [statementTxType, setStatementTxType] = useState('all');
+  const [isPrintStatementOpen, setIsPrintStatementOpen] = useState(false);
+  const [advanceAdjustBalance, setAdvanceAdjustBalance] = useState(false);
+
+  const handleApplyStatementPreset = (presetKey) => {
+    setStatementPreset(presetKey);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+
+    if (presetKey === 'current_month') {
+      const start = new Date(year, month, 1).toISOString().split('T')[0];
+      const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      setStatementFromDate(start);
+      setStatementToDate(end);
+    } else if (presetKey === 'previous_month') {
+      const start = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const end = new Date(year, month, 0).toISOString().split('T')[0];
+      setStatementFromDate(start);
+      setStatementToDate(end);
+    } else if (presetKey === 'current_fy') {
+      const start = month >= 3 ? `${year}-04-01` : `${year - 1}-04-01`;
+      const end = month >= 3 ? `${year + 1}-03-31` : `${year}-03-31`;
+      setStatementFromDate(start);
+      setStatementToDate(end);
+    } else if (presetKey === 'previous_fy') {
+      const start = month >= 3 ? `${year - 1}-04-01` : `${year - 2}-04-01`;
+      const end = month >= 3 ? `${year}-03-31` : `${year - 1}-03-31`;
+      setStatementFromDate(start);
+      setStatementToDate(end);
+    } else if (presetKey === 'all_time') {
+      setStatementFromDate('');
+      setStatementToDate('');
+    }
+  };
 
   // Modals state
   const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
@@ -605,12 +664,30 @@ export const TourLedgerSection = ({
     };
   }, [loadedTechs, selectedTechId, scopedTechProfile]);
 
+  const selectedTechSummary = useMemo(() => {
+    const techId = advanceForm.technician_id || (selectedTechId !== 'all' ? selectedTechId : null);
+    if (!techId) return null;
+    return (ledgerData.technicians_summary || []).find(t => String(t.technician_id) === String(techId));
+  }, [advanceForm.technician_id, selectedTechId, ledgerData.technicians_summary]);
+
+  const existingRecoverable = useMemo(() => {
+    if (selectedTechSummary) return Number(selectedTechSummary.recoverable_from_tech || 0);
+    if (selectedTechId !== 'all' && (summary.net_balance || 0) > 0) return Number(summary.net_balance);
+    return 0;
+  }, [selectedTechSummary, selectedTechId, summary.net_balance]);
+
   const fetchLedger = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const params = (selectedTechId && selectedTechId !== 'all') ? { technician_id: selectedTechId } : {};
+      const params = {};
+      if (selectedTechId && selectedTechId !== 'all') params.technician_id = selectedTechId;
+      if (statementFromDate) params.from_date = statementFromDate;
+      if (statementToDate) params.to_date = statementToDate;
+      if (statementTicketId && statementTicketId !== 'all') params.ticket_id = statementTicketId;
+      if (statementTxType && statementTxType !== 'all') params.tx_type = statementTxType;
+
       const res = await api.getTourLedger(params);
-      if (res && res.summary) {
+      if (res && (res.summary || res.statement)) {
         setLedgerData(res);
       }
     } catch (err) {
@@ -622,7 +699,7 @@ export const TourLedgerSection = ({
 
   useEffect(() => {
     fetchLedger();
-  }, [selectedTechId]);
+  }, [selectedTechId, statementFromDate, statementToDate, statementTicketId, statementTxType]);
 
   // Handle Allocate Tour Advance
   const handleAllocateAdvance = async (e) => {
@@ -636,20 +713,29 @@ export const TourLedgerSection = ({
 
     const chosenTech = loadedTechs.find(t => String(t.id) === String(effectiveTechId)) || currentTech;
 
+    // Check if adjusting recoverable balance
+    let finalAmount = amt;
+    let finalPurpose = advanceForm.purpose || 'Tour Advance';
+    if (advanceAdjustBalance && existingRecoverable > 0) {
+      finalAmount = Math.max(0, amt - existingRecoverable);
+      finalPurpose = `${finalPurpose} [Adjusted ₹${existingRecoverable} from existing recoverable balance]`;
+    }
+
     try {
       setSubmittingAdvance(true);
       await api.allocateTourAdvance({
         technician_id: effectiveTechId,
         technician_name: chosenTech.name || 'Technician',
-        amount: amt,
-        purpose: advanceForm.purpose,
-        tour_title: advanceForm.purpose,
+        amount: finalAmount,
+        purpose: finalPurpose,
+        tour_title: finalPurpose,
         payment_mode: advanceForm.payment_mode,
         reference_no: advanceForm.reference_no,
         allocated_by_name: currentUser?.name || 'Admin Supervisor'
       });
-      showToast(`₹${amt} tour advance allocated to ${chosenTech.name}!`, 'success');
+      showToast(`₹${finalAmount} tour advance allocated to ${chosenTech.name}!`, 'success');
       setIsAdvanceModalOpen(false);
+      setAdvanceAdjustBalance(false);
       await fetchLedger(true);
     } catch (err) {
       showToast('Failed to allocate advance: ' + err.message, 'error');
@@ -883,7 +969,125 @@ export const TourLedgerSection = ({
     }
   };
 
-  // Receipt File Chooser
+  // Reject all items in a voucher group
+  const handleRejectVoucherGroup = async (group) => {
+    const reason = window.prompt(`Enter reason for rejecting Voucher ${group.voucher_no}:`);
+    if (!reason) return;
+    try {
+      const approverName = currentUser?.name || currentUser?.username || 'Admin';
+      await api.updateTourVoucherStatus(group.voucher_no, {
+        status: 'rejected',
+        approved_by_name: approverName,
+        rejection_reason: reason
+      });
+      showToast(`Voucher ${group.voucher_no} rejected`, 'info');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to reject voucher: ' + err.message, 'error');
+    }
+  };
+
+  // Cancel an unspent advance
+  const handleCancelAdvance = async (adv) => {
+    const reason = window.prompt(`Enter reason for cancelling Advance ${adv.reference_no || 'ADV'} (₹${adv.amount}):`);
+    if (!reason) return;
+    try {
+      await api.cancelTourAdvance(adv.id, { reason });
+      showToast(`Advance ${adv.reference_no || ''} cancelled successfully`, 'info');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to cancel advance: ' + err.message, 'error');
+    }
+  };
+
+  // Reverse a settlement transaction
+  const handleReverseSettlement = async (st) => {
+    const reason = window.prompt(`Enter reason for reversing transaction ${st.reference_no || 'SETTLEMENT'} (₹${st.amount}):`);
+    if (!reason) return;
+    try {
+      await api.reverseTourSettlement(st.id, { reason });
+      showToast(`Transaction ${st.reference_no || ''} reversed successfully`, 'info');
+      await fetchLedger(true);
+    } catch (err) {
+      showToast('Failed to reverse transaction: ' + err.message, 'error');
+    }
+  };
+
+  // Export Statement to CSV / Excel
+  const handleExportStatementCSV = () => {
+    const st = ledgerData.statement;
+    if (!st || !st.transactions) return showToast('No statement data to export', 'error');
+
+    const headers = ['Date', 'Reference No', 'Complaint / Ticket', 'Transaction Type', 'Description', 'Debit (Given to Tech)', 'Credit (Expense/Return)', 'Running Balance'];
+    const rows = st.transactions.map(tx => [
+      tx.date ? formatIndianDateOnly(tx.date) : '',
+      tx.reference_no || '',
+      tx.ticket_id || '-',
+      tx.type_label || tx.tx_type || '',
+      `"${(tx.description || '').replace(/"/g, '""')}"`,
+      tx.debit > 0 ? tx.debit.toFixed(2) : '0.00',
+      tx.credit > 0 ? tx.credit.toFixed(2) : '0.00',
+      tx.running_balance.toFixed(2)
+    ]);
+
+    const summaryRows = [
+      [],
+      ['FINANCIAL SUMMARY'],
+      ['Opening Balance', '', '', '', '', '', '', (st.opening_balance || 0).toFixed(2)],
+      ['Total Advances (Debit)', '', '', '', '', '', '', (st.total_advances || 0).toFixed(2)],
+      ['Total Approved Expenses (Credit)', '', '', '', '', '', '', (st.total_approved_expenses || 0).toFixed(2)],
+      ['Total Returned to Company (Credit)', '', '', '', '', '', '', (st.total_returns || 0).toFixed(2)],
+      ['Total Reimbursements Paid (Debit)', '', '', '', '', '', '', (st.total_reimbursements || 0).toFixed(2)],
+      ['Total Adjustments', '', '', '', '', '', '', (st.total_adjustments || 0).toFixed(2)],
+      ['Closing Balance', '', '', '', '', '', '', (st.closing_balance || 0).toFixed(2)],
+      ['Final Status', '', '', '', '', '', '', `"${st.position_label || ''}"`]
+    ];
+
+    const csvContent = 'data:text/csv;charset=utf-8,\ufeff' + 
+      [headers.join(','), ...rows.map(r => r.join(',')), ...summaryRows.map(r => r.join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    const techName = (currentTech.name || 'Technician').replace(/\s+/g, '_');
+    link.setAttribute('download', `Technician_Statement_${techName}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Account statement exported to CSV / Excel!', 'success');
+  };
+
+  // Export Consolidated All Technicians Report to CSV / Excel
+  const handleExportConsolidatedCSV = () => {
+    const list = ledgerData.technicians_summary || [];
+    if (list.length === 0) return showToast('No technician summary data available', 'error');
+
+    const headers = ['Technician Name', 'Phone', 'Zone', 'Total Advances', 'Approved Expenses', 'Total Returned', 'Reimbursements Paid', 'Recoverable from Tech', 'Payable to Tech', 'Net Status'];
+    const rows = list.map(t => [
+      `"${t.name || ''}"`,
+      t.phone || '',
+      `"${t.area_zone || ''}"`,
+      Number(t.total_advance || 0).toFixed(2),
+      Number(t.approved_expenses || 0).toFixed(2),
+      Number(t.total_returned || 0).toFixed(2),
+      Number(t.total_reimbursed || 0).toFixed(2),
+      Number(t.recoverable_from_tech || 0).toFixed(2),
+      Number(t.payable_to_tech || 0).toFixed(2),
+      `"${t.status_label || ''}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\ufeff' + 
+      [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Technician_Accounts_Consolidated_Summary_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Consolidated technician report exported to CSV / Excel!', 'success');
+  };
   const handleReceiptChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1413,45 +1617,86 @@ export const TourLedgerSection = ({
       {/* Main Ledger Sub-Tabs & Tables */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {/* Sub-tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50/70 p-1.5 gap-1.5">
+        <div className="flex flex-wrap border-b border-slate-200 bg-slate-50/70 p-1.5 gap-1.5">
           <button
             type="button"
             onClick={() => setSubTab('expenses')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               subTab === 'expenses'
                 ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Expense Vouchers & Bills ({voucherLogs.length})</span>
+            <span>Expense Vouchers ({voucherLogs.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setSubTab('advances')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               subTab === 'advances'
                 ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <ArrowDownLeft className="w-3.5 h-3.5" />
-            <span>Tour Advances History ({advances.length})</span>
+            <span>Tour Advances ({advances.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setSubTab('settlements')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               subTab === 'settlements'
                 ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Deposits & Settlements ({settlements.length})</span>
+            <span>Deposits & Reimbursements ({settlements.length})</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setSubTab('statement')}
+            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              subTab === 'statement'
+                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Account Statement & Ledger</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSubTab('complaints')}
+            className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              subTab === 'complaints'
+                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Ticket className="w-3.5 h-3.5 text-blue-700" />
+            <span>Complaint Settlements ({(ledgerData.complaint_settlements || []).length})</span>
+          </button>
+
+          {isAdminOrStaff && (
+            <button
+              type="button"
+              onClick={() => setSubTab('admin_summary')}
+              className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                subTab === 'admin_summary'
+                  ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Building className="w-3.5 h-3.5 text-indigo-700" />
+              <span>All Specialists Summary ({(ledgerData.technicians_summary || []).length})</span>
+            </button>
+          )}
         </div>
 
         {/* ================= 1. EXPENSES TAB ================= */}
@@ -1774,6 +2019,7 @@ export const TourLedgerSection = ({
                       <th className="py-2.5 px-3">Ref No</th>
                       <th className="py-2.5 px-3">Allocated By</th>
                       <th className="py-2.5 px-3 text-right">Amount</th>
+                      <th className="py-2.5 px-3 text-center">Status / Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1809,6 +2055,24 @@ export const TourLedgerSection = ({
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900 text-sm whitespace-nowrap">
                           {formatCur(adv.amount)}
                         </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {adv.status === 'Cancelled' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-500 font-bold border border-slate-200" title={adv.cancellation_reason || 'Cancelled'}>
+                              Cancelled
+                            </span>
+                          ) : (
+                            isAdminOrStaff && (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelAdvance(adv)}
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                                title="Cancel unspent advance with audit trail"
+                              >
+                                Cancel
+                              </button>
+                            )
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1837,6 +2101,7 @@ export const TourLedgerSection = ({
                       <th className="py-2.5 px-3">Notes</th>
                       <th className="py-2.5 px-3">Received By</th>
                       <th className="py-2.5 px-3 text-right">Amount</th>
+                      <th className="py-2.5 px-3 text-center">Status / Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1866,12 +2131,599 @@ export const TourLedgerSection = ({
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-800 text-sm">
                           {formatCur(st.amount)}
                         </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {st.status === 'Reversed' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-500 font-bold border border-slate-200" title={st.reversal_reason || 'Reversed'}>
+                              Reversed
+                            </span>
+                          ) : (
+                            isAdminOrStaff && (
+                              <button
+                                type="button"
+                                onClick={() => handleReverseSettlement(st)}
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                                title="Reverse settlement transaction preserving audit trail"
+                              >
+                                Reverse
+                              </button>
+                            )
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ================= 4. STATEMENT & LEDGER TAB ================= */}
+        {subTab === 'statement' && (
+          <div className="p-4 sm:p-5 space-y-4">
+            {/* Filter Bar & Controls */}
+            <div className="bg-slate-50/80 p-3 sm:p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Period Presets:</span>
+                  </span>
+                  {[
+                    { key: 'current_month', label: 'Current Month' },
+                    { key: 'previous_month', label: 'Previous Month' },
+                    { key: 'current_fy', label: 'Current Financial Year' },
+                    { key: 'previous_fy', label: 'Previous Financial Year' },
+                    { key: 'all_time', label: 'All Transactions' }
+                  ].map(p => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => handleApplyStatementPreset(p.key)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        statementPreset === p.key
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPrintStatementOpen(true)}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Statement (A4)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportStatementCSV}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export Excel / CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Date Pickers & Complaint Filter */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-200/70">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">From Date</label>
+                  <input
+                    type="date"
+                    value={statementFromDate}
+                    onChange={(e) => {
+                      setStatementPreset('custom');
+                      setStatementFromDate(e.target.value);
+                    }}
+                    className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">To Date</label>
+                  <input
+                    type="date"
+                    value={statementToDate}
+                    onChange={(e) => {
+                      setStatementPreset('custom');
+                      setStatementToDate(e.target.value);
+                    }}
+                    className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Complaint / Ticket</label>
+                  <select
+                    value={statementTicketId}
+                    onChange={(e) => setStatementTicketId(e.target.value)}
+                    className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="all">All Complaints & Tours</option>
+                    {(loadedComplaints || complaints).map(c => (
+                      <option key={c.id} value={c.ticket_id}>
+                        {c.ticket_id} — {c.customer_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Transaction Type</label>
+                  <select
+                    value={statementTxType}
+                    onChange={(e) => setStatementTxType(e.target.value)}
+                    className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="all">All Transaction Types</option>
+                    <option value="advance">Tour Advance Issued</option>
+                    <option value="expense">Approved Expense Claim</option>
+                    <option value="return">Cash Surplus Returned</option>
+                    <option value="reimbursement">Reimbursement Paid</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Statement Header Card */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">ECO GREEN SOLAR</span>
+                    <span className="text-slate-400">•</span>
+                    <span className="text-xs text-slate-300">Official Accounts Ledger</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black tracking-tight mt-0.5">
+                    TECHNICIAN ACCOUNT STATEMENT
+                  </h3>
+                </div>
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Statement Period</span>
+                  <span className="text-xs font-bold font-mono text-emerald-300">
+                    {statementFromDate ? formatIndianDateOnly(statementFromDate) : 'Beginning'} to {statementToDate ? formatIndianDateOnly(statementToDate) : 'Today'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div>
+                  <span className="text-slate-400">Specialist:</span>{' '}
+                  <strong className="text-white font-bold">{currentTech.name}</strong>{' '}
+                  {currentTech.phone && <span className="font-mono text-slate-300">({currentTech.phone})</span>}
+                  <span className="ml-2 text-[11px] text-emerald-400 font-medium">[{currentTech.area_zone || 'General Zone'}]</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Account:</span>{' '}
+                  <strong className="text-white font-bold">TECHNICIAN TOUR EXPENSES</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Account Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Opening Balance</span>
+                <strong className="text-base font-black font-mono text-slate-800 block mt-0.5">
+                  {formatCur(ledgerData.statement?.opening_balance || 0)}
+                </strong>
+                <span className="text-[9px] text-slate-400">Prior to {statementFromDate ? formatIndianDateOnly(statementFromDate) : 'period'}</span>
+              </div>
+
+              <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200">
+                <span className="text-[10px] uppercase font-bold text-blue-800 block">Total Advances (Debit)</span>
+                <strong className="text-base font-black font-mono text-blue-950 block mt-0.5">
+                  {formatCur(ledgerData.statement?.total_advances || 0)}
+                </strong>
+                <span className="text-[9px] text-blue-700">Given to specialist</span>
+              </div>
+
+              <div className="bg-rose-50/70 p-3 rounded-xl border border-rose-200">
+                <span className="text-[10px] uppercase font-bold text-rose-800 block">Approved Expenses</span>
+                <strong className="text-base font-black font-mono text-rose-950 block mt-0.5">
+                  {formatCur(ledgerData.statement?.total_approved_expenses || 0)}
+                </strong>
+                <span className="text-[9px] text-rose-700">Credit against advance</span>
+              </div>
+
+              <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                <span className="text-[10px] uppercase font-bold text-emerald-800 block">Surplus Returned</span>
+                <strong className="text-base font-black font-mono text-emerald-950 block mt-0.5">
+                  {formatCur(ledgerData.statement?.total_returns || 0)}
+                </strong>
+                <span className="text-[9px] text-emerald-700">Deposited to company</span>
+              </div>
+
+              <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200">
+                <span className="text-[10px] uppercase font-bold text-indigo-800 block">Reimbursements Paid</span>
+                <strong className="text-base font-black font-mono text-indigo-950 block mt-0.5">
+                  {formatCur(ledgerData.statement?.total_reimbursements || 0)}
+                </strong>
+                <span className="text-[9px] text-indigo-700">Paid to specialist</span>
+              </div>
+
+              <div className={`p-3 rounded-xl border ${
+                (ledgerData.statement?.closing_balance || 0) > 0
+                  ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200'
+                  : (ledgerData.statement?.closing_balance < 0 ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-emerald-50 border-emerald-200')
+              }`}>
+                <span className={`text-[10px] uppercase font-bold block ${
+                  (ledgerData.statement?.closing_balance || 0) > 0
+                    ? 'text-amber-900'
+                    : (ledgerData.statement?.closing_balance < 0 ? 'text-blue-900' : 'text-emerald-900')
+                }`}>
+                  Closing Balance
+                </span>
+                <strong className={`text-base font-black font-mono block mt-0.5 ${
+                  (ledgerData.statement?.closing_balance || 0) > 0
+                    ? 'text-amber-950'
+                    : (ledgerData.statement?.closing_balance < 0 ? 'text-blue-950' : 'text-emerald-950')
+                }`}>
+                  {formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}
+                </strong>
+                <span className="text-[9px] font-bold block">
+                  {ledgerData.statement?.status_label || 'Settled'}
+                </span>
+              </div>
+            </div>
+
+            {/* Prominent Directional Position Banner */}
+            <div className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+              (ledgerData.statement?.closing_balance || 0) > 0
+                ? 'bg-amber-50 border-amber-300 text-amber-950'
+                : (ledgerData.statement?.closing_balance < 0 ? 'bg-blue-50 border-blue-300 text-blue-950' : 'bg-emerald-50 border-emerald-300 text-emerald-950')
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold">
+                  {(ledgerData.statement?.closing_balance || 0) > 0 ? '⚠️' : ((ledgerData.statement?.closing_balance || 0) < 0 ? 'ℹ️' : '✅')}
+                </span>
+                <div>
+                  <span className="text-xs font-bold block">FINAL ACCOUNT STATUS:</span>
+                  <strong className="text-sm font-black tracking-wide">
+                    {ledgerData.statement?.position_label || 'SETTLED – ₹0 OUTSTANDING'}
+                  </strong>
+                </div>
+              </div>
+              <div className="text-xs font-mono font-bold">
+                Net Position: {formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}
+              </div>
+            </div>
+
+            {/* Detailed Chronological Ledger Table */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+              <div className="bg-slate-100/80 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Detailed Transaction Ledger ({(ledgerData.statement?.transactions || []).length} Records)
+                </span>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  Running balance updates chronologically
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="py-2.5 px-3">Date</th>
+                      <th className="py-2.5 px-3">Reference</th>
+                      <th className="py-2.5 px-3">Complaint / Tour</th>
+                      <th className="py-2.5 px-3">Type</th>
+                      <th className="py-2.5 px-3">Description</th>
+                      <th className="py-2.5 px-3 text-right">Debit (Given)</th>
+                      <th className="py-2.5 px-3 text-right">Credit (Expense/Return)</th>
+                      <th className="py-2.5 px-3 text-right font-black">Running Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {/* Opening Balance Row */}
+                    <tr className="bg-slate-50/60 font-semibold text-slate-600 italic">
+                      <td className="py-2 px-3 font-mono text-[11px]">{statementFromDate ? formatIndianDateOnly(statementFromDate) : '-'}</td>
+                      <td className="py-2 px-3 font-mono text-[11px]">OPENING</td>
+                      <td className="py-2 px-3">-</td>
+                      <td className="py-2 px-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-700 font-bold">
+                          Opening Balance
+                        </span>
+                      </td>
+                      <td className="py-2 px-3">Balance brought forward from previous period</td>
+                      <td className="py-2 px-3 text-right font-mono">-</td>
+                      <td className="py-2 px-3 text-right font-mono">-</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                        {formatCur(ledgerData.statement?.opening_balance || 0)}
+                      </td>
+                    </tr>
+
+                    {(ledgerData.statement?.transactions || []).length === 0 ? (
+                      <tr>
+                        <td colSpan="8" className="py-8 text-center text-slate-400">
+                          No transactions found within this statement period.
+                        </td>
+                      </tr>
+                    ) : (
+                      (ledgerData.statement?.transactions || []).map((tx, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
+                            {tx.date ? formatIndianDateOnly(tx.date) : '-'}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 font-bold">
+                            {tx.reference_no}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-800 font-semibold">
+                            {tx.ticket_id ? (
+                              <span className="font-mono text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                                {tx.ticket_id}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">General Tour</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              tx.tx_type === 'advance' ? 'bg-blue-100 text-blue-800' :
+                              tx.tx_type === 'expense' ? 'bg-rose-100 text-rose-800' :
+                              tx.tx_type === 'return' ? 'bg-emerald-100 text-emerald-800' :
+                              tx.tx_type === 'reimbursement' ? 'bg-indigo-100 text-indigo-800' :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {tx.type_label}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700 max-w-xs truncate" title={tx.description}>
+                            {tx.description}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900 whitespace-nowrap">
+                            {tx.debit > 0 ? formatCur(tx.debit) : '-'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-900 whitespace-nowrap">
+                            {tx.credit > 0 ? formatCur(tx.credit) : '-'}
+                          </td>
+                          <td className={`py-2.5 px-3 text-right font-mono font-black text-sm whitespace-nowrap ${
+                            tx.running_balance > 0 ? 'text-amber-900' : (tx.running_balance < 0 ? 'text-blue-900' : 'text-slate-700')
+                          }`}>
+                            {formatCur(Math.abs(tx.running_balance))}
+                            <span className="text-[10px] font-normal text-slate-500 ml-1">
+                              {tx.running_balance > 0 ? 'Rec' : (tx.running_balance < 0 ? 'Pay' : 'Set')}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Reconciliation Audit Formula Footer */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>Accounting Integrity Check:</strong> Opening Balance ({formatCur(ledgerData.statement?.opening_balance || 0)}) + Advances ({formatCur(ledgerData.statement?.total_advances || 0)}) - Expenses ({formatCur(ledgerData.statement?.total_approved_expenses || 0)}) - Returns ({formatCur(ledgerData.statement?.total_returns || 0)}) + Reimbursements ({formatCur(ledgerData.statement?.total_reimbursements || 0)}) = Closing Balance ({formatCur(ledgerData.statement?.closing_balance || 0)})
+                </span>
+              </div>
+              <span className="px-2 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[10px] whitespace-nowrap self-start sm:self-auto">
+                ✓ Reconciled & Audited
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ================= 5. COMPLAINT SETTLEMENTS TAB ================= */}
+        {subTab === 'complaints' && (
+          <div className="p-4 sm:p-5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">Complaint / Tour Settlements</h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Track advance vs approved expenses and settlement status for individual complaint visits
+                </p>
+              </div>
+              <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold font-mono">
+                {(ledgerData.complaint_settlements || []).length} Complaint Tours
+              </span>
+            </div>
+
+            {(ledgerData.complaint_settlements || []).length === 0 ? (
+              <div className="text-center py-12 px-4 text-slate-400">
+                <Ticket className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                <p className="text-xs">No complaint tours logged yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {(ledgerData.complaint_settlements || []).map((cs) => (
+                  <div key={cs.ticket_id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3 hover:border-slate-300 transition-all">
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-blue-800 text-xs bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                            {cs.ticket_id}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            cs.status === 'Settled' ? 'bg-emerald-100 text-emerald-800' :
+                            cs.status === 'Return Pending' ? 'bg-amber-100 text-amber-800' :
+                            cs.status === 'Reimbursement Due' ? 'bg-blue-100 text-blue-800' :
+                            'bg-slate-100 text-slate-700'
+                          }`}>
+                            {cs.status}
+                          </span>
+                        </div>
+                        <h5 className="font-bold text-slate-900 text-sm mt-1">
+                          {cs.customer_name} {cs.city ? `(${cs.city})` : ''}
+                        </h5>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Net Balance</span>
+                        <strong className={`font-mono text-sm font-black ${
+                          cs.net_balance > 0 ? 'text-amber-900' : (cs.net_balance < 0 ? 'text-blue-900' : 'text-emerald-900')
+                        }`}>
+                          {formatCur(Math.abs(cs.net_balance))}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="bg-slate-50 p-2 rounded-xl">
+                        <span className="text-[10px] text-slate-500 block">Advance</span>
+                        <strong className="font-mono font-bold text-slate-800">{formatCur(cs.advance_amount)}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-2 rounded-xl">
+                        <span className="text-[10px] text-slate-500 block">Approved Expense</span>
+                        <strong className="font-mono font-bold text-rose-900">{formatCur(cs.approved_expense)}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-2 rounded-xl">
+                        <span className="text-[10px] text-slate-500 block">Returned</span>
+                        <strong className="font-mono font-bold text-emerald-800">{formatCur(cs.returned_amount)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-100 text-xs font-semibold text-slate-700 flex items-center justify-between">
+                      <span>Result:</span>
+                      <span className="font-bold">{cs.settlement_result}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= 6. ALL SPECIALISTS SUMMARY TAB (ADMIN ONLY) ================= */}
+        {isAdminOrStaff && subTab === 'admin_summary' && (
+          <div className="p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">All Technicians Accounts Summary & KPIs</h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Consolidated company-wide specialist advance, expense, and settlement overview
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportConsolidatedCSV}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Consolidated Report (Excel)</span>
+              </button>
+            </div>
+
+            {/* 5 Admin Financial KPIs */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="bg-blue-50/80 p-3 rounded-xl border border-blue-200">
+                <span className="text-[10px] uppercase font-bold text-blue-800 block">Total Advances Issued</span>
+                <strong className="text-lg font-black font-mono text-blue-950 block mt-1">
+                  {formatCur(ledgerData.company_kpis?.total_advances_outstanding || 0)}
+                </strong>
+                <span className="text-[10px] text-blue-700">Company tour allocation</span>
+              </div>
+
+              <div className="bg-rose-50/80 p-3 rounded-xl border border-rose-200">
+                <span className="text-[10px] uppercase font-bold text-rose-800 block">Approved Expenses</span>
+                <strong className="text-lg font-black font-mono text-rose-950 block mt-1">
+                  {formatCur(ledgerData.company_kpis?.total_approved_expenses || 0)}
+                </strong>
+                <span className="text-[10px] text-rose-700">Verified voucher claims</span>
+              </div>
+
+              <div className="bg-amber-50/80 p-3 rounded-xl border border-amber-200">
+                <span className="text-[10px] uppercase font-bold text-amber-800 block">Total Returnable</span>
+                <strong className="text-lg font-black font-mono text-amber-950 block mt-1">
+                  {formatCur(ledgerData.company_kpis?.total_returnable || 0)}
+                </strong>
+                <span className="text-[10px] text-amber-700">Owed by technicians</span>
+              </div>
+
+              <div className="bg-indigo-50/80 p-3 rounded-xl border border-indigo-200">
+                <span className="text-[10px] uppercase font-bold text-indigo-800 block">Reimbursements Payable</span>
+                <strong className="text-lg font-black font-mono text-indigo-950 block mt-1">
+                  {formatCur(ledgerData.company_kpis?.total_reimbursement_payable || 0)}
+                </strong>
+                <span className="text-[10px] text-indigo-700">Owed to technicians</span>
+              </div>
+
+              <div className="bg-emerald-50/80 p-3 rounded-xl border border-emerald-200">
+                <span className="text-[10px] uppercase font-bold text-emerald-800 block">Completed Settlements</span>
+                <strong className="text-lg font-black font-mono text-emerald-950 block mt-1">
+                  {ledgerData.company_kpis?.total_settled_tours || 0}
+                </strong>
+                <span className="text-[10px] text-emerald-700">Fully squared tours</span>
+              </div>
+            </div>
+
+            {/* Consolidated Technicians Table */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="py-2.5 px-3">Specialist</th>
+                      <th className="py-2.5 px-3 text-right">Advances</th>
+                      <th className="py-2.5 px-3 text-right">Approved Exp</th>
+                      <th className="py-2.5 px-3 text-right">Returned</th>
+                      <th className="py-2.5 px-3 text-right">Reimbursed</th>
+                      <th className="py-2.5 px-3 text-right">Recoverable</th>
+                      <th className="py-2.5 px-3 text-right">Payable</th>
+                      <th className="py-2.5 px-3 text-center">Net Status</th>
+                      <th className="py-2.5 px-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(ledgerData.technicians_summary || []).map((t) => (
+                      <tr key={t.technician_id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <strong className="text-slate-900 block font-bold">{t.name}</strong>
+                          <span className="text-[10px] text-slate-500 font-mono">{t.phone || '-'}</span>
+                          <span className="text-[10px] text-slate-400 block">{t.area_zone || 'Field'}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
+                          {formatCur(t.total_advance)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-900">
+                          {formatCur(t.approved_expenses)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-800">
+                          {formatCur(t.total_returned)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-indigo-900">
+                          {formatCur(t.total_reimbursed)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-950">
+                          {t.recoverable_from_tech > 0 ? formatCur(t.recoverable_from_tech) : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-950">
+                          {t.payable_to_tech > 0 ? formatCur(t.payable_to_tech) : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            t.status_label === 'SETTLED' ? 'bg-emerald-100 text-emerald-800' :
+                            t.status_label === 'PAYABLE BY TECHNICIAN' ? 'bg-amber-100 text-amber-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {t.status_label}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleTechChange(String(t.technician_id));
+                              setSubTab('statement');
+                            }}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                          >
+                            View Statement
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1922,9 +2774,40 @@ export const TourLedgerSection = ({
                 </div>
               )}
 
+              {existingRecoverable > 0 && (
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between text-amber-900 font-bold text-xs">
+                    <span>Existing Recoverable Balance:</span>
+                    <span className="font-mono text-sm">{formatCur(existingRecoverable)}</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700">
+                    This specialist currently holds an unreturned surplus of {formatCur(existingRecoverable)} from previous tours.
+                  </p>
+                  {advanceForm.amount && parseFloat(advanceForm.amount) > 0 && (
+                    <div className="pt-1 border-t border-amber-200/60 flex items-center justify-between text-xs font-bold text-amber-950">
+                      <span>Recommended Net Advance to Issue:</span>
+                      <span className="font-mono text-emerald-800 text-sm">
+                        {formatCur(Math.max(0, parseFloat(advanceForm.amount) - existingRecoverable))}
+                      </span>
+                    </div>
+                  )}
+                  <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={advanceAdjustBalance}
+                      onChange={(e) => setAdvanceAdjustBalance(e.target.checked)}
+                      className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-[11px] text-slate-700 font-semibold">
+                      Deduct {formatCur(existingRecoverable)} previous balance from this advance (Record transparent adjustment)
+                    </span>
+                  </label>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Advance Amount (₹) *
+                  {advanceAdjustBalance && existingRecoverable > 0 ? 'Gross Requirement (₹) *' : 'Advance Amount (₹) *'}
                 </label>
                 <input
                   type="number"
@@ -1936,6 +2819,11 @@ export const TourLedgerSection = ({
                   onChange={(e) => setAdvanceForm(prev => ({ ...prev, amount: e.target.value }))}
                   className="w-full text-base font-bold font-mono px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {advanceAdjustBalance && existingRecoverable > 0 && advanceForm.amount && (
+                  <p className="text-[10px] text-emerald-700 font-semibold mt-1">
+                    Net cash to be handed over: {formatCur(Math.max(0, parseFloat(advanceForm.amount) - existingRecoverable))}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2067,27 +2955,6 @@ export const TourLedgerSection = ({
               )}
               {/* Top Configuration: Ticket + Date (+ Specialist if Admin) */}
               <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-slate-200 space-y-3">
-                {isAdminOrStaff && (
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-800 mb-1">
-                      Select Specialist / Technician *
-                    </label>
-                    <select
-                      required
-                      value={expenseForm.technician_id}
-                      onChange={(e) => setExpenseForm(prev => ({ ...prev, technician_id: e.target.value }))}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 cursor-pointer"
-                    >
-                      <option value="">-- Choose Specialist --</option>
-                      {loadedTechs.map(t => (
-                        <option key={t.id} value={t.id}>
-                          👤 {t.name} ({t.area_zone || 'Field Specialist'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* 1. Ticket Selector (Top Priority - Dedicated Voucher per Ticket) */}
                   <div>
@@ -2108,7 +2975,7 @@ export const TourLedgerSection = ({
                       ))}
                     </select>
                     <p className="text-[10px] text-slate-500 mt-0.5">
-                      Is ticket ke sabhi expenses ek single dedicated voucher slip par aayenge.
+                      All expenses logged against this ticket will be consolidated onto a single dedicated voucher slip.
                     </p>
                   </div>
 
@@ -2914,6 +3781,169 @@ export const TourLedgerSection = ({
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: PRINTABLE ACCOUNT STATEMENT (A4) ================= */}
+      {isPrintStatementOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs print:p-0 print:bg-white print:static">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl p-4 sm:p-6 print:p-0 print:shadow-none print:max-w-none print:max-h-none print:w-full">
+            {/* Top Modal Controls (Hidden in Print) */}
+            <div className="print:hidden flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <Printer className="w-5 h-5 text-emerald-600" />
+                <h4 className="font-bold text-slate-900 text-sm">Print Account Statement (A4 Layout)</h4>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Now</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPrintStatementOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Official Printable Statement Sheet */}
+            <div className="p-4 sm:p-6 border border-slate-300 rounded-xl print:border-none print:p-0 space-y-4 text-slate-900 font-sans">
+              {/* Header: Logo + Address */}
+              <div className="flex items-start justify-between border-b-2 border-slate-900 pb-3">
+                <div className="flex items-center gap-3">
+                  <img 
+                    src={GREEN_ENERGY_LOGO_BASE64} 
+                    alt="Eco Green Solar" 
+                    className="h-12 w-auto object-contain"
+                  />
+                  <div>
+                    <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">ECO GREEN SOLAR</h2>
+                    <p className="text-[10px] text-slate-600 leading-tight">
+                      Plot No. 4, Gajanand Industrial, Near RK Exotica, Lodhika-360021<br/>
+                      Support Desk & Field Operations • info@ecogreensolar.co.in
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-xs font-black tracking-wider uppercase bg-slate-900 text-white px-2.5 py-1 rounded inline-block">
+                    TECHNICIAN ACCOUNT STATEMENT
+                  </h3>
+                  <p className="text-[10px] font-mono text-slate-500 mt-1">
+                    Date: {formatIndianDateOnly(new Date().toISOString())}
+                  </p>
+                </div>
+              </div>
+
+              {/* Specialist Meta Block */}
+              <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-200 pb-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Specialist Details</span>
+                  <strong className="text-sm font-bold text-slate-900 block">{currentTech.name}</strong>
+                  <span className="text-[11px] text-slate-600 font-mono">Phone: {currentTech.phone || 'N/A'}</span>
+                  <span className="text-[11px] text-slate-600 block">Zone: {currentTech.area_zone || 'General Field Zone'}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Statement Period</span>
+                  <strong className="text-xs font-mono font-bold text-slate-900 block">
+                    {statementFromDate ? formatIndianDateOnly(statementFromDate) : 'Beginning'} to {statementToDate ? formatIndianDateOnly(statementToDate) : 'Current Date'}
+                  </strong>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">Account: Technician Tour Advance & Expense</span>
+                </div>
+              </div>
+
+              {/* Financial Summary Table */}
+              <table className="w-full text-xs border border-slate-300 border-collapse mb-2">
+                <thead>
+                  <tr className="bg-slate-100 font-bold border-b border-slate-300 text-[10px] uppercase text-slate-700">
+                    <th className="p-2 text-left border-r border-slate-300">Opening Balance</th>
+                    <th className="p-2 text-right border-r border-slate-300">Total Advances (Debit)</th>
+                    <th className="p-2 text-right border-r border-slate-300">Approved Expenses (Credit)</th>
+                    <th className="p-2 text-right border-r border-slate-300">Returned (Credit)</th>
+                    <th className="p-2 text-right border-r border-slate-300">Reimbursements (Debit)</th>
+                    <th className="p-2 text-right">Closing Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="font-mono text-xs font-bold">
+                    <td className="p-2 border-r border-slate-300">{formatCur(ledgerData.statement?.opening_balance || 0)}</td>
+                    <td className="p-2 text-right border-r border-slate-300 text-blue-900">{formatCur(ledgerData.statement?.total_advances || 0)}</td>
+                    <td className="p-2 text-right border-r border-slate-300 text-rose-900">{formatCur(ledgerData.statement?.total_approved_expenses || 0)}</td>
+                    <td className="p-2 text-right border-r border-slate-300 text-emerald-800">{formatCur(ledgerData.statement?.total_returns || 0)}</td>
+                    <td className="p-2 text-right border-r border-slate-300 text-indigo-900">{formatCur(ledgerData.statement?.total_reimbursements || 0)}</td>
+                    <td className="p-2 text-right font-black text-sm">{formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Prominent Position Box */}
+              <div className="p-2.5 rounded-lg border-2 border-slate-800 bg-slate-50 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">FINAL ACCOUNT SETTLEMENT POSITION</span>
+                <strong className="text-sm font-black tracking-wide text-slate-950 uppercase">
+                  {ledgerData.statement?.position_label || 'SETTLED – ₹0 OUTSTANDING'}
+                </strong>
+              </div>
+
+              {/* Detailed Transactions Table */}
+              <table className="w-full text-[11px] border border-slate-300 border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 font-bold border-b border-slate-300 text-[10px] uppercase text-slate-700">
+                    <th className="p-1.5 text-left border-r border-slate-300">Date</th>
+                    <th className="p-1.5 text-left border-r border-slate-300">Reference</th>
+                    <th className="p-1.5 text-left border-r border-slate-300">Ticket / Tour</th>
+                    <th className="p-1.5 text-left border-r border-slate-300">Type</th>
+                    <th className="p-1.5 text-left border-r border-slate-300">Particulars / Details</th>
+                    <th className="p-1.5 text-right border-r border-slate-300">Debit (₹)</th>
+                    <th className="p-1.5 text-right border-r border-slate-300">Credit (₹)</th>
+                    <th className="p-1.5 text-right">Balance (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  <tr className="bg-slate-50/50 italic text-slate-600">
+                    <td className="p-1.5 border-r border-slate-300 font-mono">{statementFromDate ? formatIndianDateOnly(statementFromDate) : '-'}</td>
+                    <td className="p-1.5 border-r border-slate-300 font-mono">B/F</td>
+                    <td className="p-1.5 border-r border-slate-300">-</td>
+                    <td className="p-1.5 border-r border-slate-300">Opening Balance</td>
+                    <td className="p-1.5 border-r border-slate-300">Balance brought forward from prior period</td>
+                    <td className="p-1.5 text-right border-r border-slate-300 font-mono">-</td>
+                    <td className="p-1.5 text-right border-r border-slate-300 font-mono">-</td>
+                    <td className="p-1.5 text-right font-mono font-bold text-slate-900">{formatCur(ledgerData.statement?.opening_balance || 0)}</td>
+                  </tr>
+
+                  {(ledgerData.statement?.transactions || []).map((tx, idx) => (
+                    <tr key={idx} className="border-b border-slate-200">
+                      <td className="p-1.5 border-r border-slate-300 font-mono whitespace-nowrap">{tx.date ? formatIndianDateOnly(tx.date) : '-'}</td>
+                      <td className="p-1.5 border-r border-slate-300 font-mono font-bold">{tx.reference_no}</td>
+                      <td className="p-1.5 border-r border-slate-300 font-mono">{tx.ticket_id || 'General'}</td>
+                      <td className="p-1.5 border-r border-slate-300 font-semibold">{tx.type_label}</td>
+                      <td className="p-1.5 border-r border-slate-300 max-w-[200px] truncate">{tx.description}</td>
+                      <td className="p-1.5 text-right border-r border-slate-300 font-mono font-bold text-blue-900">{tx.debit > 0 ? formatCur(tx.debit) : '-'}</td>
+                      <td className="p-1.5 text-right border-r border-slate-300 font-mono font-bold text-emerald-900">{tx.credit > 0 ? formatCur(tx.credit) : '-'}</td>
+                      <td className="p-1.5 text-right font-mono font-black">{formatCur(Math.abs(tx.running_balance))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* 4 Official Office Signatures */}
+              <div className="grid grid-cols-4 gap-4 pt-10 text-center text-[10px] font-bold text-slate-700">
+                <div className="border-t border-slate-800 pt-1">Prepared By (Accounts)</div>
+                <div className="border-t border-slate-800 pt-1">Checked & Verified By</div>
+                <div className="border-t border-slate-800 pt-1">Approved By (Supervisor)</div>
+                <div className="border-t border-slate-800 pt-1">Specialist / Receiver's Signature</div>
+              </div>
+
+              <div className="text-[9px] text-slate-400 text-center pt-2">
+                Generated from Eco Green Solar CMS • Document is system audited and strictly reconciled with ledger books.
               </div>
             </div>
           </div>

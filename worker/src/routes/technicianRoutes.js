@@ -4,6 +4,294 @@ import { authenticateToken, requireRole } from '../auth.js';
 
 const technicianRoutes = new Hono();
 
+// Helper: Calculate Centralized Financial Ledger & Statement
+function buildLedgerAndStatement(advances, expenses, settlements, options = {}) {
+  const { fromDate, toDate, ticketId, transactionType, statusFilter } = options;
+
+  const events = [];
+
+  // 1. Advance Issued Events
+  for (const adv of advances) {
+    if ((adv.status || '').toLowerCase() === 'cancelled') continue;
+    const advAmt = parseFloat(adv.amount || 0);
+    if (advAmt <= 0) continue;
+
+    const ref = adv.reference_no || `ADV-${String(adv.id).padStart(6, '0')}`;
+    events.push({
+      id: `adv_${adv.id}`,
+      raw_id: adv.id,
+      entity_type: 'advance',
+      date: adv.allocated_at || adv.created_at || new Date().toISOString(),
+      reference_no: ref,
+      technician_id: String(adv.technician_id),
+      technician_name: adv.technician_name || 'Technician',
+      ticket_id: adv.ticket_id || null,
+      complaint_id: adv.complaint_id || null,
+      transaction_type: 'Advance Issued',
+      description: `Tour Advance: ${adv.purpose || adv.tour_title || 'General Tour'}`,
+      payment_mode: adv.payment_mode || 'Cash',
+      debit: advAmt,
+      credit: 0,
+      status: adv.status || 'Active',
+      created_by: adv.allocated_by || adv.allocated_by_name || 'Admin',
+      notes: adv.notes || null
+    });
+  }
+
+  // 2. Expense Vouchers (grouped by voucher_no to maintain voucher identity)
+  const voucherMap = new Map();
+  for (const exp of expenses) {
+    const vNo = exp.voucher_no || `EXP-${exp.id}`;
+    if (!voucherMap.has(vNo)) {
+      voucherMap.set(vNo, {
+        voucher_no: vNo,
+        technician_id: String(exp.technician_id),
+        technician_name: exp.technician_name || 'Technician',
+        ticket_id: exp.ticket_id || null,
+        complaint_id: exp.complaint_id || null,
+        expense_date: exp.expense_date || exp.created_at,
+        created_at: exp.created_at,
+        created_by: exp.created_by,
+        approved_by_name: exp.approved_by_name,
+        receipt_url: exp.receipt_url,
+        items: [],
+        total_amount: 0,
+        approved_amount: 0,
+        status: exp.status || 'Submitted'
+      });
+    }
+    const grp = voucherMap.get(vNo);
+    const amt = parseFloat(exp.amount || 0);
+    grp.items.push(exp);
+    grp.total_amount += amt;
+    const isAppr = (exp.status || '').toLowerCase() === 'approved' || (exp.status || '').toLowerCase() === 'verified';
+    if (isAppr) grp.approved_amount += amt;
+    grp.status = exp.status;
+  }
+
+  for (const vch of voucherMap.values()) {
+    const isApproved = (vch.status || '').toLowerCase() === 'approved' || (vch.status || '').toLowerCase() === 'verified';
+    const isRejected = (vch.status || '').toLowerCase() === 'rejected';
+
+    const catList = Array.from(new Set(vch.items.map(it => it.category).filter(Boolean)));
+    const catDesc = catList.join(' + ') || 'Tour Expense';
+
+    if (isApproved && vch.approved_amount > 0) {
+      events.push({
+        id: `vch_${vch.voucher_no}`,
+        raw_id: vch.voucher_no,
+        entity_type: 'expense_voucher',
+        date: vch.expense_date || vch.created_at || new Date().toISOString(),
+        reference_no: vch.voucher_no,
+        technician_id: vch.technician_id,
+        technician_name: vch.technician_name,
+        ticket_id: vch.ticket_id,
+        complaint_id: vch.complaint_id,
+        transaction_type: 'Expense Approved',
+        description: `Approved Tour Expense: ${catDesc} (${vch.items.length} line items)`,
+        payment_mode: 'Voucher Claim',
+        debit: 0,
+        credit: vch.approved_amount,
+        status: 'Approved',
+        created_by: vch.approved_by_name || 'Admin',
+        receipt_url: vch.receipt_url,
+        items: vch.items
+      });
+    } else if (isRejected) {
+      events.push({
+        id: `vch_${vch.voucher_no}`,
+        raw_id: vch.voucher_no,
+        entity_type: 'expense_voucher',
+        date: vch.expense_date || vch.created_at || new Date().toISOString(),
+        reference_no: vch.voucher_no,
+        technician_id: vch.technician_id,
+        technician_name: vch.technician_name,
+        ticket_id: vch.ticket_id,
+        complaint_id: vch.complaint_id,
+        transaction_type: 'Expense Rejected',
+        description: `Rejected Tour Expense: ${catDesc}`,
+        payment_mode: 'Voucher Claim',
+        debit: 0,
+        credit: 0,
+        status: 'Rejected',
+        created_by: vch.approved_by_name || 'Admin',
+        receipt_url: vch.receipt_url,
+        items: vch.items
+      });
+    } else {
+      events.push({
+        id: `vch_${vch.voucher_no}`,
+        raw_id: vch.voucher_no,
+        entity_type: 'expense_voucher',
+        date: vch.expense_date || vch.created_at || new Date().toISOString(),
+        reference_no: vch.voucher_no,
+        technician_id: vch.technician_id,
+        technician_name: vch.technician_name,
+        ticket_id: vch.ticket_id,
+        complaint_id: vch.complaint_id,
+        transaction_type: 'Expense Submitted',
+        description: `Submitted Tour Expense: ${catDesc} (Pending Approval)`,
+        payment_mode: 'Voucher Claim',
+        debit: 0,
+        credit: 0,
+        status: 'Pending',
+        created_by: vch.created_by || 'Technician',
+        receipt_url: vch.receipt_url,
+        items: vch.items
+      });
+    }
+  }
+
+  // 3. Settlement Events (Returns, Reimbursements, Adjustments, Reversals)
+  for (const stl of settlements) {
+    if ((stl.status || '').toLowerCase() === 'cancelled') continue;
+    const isReversed = (stl.status || '').toLowerCase() === 'reversed';
+    const retAmt = parseFloat(stl.returned_amount || 0);
+    const reimAmt = parseFloat(stl.reimbursed_amount || 0);
+    const adjAmt = parseFloat(stl.adjustment_amount || 0);
+
+    if (retAmt > 0) {
+      events.push({
+        id: `stl_ret_${stl.id}`,
+        raw_id: stl.id,
+        entity_type: 'settlement_return',
+        date: stl.settled_at || stl.created_at || new Date().toISOString(),
+        reference_no: stl.reference_no || `RET-${String(stl.id).padStart(6, '0')}`,
+        technician_id: String(stl.technician_id),
+        technician_name: stl.technician_name || 'Technician',
+        ticket_id: stl.ticket_id || null,
+        complaint_id: null,
+        transaction_type: isReversed ? 'Return Reversed' : 'Amount Returned',
+        description: isReversed
+          ? `Reversal of Return ${stl.reference_no || ''}: ${stl.reversal_reason || 'Reversed'}`
+          : `Amount Returned by Technician (${stl.payment_mode || 'Cash'}) - ${stl.notes || 'Tour settlement return'}`,
+        payment_mode: stl.payment_mode || 'Cash',
+        debit: isReversed ? retAmt : 0,
+        credit: isReversed ? 0 : retAmt,
+        status: stl.status || 'Settled',
+        created_by: stl.settled_by || 'Staff',
+        notes: stl.notes
+      });
+    }
+
+    if (reimAmt > 0) {
+      events.push({
+        id: `stl_reim_${stl.id}`,
+        raw_id: stl.id,
+        entity_type: 'settlement_reimbursement',
+        date: stl.settled_at || stl.created_at || new Date().toISOString(),
+        reference_no: stl.reference_no || `REIM-${String(stl.id).padStart(6, '0')}`,
+        technician_id: String(stl.technician_id),
+        technician_name: stl.technician_name || 'Technician',
+        ticket_id: stl.ticket_id || null,
+        complaint_id: null,
+        transaction_type: isReversed ? 'Reimbursement Reversed' : 'Reimbursement Paid',
+        description: isReversed
+          ? `Reversal of Reimbursement ${stl.reference_no || ''}: ${stl.reversal_reason || 'Reversed'}`
+          : `Reimbursement Paid to Technician (${stl.payment_mode || 'Bank Transfer'}) - ${stl.notes || 'Tour expense reimbursement'}`,
+        payment_mode: stl.payment_mode || 'Bank Transfer',
+        debit: isReversed ? 0 : reimAmt,
+        credit: isReversed ? reimAmt : 0,
+        status: stl.status || 'Settled',
+        created_by: stl.settled_by || 'Staff',
+        notes: stl.notes
+      });
+    }
+
+    if (adjAmt !== 0) {
+      events.push({
+        id: `stl_adj_${stl.id}`,
+        raw_id: stl.id,
+        entity_type: 'settlement_adjustment',
+        date: stl.settled_at || stl.created_at || new Date().toISOString(),
+        reference_no: stl.reference_no || `ADJ-${String(stl.id).padStart(6, '0')}`,
+        technician_id: String(stl.technician_id),
+        technician_name: stl.technician_name || 'Technician',
+        ticket_id: stl.ticket_id || null,
+        complaint_id: null,
+        transaction_type: 'Adjustment',
+        description: `Balance Adjustment: ${stl.notes || 'Tour balance adjustment'}`,
+        payment_mode: 'Adjustment',
+        debit: adjAmt > 0 ? adjAmt : 0,
+        credit: adjAmt < 0 ? Math.abs(adjAmt) : 0,
+        status: stl.status || 'Settled',
+        created_by: stl.settled_by || 'Staff',
+        notes: stl.notes
+      });
+    }
+  }
+
+  // 4. Chronological sort (oldest to newest for running balance)
+  events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // 5. Compute Opening Balance and Statement for specified date range
+  let openingBalance = 0;
+  const filteredEvents = [];
+
+  const fromTime = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
+  const toTime = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
+
+  for (const ev of events) {
+    const evTime = new Date(ev.date).getTime();
+
+    if (ticketId && String(ev.ticket_id || '').toLowerCase() !== String(ticketId).toLowerCase()) {
+      continue;
+    }
+
+    if (transactionType && transactionType !== 'all') {
+      if (!ev.transaction_type.toLowerCase().includes(transactionType.toLowerCase())) {
+        continue;
+      }
+    }
+
+    if (fromTime && evTime < fromTime) {
+      openingBalance += (ev.debit - ev.credit);
+    } else if (toTime && evTime > toTime) {
+      continue;
+    } else {
+      filteredEvents.push(ev);
+    }
+  }
+
+  let currentRunning = openingBalance;
+  let periodDebit = 0;
+  let periodCredit = 0;
+
+  for (const ev of filteredEvents) {
+    currentRunning = currentRunning + ev.debit - ev.credit;
+    ev.running_balance = currentRunning;
+    periodDebit += ev.debit;
+    periodCredit += ev.credit;
+  }
+
+  const closingBalance = currentRunning;
+  const displayTransactions = [...filteredEvents].reverse();
+
+  let finalPositionType = 'settled';
+  let finalPositionLabel = 'Settled — ₹0 Outstanding';
+  if (closingBalance > 0) {
+    finalPositionType = 'recoverable';
+    finalPositionLabel = `₹${closingBalance.toLocaleString('en-IN')} Returnable by Technician`;
+  } else if (closingBalance < 0) {
+    finalPositionType = 'payable';
+    finalPositionLabel = `₹${Math.abs(closingBalance).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
+  }
+
+  return {
+    opening_balance: openingBalance,
+    period_debit: periodDebit,
+    period_credit: periodCredit,
+    closing_balance: closingBalance,
+    final_position: {
+      type: finalPositionType,
+      amount: Math.abs(closingBalance),
+      label: finalPositionLabel
+    },
+    transactions: displayTransactions,
+    all_chronological_events: events
+  };
+}
+
 // GET /api/technicians
 technicianRoutes.get('/technicians', authenticateToken, async (c) => {
   try {
@@ -89,21 +377,130 @@ technicianRoutes.get('/tour-vouchers/next-sequence', authenticateToken, async (c
       c.env,
       c.executionCtx
     );
-    if (!res.rows.length) return c.json({ next_voucher_no: `${prefix}000101` });
+    if (!res.rows.length) return c.json({ next_voucher_no: `${prefix}000101`, next_seq: '000101' });
     const lastNo = res.rows[0].voucher_no;
     const num = parseInt(lastNo.split('-').pop(), 10) || 100;
-    return c.json({ next_voucher_no: `${prefix}${String(num + 1).padStart(6, '0')}` });
+    const nextSeq = String(num + 1).padStart(6, '0');
+    return c.json({ next_voucher_no: `${prefix}${nextSeq}`, next_seq: nextSeq });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
 });
 
-// GET /api/tour-ledger
+// PUT /api/tour-vouchers/:voucherNo - Update an existing tour expense voucher and items
+technicianRoutes.put('/tour-vouchers/:voucherNo', authenticateToken, async (c) => {
+  try {
+    const voucherNo = c.req.param('voucherNo');
+    const body = await c.req.json().catch(() => ({}));
+    const user = c.get('user');
+    const { items, ticket_id, complaint_id, expense_date, receipt_url, receipt_name } = body;
+
+    const existing = await query(
+      'SELECT * FROM technician_tour_expenses WHERE voucher_no = $1',
+      [voucherNo],
+      c.env,
+      c.executionCtx
+    );
+
+    if (!existing.rows || existing.rows.length === 0) {
+      return c.json({ error: 'Voucher not found' }, 404);
+    }
+
+    const first = existing.rows[0];
+    const targetTechId = first.technician_id;
+    const tourAdvanceId = first.tour_advance_id;
+    const prevStatus = first.status || 'Pending';
+
+    // Delete existing records under this voucher_no
+    await query('DELETE FROM technician_tour_expenses WHERE voucher_no = $1', [voucherNo], c.env, c.executionCtx);
+
+    const validItems = Array.isArray(items) && items.length > 0
+      ? items
+      : [{
+          category: body.category || 'Other Expense',
+          amount: body.amount,
+          description: body.description || body.title || ''
+        }];
+
+    const created = [];
+    for (const it of validItems) {
+      const itAmt = parseFloat(it.amount);
+      if (!itAmt || itAmt <= 0) continue;
+
+      const r = await query(`
+        INSERT INTO technician_tour_expenses (
+          technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+          receipt_url, receipt_name, ticket_id, complaint_id, status, created_by, approved_by_name
+        ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING *
+      `, [
+        String(targetTechId).trim(),
+        tourAdvanceId || null,
+        voucherNo,
+        it.expense_date || expense_date || first.expense_date || null,
+        it.category || 'Other Expense',
+        itAmt,
+        it.description || it.title || '',
+        it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
+        it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
+        it.ticket_id || ticket_id || first.ticket_id || null,
+        it.complaint_id || complaint_id || first.complaint_id || null,
+        prevStatus,
+        first.created_by || user.name || 'Technician',
+        first.approved_by_name || null
+      ], c.env, c.executionCtx);
+
+      if (r.rows[0]) created.push(r.rows[0]);
+    }
+
+    return c.json({ success: true, updated: created.length, voucher_no: voucherNo, items: created });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// PUT /api/tour-vouchers/:voucherNo/status - Batch approve or reject all items in a voucher
+technicianRoutes.put('/tour-vouchers/:voucherNo/status', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const voucherNo = c.req.param('voucherNo');
+    const body = await c.req.json().catch(() => ({}));
+    const user = c.get('user');
+    const { status, rejection_reason } = body;
+
+    if (!['Approved', 'Rejected', 'Pending'].map(s => s.toLowerCase()).includes((status || '').toLowerCase())) {
+      return c.json({ error: 'Invalid status' }, 400);
+    }
+
+    const normStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    await query(
+      `UPDATE technician_tour_expenses
+       SET status = $1, approved_by_name = $2, approved_at = CURRENT_TIMESTAMP, rejection_reason = $3
+       WHERE voucher_no = $4`,
+      [normStatus, user.name || 'Staff', rejection_reason || null, voucherNo],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ success: true, voucher_no: voucherNo, status: normStatus });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/tour-ledger - Unified Ledger, Account Balance, Statements & Reconciliation
 technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
   try {
-    const { technician_id } = c.req.query();
+    const { 
+      technician_id, 
+      from_date, 
+      to_date, 
+      ticket_id, 
+      transaction_type, 
+      status: statusFilter 
+    } = c.req.query();
     const user = c.get('user');
 
+    // Strict role check: technician can only access their own financial records
     let targetTechId = user.role === 'technician'
       ? (user.technician_id || user.id)
       : technician_id;
@@ -124,59 +521,271 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
       stlWhere = `WHERE s.technician_id::text = $1`;
     }
 
-    const [advRes, expRes, stlRes] = await Promise.all([
+    const [advRes, expRes, stlRes, allTechsRes] = await Promise.all([
       query(`
         SELECT a.*, a.allocated_by as allocated_by_name, t.name as technician_name, t.phone as technician_phone
         FROM technician_tour_advances a
         LEFT JOIN technicians t ON t.id::text = a.technician_id::text
         ${advWhere}
-        ORDER BY a.allocated_at DESC
+        ORDER BY a.allocated_at DESC, a.id DESC
       `, advParams, c.env, c.executionCtx),
       query(`
         SELECT e.*, t.name as technician_name, t.phone as technician_phone
         FROM technician_tour_expenses e
         LEFT JOIN technicians t ON t.id::text = e.technician_id::text
         ${expWhere}
-        ORDER BY e.expense_date DESC, e.created_at DESC
+        ORDER BY e.expense_date DESC, e.created_at DESC, e.id DESC
       `, expParams, c.env, c.executionCtx),
       query(`
         SELECT s.*, t.name as technician_name, t.phone as technician_phone
         FROM technician_tour_settlements s
         LEFT JOIN technicians t ON t.id::text = s.technician_id::text
         ${stlWhere}
-        ORDER BY s.settled_at DESC
-      `, stlParams, c.env, c.executionCtx)
+        ORDER BY s.settled_at DESC, s.id DESC
+      `, stlParams, c.env, c.executionCtx),
+      query(`SELECT id, name, phone, area_zone FROM technicians ORDER BY name ASC`, [], c.env, c.executionCtx)
     ]);
 
-    const advances = advRes.rows;
-    const expenses = expRes.rows;
-    const settlements = stlRes.rows;
+    const advances = advRes.rows || [];
+    const expenses = expRes.rows || [];
+    const settlements = stlRes.rows || [];
+    const allTechnicians = allTechsRes.rows || [];
 
-    const totalAdvance = advances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
-    const approvedExpenses = expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+    // Filter out cancelled advances
+    const activeAdvances = advances.filter(a => (a.status || '').toLowerCase() !== 'cancelled');
+    const totalAdvance = activeAdvances.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+
+    const approvedExpenses = expenses
+      .filter(e => ['approved', 'verified'].includes((e.status || '').toLowerCase()))
+      .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
+    const pendingExpenses = expenses
+      .filter(e => ['pending', 'submitted'].includes((e.status || '').toLowerCase()))
+      .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
+    const rejectedExpenses = expenses
+      .filter(e => (e.status || '').toLowerCase() === 'rejected')
+      .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
     const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-    const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || s.amount || 0), 0);
-    const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
-    const currentBalance = (totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned);
+
+    const activeSettlements = settlements.filter(s => (s.status || '').toLowerCase() !== 'cancelled');
+    const totalReturned = activeSettlements.reduce((sum, s) => {
+      const isReversed = (s.status || '').toLowerCase() === 'reversed';
+      const val = parseFloat(s.returned_amount || 0);
+      return sum + (isReversed ? 0 : val);
+    }, 0);
+
+    const totalReimbursed = activeSettlements.reduce((sum, s) => {
+      const isReversed = (s.status || '').toLowerCase() === 'reversed';
+      const val = parseFloat(s.reimbursed_amount || 0);
+      return sum + (isReversed ? 0 : val);
+    }, 0);
+
+    const totalAdjustments = activeSettlements.reduce((sum, s) => sum + parseFloat(s.adjustment_amount || 0), 0);
+
+    // Standardized Balance Formula: (Advances + Reimbursed) - (Approved Expenses + Returned) + Adjustments
+    const netBalance = (totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned) + totalAdjustments;
+    const recoverableFromTech = netBalance > 0 ? netBalance : 0;
+    const payableToTech = netBalance < 0 ? Math.abs(netBalance) : 0;
+
+    let settlementStatus = 'SETTLED';
+    let settlementStatusLabel = 'Settled — ₹0 Outstanding';
+    if (netBalance > 0) {
+      settlementStatus = 'RETURN_PENDING';
+      settlementStatusLabel = `₹${netBalance.toLocaleString('en-IN')} Returnable by Technician`;
+    } else if (netBalance < 0) {
+      settlementStatus = 'REIMBURSEMENT_DUE';
+      settlementStatusLabel = `₹${Math.abs(netBalance).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
+    }
+
+    // Build Chronological Statement & Ledger
+    const statementData = buildLedgerAndStatement(activeAdvances, expenses, activeSettlements, {
+      fromDate: from_date,
+      toDate: to_date,
+      ticketId: ticket_id,
+      transactionType: transaction_type,
+      statusFilter
+    });
+
+    // Complaint-wise settlement summary
+    const complaintSummaryMap = new Map();
+    activeAdvances.forEach(adv => {
+      if (adv.ticket_id) {
+        const tkt = adv.ticket_id;
+        if (!complaintSummaryMap.has(tkt)) {
+          complaintSummaryMap.set(tkt, {
+            ticket_id: tkt,
+            complaint_id: adv.complaint_id || null,
+            technician_id: adv.technician_id,
+            technician_name: adv.technician_name,
+            advance_issued: 0,
+            approved_expenses: 0,
+            returned: 0,
+            reimbursed: 0
+          });
+        }
+        complaintSummaryMap.get(tkt).advance_issued += parseFloat(adv.amount || 0);
+      }
+    });
+
+    expenses.forEach(exp => {
+      if (exp.ticket_id) {
+        const tkt = exp.ticket_id;
+        if (!complaintSummaryMap.has(tkt)) {
+          complaintSummaryMap.set(tkt, {
+            ticket_id: tkt,
+            complaint_id: exp.complaint_id || null,
+            technician_id: exp.technician_id,
+            technician_name: exp.technician_name,
+            advance_issued: 0,
+            approved_expenses: 0,
+            returned: 0,
+            reimbursed: 0
+          });
+        }
+        const isAppr = ['approved', 'verified'].includes((exp.status || '').toLowerCase());
+        if (isAppr) {
+          complaintSummaryMap.get(tkt).approved_expenses += parseFloat(exp.amount || 0);
+        }
+      }
+    });
+
+    activeSettlements.forEach(stl => {
+      if (stl.ticket_id) {
+        const tkt = stl.ticket_id;
+        if (complaintSummaryMap.has(tkt)) {
+          const isReversed = (stl.status || '').toLowerCase() === 'reversed';
+          if (!isReversed) {
+            complaintSummaryMap.get(tkt).returned += parseFloat(stl.returned_amount || 0);
+            complaintSummaryMap.get(tkt).reimbursed += parseFloat(stl.reimbursed_amount || 0);
+          }
+        }
+      }
+    });
+
+    const complaintSettlements = Array.from(complaintSummaryMap.values()).map(cs => {
+      const net = (cs.advance_issued + cs.reimbursed) - (cs.approved_expenses + cs.returned);
+      let status = 'Settled';
+      let statusLabel = 'Settled';
+      if (net > 0) {
+        status = 'Return Pending';
+        statusLabel = `₹${net.toLocaleString('en-IN')} Returnable by Technician`;
+      } else if (net < 0) {
+        status = 'Reimbursement Due';
+        statusLabel = `₹${Math.abs(net).toLocaleString('en-IN')} Reimbursement Due`;
+      }
+      return {
+        ...cs,
+        net_balance: net,
+        status,
+        status_label: statusLabel
+      };
+    });
+
+    // Consolidated Per-Technician Summary (for Admin view)
+    const techniciansSummary = allTechnicians.map(t => {
+      const techIdStr = String(t.id);
+      const tAdvs = activeAdvances.filter(a => String(a.technician_id) === techIdStr);
+      const tExps = expenses.filter(e => String(e.technician_id) === techIdStr);
+      const tStls = activeSettlements.filter(s => String(s.technician_id) === techIdStr);
+
+      const advSum = tAdvs.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+      const expApproved = tExps
+        .filter(e => ['approved', 'verified'].includes((e.status || '').toLowerCase()))
+        .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+      const expTotal = tExps.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
+      const retSum = tStls.reduce((sum, s) => {
+        const isReversed = (s.status || '').toLowerCase() === 'reversed';
+        return sum + (isReversed ? 0 : parseFloat(s.returned_amount || 0));
+      }, 0);
+
+      const reimSum = tStls.reduce((sum, s) => {
+        const isReversed = (s.status || '').toLowerCase() === 'reversed';
+        return sum + (isReversed ? 0 : parseFloat(s.reimbursed_amount || 0));
+      }, 0);
+
+      const tNet = (advSum + reimSum) - (expApproved + retSum);
+      let tStatus = 'Settled';
+      let tStatusLabel = 'Settled';
+      if (tNet > 0) {
+        tStatus = 'Payable by Technician';
+        tStatusLabel = `₹${tNet.toLocaleString('en-IN')} Recoverable`;
+      } else if (tNet < 0) {
+        tStatus = 'Payable to Technician';
+        tStatusLabel = `₹${Math.abs(tNet).toLocaleString('en-IN')} Reimbursement Due`;
+      }
+
+      return {
+        technician_id: t.id,
+        technician_name: t.name,
+        technician_phone: t.phone,
+        area_zone: t.area_zone,
+        total_advances: advSum,
+        total_expenses: expTotal,
+        approved_expenses: expApproved,
+        total_returned: retSum,
+        total_reimbursed: reimSum,
+        net_balance: tNet,
+        recoverable_amount: tNet > 0 ? tNet : 0,
+        payable_amount: tNet < 0 ? Math.abs(tNet) : 0,
+        status: tStatus,
+        status_label: tStatusLabel
+      };
+    });
+
+    // Company-level financial KPIs
+    const companyKPIs = {
+      total_advances_outstanding: techniciansSummary.reduce((sum, t) => sum + t.recoverable_amount, 0),
+      total_returnable: techniciansSummary.reduce((sum, t) => sum + t.recoverable_amount, 0),
+      total_reimbursement_payable: techniciansSummary.reduce((sum, t) => sum + t.payable_amount, 0),
+      total_settled_accounts: techniciansSummary.filter(t => t.net_balance === 0).length,
+      total_pending_accounts: techniciansSummary.filter(t => t.net_balance !== 0).length
+    };
+
+    // System Reconciliation Check
+    const calculatedDiscrepancy = Math.abs((totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned) - netBalance);
+    const reconciliation = {
+      is_balanced: calculatedDiscrepancy < 0.01,
+      total_advance: totalAdvance,
+      approved_expenses: approvedExpenses,
+      total_returned: totalReturned,
+      total_reimbursed: totalReimbursed,
+      net_calculated_balance: netBalance,
+      discrepancy: calculatedDiscrepancy
+    };
 
     return c.json({
       success: true,
-      advances,
+      advances: activeAdvances,
       expenses,
-      settlements,
+      settlements: activeSettlements,
+      statement: statementData,
+      complaint_settlements: complaintSettlements,
+      technicians_summary: techniciansSummary,
+      company_kpis: companyKPIs,
+      reconciliation,
       summary: {
         total_advance: totalAdvance,
         approved_expenses: approvedExpenses,
+        pending_expenses: pendingExpenses,
+        rejected_expenses: rejectedExpenses,
         total_expenses: totalExpenses,
         total_returned: totalReturned,
         total_reimbursed: totalReimbursed,
-        net_balance: currentBalance,
+        total_adjustments: totalAdjustments,
+        net_balance: netBalance,
+        recoverable_from_technician: recoverableFromTech,
+        payable_to_technician: payableToTech,
+        settlement_status: settlementStatus,
+        settlement_status_label: settlementStatusLabel,
         totalAdvance,
         approvedExpenses,
         totalExpenses,
         totalReturned,
         totalReimbursed,
-        currentBalance
+        currentBalance: netBalance
       }
     });
   } catch (err) {
@@ -184,21 +793,36 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
   }
 });
 
-// POST /api/tour-advances
+// POST /api/tour-advances - Issue Tour Advance with Optional Previous Balance Adjustment
 technicianRoutes.post('/tour-advances', authenticateToken, requireRole('admin', 'staff'), async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
-    const { technician_id, amount, tour_title, purpose, payment_mode, reference_no, notes, allocated_at } = body;
+    const { 
+      technician_id, 
+      amount, 
+      tour_title, 
+      purpose, 
+      payment_mode, 
+      reference_no, 
+      notes, 
+      allocated_at,
+      ticket_id,
+      adjust_previous_balance,
+      adjusted_amount
+    } = body;
     const user = c.get('user');
 
     if (!technician_id || !amount || parseFloat(amount) <= 0) {
       return c.json({ error: 'Technician and valid advance amount are required' }, 400);
     }
 
+    const currentYear = new Date().getFullYear();
+    const autoRef = reference_no || `ADV-${currentYear}-${Date.now().toString().slice(-6)}`;
+
     const r = await query(`
       INSERT INTO technician_tour_advances (
-        technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes, purpose
-      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8, $9)
+        technician_id, amount, allocated_by, allocated_at, payment_mode, reference_no, tour_title, notes, purpose, ticket_id, status
+      ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $6, $7, $8, $9, $10, 'Active')
       RETURNING *
     `, [
       String(technician_id).trim(),
@@ -206,13 +830,57 @@ technicianRoutes.post('/tour-advances', authenticateToken, requireRole('admin', 
       user.name || 'Admin',
       allocated_at || null,
       payment_mode || 'Cash',
-      reference_no || null,
+      autoRef,
       tour_title || purpose || 'Service Tour',
       notes || null,
-      purpose || tour_title || 'Tour Advance for Field Tasks'
+      purpose || tour_title || 'Tour Advance for Field Tasks',
+      ticket_id || null
     ], c.env, c.executionCtx);
 
-    return c.json({ success: true, advance: r.rows[0] });
+    const advance = r.rows[0];
+
+    // If an explicit previous balance adjustment was authorized:
+    if (adjust_previous_balance && parseFloat(adjusted_amount) > 0) {
+      const adjRef = `ADJ-${currentYear}-${Date.now().toString().slice(-6)}`;
+      await query(`
+        INSERT INTO technician_tour_settlements (
+          technician_id, settlement_type, advance_amount, expense_amount, returned_amount, reimbursed_amount, adjustment_amount,
+          notes, tour_advance_id, settled_by, settled_at, payment_mode, reference_no, status
+        ) VALUES ($1, 'adjustment', 0, 0, $2, 0, $2, $3, $4, $5, CURRENT_TIMESTAMP, 'Adjustment', $6, 'Settled')
+      `, [
+        String(technician_id).trim(),
+        parseFloat(adjusted_amount),
+        `Previous outstanding recoverable balance adjusted against new advance ${autoRef}`,
+        advance.id,
+        user.name || 'Admin',
+        adjRef
+      ], c.env, c.executionCtx);
+    }
+
+    return c.json({ success: true, advance });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/tour-advances/:id/cancel - Cancel an unspent advance with audit trail
+technicianRoutes.post('/tour-advances/:id/cancel', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const user = c.get('user');
+    const { cancellation_reason } = body;
+
+    await query(
+      `UPDATE technician_tour_advances 
+       SET status = 'Cancelled', cancellation_reason = $1, notes = COALESCE(notes, '') || ' [Cancelled by ' || $2 || ']'
+       WHERE id = $3`,
+      [cancellation_reason || 'Advance Cancelled by Administrator', user.name || 'Admin', id],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ success: true, message: 'Advance marked as cancelled' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -234,39 +902,60 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
       receipt_data,
       receipt_name,
       ticket_id,
-      voucher_no
+      voucher_no,
+      items
     } = body;
 
     const targetTechId = user.role === 'technician'
       ? (user.technician_id || user.id)
       : technician_id;
 
-    if (!targetTechId || !amount || parseFloat(amount) <= 0) {
-      return c.json({ error: 'Technician and valid amount are required' }, 400);
+    if (!targetTechId) {
+      return c.json({ error: 'Technician is required' }, 400);
     }
 
-    const r = await query(`
-      INSERT INTO technician_tour_expenses (
-        technician_id, tour_advance_id, expense_date, category, amount, description,
-        receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, status, created_by
-      ) VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, $11, 'Pending', $12)
-      RETURNING *
-    `, [
-      String(targetTechId).trim(),
-      tour_advance_id || null,
-      expense_date || null,
-      category || 'Travel',
-      parseFloat(amount),
-      description || '',
-      receipt_url || null,
-      receipt_data || null,
-      receipt_name || null,
-      ticket_id || null,
-      voucher_no || `EXP-${Date.now()}`,
-      user.name || 'Technician'
-    ], c.env, c.executionCtx);
+    const currentYear = new Date().getFullYear();
+    const finalVoucherNo = voucher_no || `EXP-${currentYear}-${Date.now().toString().slice(-6)}`;
 
-    return c.json({ success: true, expense: r.rows[0] });
+    // Support multi-item submission in a single call
+    const lineItems = Array.isArray(items) && items.length > 0
+      ? items
+      : [{
+          category: category || 'Travel',
+          amount: parseFloat(amount || 0),
+          description: description || ''
+        }];
+
+    const created = [];
+    for (const it of lineItems) {
+      const itAmt = parseFloat(it.amount || 0);
+      if (itAmt <= 0) continue;
+
+      const r = await query(`
+        INSERT INTO technician_tour_expenses (
+          technician_id, tour_advance_id, expense_date, category, amount, description,
+          receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, status, created_by
+        ) VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, $11, 'Pending', $12)
+        RETURNING *
+      `, [
+        String(targetTechId).trim(),
+        tour_advance_id || null,
+        it.expense_date || expense_date || null,
+        it.category || category || 'Travel',
+        itAmt,
+        it.description || it.title || description || '',
+        receipt_url || null,
+        receipt_data || null,
+        receipt_name || null,
+        ticket_id || null,
+        finalVoucherNo,
+        user.name || 'Technician'
+      ], c.env, c.executionCtx);
+
+      if (r.rows[0]) created.push(r.rows[0]);
+    }
+
+    return c.json({ success: true, count: created.length, voucher_no: finalVoucherNo, items: created });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -277,7 +966,7 @@ technicianRoutes.put('/tour-expenses/:id/status', authenticateToken, requireRole
   try {
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    const { status } = body;
+    const { status, rejection_reason } = body;
     const user = c.get('user');
 
     if (!['Approved', 'Rejected', 'Pending'].map(s => s.toLowerCase()).includes((status || '').toLowerCase())) {
@@ -287,9 +976,9 @@ technicianRoutes.put('/tour-expenses/:id/status', authenticateToken, requireRole
     const normStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     await query(
       `UPDATE technician_tour_expenses 
-       SET status = $1, approved_by_name = $2
-       WHERE id = $3`,
-      [normStatus, user.name || 'Staff', id],
+       SET status = $1, approved_by_name = $2, approved_at = CURRENT_TIMESTAMP, rejection_reason = $3
+       WHERE id = $4`,
+      [normStatus, user.name || 'Staff', rejection_reason || null, id],
       c.env,
       c.executionCtx
     );
@@ -300,32 +989,90 @@ technicianRoutes.put('/tour-expenses/:id/status', authenticateToken, requireRole
   }
 });
 
-// POST /api/tour-settlements
+// POST /api/tour-settlements - Record Return, Reimbursement or Adjustment
 technicianRoutes.post('/tour-settlements', authenticateToken, requireRole('admin', 'staff'), async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
-    const { technician_id, advance_amount, expense_amount, returned_amount, reimbursed_amount, notes, tour_advance_id } = body;
+    const { 
+      technician_id, 
+      settlement_type = 'return',
+      returned_amount = 0, 
+      reimbursed_amount = 0, 
+      adjustment_amount = 0,
+      payment_mode = 'Cash',
+      reference_no,
+      ticket_id,
+      notes, 
+      tour_advance_id 
+    } = body;
     const user = c.get('user');
 
-    if (!technician_id) return c.json({ error: 'Technician required' }, 400);
+    if (!technician_id) return c.json({ error: 'Technician is required' }, 400);
+
+    const ret = parseFloat(returned_amount || 0);
+    const reim = parseFloat(reimbursed_amount || 0);
+    const adj = parseFloat(adjustment_amount || 0);
+
+    if (ret <= 0 && reim <= 0 && adj === 0) {
+      return c.json({ error: 'Valid return, reimbursement, or adjustment amount is required' }, 400);
+    }
+
+    const currentYear = new Date().getFullYear();
+    let autoRef = reference_no;
+    if (!autoRef) {
+      if (ret > 0) autoRef = `RET-${currentYear}-${Date.now().toString().slice(-6)}`;
+      else if (reim > 0) autoRef = `REIM-${currentYear}-${Date.now().toString().slice(-6)}`;
+      else autoRef = `ADJ-${currentYear}-${Date.now().toString().slice(-6)}`;
+    }
 
     const r = await query(`
       INSERT INTO technician_tour_settlements (
-        technician_id, advance_amount, expense_amount, returned_amount, reimbursed_amount, notes, tour_advance_id, settled_by, settled_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+        technician_id, settlement_type, advance_amount, expense_amount, returned_amount, reimbursed_amount, adjustment_amount,
+        payment_mode, reference_no, ticket_id, notes, tour_advance_id, settled_by, settled_at, status
+      ) VALUES ($1, $2, 0, 0, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, 'Settled')
       RETURNING *
     `, [
       String(technician_id).trim(),
-      parseFloat(advance_amount || 0),
-      parseFloat(expense_amount || 0),
-      parseFloat(returned_amount || 0),
-      parseFloat(reimbursed_amount || 0),
+      settlement_type,
+      ret,
+      reim,
+      adj,
+      payment_mode || 'Cash',
+      autoRef,
+      ticket_id || null,
       notes || null,
       tour_advance_id || null,
       user.name || 'Staff'
     ], c.env, c.executionCtx);
 
     return c.json({ success: true, settlement: r.rows[0] });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/tour-settlements/:id/reverse - Reverse a settlement transaction preserving audit history
+technicianRoutes.post('/tour-settlements/:id/reverse', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const user = c.get('user');
+    const { reversal_reason } = body;
+
+    if (!reversal_reason || !reversal_reason.trim()) {
+      return c.json({ error: 'Reversal reason is required for audit history' }, 400);
+    }
+
+    await query(
+      `UPDATE technician_tour_settlements
+       SET status = 'Reversed', reversal_reason = $1, notes = COALESCE(notes, '') || ' [Reversed by ' || $2 || ': ' || $1 || ']'
+       WHERE id = $3`,
+      [reversal_reason.trim(), user.name || 'Admin', id],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ success: true, message: 'Settlement transaction marked as reversed' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
