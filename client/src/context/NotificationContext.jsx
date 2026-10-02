@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { api } from '../api/client';
+import { playNotificationChime } from '../utils/sound';
 
 const NotificationContext = createContext();
 
@@ -68,23 +69,7 @@ const addPermanentReadId = (id) => {
   } catch (_) {}
 };
 
-const playNotificationChime = () => {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.35);
-  } catch (_) {}
-};
+
 
 export const NotificationProvider = ({ children }) => {
   const { currentUser } = useAuth();
@@ -111,6 +96,31 @@ export const NotificationProvider = ({ children }) => {
 
   const [activePopup, setActivePopup] = useState(null);
   const [dismissedPopupIds, setDismissedPopupIds] = useState(new Set());
+
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('egs_notification_sound_enabled') !== 'false';
+    } catch (_) {
+      return true;
+    }
+  });
+
+  const toggleSound = useCallback(() => {
+    setSoundEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('egs_notification_sound_enabled', String(next));
+      } catch (_) {}
+      if (next) {
+        playNotificationChime({ force: true, volume: 0.95 });
+      }
+      return next;
+    });
+  }, []);
+
+  const playSound = useCallback((opts = {}) => {
+    playNotificationChime({ volume: 0.95, ...opts });
+  }, []);
 
   // Check if a notification targets the active user (Role-Based Filtering)
   const isNotificationForUser = useCallback((notif, user) => {
@@ -625,7 +635,10 @@ export const NotificationProvider = ({ children }) => {
     dismissAllPopups,
     fetchFromBackend,
     saveNotifications,
-    playNotificationChime,
+    playNotificationChime: playSound,
+    playSound,
+    soundEnabled,
+    toggleSound,
     isUnread
   };
 

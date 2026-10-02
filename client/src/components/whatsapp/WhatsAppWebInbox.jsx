@@ -3,6 +3,7 @@ import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } fr
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
+import { playNotificationChime as playLoudChime } from '../../utils/sound';
 import { 
   Search, Send, FileText, Paperclip, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -265,20 +266,8 @@ export const WhatsAppWebInbox = ({
 
   // Synthesize notification chime using Web Audio API
   const playNotificationChime = () => {
-    try {
-      if (!soundEnabled) return;
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
-    } catch (e) {}
+    if (!soundEnabled) return;
+    playLoudChime({ volume: 0.95 });
   };
 
   const handleToggleSound = () => {

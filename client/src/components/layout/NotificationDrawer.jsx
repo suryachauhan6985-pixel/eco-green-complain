@@ -7,7 +7,8 @@ import {
   X, Bell, MessageSquare, Mail, RefreshCw, Trash2, CheckCheck, 
   ExternalLink, Sparkles, Send, ShieldAlert, Wrench, CheckCircle2, 
   AlertCircle, Clock, ArrowRight, UserCheck, Shield,
-  ChevronDown, ChevronUp, Layers, RotateCcw, Check
+  ChevronDown, ChevronUp, Layers, RotateCcw, Check,
+  Volume2, VolumeX
 } from 'lucide-react';
 
 // SwipeableCard Component (Swipe left or right to dismiss / clear)
@@ -135,7 +136,10 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
     deleteNotification,
     deleteNotificationsForTicket,
     clearNotifications,
-    isUnread 
+    isUnread,
+    soundEnabled,
+    toggleSound,
+    playSound
   } = useNotifications();
   const { confirm, showToast } = useDialog();
 
@@ -387,12 +391,28 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                 </p>
               </div>
             </div>
-            <button 
-              onClick={onClose}
-              className="p-1.5 hover:bg-emerald-700 rounded-xl text-emerald-200 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={toggleSound}
+                title={soundEnabled ? 'Notification Sound: ON (Click to Mute)' : 'Notification Sound: MUTED (Click to Unmute)'}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs ${
+                  soundEnabled
+                    ? 'bg-emerald-700 border-emerald-500 text-emerald-100 hover:bg-emerald-600 hover:text-white'
+                    : 'bg-rose-900/60 border-rose-700 text-rose-200 hover:bg-rose-800'
+                }`}
+              >
+                {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-300" /> : <VolumeX className="w-4 h-4 text-rose-300" />}
+                <span className="hidden sm:inline">{soundEnabled ? 'Sound ON' : 'Muted'}</span>
+              </button>
+              <button 
+                onClick={onClose}
+                className="p-1.5 hover:bg-emerald-700 rounded-xl text-emerald-200 hover:text-white transition-colors"
+                title="Close Drawer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Master Tab Switcher */}
@@ -456,6 +476,20 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof playSound === 'function') {
+                        playSound({ force: true, volume: 1.0 });
+                      }
+                      showToast('Notification chime played at 100% volume 🔔', 'info');
+                    }}
+                    title="Play Test Chime at 100% Volume"
+                    className="p-1 px-2 rounded-md font-semibold text-emerald-800 bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 transition-colors flex items-center gap-1 text-[11px]"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Test Sound</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
