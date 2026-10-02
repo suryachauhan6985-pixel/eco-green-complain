@@ -12,6 +12,18 @@ function getISTDateString(val) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
+function getISTTimeString(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
 // Helper: Calculate Centralized Financial Ledger & Statement with Viewer Accounting Perspective
 function buildLedgerAndStatement(advances, expenses, settlements, options = {}) {
   const { fromDate, toDate, ticketId, transactionType, statusFilter, technician, perspective = 'company' } = options;
@@ -36,6 +48,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
       date: rawDate,
       calendar_date: getISTDateString(rawDate),
       actual_timestamp: actualTs,
+      time_formatted: getISTTimeString(actualTs),
       reference_no: ref,
       technician_id: String(adv.technician_id),
       technician_name: adv.technician_name || technician?.name || 'Technician',
@@ -101,6 +114,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: rawDate,
         calendar_date: getISTDateString(rawDate),
         actual_timestamp: actualTs,
+        time_formatted: getISTTimeString(actualTs),
         reference_no: vch.voucher_no,
         technician_id: vch.technician_id,
         technician_name: vch.technician_name,
@@ -123,6 +137,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: rawDate,
         calendar_date: getISTDateString(rawDate),
         actual_timestamp: actualTs,
+        time_formatted: getISTTimeString(actualTs),
         reference_no: vch.voucher_no,
         technician_id: vch.technician_id,
         technician_name: vch.technician_name,
@@ -145,6 +160,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: rawDate,
         calendar_date: getISTDateString(rawDate),
         actual_timestamp: actualTs,
+        time_formatted: getISTTimeString(actualTs),
         reference_no: vch.voucher_no,
         technician_id: vch.technician_id,
         technician_name: vch.technician_name,
@@ -180,6 +196,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: rawDate,
         calendar_date: getISTDateString(rawDate),
         actual_timestamp: actualTs,
+        time_formatted: getISTTimeString(actualTs),
         reference_no: stl.reference_no || `RET-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
         technician_name: stl.technician_name || technician?.name || 'Technician',
@@ -208,6 +225,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: rawDate,
         calendar_date: getISTDateString(rawDate),
         actual_timestamp: actualTs,
+        time_formatted: getISTTimeString(actualTs),
         reference_no: stl.reference_no || `REIM-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
         technician_name: stl.technician_name || technician?.name || 'Technician',
@@ -236,6 +254,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         date: rawDate,
         calendar_date: getISTDateString(rawDate),
         actual_timestamp: actualTs,
+        time_formatted: getISTTimeString(actualTs),
         reference_no: stl.reference_no || `ADJ-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
         technician_name: stl.technician_name || technician?.name || 'Technician',
@@ -253,8 +272,8 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   }
 
   // 4. Chronological sort (oldest to newest for correct running balance)
-  // Calendar day in IST compared first, then business priority, then actual timestamp
-  const sameDayPriority = {
+  // Strict timestamp order like a bank statement
+  const fallbackTypeOrder = {
     advance: 1,
     expense_voucher: 2,
     settlement_return: 3,
@@ -263,24 +282,25 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   };
 
   rawEvents.sort((a, b) => {
-    const dateA = a.calendar_date || getISTDateString(a.date);
-    const dateB = b.calendar_date || getISTDateString(b.date);
-    if (dateA !== dateB) return dateA.localeCompare(dateB);
-    const prioA = sameDayPriority[a.entity_type] || 99;
-    const prioB = sameDayPriority[b.entity_type] || 99;
-    if (prioA !== prioB) return prioA - prioB;
-    return (a.actual_timestamp || 0) - (b.actual_timestamp || 0);
+    const tsA = Number(a.actual_timestamp) || 0;
+    const tsB = Number(b.actual_timestamp) || 0;
+    if (tsA !== tsB) return tsA - tsB;
+    // Tie-breaker only if timestamps are identical down to the millisecond
+    const pA = fallbackTypeOrder[a.entity_type] || 99;
+    const pB = fallbackTypeOrder[b.entity_type] || 99;
+    if (pA !== pB) return pA - pB;
+    return String(a.raw_id || a.id || '').localeCompare(String(b.raw_id || b.id || ''));
   });
 
   // 5. Compute Opening Balance and Statement for specified date range
   let openingBalance = 0;
   const filteredEvents = [];
 
-  const fromTime = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
-  const toTime = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
+  const fromTime = fromDate ? new Date(`${fromDate}T00:00:00+05:30`).getTime() : null;
+  const toTime = toDate ? new Date(`${toDate}T23:59:59.999+05:30`).getTime() : null;
 
   for (const ev of rawEvents) {
-    const evTime = new Date(ev.date).getTime();
+    const evTime = ev.actual_timestamp || new Date(ev.date).getTime();
 
     if (ticketId && ticketId !== 'all' && String(ev.ticket_id || '').toLowerCase() !== String(ticketId).toLowerCase()) {
       continue;
