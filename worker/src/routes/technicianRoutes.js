@@ -359,19 +359,77 @@ technicianRoutes.put('/technicians/:id', authenticateToken, async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    const { name, phone, area_zone, specialization } = body;
+    const { name, phone, email, area_zone, specialization } = body;
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    const cleanName = name ? name.trim() : null;
+    const cleanEmail = email ? email.trim() : null;
+
+    // 1. Fetch current technician to get user_id and existing phone
+    const currentRes = await query('SELECT * FROM technicians WHERE id = $1', [id], c.env, c.executionCtx);
+    if (!currentRes.rows || currentRes.rows.length === 0) {
+      return c.json({ error: 'Technician not found' }, 404);
+    }
+    const currentTech = currentRes.rows[0];
+
+    // 2. Update technicians table
     await query(
       `UPDATE technicians
        SET name = COALESCE($1, name),
            phone = COALESCE($2, phone),
-           area_zone = COALESCE($3, area_zone),
-           specialization = COALESCE($4, specialization)
-       WHERE id = $5`,
-      [name || null, phone || null, area_zone || null, specialization || null, id],
+           email = COALESCE($3, email),
+           area_zone = COALESCE($4, area_zone),
+           specialization = COALESCE($5, specialization)
+       WHERE id = $6`,
+      [cleanName, cleanPhone || null, cleanEmail, area_zone || null, specialization || null, id],
       c.env,
       c.executionCtx
     );
-    return c.json({ success: true });
+
+    // 3. Find and sync linked user in users table
+    let targetUserId = currentTech.user_id;
+    if (!targetUserId) {
+      const userRes = await query(
+        `SELECT id FROM users 
+         WHERE role = 'technician' 
+           AND (
+             ($1 != '' AND phone LIKE '%' || $1)
+             OR ($2 != '' AND LOWER(email) = LOWER($2))
+           )
+         ORDER BY id DESC LIMIT 1`,
+        [cleanPhone || (currentTech.phone || ''), cleanEmail || (currentTech.email || '')],
+        c.env,
+        c.executionCtx
+      );
+      if (userRes.rows && userRes.rows.length > 0) {
+        targetUserId = userRes.rows[0].id;
+        await query('UPDATE technicians SET user_id = $1 WHERE id = $2', [targetUserId, id], c.env, c.executionCtx).catch(() => {});
+      }
+    }
+
+    if (targetUserId) {
+      await query(
+        `UPDATE users 
+         SET name = COALESCE($1, name),
+             phone = COALESCE($2, phone),
+             email = COALESCE($3, email)
+         WHERE id = $4`,
+        [cleanName, cleanPhone || null, cleanEmail, targetUserId],
+        c.env,
+        c.executionCtx
+      ).catch(() => {});
+    }
+
+    // 4. Update technician_name on assigned complaints
+    if (cleanName) {
+      await query(
+        'UPDATE complaints SET technician_name = $1 WHERE assigned_technician_id = $2',
+        [cleanName, id],
+        c.env,
+        c.executionCtx
+      ).catch(() => {});
+    }
+
+    return c.json({ success: true, message: 'Technician profile and linked user account updated successfully' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

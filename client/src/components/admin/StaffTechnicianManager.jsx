@@ -11,7 +11,7 @@ import { StaffTeamSkeleton } from '../common/SkeletonLoader';
 
 export const StaffTechnicianManager = () => {
   const { confirm, alert, showToast: showGlobalToast } = useDialog();
-  const { currentUser } = useAuth();
+  const { currentUser, setCurrentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
 
   const [activeTab, setActiveTab] = useState('technicians'); // 'technicians' | 'staff' | 'catalog'
@@ -162,10 +162,26 @@ export const StaffTechnicianManager = () => {
       if (editingMember?.isTech) {
         await api.updateTechnician(editingMember.id, payload);
         showToast(`Technician ${editFormData.name} updated successfully!`);
+        if (currentUser && (String(currentUser.technician_id) === String(editingMember.id) || String(currentUser.id) === String(editingMember.user_id) || String(currentUser.phone) === String(cleanPhone))) {
+          const updatedUser = { ...currentUser, name: editFormData.name, phone: cleanPhone };
+          if (typeof setCurrentUser === 'function') setCurrentUser(updatedUser);
+          try {
+            sessionStorage.setItem('egs_cached_user', JSON.stringify(updatedUser));
+            localStorage.setItem('egs_cached_user', JSON.stringify(updatedUser));
+          } catch (_) {}
+        }
       } else {
         payload.role = editFormData.role;
         await api.updateUser(editingMember.id, payload);
         showToast(`Staff member ${editFormData.name} updated successfully!`);
+        if (currentUser && String(currentUser.id) === String(editingMember.id)) {
+          const updatedUser = { ...currentUser, name: editFormData.name, phone: cleanPhone, role: editFormData.role };
+          if (typeof setCurrentUser === 'function') setCurrentUser(updatedUser);
+          try {
+            sessionStorage.setItem('egs_cached_user', JSON.stringify(updatedUser));
+            localStorage.setItem('egs_cached_user', JSON.stringify(updatedUser));
+          } catch (_) {}
+        }
       }
       setIsEditModalOpen(false);
       setEditingMember(null);

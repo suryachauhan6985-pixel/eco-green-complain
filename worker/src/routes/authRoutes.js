@@ -202,6 +202,82 @@ authRoutes.post('/create-user', authenticateToken, requireRole('admin'), async (
   }
 });
 
+// PUT /api/auth/profile - Update own profile
+authRoutes.put('/profile', authenticateToken, async (c) => {
+  try {
+    const user = c.get('user');
+    const body = await c.req.json().catch(() => ({}));
+    const { name, email, phone, username } = body;
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    const cleanName = name ? name.trim() : null;
+    const cleanEmail = email ? email.trim() : null;
+    const cleanUsername = username ? username.trim().toLowerCase() : null;
+
+    await query(
+      `UPDATE users 
+       SET name = COALESCE($1, name),
+           phone = COALESCE($2, phone),
+           email = COALESCE($3, email),
+           username = COALESCE($4, username)
+       WHERE id = $5`,
+      [cleanName, cleanPhone || null, cleanEmail, cleanUsername, user.id],
+      c.env,
+      c.executionCtx
+    );
+
+    // If user is technician, sync to technicians table and complaints
+    if (user.role === 'technician') {
+      const techRes = await query(
+        `SELECT id FROM technicians 
+         WHERE user_id = $1 
+            OR ($2 != '' AND phone LIKE '%' || $2)
+         ORDER BY id DESC LIMIT 1`,
+        [user.id, cleanPhone.length >= 10 ? cleanPhone.slice(-10) : ''],
+        c.env,
+        c.executionCtx
+      );
+      if (techRes.rows && techRes.rows.length > 0) {
+        const techId = techRes.rows[0].id;
+        await query(
+          `UPDATE technicians 
+           SET name = COALESCE($1, name),
+               phone = COALESCE($2, phone),
+               email = COALESCE($3, email),
+               user_id = $4
+           WHERE id = $5`,
+          [cleanName, cleanPhone || null, cleanEmail, user.id, techId],
+          c.env,
+          c.executionCtx
+        ).catch(() => {});
+
+        if (cleanName) {
+          await query(
+            'UPDATE complaints SET technician_name = $1 WHERE assigned_technician_id = $2',
+            [cleanName, techId],
+            c.env,
+            c.executionCtx
+          ).catch(() => {});
+        }
+      }
+    }
+
+    const updatedUserRes = await query(
+      'SELECT id, name, username, email, role, phone, is_active FROM users WHERE id = $1',
+      [user.id],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: { ...updatedUserRes.rows[0], technician_id: user.technician_id }
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // PUT /api/auth/users/:id
 authRoutes.put('/users/:id', authenticateToken, async (c) => {
   try {
@@ -214,6 +290,8 @@ authRoutes.put('/users/:id', authenticateToken, async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { name, email, phone, role, is_active } = body;
     const cleanPhone = (phone || '').replace(/\D/g, '');
+    const cleanName = name ? name.trim() : null;
+    const cleanEmail = email ? email.trim() : null;
 
     await query(
       `UPDATE users 
@@ -223,12 +301,50 @@ authRoutes.put('/users/:id', authenticateToken, async (c) => {
            role = CASE WHEN $4::text IS NOT NULL AND $5 = 'admin' THEN $4 ELSE role END,
            is_active = CASE WHEN $6::int IS NOT NULL AND $5 = 'admin' THEN $6 ELSE is_active END
        WHERE id = $7`,
-      [name || null, email || null, cleanPhone || null, role || null, user.role, is_active !== undefined ? Number(is_active) : null, id],
+      [cleanName, cleanEmail, cleanPhone || null, role || null, user.role, is_active !== undefined ? Number(is_active) : null, id],
       c.env,
       c.executionCtx
     );
 
-    return c.json({ success: true });
+    // If target user is a technician, sync to technicians table as well
+    const targetUserRes = await query('SELECT id, role, name, phone, email FROM users WHERE id = $1', [id], c.env, c.executionCtx);
+    const targetUser = targetUserRes.rows[0];
+    if (targetUser && targetUser.role === 'technician') {
+      const techRes = await query(
+        `SELECT id FROM technicians 
+         WHERE user_id = $1 
+            OR ($2 != '' AND phone LIKE '%' || $2)
+         ORDER BY id DESC LIMIT 1`,
+        [id, cleanPhone.length >= 10 ? cleanPhone.slice(-10) : ''],
+        c.env,
+        c.executionCtx
+      );
+      if (techRes.rows && techRes.rows.length > 0) {
+        const techId = techRes.rows[0].id;
+        await query(
+          `UPDATE technicians 
+           SET name = COALESCE($1, name),
+               phone = COALESCE($2, phone),
+               email = COALESCE($3, email),
+               user_id = $4
+           WHERE id = $5`,
+          [cleanName, cleanPhone || null, cleanEmail, id, techId],
+          c.env,
+          c.executionCtx
+        ).catch(() => {});
+
+        if (cleanName) {
+          await query(
+            'UPDATE complaints SET technician_name = $1 WHERE assigned_technician_id = $2',
+            [cleanName, techId],
+            c.env,
+            c.executionCtx
+          ).catch(() => {});
+        }
+      }
+    }
+
+    return c.json({ success: true, message: 'User updated successfully' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
