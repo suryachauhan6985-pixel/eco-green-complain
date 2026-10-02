@@ -5,11 +5,19 @@ import { deleteR2Object } from '../r2.js';
 
 const technicianRoutes = new Hono();
 
-// Helper: Calculate Centralized Financial Ledger & Statement
-function buildLedgerAndStatement(advances, expenses, settlements, options = {}) {
-  const { fromDate, toDate, ticketId, transactionType, statusFilter, technician } = options;
+function getISTDateString(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
 
-  const events = [];
+// Helper: Calculate Centralized Financial Ledger & Statement with Viewer Accounting Perspective
+function buildLedgerAndStatement(advances, expenses, settlements, options = {}) {
+  const { fromDate, toDate, ticketId, transactionType, statusFilter, technician, perspective = 'company' } = options;
+  const isTech = perspective === 'technician';
+
+  const rawEvents = [];
 
   // 1. Advance Issued Events
   for (const adv of advances) {
@@ -18,23 +26,25 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     if (advAmt <= 0) continue;
 
     const ref = adv.reference_no || `ADV-${String(adv.id).padStart(6, '0')}`;
-    events.push({
+    const rawDate = adv.allocated_at || adv.advance_date || adv.created_at || new Date().toISOString();
+    const actualTs = new Date(adv.allocated_at || adv.created_at || rawDate).getTime();
+
+    rawEvents.push({
       id: `adv_${adv.id}`,
       raw_id: adv.id,
       entity_type: 'advance',
-      date: adv.allocated_at || adv.advance_date || adv.created_at || new Date().toISOString(),
+      date: rawDate,
+      calendar_date: getISTDateString(rawDate),
+      actual_timestamp: actualTs,
       reference_no: ref,
       technician_id: String(adv.technician_id),
       technician_name: adv.technician_name || technician?.name || 'Technician',
       ticket_id: adv.ticket_id || null,
       complaint_id: adv.complaint_id || null,
       tx_type: 'advance',
-      type_label: 'Tour Advance',
-      transaction_type: 'Tour Advance',
+      amount: advAmt,
       description: adv.purpose || adv.tour_title || 'Tour Travel Advance',
       payment_mode: adv.payment_mode || 'Cash',
-      debit: advAmt,
-      credit: 0,
       status: adv.status || 'Active',
       created_by: adv.allocated_by || adv.allocated_by_name || 'Admin',
       notes: adv.notes || null
@@ -54,6 +64,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
         complaint_id: exp.complaint_id || null,
         expense_date: exp.expense_date || exp.created_at,
         created_at: exp.created_at,
+        approved_at: exp.approved_at,
         created_by: exp.created_by,
         approved_by_name: exp.approved_by_name,
         receipt_url: exp.receipt_url,
@@ -70,6 +81,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     const isAppr = (exp.status || '').toLowerCase() === 'approved' || (exp.status || '').toLowerCase() === 'verified';
     if (isAppr) grp.approved_amount += amt;
     grp.status = exp.status;
+    if (exp.approved_at && !grp.approved_at) grp.approved_at = exp.approved_at;
   }
 
   for (const vch of voucherMap.values()) {
@@ -78,71 +90,70 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
 
     const catList = Array.from(new Set(vch.items.map(it => it.category).filter(Boolean)));
     const catDesc = catList.join(' + ') || 'Tour Expense';
+    const rawDate = vch.expense_date || vch.created_at || new Date().toISOString();
+    const actualTs = new Date(vch.approved_at || vch.created_at || rawDate).getTime();
 
     if (isApproved && vch.approved_amount > 0) {
-      events.push({
+      rawEvents.push({
         id: `vch_${vch.voucher_no}`,
         raw_id: vch.voucher_no,
         entity_type: 'expense_voucher',
-        date: vch.expense_date || vch.created_at || new Date().toISOString(),
+        date: rawDate,
+        calendar_date: getISTDateString(rawDate),
+        actual_timestamp: actualTs,
         reference_no: vch.voucher_no,
         technician_id: vch.technician_id,
         technician_name: vch.technician_name,
         ticket_id: vch.ticket_id,
         complaint_id: vch.complaint_id,
         tx_type: 'expense',
-        type_label: 'Approved Expense',
-        transaction_type: 'Approved Expense',
+        amount: vch.approved_amount,
         description: `Approved Tour Expense: ${catDesc} (${vch.items.length} items)`,
         payment_mode: 'Voucher Claim',
-        debit: 0,
-        credit: vch.approved_amount,
         status: 'Approved',
         created_by: vch.approved_by_name || 'Admin',
         receipt_url: vch.receipt_url,
         items: vch.items
       });
     } else if (isRejected) {
-      events.push({
+      rawEvents.push({
         id: `vch_${vch.voucher_no}`,
         raw_id: vch.voucher_no,
         entity_type: 'expense_voucher',
-        date: vch.expense_date || vch.created_at || new Date().toISOString(),
+        date: rawDate,
+        calendar_date: getISTDateString(rawDate),
+        actual_timestamp: actualTs,
         reference_no: vch.voucher_no,
         technician_id: vch.technician_id,
         technician_name: vch.technician_name,
         ticket_id: vch.ticket_id,
         complaint_id: vch.complaint_id,
         tx_type: 'rejected_expense',
-        type_label: 'Rejected Expense',
-        transaction_type: 'Rejected Expense',
+        amount: 0,
         description: `Rejected Tour Expense: ${catDesc}`,
         payment_mode: 'Voucher Claim',
-        debit: 0,
-        credit: 0,
         status: 'Rejected',
         created_by: vch.approved_by_name || 'Admin',
         receipt_url: vch.receipt_url,
         items: vch.items
       });
     } else {
-      events.push({
+      rawEvents.push({
         id: `vch_${vch.voucher_no}`,
         raw_id: vch.voucher_no,
         entity_type: 'expense_voucher',
-        date: vch.expense_date || vch.created_at || new Date().toISOString(),
+        date: rawDate,
+        calendar_date: getISTDateString(rawDate),
+        actual_timestamp: actualTs,
         reference_no: vch.voucher_no,
         technician_id: vch.technician_id,
         technician_name: vch.technician_name,
         ticket_id: vch.ticket_id,
         complaint_id: vch.complaint_id,
         tx_type: 'pending_expense',
-        type_label: 'Submitted Expense (Pending)',
-        transaction_type: 'Submitted Expense (Pending)',
+        amount: 0,
         description: `Submitted Tour Expense: ${catDesc} (Pending Verification)`,
         payment_mode: 'Voucher Claim',
-        debit: 0,
-        credit: 0,
         status: 'Pending',
         created_by: vch.created_by || 'Technician',
         receipt_url: vch.receipt_url,
@@ -158,27 +169,31 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     const retAmt = parseFloat(stl.returned_amount || 0);
     const reimAmt = parseFloat(stl.reimbursed_amount || 0);
     const adjAmt = parseFloat(stl.adjustment_amount || 0);
+    const rawDate = stl.settled_at || stl.created_at || new Date().toISOString();
+    const actualTs = new Date(stl.settled_at || stl.created_at || rawDate).getTime();
 
     if (retAmt > 0) {
-      events.push({
+      rawEvents.push({
         id: `stl_ret_${stl.id}`,
         raw_id: stl.id,
         entity_type: 'settlement_return',
-        date: stl.settled_at || stl.created_at || new Date().toISOString(),
+        date: rawDate,
+        calendar_date: getISTDateString(rawDate),
+        actual_timestamp: actualTs,
         reference_no: stl.reference_no || `RET-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
         technician_name: stl.technician_name || technician?.name || 'Technician',
         ticket_id: stl.ticket_id || null,
         complaint_id: null,
         tx_type: 'return',
-        type_label: isReversed ? 'Return Reversed' : 'Amount Returned',
-        transaction_type: isReversed ? 'Return Reversed' : 'Amount Returned',
+        amount: retAmt,
+        is_reversed: isReversed,
         description: isReversed
           ? `Reversal of Return ${stl.reference_no || ''}: ${stl.reversal_reason || 'Reversed'}`
-          : `Amount Returned by Technician (${stl.payment_mode || 'Cash'}) - ${stl.notes || 'Tour surplus deposit'}`,
+          : (isTech
+              ? `Amount Returned to Company (${stl.payment_mode || 'Cash'}) - ${stl.notes || 'Tour surplus deposit'}`
+              : `Amount Returned by Technician (${stl.payment_mode || 'Cash'}) - ${stl.notes || 'Tour surplus deposit'}`),
         payment_mode: stl.payment_mode || 'Cash',
-        debit: isReversed ? retAmt : 0,
-        credit: isReversed ? 0 : retAmt,
         status: stl.status || 'Settled',
         created_by: stl.settled_by || 'Staff',
         notes: stl.notes
@@ -186,25 +201,27 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     }
 
     if (reimAmt > 0) {
-      events.push({
+      rawEvents.push({
         id: `stl_reim_${stl.id}`,
         raw_id: stl.id,
         entity_type: 'settlement_reimbursement',
-        date: stl.settled_at || stl.created_at || new Date().toISOString(),
+        date: rawDate,
+        calendar_date: getISTDateString(rawDate),
+        actual_timestamp: actualTs,
         reference_no: stl.reference_no || `REIM-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
         technician_name: stl.technician_name || technician?.name || 'Technician',
         ticket_id: stl.ticket_id || null,
         complaint_id: null,
         tx_type: 'reimbursement',
-        type_label: isReversed ? 'Reimbursement Reversed' : 'Reimbursement Paid',
-        transaction_type: isReversed ? 'Reimbursement Reversed' : 'Reimbursement Paid',
+        amount: reimAmt,
+        is_reversed: isReversed,
         description: isReversed
           ? `Reversal of Reimbursement ${stl.reference_no || ''}: ${stl.reversal_reason || 'Reversed'}`
-          : `Reimbursement Paid to Technician (${stl.payment_mode || 'Bank Transfer'}) - ${stl.notes || 'Tour expense reimbursement'}`,
+          : (isTech
+              ? `Reimbursement Received from Company (${stl.payment_mode || 'Bank Transfer'}) - ${stl.notes || 'Tour expense claim'}`
+              : `Reimbursement Paid to Technician (${stl.payment_mode || 'Bank Transfer'}) - ${stl.notes || 'Tour expense reimbursement'}`),
         payment_mode: stl.payment_mode || 'Bank Transfer',
-        debit: isReversed ? 0 : reimAmt,
-        credit: isReversed ? reimAmt : 0,
         status: stl.status || 'Settled',
         created_by: stl.settled_by || 'Staff',
         notes: stl.notes
@@ -212,23 +229,22 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     }
 
     if (adjAmt !== 0) {
-      events.push({
+      rawEvents.push({
         id: `stl_adj_${stl.id}`,
         raw_id: stl.id,
         entity_type: 'settlement_adjustment',
-        date: stl.settled_at || stl.created_at || new Date().toISOString(),
+        date: rawDate,
+        calendar_date: getISTDateString(rawDate),
+        actual_timestamp: actualTs,
         reference_no: stl.reference_no || `ADJ-${String(stl.id).padStart(6, '0')}`,
         technician_id: String(stl.technician_id),
         technician_name: stl.technician_name || technician?.name || 'Technician',
         ticket_id: stl.ticket_id || null,
         complaint_id: null,
         tx_type: 'adjustment',
-        type_label: 'Balance Adjustment',
-        transaction_type: 'Adjustment',
+        amount: adjAmt,
         description: `Balance Adjustment: ${stl.notes || 'Tour balance adjustment'}`,
         payment_mode: 'Adjustment',
-        debit: adjAmt > 0 ? adjAmt : 0,
-        credit: adjAmt < 0 ? Math.abs(adjAmt) : 0,
         status: stl.status || 'Settled',
         created_by: stl.settled_by || 'Staff',
         notes: stl.notes
@@ -237,19 +253,23 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   }
 
   // 4. Chronological sort (oldest to newest for correct running balance)
-  // Tie-breaker on same timestamp: Advances first (+), then Reimbursements (+), then Expenses (-), then Returns (-), then Adjustments
-  events.sort((a, b) => {
-    const timeA = new Date(a.date).getTime();
-    const timeB = new Date(b.date).getTime();
-    if (timeA !== timeB) return timeA - timeB;
-    const priority = {
-      advance: 1,
-      settlement_reimbursement: 2,
-      expense_voucher: 3,
-      settlement_return: 4,
-      settlement_adjustment: 5
-    };
-    return (priority[a.entity_type] || 9) - (priority[b.entity_type] || 9);
+  // Calendar day in IST compared first, then business priority, then actual timestamp
+  const sameDayPriority = {
+    advance: 1,
+    expense_voucher: 2,
+    settlement_return: 3,
+    settlement_reimbursement: 4,
+    settlement_adjustment: 5
+  };
+
+  rawEvents.sort((a, b) => {
+    const dateA = a.calendar_date || getISTDateString(a.date);
+    const dateB = b.calendar_date || getISTDateString(b.date);
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    const prioA = sameDayPriority[a.entity_type] || 99;
+    const prioB = sameDayPriority[b.entity_type] || 99;
+    if (prioA !== prioB) return prioA - prioB;
+    return (a.actual_timestamp || 0) - (b.actual_timestamp || 0);
   });
 
   // 5. Compute Opening Balance and Statement for specified date range
@@ -259,7 +279,7 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   const fromTime = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
   const toTime = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
 
-  for (const ev of events) {
+  for (const ev of rawEvents) {
     const evTime = new Date(ev.date).getTime();
 
     if (ticketId && ticketId !== 'all' && String(ev.ticket_id || '').toLowerCase() !== String(ticketId).toLowerCase()) {
@@ -267,13 +287,118 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     }
 
     if (transactionType && transactionType !== 'all') {
-      if (ev.tx_type !== transactionType && !ev.transaction_type.toLowerCase().includes(transactionType.toLowerCase())) {
+      if (ev.tx_type !== transactionType && !ev.entity_type.toLowerCase().includes(transactionType.toLowerCase())) {
         continue;
       }
     }
 
+    // Determine perspective-aware Debit, Credit, and Delta
+    let debit = 0;
+    let credit = 0;
+    let delta = 0;
+    let particulars = ev.description;
+    let typeLabel = ev.entity_type;
+
+    if (ev.entity_type === 'advance') {
+      if (isTech) {
+        credit = ev.amount;
+        delta = ev.amount;
+        particulars = 'Tour Advance Received';
+        typeLabel = 'Advance Received';
+      } else {
+        debit = ev.amount;
+        delta = ev.amount;
+        particulars = 'Tour Advance Given';
+        typeLabel = 'Tour Advance';
+      }
+    } else if (ev.entity_type === 'expense_voucher') {
+      if (ev.status === 'Approved' || ev.status === 'Verified') {
+        if (isTech) {
+          debit = ev.amount;
+          delta = -ev.amount;
+          particulars = ev.description;
+          typeLabel = 'Approved Expense';
+        } else {
+          credit = ev.amount;
+          delta = -ev.amount;
+          particulars = ev.description;
+          typeLabel = 'Approved Expense';
+        }
+      } else {
+        debit = 0;
+        credit = 0;
+        delta = 0;
+        particulars = ev.description;
+        typeLabel = ev.status === 'Rejected' ? 'Rejected Expense' : 'Submitted Expense (Pending)';
+      }
+    } else if (ev.entity_type === 'settlement_return') {
+      if (ev.is_reversed) {
+        if (isTech) {
+          credit = ev.amount;
+          delta = ev.amount;
+          typeLabel = 'Return Reversed';
+        } else {
+          debit = ev.amount;
+          delta = ev.amount;
+          typeLabel = 'Return Reversed';
+        }
+      } else {
+        if (isTech) {
+          debit = ev.amount;
+          delta = -ev.amount;
+          particulars = 'Amount Returned to Company';
+          typeLabel = 'Amount Returned';
+        } else {
+          credit = ev.amount;
+          delta = -ev.amount;
+          particulars = 'Amount Returned by Technician';
+          typeLabel = 'Amount Returned';
+        }
+      }
+    } else if (ev.entity_type === 'settlement_reimbursement') {
+      if (ev.is_reversed) {
+        if (isTech) {
+          debit = ev.amount;
+          delta = -ev.amount;
+          typeLabel = 'Reimbursement Reversed';
+        } else {
+          credit = ev.amount;
+          delta = -ev.amount;
+          typeLabel = 'Reimbursement Reversed';
+        }
+      } else {
+        if (isTech) {
+          credit = ev.amount;
+          delta = ev.amount;
+          particulars = 'Reimbursement Received from Company';
+          typeLabel = 'Reimbursement Received';
+        } else {
+          debit = ev.amount;
+          delta = ev.amount;
+          particulars = 'Reimbursement Paid to Technician';
+          typeLabel = 'Reimbursement Paid';
+        }
+      }
+    } else if (ev.entity_type === 'settlement_adjustment') {
+      if (isTech) {
+        if (ev.amount > 0) { credit = ev.amount; delta = ev.amount; }
+        else { debit = Math.abs(ev.amount); delta = -Math.abs(ev.amount); }
+        typeLabel = 'Balance Adjustment';
+      } else {
+        if (ev.amount > 0) { debit = ev.amount; delta = ev.amount; }
+        else { credit = Math.abs(ev.amount); delta = -Math.abs(ev.amount); }
+        typeLabel = 'Balance Adjustment';
+      }
+    }
+
+    ev.debit = debit;
+    ev.credit = credit;
+    ev.delta = delta;
+    ev.particulars = particulars;
+    ev.type_label = typeLabel;
+
     if (fromTime && evTime < fromTime) {
-      openingBalance += (ev.debit - ev.credit);
+      openingBalance += delta;
     } else if (toTime && evTime > toTime) {
       continue;
     } else {
@@ -292,53 +417,105 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   let totalAdjustments = 0;
 
   for (const ev of filteredEvents) {
-    currentRunning = currentRunning + ev.debit - ev.credit;
+    currentRunning = currentRunning + ev.delta;
     ev.running_balance = currentRunning;
     periodDebit += ev.debit;
     periodCredit += ev.credit;
 
-    if (currentRunning > 0) {
-      ev.balance_direction = 'Returnable';
-      ev.balance_label = `₹${currentRunning.toLocaleString('en-IN')} Returnable by Technician`;
-    } else if (currentRunning < 0) {
-      ev.balance_direction = 'Payable';
-      ev.balance_label = `₹${Math.abs(currentRunning).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
+    if (isTech) {
+      if (currentRunning > 0) {
+        ev.balance_direction = 'Cr';
+        ev.balance_formatted = `₹${currentRunning.toLocaleString('en-IN')} Cr`;
+        ev.balance_label = `₹${currentRunning.toLocaleString('en-IN')} Returnable to Company`;
+      } else if (currentRunning < 0) {
+        ev.balance_direction = 'Dr';
+        ev.balance_formatted = `₹${Math.abs(currentRunning).toLocaleString('en-IN')} Dr`;
+        ev.balance_label = `₹${Math.abs(currentRunning).toLocaleString('en-IN')} Reimbursement Receivable from Company`;
+      } else {
+        ev.balance_direction = 'Settled';
+        ev.balance_formatted = '₹0';
+        ev.balance_label = '₹0 – Account Settled';
+      }
     } else {
-      ev.balance_direction = 'Settled';
-      ev.balance_label = '₹0 Account Settled';
+      if (currentRunning > 0) {
+        ev.balance_direction = 'Dr';
+        ev.balance_formatted = `₹${currentRunning.toLocaleString('en-IN')} Dr`;
+        ev.balance_label = `₹${currentRunning.toLocaleString('en-IN')} Recoverable from Technician`;
+      } else if (currentRunning < 0) {
+        ev.balance_direction = 'Cr';
+        ev.balance_formatted = `₹${Math.abs(currentRunning).toLocaleString('en-IN')} Cr`;
+        ev.balance_label = `₹${Math.abs(currentRunning).toLocaleString('en-IN')} Payable to Technician`;
+      } else {
+        ev.balance_direction = 'Settled';
+        ev.balance_formatted = '₹0';
+        ev.balance_label = '₹0 – Account Settled';
+      }
     }
 
     if (ev.entity_type === 'advance') {
-      totalAdvances += (ev.debit || 0);
+      totalAdvances += ev.amount;
     } else if (ev.entity_type === 'expense_voucher' && (ev.status === 'Approved' || ev.status === 'Verified')) {
-      totalApprovedExpenses += (ev.credit || 0);
+      totalApprovedExpenses += ev.amount;
     } else if (ev.entity_type === 'settlement_return') {
-      totalReturns += (ev.credit || 0);
+      totalReturns += ev.amount;
     } else if (ev.entity_type === 'settlement_reimbursement') {
-      totalReimbursements += (ev.debit || 0);
+      totalReimbursements += ev.amount;
     } else if (ev.entity_type === 'settlement_adjustment') {
-      totalAdjustments += (ev.debit - ev.credit);
+      totalAdjustments += ev.amount;
     }
   }
 
   const closingBalance = currentRunning;
 
   let finalPositionType = 'settled';
-  let finalPositionLabel = '₹0 Account Settled';
-  if (closingBalance > 0) {
-    finalPositionType = 'returnable';
-    finalPositionLabel = `₹${closingBalance.toLocaleString('en-IN')} Returnable by Technician`;
-  } else if (closingBalance < 0) {
-    finalPositionType = 'payable';
-    finalPositionLabel = `₹${Math.abs(closingBalance).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
+  let finalPositionLabel = '₹0 – Account Settled';
+  let closingFormatted = '₹0';
+  let closingDirection = 'Settled';
+
+  if (isTech) {
+    if (closingBalance > 0) {
+      finalPositionType = 'returnable';
+      closingDirection = 'Cr';
+      closingFormatted = `₹${closingBalance.toLocaleString('en-IN')} Cr`;
+      finalPositionLabel = `₹${closingBalance.toLocaleString('en-IN')} Returnable to Company`;
+    } else if (closingBalance < 0) {
+      finalPositionType = 'receivable';
+      closingDirection = 'Dr';
+      closingFormatted = `₹${Math.abs(closingBalance).toLocaleString('en-IN')} Dr`;
+      finalPositionLabel = `₹${Math.abs(closingBalance).toLocaleString('en-IN')} Reimbursement Receivable from Company`;
+    }
+  } else {
+    if (closingBalance > 0) {
+      finalPositionType = 'recoverable';
+      closingDirection = 'Dr';
+      closingFormatted = `₹${closingBalance.toLocaleString('en-IN')} Dr`;
+      finalPositionLabel = `₹${closingBalance.toLocaleString('en-IN')} Recoverable from Technician`;
+    } else if (closingBalance < 0) {
+      finalPositionType = 'payable';
+      closingDirection = 'Cr';
+      closingFormatted = `₹${Math.abs(closingBalance).toLocaleString('en-IN')} Cr`;
+      finalPositionLabel = `₹${Math.abs(closingBalance).toLocaleString('en-IN')} Payable to Technician`;
+    }
   }
 
   return {
+    perspective,
+    perspective_title: isTech ? 'My Account Statement' : 'Technician Account Statement',
     technician: technician || null,
+    columns: {
+      debit_header: isTech ? 'Debit (Expense / Return)' : 'Debit (Advance Given)',
+      credit_header: isTech ? 'Credit (Advance Received)' : 'Credit (Expense / Return)',
+      balance_header: 'Running Balance'
+    },
     opening_balance: openingBalance,
+    opening_balance_formatted: isTech
+      ? (openingBalance > 0 ? `₹${openingBalance.toLocaleString('en-IN')} Cr` : (openingBalance < 0 ? `₹${Math.abs(openingBalance).toLocaleString('en-IN')} Dr` : '₹0'))
+      : (openingBalance > 0 ? `₹${openingBalance.toLocaleString('en-IN')} Dr` : (openingBalance < 0 ? `₹${Math.abs(openingBalance).toLocaleString('en-IN')} Cr` : '₹0')),
     period_debit: periodDebit,
     period_credit: periodCredit,
     closing_balance: closingBalance,
+    closing_balance_formatted: closingFormatted,
+    closing_direction: closingDirection,
     total_advances: totalAdvances,
     total_approved_expenses: totalApprovedExpenses,
     total_returns: totalReturns,
@@ -349,11 +526,12 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
     final_position: {
       type: finalPositionType,
       amount: Math.abs(closingBalance),
-      label: finalPositionLabel
+      label: finalPositionLabel,
+      direction: closingDirection
     },
-    // Strictly chronological order (oldest first, newest at bottom) for accurate financial statement
+    // Strictly actual transactions (WITHOUT opening or closing fake rows)
     transactions: filteredEvents,
-    all_chronological_events: events
+    transaction_count: filteredEvents.length
   };
 }
 
@@ -791,24 +969,32 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
     const recoverableFromTech = netBalance > 0 ? netBalance : 0;
     const payableToTech = netBalance < 0 ? Math.abs(netBalance) : 0;
 
+    const isTech = user.role === 'technician';
+    const perspective = isTech ? 'technician' : 'company';
+
     let settlementStatus = 'SETTLED';
-    let settlementStatusLabel = 'Settled — ₹0 Outstanding';
+    let settlementStatusLabel = '₹0 – Account Settled';
     if (netBalance > 0) {
-      settlementStatus = 'RETURN_PENDING';
-      settlementStatusLabel = `₹${netBalance.toLocaleString('en-IN')} Returnable by Technician`;
+      settlementStatus = isTech ? 'RETURN_PENDING' : 'RECOVERABLE_FROM_TECH';
+      settlementStatusLabel = isTech
+        ? `₹${netBalance.toLocaleString('en-IN')} Returnable to Company`
+        : `₹${netBalance.toLocaleString('en-IN')} Recoverable from Technician`;
     } else if (netBalance < 0) {
-      settlementStatus = 'REIMBURSEMENT_DUE';
-      settlementStatusLabel = `₹${Math.abs(netBalance).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
+      settlementStatus = isTech ? 'REIMBURSEMENT_RECEIVABLE' : 'REIMBURSEMENT_PAYABLE';
+      settlementStatusLabel = isTech
+        ? `₹${Math.abs(netBalance).toLocaleString('en-IN')} Reimbursement Receivable from Company`
+        : `₹${Math.abs(netBalance).toLocaleString('en-IN')} Reimbursement Payable to Technician`;
     }
 
-    // Build Chronological Statement & Ledger
+    // Build Chronological Statement & Ledger with perspective
     const statementData = buildLedgerAndStatement(activeAdvances, expenses, activeSettlements, {
       fromDate: from_date,
       toDate: to_date,
       ticketId: ticket_id,
       transactionType: transaction_type,
       statusFilter,
-      technician: targetTechnician
+      technician: targetTechnician,
+      perspective
     });
 
     // Complaint-wise settlement summary

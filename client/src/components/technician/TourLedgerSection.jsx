@@ -1087,37 +1087,40 @@ export const TourLedgerSection = ({
     const st = ledgerData.statement;
     if (!st || !st.transactions) return showToast('No statement data to export', 'error');
 
+    const isTech = user?.role === 'technician';
     const titleRows = [
-      [`"ECO GREEN SOLAR - TECHNICIAN ACCOUNT STATEMENT"`],
-      [`"Technician: ${currentTech.name} | Phone: ${currentTech.phone || 'N/A'} | Zone: ${currentTech.area_zone || 'General Zone'}"`],
+      [`"ECO GREEN SOLAR - ${st.perspective_title || (isTech ? 'MY ACCOUNT STATEMENT' : 'TECHNICIAN ACCOUNT STATEMENT')}"`],
+      [`"Specialist: ${currentTech.name} | Phone: ${currentTech.phone || 'N/A'} | Zone: ${currentTech.area_zone || 'General Zone'}"`],
       [`"Statement Period: ${statementFromDate ? formatIndianDateOnly(statementFromDate) : 'Beginning'} to ${statementToDate ? formatIndianDateOnly(statementToDate) : 'Today'}"`],
       []
     ];
 
-    const headers = ['Date', 'Reference No', 'Complaint / Ticket', 'Transaction Type', 'Description', 'Advance Given (Debit)', 'Expense / Settlement (Credit)', 'Running Balance', 'Account Position'];
+    const debitCol = st.columns?.debit_header || (isTech ? 'Debit (Expense / Return)' : 'Debit (Advance Given)');
+    const creditCol = st.columns?.credit_header || (isTech ? 'Credit (Advance Received)' : 'Credit (Expense / Return)');
+
+    const headers = ['Date', 'Reference No', 'Complaint / Ticket', 'Transaction Type', 'Description', `"${debitCol}"`, `"${creditCol}"`, 'Running Balance', 'Account Position'];
     const rows = st.transactions.map(tx => [
       tx.date ? formatIndianDateOnly(tx.date) : '',
       tx.reference_no || '',
       tx.ticket_id || '-',
-      tx.type_label || tx.tx_type || '',
-      `"${(tx.description || '').replace(/"/g, '""')}"`,
+      tx.type_label || tx.particulars || tx.tx_type || '',
+      `"${(tx.particulars || tx.description || '').replace(/"/g, '""')}"`,
       tx.debit > 0 ? tx.debit.toFixed(2) : '0.00',
       tx.credit > 0 ? tx.credit.toFixed(2) : '0.00',
       tx.running_balance.toFixed(2),
-      `"${tx.balance_label || (tx.running_balance > 0 ? 'Returnable by Technician' : (tx.running_balance < 0 ? 'Reimbursement Payable' : 'Settled'))}"`
+      `"${tx.balance_label || ''}"`
     ]);
 
     const summaryRows = [
       [],
       ['FINANCIAL SUMMARY'],
-      ['Opening Balance', '', '', '', '', '', '', (st.opening_balance || 0).toFixed(2), 'Prior Period Balance'],
-      ['Total Advances (Debit)', '', '', '', '', '', '', (st.total_advances || 0).toFixed(2), 'Given to Technician'],
-      ['Total Approved Expenses (Credit)', '', '', '', '', '', '', (st.total_approved_expenses || 0).toFixed(2), 'Credit against Advance'],
-      ['Total Returned to Company (Credit)', '', '', '', '', '', '', (st.total_returns || 0).toFixed(2), 'Deposited to Company'],
-      ['Total Reimbursements Paid (Debit)', '', '', '', '', '', '', (st.total_reimbursements || 0).toFixed(2), 'Paid to Technician'],
-      ['Total Adjustments', '', '', '', '', '', '', (st.total_adjustments || 0).toFixed(2), 'Adjustments'],
-      ['Closing Balance', '', '', '', '', '', '', (st.closing_balance || 0).toFixed(2), (st.closing_balance > 0 ? 'Returnable by Technician' : (st.closing_balance < 0 ? 'Reimbursement Payable' : 'Settled'))],
-      ['Final Status', '', '', '', '', '', '', `"${st.position_label || ''}"`, '']
+      ['Opening Balance', '', '', '', '', '', '', (st.opening_balance || 0).toFixed(2), `"${st.opening_balance_formatted || ''}"`],
+      [isTech ? 'Total Advances Received (Credit)' : 'Total Advances Given (Debit)', '', '', '', '', '', '', (st.total_advances || 0).toFixed(2), ''],
+      [isTech ? 'Total Approved Expenses (Debit)' : 'Total Approved Expenses (Credit)', '', '', '', '', '', '', (st.total_approved_expenses || 0).toFixed(2), ''],
+      [isTech ? 'Total Returned to Company (Debit)' : 'Total Returned by Technician (Credit)', '', '', '', '', '', '', (st.total_returns || 0).toFixed(2), ''],
+      [isTech ? 'Total Reimbursements Received (Credit)' : 'Total Reimbursements Paid (Debit)', '', '', '', '', '', '', (st.total_reimbursements || 0).toFixed(2), ''],
+      ['Closing Balance', '', '', '', '', '', '', (st.closing_balance || 0).toFixed(2), `"${st.closing_balance_formatted || ''}"`],
+      ['Final Status', '', '', '', '', '', '', `"${st.status_label || st.position_label || ''}"`, '']
     ];
 
     const csvContent = 'data:text/csv;charset=utf-8,\ufeff' + 
@@ -1127,7 +1130,7 @@ export const TourLedgerSection = ({
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     const techName = (currentTech.name || 'Technician').replace(/\s+/g, '_');
-    link.setAttribute('download', `Technician_Statement_${techName}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Statement_${isTech ? 'MyAccount' : 'Technician'}_${techName}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2673,8 +2676,12 @@ export const TourLedgerSection = ({
                       <th className="py-2.5 px-3">Complaint / Tour</th>
                       <th className="py-2.5 px-3">Transaction</th>
                       <th className="py-2.5 px-3">Description</th>
-                      <th className="py-2.5 px-3 text-right">Advance Given (Debit)</th>
-                      <th className="py-2.5 px-3 text-right">Expense / Settlement (Credit)</th>
+                      <th className="py-2.5 px-3 text-right">
+                        {ledgerData.statement?.columns?.debit_header || (user?.role === 'technician' ? 'Debit (Expense / Return)' : 'Debit (Advance Given)')}
+                      </th>
+                      <th className="py-2.5 px-3 text-right">
+                        {ledgerData.statement?.columns?.credit_header || (user?.role === 'technician' ? 'Credit (Advance Received)' : 'Credit (Expense / Return)')}
+                      </th>
                       <th className="py-2.5 px-3 text-right font-black">Running Balance</th>
                     </tr>
                   </thead>
@@ -2742,51 +2749,64 @@ export const TourLedgerSection = ({
                             {tx.credit > 0 ? formatCur(tx.credit) : '—'}
                           </td>
                           <td className={`py-2.5 px-3 text-right font-mono font-black text-sm whitespace-nowrap ${
-                            tx.running_balance > 0 ? 'text-amber-900' : (tx.running_balance < 0 ? 'text-blue-900' : 'text-slate-700')
+                            tx.balance_direction === 'Dr' ? (user?.role === 'technician' ? 'text-blue-900' : 'text-amber-900') :
+                            tx.balance_direction === 'Cr' ? (user?.role === 'technician' ? 'text-amber-900' : 'text-blue-900') :
+                            'text-slate-700'
                           }`}>
                             {formatCur(Math.abs(tx.running_balance))}
                             <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              tx.running_balance > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                              (tx.running_balance < 0 ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300')
+                              tx.balance_direction === 'Dr' ? (user?.role === 'technician' ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-amber-100 text-amber-900 border border-amber-300') :
+                              tx.balance_direction === 'Cr' ? (user?.role === 'technician' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-blue-100 text-blue-900 border border-blue-300') :
+                              'bg-emerald-100 text-emerald-900 border border-emerald-300'
                             }`}>
-                              {tx.running_balance > 0 ? 'To Return' : (tx.running_balance < 0 ? 'Payable' : 'Settled')}
+                              {tx.balance_direction === 'Dr'
+                                ? (user?.role === 'technician' ? 'Dr (Receivable)' : 'Dr (Recoverable)')
+                                : (tx.balance_direction === 'Cr'
+                                    ? (user?.role === 'technician' ? 'Cr (To Return)' : 'Cr (Payable)')
+                                    : 'Settled')}
                             </span>
                           </td>
                         </tr>
                       ))
                     )}
-
-                    {/* Closing Balance Row */}
-                    <tr className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
-                      <td className="py-2.5 px-3 font-mono text-[11px]">{statementToDate ? formatIndianDateOnly(statementToDate) : 'Closing'}</td>
-                      <td className="py-2.5 px-3 font-mono text-[11px]">CLOSING</td>
-                      <td className="py-2.5 px-3 text-slate-400">-</td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-white font-bold">
-                          Closing Balance
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 font-bold text-slate-800">
-                        {ledgerData.statement?.status_label || 'Settled'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
-                        {formatCur(ledgerData.statement?.total_advances || 0)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-900">
-                        {formatCur((ledgerData.statement?.total_approved_expenses || 0) + (ledgerData.statement?.total_returns || 0))}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-black text-sm whitespace-nowrap">
-                        {formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}
-                        <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          (ledgerData.statement?.closing_balance || 0) > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                          ((ledgerData.statement?.closing_balance || 0) < 0 ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300')
-                        }`}>
-                          {(ledgerData.statement?.closing_balance || 0) > 0 ? 'To Return' : ((ledgerData.statement?.closing_balance || 0) < 0 ? 'Payable' : 'Settled')}
-                        </span>
-                      </td>
-                    </tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Statement Closing Result Card (Summary, Not a Transaction) */}
+            <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs ${
+              (ledgerData.statement?.closing_balance || 0) !== 0
+                ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+                : 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shrink-0 ${
+                  (ledgerData.statement?.closing_balance || 0) !== 0
+                    ? 'bg-amber-200 text-amber-900'
+                    : 'bg-emerald-200 text-emerald-900'
+                }`}>
+                  {(ledgerData.statement?.closing_balance || 0) !== 0 ? '₹' : '✓'}
+                </div>
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
+                    Statement Closing Balance
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <strong className="text-xl font-black font-mono">
+                      {ledgerData.statement?.closing_balance_formatted || formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}
+                    </strong>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-white/80 border border-slate-300">
+                      {ledgerData.statement?.status_label || ledgerData.statement?.position_label}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Account Status</span>
+                <span className="text-xs font-bold text-slate-800">
+                  {ledgerData.statement?.closing_balance === 0 ? 'Account Fully Settled' : (user?.role === 'technician' ? 'Outstanding Settlement Due' : 'Balance Pending Settlement')}
+                </span>
               </div>
             </div>
 
@@ -4175,7 +4195,7 @@ export const TourLedgerSection = ({
                 </div>
                 <div className="text-right">
                   <h3 className="text-xs font-black tracking-wider uppercase bg-slate-900 text-white px-2.5 py-1 rounded inline-block">
-                    TECHNICIAN ACCOUNT STATEMENT
+                    {ledgerData.statement?.perspective_title || (user?.role === 'technician' ? 'MY ACCOUNT STATEMENT' : 'TECHNICIAN ACCOUNT STATEMENT')}
                   </h3>
                   <p className="text-[10px] font-mono text-slate-500 mt-1">
                     Date: {formatIndianDateOnly(new Date().toISOString())}
@@ -4196,7 +4216,9 @@ export const TourLedgerSection = ({
                   <strong className="text-xs font-mono font-bold text-slate-900 block">
                     {statementFromDate ? formatIndianDateOnly(statementFromDate) : 'Beginning'} to {statementToDate ? formatIndianDateOnly(statementToDate) : 'Current Date'}
                   </strong>
-                  <span className="text-[10px] text-slate-500 block mt-0.5">Account: Technician Tour Advance & Expense</span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    Account: {user?.role === 'technician' ? 'My Tour Advances & Expenses' : 'Technician Tour Advance & Expense'}
+                  </span>
                 </div>
               </div>
 
@@ -4205,21 +4227,33 @@ export const TourLedgerSection = ({
                 <thead>
                   <tr className="bg-slate-100 font-bold border-b border-slate-300 text-[10px] uppercase text-slate-700">
                     <th className="p-2 text-left border-r border-slate-300">Opening Balance</th>
-                    <th className="p-2 text-right border-r border-slate-300">Total Advances (Debit)</th>
-                    <th className="p-2 text-right border-r border-slate-300">Approved Expenses (Credit)</th>
-                    <th className="p-2 text-right border-r border-slate-300">Returned (Credit)</th>
-                    <th className="p-2 text-right border-r border-slate-300">Reimbursements (Debit)</th>
+                    <th className="p-2 text-right border-r border-slate-300">
+                      {user?.role === 'technician' ? 'Advances Received (Credit)' : 'Total Advances (Debit)'}
+                    </th>
+                    <th className="p-2 text-right border-r border-slate-300">
+                      {user?.role === 'technician' ? 'Approved Expenses (Debit)' : 'Approved Expenses (Credit)'}
+                    </th>
+                    <th className="p-2 text-right border-r border-slate-300">
+                      {user?.role === 'technician' ? 'Returned to Co. (Debit)' : 'Returned (Credit)'}
+                    </th>
+                    <th className="p-2 text-right border-r border-slate-300">
+                      {user?.role === 'technician' ? 'Reimbursements (Credit)' : 'Reimbursements (Debit)'}
+                    </th>
                     <th className="p-2 text-right">Closing Balance</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr className="font-mono text-xs font-bold">
-                    <td className="p-2 border-r border-slate-300">{formatCur(ledgerData.statement?.opening_balance || 0)}</td>
+                    <td className="p-2 border-r border-slate-300">
+                      {ledgerData.statement?.opening_balance_formatted || formatCur(ledgerData.statement?.opening_balance || 0)}
+                    </td>
                     <td className="p-2 text-right border-r border-slate-300 text-blue-900">{formatCur(ledgerData.statement?.total_advances || 0)}</td>
                     <td className="p-2 text-right border-r border-slate-300 text-rose-900">{formatCur(ledgerData.statement?.total_approved_expenses || 0)}</td>
                     <td className="p-2 text-right border-r border-slate-300 text-emerald-800">{formatCur(ledgerData.statement?.total_returns || 0)}</td>
                     <td className="p-2 text-right border-r border-slate-300 text-indigo-900">{formatCur(ledgerData.statement?.total_reimbursements || 0)}</td>
-                    <td className="p-2 text-right font-black text-sm">{formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}</td>
+                    <td className="p-2 text-right font-black text-sm">
+                      {ledgerData.statement?.closing_balance_formatted || formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -4228,7 +4262,7 @@ export const TourLedgerSection = ({
               <div className="p-2.5 rounded-lg border-2 border-slate-800 bg-slate-50 text-center">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block">FINAL ACCOUNT SETTLEMENT POSITION</span>
                 <strong className="text-sm font-black tracking-wide text-slate-950 uppercase">
-                  {ledgerData.statement?.position_label || 'SETTLED – ₹0 OUTSTANDING'}
+                  {ledgerData.statement?.status_label || ledgerData.statement?.position_label || 'SETTLED – ₹0 OUTSTANDING'}
                 </strong>
               </div>
 
@@ -4241,9 +4275,13 @@ export const TourLedgerSection = ({
                     <th className="p-1.5 text-left border-r border-slate-300">Ticket / Tour</th>
                     <th className="p-1.5 text-left border-r border-slate-300">Type</th>
                     <th className="p-1.5 text-left border-r border-slate-300">Particulars / Details</th>
-                    <th className="p-1.5 text-right border-r border-slate-300">Debit (₹)</th>
-                    <th className="p-1.5 text-right border-r border-slate-300">Credit (₹)</th>
-                    <th className="p-1.5 text-right">Balance (₹)</th>
+                    <th className="p-1.5 text-right border-r border-slate-300">
+                      {ledgerData.statement?.columns?.debit_header || (user?.role === 'technician' ? 'Debit (Expense/Return)' : 'Debit (Advance Given)')}
+                    </th>
+                    <th className="p-1.5 text-right border-r border-slate-300">
+                      {ledgerData.statement?.columns?.credit_header || (user?.role === 'technician' ? 'Credit (Advance Recv)' : 'Credit (Expense/Return)')}
+                    </th>
+                    <th className="p-1.5 text-right">Balance</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -4255,7 +4293,9 @@ export const TourLedgerSection = ({
                     <td className="p-1.5 border-r border-slate-300">Balance brought forward from prior period</td>
                     <td className="p-1.5 text-right border-r border-slate-300 font-mono">-</td>
                     <td className="p-1.5 text-right border-r border-slate-300 font-mono">-</td>
-                    <td className="p-1.5 text-right font-mono font-bold text-slate-900">{formatCur(ledgerData.statement?.opening_balance || 0)}</td>
+                    <td className="p-1.5 text-right font-mono font-bold text-slate-900">
+                      {ledgerData.statement?.opening_balance_formatted || formatCur(ledgerData.statement?.opening_balance || 0)}
+                    </td>
                   </tr>
 
                   {(ledgerData.statement?.transactions || []).map((tx, idx) => (
@@ -4263,35 +4303,22 @@ export const TourLedgerSection = ({
                       <td className="p-1.5 border-r border-slate-300 font-mono whitespace-nowrap">{tx.date ? formatIndianDateOnly(tx.date) : '-'}</td>
                       <td className="p-1.5 border-r border-slate-300 font-mono font-bold">{tx.reference_no}</td>
                       <td className="p-1.5 border-r border-slate-300 font-mono">{tx.ticket_id || 'General'}</td>
-                      <td className="p-1.5 border-r border-slate-300 font-semibold">{tx.type_label || tx.transaction_type}</td>
-                      <td className="p-1.5 border-r border-slate-300 max-w-[200px] truncate">{tx.description}</td>
+                      <td className="p-1.5 border-r border-slate-300 font-semibold">{tx.type_label || tx.particulars || tx.transaction_type}</td>
+                      <td className="p-1.5 border-r border-slate-300 max-w-[200px] truncate">{tx.particulars || tx.description}</td>
                       <td className="p-1.5 text-right border-r border-slate-300 font-mono font-bold text-blue-900">{tx.debit > 0 ? formatCur(tx.debit) : '—'}</td>
                       <td className="p-1.5 text-right border-r border-slate-300 font-mono font-bold text-emerald-900">{tx.credit > 0 ? formatCur(tx.credit) : '—'}</td>
                       <td className="p-1.5 text-right font-mono font-black whitespace-nowrap">
                         {formatCur(Math.abs(tx.running_balance))}
                         <span className="text-[9px] font-normal text-slate-600 ml-1">
-                          {tx.running_balance > 0 ? 'Dr (Returnable)' : (tx.running_balance < 0 ? 'Cr (Payable)' : 'Settled')}
+                          {tx.balance_direction === 'Dr'
+                            ? (user?.role === 'technician' ? 'Dr (Receivable)' : 'Dr (Recoverable)')
+                            : (tx.balance_direction === 'Cr'
+                                ? (user?.role === 'technician' ? 'Cr (To Return)' : 'Cr (Payable)')
+                                : 'Settled')}
                         </span>
                       </td>
                     </tr>
                   ))}
-
-                  {/* Closing Balance Row */}
-                  <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
-                    <td className="p-1.5 border-r border-slate-300 font-mono">{statementToDate ? formatIndianDateOnly(statementToDate) : 'Closing'}</td>
-                    <td className="p-1.5 border-r border-slate-300 font-mono">CLOSING</td>
-                    <td className="p-1.5 border-r border-slate-300">-</td>
-                    <td className="p-1.5 border-r border-slate-300 font-bold">Closing Balance</td>
-                    <td className="p-1.5 border-r border-slate-300 font-bold">{ledgerData.statement?.status_label || 'Settled'}</td>
-                    <td className="p-1.5 text-right border-r border-slate-300 font-mono font-bold text-blue-900">{formatCur(ledgerData.statement?.total_advances || 0)}</td>
-                    <td className="p-1.5 text-right border-r border-slate-300 font-mono font-bold text-emerald-900">{formatCur((ledgerData.statement?.total_approved_expenses || 0) + (ledgerData.statement?.total_returns || 0))}</td>
-                    <td className="p-1.5 text-right font-mono font-black whitespace-nowrap">
-                      {formatCur(Math.abs(ledgerData.statement?.closing_balance || 0))}
-                      <span className="text-[9px] font-normal text-slate-700 ml-1">
-                        {(ledgerData.statement?.closing_balance || 0) > 0 ? 'Dr (Returnable)' : ((ledgerData.statement?.closing_balance || 0) < 0 ? 'Cr (Payable)' : 'Settled')}
-                      </span>
-                    </td>
-                  </tr>
                 </tbody>
               </table>
 
