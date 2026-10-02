@@ -3199,7 +3199,7 @@ export const TourLedgerSection = ({
                   onChange={(e) => setEditAdvanceForm(prev => ({ ...prev, technician_id: e.target.value }))}
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800"
                 >
-                  {technicians.map(t => (
+                  {(loadedTechs || []).map(t => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.area_zone || 'Field Zone'})
                     </option>
