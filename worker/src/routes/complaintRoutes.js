@@ -29,6 +29,169 @@ async function generateNextTicketId(env, ctx) {
   return `${prefix}${String(nextNum).padStart(6, '0')}`;
 }
 
+// Self-healing check for retention schema
+let retentionSchemaEnsured = false;
+async function ensureRetentionSchema(env, ctx) {
+  if (retentionSchemaEnsured) return;
+  try {
+    await query(`
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS documents_purged INT DEFAULT 0;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS documents_purged_at TIMESTAMP;
+      ALTER TABLE complaint_attachments ADD COLUMN IF NOT EXISTS is_purged INT DEFAULT 0;
+    `, [], env, ctx);
+    retentionSchemaEnsured = true;
+  } catch (_) {}
+}
+
+/**
+ * Purge all R2 media files for a complaint closed > 30 days ago
+ * Preserves the complaint row, customer data, and attachment metadata in database.
+ */
+export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
+  if (!complaint) return false;
+  await ensureRetentionSchema(env, ctx);
+
+  const isClosed = ['Closed', 'closed'].includes(complaint.status);
+  const closedDate = complaint.closed_at ? new Date(complaint.closed_at) : null;
+  if (!isClosed || !closedDate || isNaN(closedDate.getTime())) return false;
+
+  const msIn30Days = 30 * 24 * 60 * 60 * 1000;
+  const isPast30Days = (Date.now() - closedDate.getTime()) >= msIn30Days;
+  if (!isPast30Days) return false;
+
+  // Already purged
+  if (Number(complaint.documents_purged) === 1) return true;
+
+  try {
+    const bucket = env?.MEDIA_BUCKET;
+    const ticketId = complaint.ticket_id;
+    const compId = complaint.id;
+
+    // 1. Fetch attachments
+    const atts = await query(
+      'SELECT id, file_url, file_data, file_name FROM complaint_attachments WHERE complaint_id = $1',
+      [compId],
+      env,
+      ctx
+    );
+
+    const keysToDelete = new Set();
+
+    // From attachments rows
+    for (const row of atts.rows) {
+      const candidates = [row.file_url, row.file_data].filter(Boolean);
+      for (const u of candidates) {
+        const match = u.match(/(?:complaints\/[^\s"']+)/);
+        if (match) keysToDelete.add(decodeURIComponent(match[0]));
+      }
+    }
+
+    // From closing photo
+    if (complaint.closing_photo_url) {
+      const match = complaint.closing_photo_url.match(/(?:complaints\/[^\s"']+)/);
+      if (match) keysToDelete.add(decodeURIComponent(match[0]));
+    }
+
+    // List R2 objects under complaints/${ticketId}/ prefix to ensure 100% complete purge of all media
+    if (bucket && typeof bucket.list === 'function' && ticketId) {
+      try {
+        const listed = await bucket.list({ prefix: `complaints/${ticketId}/` });
+        if (listed && listed.objects) {
+          for (const obj of listed.objects) {
+            keysToDelete.add(obj.key);
+          }
+        }
+      } catch (err) {
+        console.warn(`[R2 List Purge Error for ${ticketId}]`, err.message);
+      }
+    }
+
+    // Delete all collected objects from Cloudflare R2
+    if (bucket && keysToDelete.size > 0) {
+      for (const key of keysToDelete) {
+        try {
+          await deleteR2Object(bucket, key);
+        } catch (delErr) {
+          console.warn(`[Purge R2 Object Error] Key: ${key}:`, delErr.message);
+        }
+      }
+    }
+
+    // Update database: mark attachments as purged while preserving file_name & upload info
+    await query(
+      'UPDATE complaint_attachments SET is_purged = 1, file_url = NULL, file_data = NULL WHERE complaint_id = $1',
+      [compId],
+      env,
+      ctx
+    ).catch(() => {});
+
+    // Update complaint record
+    await query(
+      `UPDATE complaints 
+       SET documents_purged = 1, 
+           documents_purged_at = CURRENT_TIMESTAMP, 
+           closing_photo_url = NULL 
+       WHERE id = $1`,
+      [compId],
+      env,
+      ctx
+    ).catch(() => {});
+
+    // Log in complaint timeline for full enterprise audit
+    await query(
+      `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+       VALUES ($1, 'Documents Purged', 'All attachments and closing media were automatically removed from Cloudflare R2 storage in accordance with the 30-day post-closure retention policy. Complaint details and records remain permanently archived.', 'Automated Lifecycle System', 'system', 0)`,
+      [compId],
+      env,
+      ctx
+    ).catch(() => {});
+
+    complaint.documents_purged = 1;
+    complaint.documents_purged_at = new Date().toISOString();
+    complaint.closing_photo_url = null;
+    return true;
+  } catch (e) {
+    console.error(`[Purge Expired Docs Error] Ticket ${complaint.ticket_id}:`, e);
+    return false;
+  }
+}
+
+/**
+ * Batch process all closed complaints older than 30 days
+ */
+export async function runBatchExpiredDocumentsPurge(env, ctx) {
+  await ensureRetentionSchema(env, ctx);
+
+  const sql = `
+    SELECT id, ticket_id, status, closed_at, documents_purged, closing_photo_url
+    FROM complaints
+    WHERE status IN ('Closed', 'closed')
+      AND closed_at IS NOT NULL
+      AND closed_at < (NOW() - INTERVAL '30 days')
+      AND (documents_purged IS NULL OR documents_purged = 0)
+    ORDER BY closed_at ASC
+    LIMIT 100
+  `;
+  const res = await query(sql, [], env, ctx);
+  let purgedCount = 0;
+  const purgedTickets = [];
+
+  for (const comp of res.rows) {
+    const ok = await purgeComplaintDocumentsIfExpired(comp, env, ctx);
+    if (ok) {
+      purgedCount++;
+      purgedTickets.push(comp.ticket_id);
+    }
+  }
+
+  return { 
+    success: true, 
+    purgedCount, 
+    purgedTickets, 
+    message: `Successfully purged expired documents for ${purgedCount} complaints older than 30 days.` 
+  };
+}
+
 // GET /api/complaints - Filtered List
 complaintRoutes.get('/', authenticateToken, async (c) => {
   try {
@@ -250,6 +413,26 @@ complaintRoutes.get('/track/:query', async (c) => {
   }
 });
 
+// POST /api/complaints/purge-expired-documents - Batch Lifecycle Purge (>30 days closed)
+complaintRoutes.post('/purge-expired-documents', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const res = await runBatchExpiredDocumentsPurge(c.env, c.executionCtx);
+    return c.json(res);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/complaints/purge-expired-documents - Trigger Alias
+complaintRoutes.get('/purge-expired-documents', optionalAuth, async (c) => {
+  try {
+    const res = await runBatchExpiredDocumentsPurge(c.env, c.executionCtx);
+    return c.json(res);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // GET /api/complaints/:id - Detail
 complaintRoutes.get('/:id', authenticateToken, async (c) => {
   try {
@@ -272,8 +455,12 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
     if (compRes.rows.length === 0) return c.json({ error: 'Complaint not found' }, 404);
 
     const complaint = compRes.rows[0];
+
+    // Check and auto-purge documents from R2 if complaint closed > 30 days
+    await purgeComplaintDocumentsIfExpired(complaint, c.env, c.executionCtx);
+
     const atts = await query(
-      'SELECT id, file_name, file_url, file_type, uploaded_by, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY created_at ASC',
+      'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(is_purged, 0) as is_purged, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY created_at ASC',
       [complaint.id],
       c.env,
       c.executionCtx

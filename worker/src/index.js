@@ -88,4 +88,16 @@ app.onError((err, c) => {
   }, 500);
 });
 
-export default app;
+import { runBatchExpiredDocumentsPurge } from './routes/complaintRoutes.js';
+
+export default {
+  fetch: app.fetch,
+  async scheduled(event, env, ctx) {
+    console.log('[Cron Event] Running batch purge of expired complaint documents (>30 days closed)...');
+    ctx.waitUntil(
+      runBatchExpiredDocumentsPurge(env, ctx)
+        .then(res => console.log('[Cron Purge Finished]', res))
+        .catch(err => console.error('[Cron Purge Failed]', err))
+    );
+  }
+};

@@ -9,7 +9,7 @@ import {
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
-  Play, Pause, Video, Download, Camera, Upload, Lock, Users
+  Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -168,6 +168,14 @@ export const ComplaintDetailDrawer = ({
   const allResolutionProofs = resolutionProofAttachments.length > 0 
     ? resolutionProofAttachments 
     : (ticket?.closing_photo_url ? [{ id: 'closing_photo', file_url: ticket.closing_photo_url, file_name: 'Technician Closing Proof Photo/Video', uploaded_by: ticket.status === 'Reopened' ? previousTechName : (ticket.technician_name || 'Technician') }] : []);
+
+  // 30-Day Post-Closure Cloud Retention Check
+  const isTicketClosed = ['Closed', 'closed'].includes(ticket?.status);
+  const ticketClosedDate = ticket?.closed_at ? new Date(ticket.closed_at) : null;
+  const daysSinceClosure = ticketClosedDate && !isNaN(ticketClosedDate.getTime()) 
+    ? Math.max(0, Math.floor((Date.now() - ticketClosedDate.getTime()) / (1000 * 60 * 60 * 24))) 
+    : 0;
+  const areDocumentsPurged = ticket?.documents_purged === 1 || (isTicketClosed && daysSinceClosure >= 30);
 
   const cachedUser = React.useMemo(() => {
     try {
@@ -1767,43 +1775,122 @@ export const ComplaintDetailDrawer = ({
                         </div>
 
                         {!isResolvedOrClosed && isAdminOrStaff && (
-                          <div
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDiagnosticsDragging(true); }}
-                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDiagnosticsDragging(false); }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setIsDiagnosticsDragging(false);
-                              if (e.dataTransfer?.files?.length > 0) {
-                                uploadFilesList(Array.from(e.dataTransfer.files));
-                              }
-                            }}
-                            className={`mb-3 p-3 rounded-xl border-2 border-dashed transition-all duration-200 text-center ${
-                              isDiagnosticsDragging
-                                ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/50 scale-[1.01]'
-                                : 'border-slate-200 hover:border-emerald-400 bg-slate-50/60'
-                            }`}
-                          >
-                            {isDiagnosticsDragging ? (
-                              <div className="py-2 flex flex-col items-center justify-center space-y-1 pointer-events-none">
-                                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
-                                  <Upload className="w-4 h-4" />
+                          areDocumentsPurged ? (
+                            <div className="mb-3 p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-center">
+                              <p className="text-xs font-bold text-amber-900 flex items-center justify-center gap-1.5">
+                                <Lock className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Attachment uploads locked — complaint closed over 30 days ago</span>
+                              </p>
+                              <p className="text-[10px] text-amber-700 mt-0.5">Media storage lifecycle has ended for this ticket.</p>
+                            </div>
+                          ) : (
+                            <div
+                              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDiagnosticsDragging(true); }}
+                              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDiagnosticsDragging(false); }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setIsDiagnosticsDragging(false);
+                                if (e.dataTransfer?.files?.length > 0) {
+                                  uploadFilesList(Array.from(e.dataTransfer.files));
+                                }
+                              }}
+                              className={`mb-3 p-3 rounded-xl border-2 border-dashed transition-all duration-200 text-center ${
+                                isDiagnosticsDragging
+                                  ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/50 scale-[1.01]'
+                                  : 'border-slate-200 hover:border-emerald-400 bg-slate-50/60'
+                              }`}
+                            >
+                              {isDiagnosticsDragging ? (
+                                <div className="py-2 flex flex-col items-center justify-center space-y-1 pointer-events-none">
+                                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
+                                    <Upload className="w-4 h-4" />
+                                  </div>
+                                  <p className="text-xs font-bold text-emerald-800">Drop files here to attach to complaint</p>
+                                  <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 50MB</p>
                                 </div>
-                                <p className="text-xs font-bold text-emerald-800">Drop files here to attach to complaint</p>
-                                <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 50MB</p>
+                              ) : (
+                                <div className="flex items-center justify-center gap-2 text-slate-500 py-0.5">
+                                  <Upload className="w-3.5 h-3.5 text-slate-400" />
+                                  <span className="text-[11px] font-medium text-slate-600">Drag & drop photos, videos or documents here to upload</span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        )}
+
+                        {areDocumentsPurged && (
+                          <div className="mb-3.5 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-start gap-3 text-xs text-amber-950 shadow-xs">
+                            <div className="p-2 bg-amber-100 rounded-lg text-amber-700 shrink-0">
+                              <Archive className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <strong className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                  <span>Media Attachments Purged from Cloud Storage</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 border border-amber-300">
+                                    30+ Days Closed
+                                  </span>
+                                </strong>
+                                {ticket?.closed_at && (
+                                  <span className="text-[10px] text-amber-700 font-mono">
+                                    Closed {daysSinceClosure} days ago ({formatIndianDateOnly(ticket.closed_at)})
+                                  </span>
+                                )}
                               </div>
-                            ) : (
-                              <div className="flex items-center justify-center gap-2 text-slate-500 py-0.5">
-                                <Upload className="w-3.5 h-3.5 text-slate-400" />
-                                <span className="text-[11px] font-medium text-slate-600">Drag & drop photos, videos or documents here to upload</span>
+                              <p className="text-[11px] text-amber-800 leading-relaxed mt-1">
+                                In accordance with data retention policy, all photo, video, and document files have been automatically removed from Cloudflare R2 storage because this complaint was closed more than 30 days ago.
+                              </p>
+                              <div className="mt-2 text-[10px] font-semibold text-emerald-800 bg-emerald-50/80 p-2 rounded-lg border border-emerald-200 flex items-center gap-2">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>All database records, customer details, complaint logs, technician notes, and ticket history remain permanently intact and archived.</span>
                               </div>
-                            )}
+                            </div>
                           </div>
                         )}
+
                         {initialIssueAttachments.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {initialIssueAttachments.map((att) => {
+                              const isPurged = areDocumentsPurged || att.is_purged === 1 || !att.file_url;
+                              if (isPurged) {
+                                return (
+                                  <div
+                                    key={att.id}
+                                    className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2.5 relative overflow-hidden"
+                                  >
+                                    <div 
+                                      onClick={() => showToast('Attachment was removed from cloud storage because this complaint has been closed for more than 30 days. Ticket records remain permanently saved.', 'warning')}
+                                      className="w-12 h-12 bg-amber-100 rounded-lg flex flex-col items-center justify-center shrink-0 border border-amber-300 cursor-pointer"
+                                      title="Attachment purged after 30 days of ticket closure"
+                                    >
+                                      <Archive className="w-5 h-5 text-amber-700" />
+                                      <span className="text-[8px] font-bold uppercase tracking-wider text-amber-800">Purged</span>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1 mb-0.5">
+                                        <span className="text-[9px] font-bold text-amber-900 bg-amber-200/80 border border-amber-300 px-1.5 py-0.5 rounded leading-none">
+                                          Purged from Cloud (30d+)
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] font-bold text-slate-700 truncate" title={att.file_name}>
+                                        {att.file_name}
+                                      </p>
+                                      <div className="flex items-center gap-1.5 mt-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => showToast('This file was automatically purged from cloud storage 30 days after complaint closure. Complaint records and details remain permanently archived.', 'warning')}
+                                          className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer hover:bg-amber-200 transition-colors"
+                                        >
+                                          <Archive className="w-3 h-3 text-amber-700" /> Purged from Cloud
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
                               const rawUrl = att.file_url || att.file_data || '';
                               const fileUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:') || rawUrl.startsWith('/api')
                                 ? rawUrl
@@ -2840,14 +2927,31 @@ export const ComplaintDetailDrawer = ({
                           <div className="pt-2 border-t border-emerald-200 space-y-2">
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] font-bold text-emerald-950 flex items-center gap-1.5">
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Technician Site Completion Proof ({allResolutionProofs.length}):
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Technician Site Completion Proof:
                               </span>
-                              <span className="text-[9px] text-emerald-800 font-bold bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
-                                Uploaded by Technician at Site Resolution
-                              </span>
+                              {areDocumentsPurged ? (
+                                <span className="text-[9px] text-amber-800 font-bold bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                                  Purged from Cloud (30d+ Closed)
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-emerald-800 font-bold bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
+                                  Uploaded by Technician at Site Resolution
+                                </span>
+                              )}
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {areDocumentsPurged ? (
+                              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-950">
+                                <Archive className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                <div>
+                                  <strong className="block font-bold text-amber-900">Completion Proof Media Purged</strong>
+                                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                    The resolution photo/video file was automatically purged from Cloudflare R2 storage after 30 days of ticket closure. Resolution verification, technician notes, and feedback remain permanently recorded.
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                               {allResolutionProofs.map((closingProof, idx) => {
                                 const fileUrl = closingProof.file_data || closingProof.file_url || `/api/attachments/${closingProof.id}`;
                                 const isPdf = closingProof.file_type === 'application/pdf' || 
@@ -2942,6 +3046,7 @@ export const ComplaintDetailDrawer = ({
                                 );
                               })}
                             </div>
+                            )}
                           </div>
                         )}
                       </div>

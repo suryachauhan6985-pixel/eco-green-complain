@@ -287,6 +287,30 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
 
     const object = await getR2Object(bucket, cleanKey, getOptions);
     if (!object) {
+      // Check if this object belonged to a closed complaint older than 30 days
+      const keyParts = cleanKey.split('/');
+      const folderId = keyParts[1];
+      if (folderId && folderId !== 'general' && folderId !== 'temp') {
+        const checkClosed = await query(
+          "SELECT ticket_id, status, closed_at, documents_purged FROM complaints WHERE (ticket_id = $1 OR id::text = $1) LIMIT 1",
+          [folderId],
+          c.env,
+          c.executionCtx
+        ).catch(() => ({ rows: [] }));
+        if (checkClosed.rows.length > 0) {
+          const comp = checkClosed.rows[0];
+          const isClosed = ['Closed', 'closed'].includes(comp.status);
+          const closedDate = comp.closed_at ? new Date(comp.closed_at) : null;
+          const isExpired = comp.documents_purged === 1 || (isClosed && closedDate && (Date.now() - closedDate.getTime()) >= 30 * 24 * 60 * 60 * 1000);
+          if (isExpired) {
+            return c.json({ 
+              error: 'This document has been permanently removed from cloud storage because the complaint was closed more than 30 days ago in accordance with data retention policy.',
+              purged: true,
+              expired: true
+            }, 410);
+          }
+        }
+      }
       return c.text('File not found in storage', 404);
     }
 
