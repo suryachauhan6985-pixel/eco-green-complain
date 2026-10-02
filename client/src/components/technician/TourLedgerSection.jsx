@@ -1789,10 +1789,10 @@ export const TourLedgerSection = ({
       </div>
 
       {/* Main Ledger Sub-Tabs & Tables */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-2xl border-2 border-slate-300/80 shadow-xs overflow-hidden">
         {/* Sub-tab Navigation: Distinct Separated Card Buttons with Borders and Badges */}
-        <div className="p-3 bg-slate-100/90 border-b border-slate-200">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <div className="p-3 sm:p-3.5 bg-slate-200/80 border-b border-slate-300">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {/* 1. Expense Vouchers */}
             <button
               type="button"
@@ -1800,15 +1800,15 @@ export const TourLedgerSection = ({
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'expenses'
                   ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
-                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/60 border-slate-300 shadow-2xs'
+                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 border-slate-300 hover:border-emerald-300 shadow-2xs'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <Tag className={`w-4 h-4 shrink-0 ${subTab === 'expenses' ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                <Tag className={`w-4 h-4 shrink-0 ${subTab === 'expenses' ? 'text-emerald-200' : 'text-slate-600'}`} />
                 <span className="truncate">Expense Vouchers</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                subTab === 'expenses' ? 'bg-emerald-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                subTab === 'expenses' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
                 {voucherLogs.length}
               </span>
@@ -1820,16 +1820,16 @@ export const TourLedgerSection = ({
               onClick={() => setSubTab('advances')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'advances'
-                  ? 'bg-blue-800 text-white border-blue-900 shadow-md ring-2 ring-blue-500/25'
-                  : 'bg-white text-slate-700 hover:text-blue-800 hover:bg-blue-50/60 border-slate-300 shadow-2xs'
+                  ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
+                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 border-slate-300 hover:border-emerald-300 shadow-2xs'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <ArrowDownLeft className={`w-4 h-4 shrink-0 ${subTab === 'advances' ? 'text-blue-200' : 'text-blue-600'}`} />
+                <ArrowDownLeft className={`w-4 h-4 shrink-0 ${subTab === 'advances' ? 'text-emerald-200' : 'text-slate-600'}`} />
                 <span className="truncate">Tour Advances</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                subTab === 'advances' ? 'bg-blue-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                subTab === 'advances' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
                 {advances.length}
               </span>
@@ -1841,16 +1841,16 @@ export const TourLedgerSection = ({
               onClick={() => setSubTab('settlements')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'settlements'
-                  ? 'bg-teal-800 text-white border-teal-900 shadow-md ring-2 ring-teal-500/25'
-                  : 'bg-white text-slate-700 hover:text-teal-800 hover:bg-teal-50/60 border-slate-300 shadow-2xs'
+                  ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
+                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 border-slate-300 hover:border-emerald-300 shadow-2xs'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <CheckCircle2 className={`w-4 h-4 shrink-0 ${subTab === 'settlements' ? 'text-teal-200' : 'text-teal-600'}`} />
+                <CheckCircle2 className={`w-4 h-4 shrink-0 ${subTab === 'settlements' ? 'text-emerald-200' : 'text-slate-600'}`} />
                 <span className="truncate">Deposits & Returns</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                subTab === 'settlements' ? 'bg-teal-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                subTab === 'settlements' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
                 {settlements.length}
               </span>
@@ -1862,16 +1862,16 @@ export const TourLedgerSection = ({
               onClick={() => setSubTab('statement')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'statement'
-                  ? 'bg-slate-900 text-white border-black shadow-md ring-2 ring-slate-500/25'
-                  : 'bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 border-slate-300 shadow-2xs'
+                  ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
+                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 border-slate-300 hover:border-emerald-300 shadow-2xs'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <FileText className={`w-4 h-4 shrink-0 ${subTab === 'statement' ? 'text-emerald-300' : 'text-slate-600'}`} />
+                <FileText className={`w-4 h-4 shrink-0 ${subTab === 'statement' ? 'text-emerald-200' : 'text-slate-600'}`} />
                 <span className="truncate">Account Ledger</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                subTab === 'statement' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                subTab === 'statement' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
                 Statement
               </span>
@@ -1883,16 +1883,16 @@ export const TourLedgerSection = ({
               onClick={() => setSubTab('complaints')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'complaints'
-                  ? 'bg-purple-800 text-white border-purple-900 shadow-md ring-2 ring-purple-500/25'
-                  : 'bg-white text-slate-700 hover:text-purple-800 hover:bg-purple-50/60 border-slate-300 shadow-2xs'
+                  ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
+                  : 'bg-white text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 border-slate-300 hover:border-emerald-300 shadow-2xs'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <Ticket className={`w-4 h-4 shrink-0 ${subTab === 'complaints' ? 'text-purple-200' : 'text-purple-600'}`} />
+                <Ticket className={`w-4 h-4 shrink-0 ${subTab === 'complaints' ? 'text-emerald-200' : 'text-slate-600'}`} />
                 <span className="truncate">Job Settlements</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                subTab === 'complaints' ? 'bg-purple-900 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                subTab === 'complaints' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
                 {(ledgerData.complaint_settlements || []).length}
               </span>
