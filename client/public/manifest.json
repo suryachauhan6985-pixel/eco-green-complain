@@ -4,6 +4,7 @@
   "description": "Enterprise solar rooftop, water heater and heat pump service management portal",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#085235",
   "theme_color": "#085235",

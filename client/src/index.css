@@ -36,3 +36,27 @@
 .animate-soft-pulse {
   animation: soft-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* ================= iOS Safari & Mobile PWA Native Enhancements ================= */
+
+/* 1. Eliminate iOS Safari Auto-Zoom on Input Focus */
+@media screen and (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* 2. Prevent Rubber-Banding / Overscroll Bounce on iOS */
+html, body {
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 3. Disable Callout Context Popups on Long-Press for App Feel */
+input, select, textarea, button, a {
+  -webkit-touch-callout: none;
+}
+

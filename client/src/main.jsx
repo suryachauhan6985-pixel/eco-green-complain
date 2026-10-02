@@ -83,3 +83,29 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     });
   });
 }
+
+// iOS Standalone PWA Link Persistence (Prevents opening external Safari tabs)
+if (typeof window !== 'undefined' && 'standalone' in window.navigator && window.navigator.standalone) {
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a && a.href && a.hostname === window.location.hostname && !a.target && !a.hasAttribute('download')) {
+      e.preventDefault();
+      window.location.href = a.href;
+    }
+  }, false);
+}
+
+// iOS Double-Tap Auto-Zoom Prevention
+if (typeof window !== 'undefined') {
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      if (e.target && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+        e.preventDefault();
+      }
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
+}
+
