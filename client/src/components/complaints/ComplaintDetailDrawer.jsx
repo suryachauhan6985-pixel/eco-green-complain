@@ -86,6 +86,10 @@ export const ComplaintDetailDrawer = ({
 
   // Edit Complaint Modal State
   const [isEditing, setIsEditing] = useState(false);
+  const isEditingRef = useRef(false);
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
   const [editFormData, setEditFormData] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [editNewFiles, setEditNewFiles] = useState([]);
@@ -453,12 +457,14 @@ export const ComplaintDetailDrawer = ({
 
       // Real-Time Live Sync across tabs, windows, and roles without browser refresh
       const unsubscribe = subscribeLiveSync(['complaints', 'techs'], () => {
-        fetchTicketDetailsSilent();
-        fetchWhatsAppChat();
+        if (!isEditingRef.current) {
+          fetchTicketDetailsSilent();
+          fetchWhatsAppChat();
+        }
       });
 
       const interval = setInterval(() => {
-        if (document.visibilityState === 'visible') {
+        if (document.visibilityState === 'visible' && !isEditingRef.current) {
           fetchWhatsAppChat();
           fetchTicketDetailsSilent();
         }

@@ -123,10 +123,20 @@ export const NewComplaintModal = ({
     totalFiles: 0
   });
 
+  const initializedModalTicketId = useRef(null);
+
   // Populate from initialData (supports both Edit Mode and New Ticket Lead Conversion)
   useEffect(() => {
     if (initialData && isOpen) {
+      const currentTicketKey = initialData.id || initialData.ticket_id || 'new_modal';
+      // Only initialize once per open modal session for this ticket so background polling never overwrites user edits!
+      if (initializedModalTicketId.current === currentTicketKey) {
+        return;
+      }
+      initializedModalTicketId.current = currentTicketKey;
+
       if (isEditMode) {
+        const rawCharges = Number(initialData.estimated_charges);
         setFormData({
           customer_name: initialData.customer_name || '',
           customer_phone: initialData.customer_phone || '',
@@ -144,11 +154,9 @@ export const NewComplaintModal = ({
           invoice_date: initialData.invoice_date || '',
           location_url: initialData.location_url || '',
           is_in_warranty: initialData.is_in_warranty !== undefined ? initialData.is_in_warranty : 1,
-          estimated_charges: (initialData.estimated_charges !== undefined && initialData.estimated_charges !== null && Number(initialData.estimated_charges) > 0)
-            ? String(Number(initialData.estimated_charges))
-            : '',
+          estimated_charges: (rawCharges > 0 && !isNaN(rawCharges)) ? String(rawCharges) : '',
           notify_charges: initialData.notify_charges !== undefined
-            ? (Number(initialData.estimated_charges) > 0 ? Boolean(initialData.notify_charges === 1 || initialData.notify_charges === '1' || initialData.notify_charges === true) : true)
+            ? (rawCharges > 0 ? Boolean(initialData.notify_charges === 1 || initialData.notify_charges === '1' || initialData.notify_charges === true) : true)
             : true,
           product_type: initialData.product_type || 'Solar Rooftop Systems',
           product_serial: initialData.product_serial || '',
@@ -171,6 +179,8 @@ export const NewComplaintModal = ({
         }));
         setStep('form');
       }
+    } else if (!isOpen) {
+      initializedModalTicketId.current = null;
     }
   }, [initialData, isOpen, isEditMode]);
 
@@ -1857,10 +1867,27 @@ export const NewComplaintModal = ({
 
               {/* Service Charges & Quotation */}
               <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/80 space-y-3">
-                <h4 className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                  <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
-                  Service Charges & Customer Notification
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
+                    Service Charges & Customer Notification
+                  </h4>
+                  {Number(formData.estimated_charges) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          estimated_charges: '',
+                          notify_charges: true
+                        }));
+                      }}
+                      className="text-[11px] font-bold text-rose-700 hover:text-rose-900 bg-rose-100/80 hover:bg-rose-100 border border-rose-300 px-2.5 py-0.5 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                    >
+                      <span>✕</span> Remove Charges (Set to ₹0)
+                    </button>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                   <div>
