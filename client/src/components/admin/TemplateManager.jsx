@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
+import { INITIAL_TEMPLATES } from '../../data/demoData';
 import { 
   Settings, MessageSquare, Mail, Save, RefreshCw, 
   HelpCircle, Code2, Check, Key, Shield, Sparkles,
@@ -181,13 +182,28 @@ export const TemplateManager = () => {
         };
       });
 
-      setTemplates(list);
+      // Guarantee that charges_added and charges_removed and other built-in defaults are always present
+      const existingKeys = new Set(list.map(t => t.template_key));
+      const missingDefaults = (INITIAL_TEMPLATES || [])
+        .filter(dt => !existingKeys.has(dt.template_key))
+        .map(dt => {
+          const isTech = isTechnicianTemplate(dt);
+          return {
+            ...dt,
+            audience: dt.audience || (isTech ? 'technician' : 'customer'),
+            meta_status: dt.meta_status || 'APPROVED',
+            is_active: dt.is_active !== undefined ? dt.is_active : 1
+          };
+        });
 
-      if (list.length > 0) {
+      const finalList = [...list, ...missingDefaults];
+      setTemplates(finalList);
+
+      if (finalList.length > 0) {
         if (!selectedTemplate) {
-          selectTemplate(list[0]);
+          selectTemplate(finalList[0]);
         } else {
-          const reSelected = list.find(t => t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key) || list[0];
+          const reSelected = finalList.find(t => t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key) || finalList[0];
           selectTemplate(reSelected);
         }
       }

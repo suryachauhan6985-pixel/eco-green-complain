@@ -355,7 +355,7 @@ commonRoutes.get('/categories', async (c) => {
 // GET /api/notifications/templates
 commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
   try {
-    const res = await query(`
+    let res = await query(`
       SELECT * FROM notification_templates 
       ORDER BY 
         CASE audience 
@@ -366,6 +366,58 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
         END ASC, 
         id ASC
     `, [], c.env, c.executionCtx);
+
+    const existingKeys = new Set((res.rows || []).map(r => r.template_key));
+    const missingDefaults = [
+      {
+        template_key: 'charges_added',
+        name: 'Service Charges Added / Updated',
+        audience: 'customer',
+        trigger_event: 'charges_added',
+        meta_template_name: 'charges_added',
+        whatsapp_body: '☀️ *Eco Green Solar - Service Charges Update*\n\nDear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket *{{complaint_id}}*.\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Estimated Service Charges:* ₹{{estimated_charges}}\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur service team will attend to your request. For any questions, please contact our support.\n- Eco Green Solar Care',
+        email_subject: '[Eco Green Solar] Service Charges Updated - Ticket #{{complaint_id}}',
+        email_body: 'Dear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket #{{complaint_id}}.\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nEstimated Charges: ₹{{estimated_charges}}\n\nTrack live status at: {{feedback_url}}'
+      },
+      {
+        template_key: 'charges_removed',
+        name: 'Service Charges Removed / Waived',
+        audience: 'customer',
+        trigger_event: 'charges_removed',
+        meta_template_name: 'charges_removed',
+        whatsapp_body: '☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear {{customer_name}},\n\nThe service charges for your complaint ticket *{{complaint_id}}* have been waived / removed (₹0).\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care',
+        email_subject: '[Eco Green Solar] Service Charges Waived - Ticket #{{complaint_id}}',
+        email_body: 'Dear {{customer_name}},\n\nThe service charges for your complaint ticket #{{complaint_id}} have been waived / removed (₹0).\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nRevised Charges: ₹0 (Covered Under Warranty)\n\nTrack live status at: {{feedback_url}}'
+      }
+    ].filter(d => !existingKeys.has(d.template_key));
+
+    if (missingDefaults.length > 0) {
+      for (const d of missingDefaults) {
+        await query(`
+          INSERT INTO notification_templates (
+            template_key, name, whatsapp_body, email_subject, email_body,
+            audience, trigger_event, meta_template_name, meta_status, is_active, channel, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'APPROVED', 1, 'whatsapp', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON CONFLICT (template_key) DO NOTHING
+        `, [
+          d.template_key, d.name, d.whatsapp_body, d.email_subject, d.email_body,
+          d.audience, d.trigger_event, d.meta_template_name
+        ], c.env, c.executionCtx).catch(e => console.warn('[AutoSeed Template Err]', e.message));
+      }
+
+      res = await query(`
+        SELECT * FROM notification_templates 
+        ORDER BY 
+          CASE audience 
+            WHEN 'customer' THEN 1 
+            WHEN 'technician' THEN 2 
+            WHEN 'staff' THEN 3 
+            ELSE 4 
+          END ASC, 
+          id ASC
+      `, [], c.env, c.executionCtx);
+    }
+
     return c.json({ success: true, templates: res.rows });
   } catch (err) {
     return c.json({ error: 'Failed to fetch templates: ' + err.message }, 500);

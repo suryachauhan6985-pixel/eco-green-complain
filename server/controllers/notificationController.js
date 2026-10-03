@@ -4,7 +4,7 @@ const { fetchMetaTemplates } = require('../services/whatsappProvider');
 
 function getTemplates(req, res) {
   try {
-    const templates = db.prepare(`
+    let templates = db.prepare(`
       SELECT * FROM notification_templates 
       ORDER BY 
         CASE audience 
@@ -15,6 +15,56 @@ function getTemplates(req, res) {
         END ASC, 
         id ASC
     `).all();
+
+    const existingKeys = new Set((templates || []).map(r => r.template_key));
+    const missingDefaults = [
+      {
+        template_key: 'charges_added',
+        name: 'Service Charges Added / Updated',
+        audience: 'customer',
+        trigger_event: 'charges_added',
+        meta_template_name: 'charges_added',
+        whatsapp_body: '☀️ *Eco Green Solar - Service Charges Update*\n\nDear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket *{{complaint_id}}*.\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Estimated Service Charges:* ₹{{estimated_charges}}\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur service team will attend to your request. For any questions, please contact our support.\n- Eco Green Solar Care',
+        email_subject: '[Eco Green Solar] Service Charges Updated - Ticket #{{complaint_id}}',
+        email_body: 'Dear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket #{{complaint_id}}.\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nEstimated Charges: ₹{{estimated_charges}}\n\nTrack live status at: {{feedback_url}}'
+      },
+      {
+        template_key: 'charges_removed',
+        name: 'Service Charges Removed / Waived',
+        audience: 'customer',
+        trigger_event: 'charges_removed',
+        meta_template_name: 'charges_removed',
+        whatsapp_body: '☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear {{customer_name}},\n\nThe service charges for your complaint ticket *{{complaint_id}}* have been waived / removed (₹0).\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care',
+        email_subject: '[Eco Green Solar] Service Charges Waived - Ticket #{{complaint_id}}',
+        email_body: 'Dear {{customer_name}},\n\nThe service charges for your complaint ticket #{{complaint_id}} have been waived / removed (₹0).\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nRevised Charges: ₹0 (Covered Under Warranty)\n\nTrack live status at: {{feedback_url}}'
+      }
+    ].filter(d => !existingKeys.has(d.template_key));
+
+    if (missingDefaults.length > 0) {
+      const insertStmt = db.prepare(`
+        INSERT INTO notification_templates (
+          template_key, name, whatsapp_body, email_subject, email_body,
+          audience, trigger_event, meta_template_name, meta_status, is_active, channel, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', 1, 'whatsapp', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `);
+      for (const d of missingDefaults) {
+        try {
+          insertStmt.run(d.template_key, d.name, d.whatsapp_body, d.email_subject, d.email_body, d.audience, d.trigger_event, d.meta_template_name);
+        } catch (_) {}
+      }
+      templates = db.prepare(`
+        SELECT * FROM notification_templates 
+        ORDER BY 
+          CASE audience 
+            WHEN 'customer' THEN 1 
+            WHEN 'technician' THEN 2 
+            WHEN 'staff' THEN 3 
+            ELSE 4 
+          END ASC, 
+          id ASC
+      `).all();
+    }
+
     res.json({ success: true, templates });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch templates' });
