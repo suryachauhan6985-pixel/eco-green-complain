@@ -277,6 +277,10 @@ export const TourLedgerSection = ({
       showToast('Tour advance updated successfully!', 'success');
       setIsEditAdvanceModalOpen(false);
       await fetchLedger(true);
+      try {
+        window.dispatchEvent(new CustomEvent('tour-ledger-updated', { detail: { timestamp: Date.now() } }));
+        localStorage.setItem('egs_live_ledger_sync', String(Date.now()));
+      } catch (_) {}
     } catch (err) {
       showToast('Failed to update advance: ' + err.message, 'error');
     } finally {
@@ -296,6 +300,10 @@ export const TourLedgerSection = ({
       await api.deleteTourAdvance(adv.id);
       showToast(`Advance ${adv.reference_no || ''} deleted successfully`, 'success');
       await fetchLedger(true);
+      try {
+        window.dispatchEvent(new CustomEvent('tour-ledger-updated', { detail: { timestamp: Date.now() } }));
+        localStorage.setItem('egs_live_ledger_sync', String(Date.now()));
+      } catch (_) {}
     } catch (err) {
       showToast('Failed to delete advance: ' + err.message, 'error');
     }
@@ -679,33 +687,43 @@ export const TourLedgerSection = ({
       }];
     }
 
-    // Group strictly by ticket (or voucher if general tour without ticket)
-    const ticketGroups = new Map();
+    // Group strictly by distinct allotted voucher! Every voucher_no is an independent legal slip
+    const voucherGroups = new Map();
     filtered.forEach(it => {
-      const key = (it.ticket_id && String(it.ticket_id).trim())
-        ? `tkt_${String(it.ticket_id).trim()}`
-        : (it.voucher_no ? `vch_${it.voucher_no}` : `item_${it.id}`);
+      const vNoKey = it.voucher_no 
+        ? `vch_${String(it.voucher_no).trim()}` 
+        : (it.ticket_id ? `tkt_${String(it.ticket_id).trim()}_${it.expense_date}` : `item_${it.id}`);
 
-      if (!ticketGroups.has(key)) {
-        ticketGroups.set(key, []);
+      if (!voucherGroups.has(vNoKey)) {
+        voucherGroups.set(vNoKey, []);
       }
-      ticketGroups.get(key).push(it);
+      voucherGroups.get(vNoKey).push(it);
     });
 
     const chunks = [];
     const chunkSize = 9;
 
-    // Process each ticket's items into its dedicated voucher table(s)
-    ticketGroups.forEach((ticketExps) => {
-      // Merge same date + same category within this specific ticket for print/export
-      const groupedItems = groupExpensesForPrint(ticketExps);
+    // Process each voucher's items into its dedicated voucher table(s)
+    voucherGroups.forEach((vchExps) => {
+      // Merge same date + same category within this specific voucher for print/export
+      const groupedItems = groupExpensesForPrint(vchExps);
 
       for (let i = 0; i < groupedItems.length; i += chunkSize) {
         const chunkItems = groupedItems.slice(i, i + chunkSize);
         const chunkTotal = chunkItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
 
-        // Consecutive sequential numbering starting from startingVoucherNo
-        const vNo = `TT-${Number(startingVoucherNo) + chunks.length}`;
+        // System allocated voucher number directly from the voucher
+        const rawVch = vchExps[0]?.voucher_no || '';
+        let vNo = rawVch;
+        if (!vNo) {
+          vNo = `TT-${chunks.length + 1}`;
+        } else {
+          // Normalize formatting cleanly to TT-XXX
+          const digits = vNo.replace(/\D/g, '');
+          if (digits) {
+            vNo = `TT-${digits}`;
+          }
+        }
 
         const latestDate = chunkItems[0]?.expense_date 
           ? formatIndianDateOnly(chunkItems[0].expense_date)
@@ -759,6 +777,13 @@ export const TourLedgerSection = ({
     };
   }, [loadedTechs, selectedTechId, scopedTechProfile]);
 
+  const broadcastLedgerUpdate = () => {
+    try {
+      window.dispatchEvent(new CustomEvent('tour-ledger-updated', { detail: { timestamp: Date.now() } }));
+      localStorage.setItem('egs_live_ledger_sync', String(Date.now()));
+    } catch (_) {}
+  };
+
   const fetchLedger = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -782,6 +807,33 @@ export const TourLedgerSection = ({
 
   useEffect(() => {
     fetchLedger();
+
+    // Live sync polling: auto-refresh silently every 6s when document is visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchLedger(true);
+      }
+    }, 6000);
+
+    const handleSync = () => {
+      fetchLedger(true);
+    };
+
+    window.addEventListener('focus', handleSync);
+    window.addEventListener('tour-ledger-updated', handleSync);
+    const handleStorage = (e) => {
+      if (e.key === 'egs_live_ledger_sync') {
+        fetchLedger(true);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('tour-ledger-updated', handleSync);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [selectedTechId, statementFromDate, statementToDate, statementTicketId, statementTxType]);
 
   // Handle Allocate Tour Advance
@@ -820,6 +872,7 @@ export const TourLedgerSection = ({
       setIsAdvanceModalOpen(false);
       setAdvanceAdjustBalance(false);
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to allocate advance: ' + err.message, 'error');
     } finally {
@@ -845,14 +898,21 @@ export const TourLedgerSection = ({
     try {
       setSubmittingExpense(true);
 
-      // Get latest global voucher sequence
+      // Check if this ticket already has an unapproved voucher for this technician
       let vNo = null;
-      try {
-        const seqRes = await api.getNextVoucherSequence();
-        if (seqRes && (seqRes.next_voucher_no || seqRes.next_seq)) {
-          vNo = seqRes.next_voucher_no || `TT-${seqRes.next_seq}`;
+      if (expenseForm.ticket_id) {
+        const normTkt = String(expenseForm.ticket_id).trim().toLowerCase();
+        const unapprovedVch = (ledgerData.expenses || []).find(e => 
+          String(e.technician_id) === String(effectiveTechId) &&
+          String(e.ticket_id || '').trim().toLowerCase() === normTkt &&
+          (e.status || '').toLowerCase() !== 'approved' &&
+          (e.status || '').toLowerCase() !== 'verified' &&
+          e.voucher_no
+        );
+        if (unapprovedVch) {
+          vNo = unapprovedVch.voucher_no;
         }
-      } catch (_) {}
+      }
 
       // Find complaint_id if ticket_id is selected
       let compId = null;
@@ -899,10 +959,11 @@ export const TourLedgerSection = ({
         setIsExpenseModalOpen(false);
         setEditingVoucherNo(null);
         await fetchLedger(true);
+        broadcastLedgerUpdate();
         return;
       }
 
-      await api.addTourExpense({
+      const saveRes = await api.addTourExpense({
         technician_id: effectiveTechId,
         technician_name: chosenTech.name || 'Technician',
         voucher_no: vNo,
@@ -919,10 +980,12 @@ export const TourLedgerSection = ({
         description: itemsPayload[0].description
       });
 
-      showToast(`Voucher for ${expenseForm.ticket_id || 'General Tour'} (${itemsPayload.length} items - ₹${expenseTotalSum}) saved successfully!`, 'success');
+      const assignedVch = saveRes?.voucher_no || vNo || 'allotted voucher';
+      showToast(`Voucher ${assignedVch} for ${expenseForm.ticket_id || 'General Tour'} (${itemsPayload.length} items - ₹${expenseTotalSum}) saved successfully!`, 'success');
       setIsExpenseModalOpen(false);
       setEditingVoucherNo(null);
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to log expense: ' + err.message, 'error');
     } finally {
@@ -975,6 +1038,7 @@ export const TourLedgerSection = ({
         notes: ''
       });
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to record settlement: ' + err.message, 'error');
     } finally {
@@ -989,6 +1053,7 @@ export const TourLedgerSection = ({
       await api.updateTourExpenseStatus(expId, newStatus, '', approverName);
       showToast(`Expense marked as ${newStatus}`, 'info');
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');
     }
@@ -1009,6 +1074,7 @@ export const TourLedgerSection = ({
       await api.deleteTourExpense(exp.id);
       showToast('Expense voucher removed', 'success');
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to delete expense: ' + err.message, 'error');
     }
@@ -1021,6 +1087,7 @@ export const TourLedgerSection = ({
       await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'approved', '', approverName)));
       showToast(`Voucher ${group.voucher_no} marked as approved by ${approverName}`, 'info');
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');
     }
@@ -1032,6 +1099,7 @@ export const TourLedgerSection = ({
       await Promise.all(group.items.map(it => api.updateTourExpenseStatus(it.id, 'submitted', '', null)));
       showToast(`Voucher ${group.voucher_no} reverted to Submitted (Unlocked for editing)`, 'info');
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to revert voucher: ' + err.message, 'error');
     }
@@ -1053,6 +1121,7 @@ export const TourLedgerSection = ({
       await Promise.all(group.items.map(it => api.deleteTourExpense(it.id)));
       showToast(`Voucher ${group.voucher_no} deleted successfully`, 'success');
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Failed to delete voucher: ' + err.message, 'error');
     }
@@ -1171,6 +1240,7 @@ export const TourLedgerSection = ({
 
       setCancelModalState(prev => ({ ...prev, isOpen: false, submitting: false }));
       await fetchLedger(true);
+      broadcastLedgerUpdate();
     } catch (err) {
       showToast('Action failed: ' + err.message, 'error');
       setCancelModalState(prev => ({ ...prev, submitting: false }));
@@ -3687,18 +3757,6 @@ export const TourLedgerSection = ({
                 <span className="font-bold text-sm">Voucher Book Print (2 Vouchers per A4 Page)</span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {/* Global Sequence Number Controller */}
-                <div className="flex items-center gap-1.5 bg-slate-700/80 px-2.5 py-1 rounded-lg text-xs" title="Adjust the starting global voucher sequence number">
-                  <span className="text-slate-300 font-bold">Voucher No: TT-</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={startingVoucherNo}
-                    onChange={(e) => setStartingVoucherNo(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-16 px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded text-emerald-400 font-mono font-bold text-xs text-center focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-
                 <button
                   type="button"
                   onClick={handleExportWord}
@@ -3808,6 +3866,21 @@ export const TourLedgerSection = ({
                     background: #fff !important;
                     -webkit-print-color-adjust: exact !important;
                     print-color-adjust: exact !important;
+                    overflow: visible !important;
+                    height: auto !important;
+                  }
+                  /* Remove viewport clipping from fixed/scroll modal containers during print */
+                  .fixed, [class*="fixed"], [class*="overflow-"] {
+                    position: static !important;
+                    overflow: visible !important;
+                    height: auto !important;
+                    max-height: none !important;
+                    display: block !important;
+                    background: transparent !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    border: none !important;
+                    box-shadow: none !important;
                   }
                   body * {
                     visibility: hidden !important;
@@ -3816,12 +3889,11 @@ export const TourLedgerSection = ({
                     visibility: visible !important;
                   }
                   #tour-voucher-print-area {
-                    position: absolute !important;
-                    left: 0 !important;
-                    top: 0 !important;
+                    position: static !important;
                     width: 100% !important;
                     margin: 0 !important;
                     padding: 0 !important;
+                    display: block !important;
                   }
                   .voucher-page-pair {
                     box-sizing: border-box !important;

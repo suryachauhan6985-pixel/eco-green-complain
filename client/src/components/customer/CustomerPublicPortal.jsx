@@ -128,7 +128,7 @@ export const CustomerPublicPortal = ({
         </div>
         <h2 className="text-xl sm:text-2xl font-black">Customer Service & Ticket Tracker</h2>
         <p className="text-xs sm:text-sm text-emerald-100 max-w-md mx-auto mt-1">
-          Track your solar repair request, view assigned technician contact, or raise a new service complaint.
+          Track your solar repair request and view assigned technician contact in real-time.
         </p>
 
         {/* Search Bar */}
@@ -341,22 +341,11 @@ export const CustomerPublicPortal = ({
 
           {/* Service Assistance Note for Resolved or Closed tickets */}
           {(trackingData.complaint.status === 'Closed' || trackingData.complaint.status === 'Resolved') && (
-            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-600 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  This service ticket is finalized. If you require further maintenance or have a new issue, please register a new ticket.
-                </span>
-              </div>
-              {onOpenNewComplaint && (
-                <button
-                  type="button"
-                  onClick={onOpenNewComplaint}
-                  className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs shrink-0 transition-colors shadow-2xs cursor-pointer"
-                >
-                  + New Service Ticket
-                </button>
-              )}
+            <div className="pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-600 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                This service ticket is finalized and closed. Thank you for choosing Eco Green Support.
+              </span>
             </div>
           )}
         </div>
@@ -365,16 +354,8 @@ export const CustomerPublicPortal = ({
           <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
           <h4 className="font-bold text-slate-800">No complaint found</h4>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            We couldn't find a record matching "{ticketQuery}". Please verify your ticket ID or register a new service request below.
+            We couldn't find a record matching "{ticketQuery}". Please verify your ticket ID or mobile number.
           </p>
-          {onOpenNewComplaint && (
-            <button
-              onClick={onOpenNewComplaint}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all"
-            >
-              Raise a New Complaint
-            </button>
-          )}
         </div>
       )}
     </div>

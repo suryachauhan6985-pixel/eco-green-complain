@@ -135,8 +135,25 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       }
     }, 5000);
 
+    const handleSync = () => {
+      fetchMyJobs(true);
+      fetchTechniciansList();
+    };
+
+    window.addEventListener('tour-ledger-updated', handleSync);
+    window.addEventListener('focus', handleSync);
+    const handleStorage = (e) => {
+      if (e.key === 'egs_live_ledger_sync') {
+        handleSync();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
     return () => {
       clearInterval(interval);
+      window.removeEventListener('tour-ledger-updated', handleSync);
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('storage', handleStorage);
     };
   }, [currentUser]);
 

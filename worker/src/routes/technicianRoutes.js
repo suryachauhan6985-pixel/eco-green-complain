@@ -1384,8 +1384,36 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
       return c.json({ error: 'Technician is required' }, 400);
     }
 
-    let finalVoucherNo = voucher_no;
-    if (!finalVoucherNo || finalVoucherNo.startsWith('EXP-')) {
+    let finalVoucherNo = null;
+
+    // Smart Voucher Grouping Rule:
+    // If expense is logged for a ticket, check if an unapproved voucher already exists for that ticket & tech.
+    // If yes, append entries into that same voucher. If already approved, issue a new voucher sequence.
+    if (ticket_id && String(ticket_id).trim()) {
+      const trimmedTicket = String(ticket_id).trim();
+      const existingUnapproved = await query(
+        `SELECT voucher_no FROM technician_tour_expenses 
+         WHERE technician_id = $1 
+           AND (ticket_id = $2 OR ticket_id ILIKE $3)
+           AND LOWER(COALESCE(status, 'pending')) NOT IN ('approved', 'verified')
+           AND voucher_no IS NOT NULL AND voucher_no != ''
+         ORDER BY id DESC LIMIT 1`,
+        [String(targetTechId).trim(), trimmedTicket, `%${trimmedTicket}%`],
+        c.env,
+        c.executionCtx
+      );
+      if (existingUnapproved.rows.length > 0 && existingUnapproved.rows[0].voucher_no) {
+        finalVoucherNo = existingUnapproved.rows[0].voucher_no;
+      }
+    }
+
+    // If explicit voucher_no was passed (and wasn't auto-EXP), respect it if no unapproved ticket voucher was found
+    if (!finalVoucherNo && voucher_no && !voucher_no.startsWith('EXP-')) {
+      finalVoucherNo = voucher_no;
+    }
+
+    // Otherwise, generate the next sequential voucher number across all records
+    if (!finalVoucherNo) {
       const res = await query(
         `SELECT voucher_no FROM technician_tour_expenses 
          WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
@@ -1454,24 +1482,32 @@ technicianRoutes.put('/tour-expenses/:id/status', authenticateToken, requireRole
   try {
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    const { status, rejection_reason } = body;
+    const { status, rejection_reason, approved_by_name } = body;
     const user = c.get('user');
 
-    if (!['Approved', 'Rejected', 'Pending'].map(s => s.toLowerCase()).includes((status || '').toLowerCase())) {
+    const allowed = ['approved', 'rejected', 'pending', 'submitted'];
+    if (!allowed.includes((status || '').toLowerCase())) {
       return c.json({ error: 'Invalid status' }, 400);
     }
 
-    const normStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    const isAppr = (status || '').toLowerCase() === 'approved';
+    const isRej = (status || '').toLowerCase() === 'rejected';
+    const normStatus = isAppr ? 'Approved' : (isRej ? 'Rejected' : 'Pending');
+    const approver = isAppr ? (approved_by_name || user.name || 'Admin') : null;
+
     await query(
       `UPDATE technician_tour_expenses 
-       SET status = $1, approved_by_name = $2, approved_at = CURRENT_TIMESTAMP, rejection_reason = $3
+       SET status = $1, 
+           approved_by_name = $2, 
+           approved_at = CASE WHEN $1 = 'Approved' THEN CURRENT_TIMESTAMP ELSE NULL END, 
+           rejection_reason = $3
        WHERE id = $4`,
-      [normStatus, user.name || 'Staff', rejection_reason || null, id],
+      [normStatus, approver, rejection_reason || null, id],
       c.env,
       c.executionCtx
     );
 
-    return c.json({ success: true });
+    return c.json({ success: true, status: normStatus });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
