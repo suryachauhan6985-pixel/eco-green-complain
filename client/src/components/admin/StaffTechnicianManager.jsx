@@ -8,6 +8,7 @@ import {
 import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 import { StaffTeamSkeleton } from '../common/SkeletonLoader';
+import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
 
 export const StaffTechnicianManager = () => {
   const { confirm, alert, showToast: showGlobalToast } = useDialog();
@@ -62,6 +63,23 @@ export const StaffTechnicianManager = () => {
   useEffect(() => {
     loadData();
     loadCatalog();
+
+    // Real-Time Live Sync across tabs, windows, and roles without browser refresh
+    const unsubscribe = subscribeLiveSync(['techs', 'complaints'], () => {
+      loadData(true);
+    });
+
+    // Resilient background heartbeat sync every 6 seconds when visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadData(true);
+      }
+    }, 6000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   const openEditModal = (member, isTech = false) => {
@@ -136,7 +154,8 @@ export const StaffTechnicianManager = () => {
       showToast(res?.message || `Password securely reset for ${resetMember.name}!`);
       setIsResetModalOpen(false);
       setResetMember(null);
-      loadData();
+      broadcastTechniciansUpdate({ action: 'password_reset' });
+      loadData(true);
     } catch (err) {
       showGlobalToast('Failed to reset password: ' + err.message, 'error');
     } finally {
@@ -187,7 +206,8 @@ export const StaffTechnicianManager = () => {
       }
       setIsEditModalOpen(false);
       setEditingMember(null);
-      loadData();
+      broadcastTechniciansUpdate({ action: 'member_updated' });
+      loadData(true);
     } catch (err) {
       showGlobalToast('Failed to update member: ' + err.message, 'error');
     }
@@ -285,9 +305,9 @@ export const StaffTechnicianManager = () => {
     }
   };
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [techRes, usersRes] = await Promise.all([
         api.getTechnicians().catch(e => { console.warn('Tech load error:', e); return []; }),
         api.getUsers().catch(e => { console.warn('Users load error:', e); return []; })
@@ -301,11 +321,11 @@ export const StaffTechnicianManager = () => {
       setTechnicians(techList);
       setUsers(userList);
     } catch (err) {
-      console.error('Failed to load team data:', err);
+      if (!silent) console.error('Failed to load team data:', err);
       setTechnicians([]);
       setUsers([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -313,7 +333,8 @@ export const StaffTechnicianManager = () => {
     try {
       await api.updateTechnicianStatus(tech.id, !tech.is_available);
       showToast('Technician availability updated');
-      loadData();
+      broadcastTechniciansUpdate({ techId: tech.id, is_available: !tech.is_available });
+      loadData(true);
     } catch (err) {
       showGlobalToast('Failed to update availability: ' + err.message, 'error');
     }
@@ -331,7 +352,8 @@ export const StaffTechnicianManager = () => {
     try {
       await api.deleteTechnician(id);
       showToast(`Technician ${name} removed`);
-      loadData();
+      broadcastTechniciansUpdate({ action: 'member_deleted', techId: id });
+      loadData(true);
     } catch (err) {
       showGlobalToast('Failed to delete technician: ' + err.message, 'error');
     }
@@ -349,7 +371,8 @@ export const StaffTechnicianManager = () => {
     try {
       await api.deleteUser(id);
       showToast(`Staff member ${name} removed`);
-      loadData();
+      broadcastTechniciansUpdate({ action: 'member_deleted', userId: id });
+      loadData(true);
     } catch (err) {
       showGlobalToast('Failed to delete user: ' + err.message, 'error');
     }
@@ -380,6 +403,7 @@ export const StaffTechnicianManager = () => {
         email: safeEmail
       });
       showToast(`New ${formData.role} created successfully!`);
+      broadcastTechniciansUpdate({ action: 'member_added', role: formData.role });
       setIsAddModalOpen(false);
       setShowAddPassword(false);
       setFormData({
@@ -389,7 +413,7 @@ export const StaffTechnicianManager = () => {
         password: '',
         role: 'technician'
       });
-      loadData();
+      loadData(true);
     } catch (err) {
       showGlobalToast('Failed to add member: ' + err.message, 'error');
     }

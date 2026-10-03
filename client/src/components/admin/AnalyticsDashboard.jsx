@@ -6,6 +6,7 @@ import {
   Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload
 } from 'lucide-react';
 import { AnalyticsDashboardSkeleton } from '../common/SkeletonLoader';
+import { subscribeLiveSync } from '../../utils/liveSync';
 
 export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [metrics, setMetrics] = useState(null);
@@ -325,23 +326,40 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
     }
   };
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [metricData] = await Promise.all([
         api.getMetrics(),
         fetchCustomerStats()
       ]);
       setMetrics(metricData);
     } catch (err) {
-      console.error('Failed to load metrics:', err);
+      if (!silent) console.error('Failed to load metrics:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchMetrics();
+
+    // Real-Time Live Sync across tabs, windows, and roles without browser refresh
+    const unsubscribe = subscribeLiveSync(['complaints', 'techs'], () => {
+      fetchMetrics(true);
+    });
+
+    // Resilient background heartbeat sync every 8 seconds when visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchMetrics(true);
+      }
+    }, 8000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   if (loading && !metrics) {

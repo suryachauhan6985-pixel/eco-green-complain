@@ -14,6 +14,7 @@ import {
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUpload';
+import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -187,6 +188,15 @@ export const ComplaintDetailDrawer = ({
   const effectiveRole = (currentUser?.role || cachedUser?.role || '').toLowerCase();
   const isAdminOrStaff = effectiveRole === 'admin' || effectiveRole === 'staff';
 
+  const notifyComplaintChanged = (extra = {}) => {
+    broadcastComplaintsUpdate({
+      ticketId: ticket?.ticket_id,
+      complaintId: ticket?.id || complaintId,
+      ...extra
+    });
+    if (onComplaintUpdated) onComplaintUpdated();
+  };
+
   const uploadFilesList = async (files) => {
     if (!files || files.length === 0 || !ticket) return;
     if (!isAdminOrStaff) {
@@ -231,7 +241,7 @@ export const ComplaintDetailDrawer = ({
         showToast(`${files.length} document/photo(s) attached successfully!`, 'success');
       }
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'attachment_uploaded' });
     } catch (err) {
       showToast('Failed to upload attachment: ' + err.message, 'error');
     } finally {
@@ -270,7 +280,7 @@ export const ComplaintDetailDrawer = ({
       await api.deleteComplaintAttachment(att.id, ticket?.id);
       setAttachments(prev => prev.filter(a => String(a.id) !== String(att.id)));
       showToast('Attachment deleted successfully', 'success');
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'attachment_deleted' });
     } catch (err) {
       showToast('Failed to delete attachment: ' + err.message, 'error');
     } finally {
@@ -439,13 +449,23 @@ export const ComplaintDetailDrawer = ({
       setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
       fetchTicketDetails();
       fetchTechs();
+
+      // Real-Time Live Sync across tabs, windows, and roles without browser refresh
+      const unsubscribe = subscribeLiveSync(['complaints', 'techs'], () => {
+        fetchTicketDetailsSilent();
+        fetchWhatsAppChat();
+      });
+
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
           fetchWhatsAppChat();
           fetchTicketDetailsSilent();
         }
       }, 5000);
-      return () => clearInterval(interval);
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }
   }, [isOpen, complaintId]);
 
@@ -459,6 +479,7 @@ export const ComplaintDetailDrawer = ({
       showToast('WhatsApp reply sent to customer!', 'success');
       await fetchWhatsAppChat();
       await fetchTicketDetails();
+      notifyComplaintChanged({ action: 'wa_reply_sent' });
     } catch (err) {
       showToast('Failed to send WhatsApp message: ' + err.message, 'error');
     } finally {
@@ -486,7 +507,8 @@ export const ComplaintDetailDrawer = ({
       const res = await api.assignTechnician(ticket.id, selectedTechId, expectedDate, secondaryTechId || null);
       setIsReassignOpen(false);
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'assigned', techId: selectedTechId });
+      broadcastTechniciansUpdate({ techId: selectedTechId });
 
       if (res?.warning) {
         showToast(res.warning, 'warning');
@@ -572,7 +594,7 @@ export const ComplaintDetailDrawer = ({
       await api.remindTechnician(ticket.id);
       showToast(`Reminder WhatsApp sent to ${ticket.technician_name || 'technician'}!`, 'success');
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'reminded' });
     } catch (err) {
       showToast('Failed to send reminder: ' + err.message, 'error');
     } finally {
@@ -587,7 +609,7 @@ export const ComplaintDetailDrawer = ({
       const res = await api.resendTechnicianWorkOrder(ticket.id);
       showToast(res.message || `Work order sent to ${ticket.technician_name || 'technician'} via WhatsApp!`, 'success');
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'work_order_resent' });
     } catch (err) {
       showToast('Failed to resend work order: ' + err.message, 'error');
     } finally {
@@ -613,7 +635,7 @@ export const ComplaintDetailDrawer = ({
         notify_customer: false
       });
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'status_updated', status: newStatus });
 
       // Trigger in-app notification (reverse flow: tech updates -> staff receives; staff updates -> tech receives)
       addNotification({
@@ -708,7 +730,7 @@ export const ComplaintDetailDrawer = ({
       const savedNote = followUpNote;
       setFollowUpNote('');
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'note_added' });
 
       // Trigger in-app notification
       addNotification({
@@ -848,7 +870,8 @@ export const ComplaintDetailDrawer = ({
       });
       setResolutionPhotos([]);
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'resolved' });
+      broadcastTechniciansUpdate();
 
       // Trigger in-app notification for Staff & Admin (reverse flow)
       addNotification({
@@ -882,7 +905,7 @@ export const ComplaintDetailDrawer = ({
       setClosing(true);
       await api.closeComplaint(ticket.id, closureRemarks);
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'closed' });
       showToast('Ticket closed successfully!', 'success');
     } catch (err) {
       showToast('Failed to close ticket: ' + err.message, 'error');
@@ -916,7 +939,8 @@ export const ComplaintDetailDrawer = ({
       });
       setReopenReason('');
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'reopened', techId: targetTech });
+      broadcastTechniciansUpdate({ techId: targetTech });
       const techObj = technicians.find(t => String(t.id) === String(targetTech));
       showToast(`Complaint ticket reopened & assigned to ${techObj?.name || ticket.technician_name || 'technician'}!`, 'success');
     } catch (err) {
@@ -1051,7 +1075,7 @@ export const ComplaintDetailDrawer = ({
 
       await fetchTicketDetails();
       setIsEditing(false);
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'edited' });
       showToast(res?.whatsapp_notified ? 'Complaint updated & customer notified via WhatsApp! 📲' : 'Complaint details updated successfully!', 'success');
     } catch (err) {
       showToast('Failed to update complaint: ' + err.message, 'error');
@@ -1162,7 +1186,8 @@ export const ComplaintDetailDrawer = ({
       await fetchTicketDetails();
       setIsRecordingPayment(false);
       setShowUnderpaidWarning(false);
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'payment_recorded' });
+      broadcastLedgerUpdate({ ticketId: ticket?.ticket_id });
       showToast(wasAlreadyCollected ? 'Payment record updated successfully!' : 'Payment collected recorded successfully!', 'success');
     } catch (err) {
       showToast('Failed to record payment: ' + err.message, 'error');
@@ -1210,7 +1235,8 @@ export const ComplaintDetailDrawer = ({
         notes: `Cash received from ${techName} by ${currentUser?.name || 'Staff'}`
       });
       await fetchTicketDetails();
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'settled_company' });
+      broadcastLedgerUpdate({ ticketId: ticket?.ticket_id });
       showToast(`₹${ticket.payment_collected} marked as received & settled with company!`, 'success');
     } catch (err) {
       showToast('Failed to settle payment with company: ' + err.message, 'error');
@@ -1233,7 +1259,7 @@ export const ComplaintDetailDrawer = ({
     try {
       await api.deleteComplaint(ticket.id);
       showToast(`Ticket #${ticket.ticket_id} deleted successfully!`, 'success');
-      if (onComplaintUpdated) onComplaintUpdated();
+      notifyComplaintChanged({ action: 'deleted' });
       onClose();
     } catch (err) {
       showToast('Failed to delete complaint: ' + err.message, 'error');

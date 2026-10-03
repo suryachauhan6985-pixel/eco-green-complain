@@ -5,6 +5,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
+import { broadcastComplaintsUpdate } from '../../utils/liveSync';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
@@ -748,6 +749,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
         });
       }
 
+      broadcastComplaintsUpdate({ ticketId: res.complaint?.ticket_id, action: 'created' });
       if (onComplaintCreated) onComplaintCreated(res.complaint);
     } catch (err) {
       showToast('Failed to create complaint: ' + err.message, 'error');

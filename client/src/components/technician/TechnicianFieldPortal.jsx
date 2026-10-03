@@ -12,6 +12,7 @@ import {
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { TourLedgerSection } from './TourLedgerSection';
+import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
 
 const checkHasLocation = (job) => {
   if (!job) return false;
@@ -140,20 +141,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       fetchTechniciansList();
     };
 
-    window.addEventListener('tour-ledger-updated', handleSync);
-    window.addEventListener('focus', handleSync);
-    const handleStorage = (e) => {
-      if (e.key === 'egs_live_ledger_sync') {
-        handleSync();
-      }
-    };
-    window.addEventListener('storage', handleStorage);
+    // Real-Time Live Sync across tabs, windows, and roles without browser refresh
+    const unsubscribe = subscribeLiveSync(['complaints', 'ledger', 'techs'], handleSync);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('tour-ledger-updated', handleSync);
-      window.removeEventListener('focus', handleSync);
-      window.removeEventListener('storage', handleStorage);
+      unsubscribe();
     };
   }, [currentUser]);
 
@@ -163,6 +156,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const newStatus = !techProfile.is_available;
       await api.updateTechnicianAvailability(techProfile.id, newStatus);
       setTechProfile(prev => ({ ...prev, is_available: newStatus ? 1 : 0 }));
+      broadcastTechniciansUpdate({ techId: techProfile.id, is_available: newStatus ? 1 : 0 });
       showToast(newStatus ? 'Duty status set to: ON DUTY' : 'Duty status set to: OFF DUTY', 'info');
     } catch (err) {
       showToast('Failed to update status: ' + err.message, 'error');

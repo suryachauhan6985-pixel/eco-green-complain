@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { GREEN_ENERGY_LOGO_BASE64 } from '../../assets/greenEnergyLogo';
+import { subscribeLiveSync, broadcastLedgerUpdate as emitLedgerUpdate } from '../../utils/liveSync';
 
 const EXPENSE_CATEGORIES = [
   'Bus / Train Fare',
@@ -779,6 +780,7 @@ export const TourLedgerSection = ({
 
   const broadcastLedgerUpdate = () => {
     try {
+      emitLedgerUpdate({ selectedTechId });
       window.dispatchEvent(new CustomEvent('tour-ledger-updated', { detail: { timestamp: Date.now() } }));
       localStorage.setItem('egs_live_ledger_sync', String(Date.now()));
     } catch (_) {}
@@ -808,31 +810,22 @@ export const TourLedgerSection = ({
   useEffect(() => {
     fetchLedger();
 
-    // Live sync polling: auto-refresh silently every 6s when document is visible
+    // Live sync polling: auto-refresh silently every 5s when document is visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchLedger(true);
       }
-    }, 6000);
+    }, 5000);
 
     const handleSync = () => {
       fetchLedger(true);
     };
 
-    window.addEventListener('focus', handleSync);
-    window.addEventListener('tour-ledger-updated', handleSync);
-    const handleStorage = (e) => {
-      if (e.key === 'egs_live_ledger_sync') {
-        fetchLedger(true);
-      }
-    };
-    window.addEventListener('storage', handleStorage);
+    const unsubscribe = subscribeLiveSync(['ledger', 'techs'], handleSync);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleSync);
-      window.removeEventListener('tour-ledger-updated', handleSync);
-      window.removeEventListener('storage', handleStorage);
+      unsubscribe();
     };
   }, [selectedTechId, statementFromDate, statementToDate, statementTicketId, statementTxType]);
 

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/SkeletonLoader';
+import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -91,12 +92,12 @@ export const ComplaintList = ({
     }
   };
 
-  const fetchTechnicians = async () => {
+  const fetchTechnicians = async (silent = false) => {
     try {
       const data = await api.getTechnicians();
       setTechnicians(data.technicians || []);
     } catch (e) {
-      console.error(e);
+      if (!silent) console.error(e);
     }
   };
 
@@ -127,14 +128,24 @@ export const ComplaintList = ({
     fetchComplaints();
     fetchTechnicians();
 
-    // Resilient background heartbeat sync every 6 seconds
+    // Real-Time Live Sync across tabs, windows, and roles without browser refresh
+    const unsubscribe = subscribeLiveSync(['complaints', 'techs'], () => {
+      fetchComplaints(true);
+      fetchTechnicians(true);
+    });
+
+    // Resilient background heartbeat sync every 5 seconds when visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchComplaints(true);
+        fetchTechnicians(true);
       }
-    }, 6000);
+    }, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [refreshKey]);
 
   const getAssignedTechName = (c) => {
@@ -185,7 +196,9 @@ export const ComplaintList = ({
       await api.settleCompanyPayment(complaint.id, {
         notes: `Quick cash settlement collected from ${techName} by ${currentUser?.name || 'Staff'}`
       });
-      fetchComplaints();
+      fetchComplaints(true);
+      broadcastComplaintsUpdate({ ticketId: complaint.ticket_id, action: 'settled' });
+      broadcastLedgerUpdate({ ticketId: complaint.ticket_id, action: 'settled' });
       showToast(`₹${amount} received and settled with company!`, 'success');
     } catch (err) {
       showToast('Failed to settle payment: ' + err.message, 'error');
@@ -206,7 +219,8 @@ export const ComplaintList = ({
     try {
       await api.deleteComplaint(complaint.id);
       showToast(`Ticket #${complaint.ticket_id} deleted successfully!`, 'success');
-      fetchComplaints();
+      fetchComplaints(true);
+      broadcastComplaintsUpdate({ ticketId: complaint.ticket_id, action: 'deleted' });
     } catch (err) {
       showToast('Failed to delete complaint: ' + err.message, 'error');
     }
