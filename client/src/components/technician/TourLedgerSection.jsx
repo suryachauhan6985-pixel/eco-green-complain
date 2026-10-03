@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
@@ -2762,12 +2763,6 @@ export const TourLedgerSection = ({
                             <div className="font-semibold text-slate-800">
                               {tx.date ? formatIndianDateOnly(tx.date) : '-'}
                             </div>
-                            {tx.time_formatted && (
-                              <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                <span>{tx.time_formatted}</span>
-                              </div>
-                            )}
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 font-bold">
                             {tx.reference_no}
@@ -3740,9 +3735,9 @@ export const TourLedgerSection = ({
       })()}
 
       {/* ================= MODAL: PRINT & WORD EXPORT VOUCHER ================= */}
-      {isVoucherModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+      {isVoucherModalOpen && typeof document !== 'undefined' ? createPortal(
+        <div id="tour-voucher-modal-portal" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
+          <div className="voucher-modal-card bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
             {/* Modal Actions Bar */}
             <div className="p-3 sm:p-4 bg-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
@@ -3846,7 +3841,7 @@ export const TourLedgerSection = ({
             </div>
 
             {/* Printable Voucher Paper */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200">
+            <div className="voucher-paper-container flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200">
               <style>{`
                 @media print {
                   @page {
@@ -3861,37 +3856,64 @@ export const TourLedgerSection = ({
                     print-color-adjust: exact !important;
                     overflow: visible !important;
                     height: auto !important;
+                    width: 100% !important;
                   }
-                  /* Remove viewport clipping from fixed/scroll modal containers during print */
-                  .fixed, [class*="fixed"], [class*="overflow-"] {
+                  /* Completely hide main application tree to eliminate preceding blank pages */
+                  body > *:not(#tour-voucher-modal-portal) {
+                    display: none !important;
+                  }
+                  #tour-voucher-modal-portal {
                     position: static !important;
-                    overflow: visible !important;
-                    height: auto !important;
-                    max-height: none !important;
                     display: block !important;
-                    background: transparent !important;
-                    padding: 0 !important;
                     margin: 0 !important;
-                    border: none !important;
+                    padding: 0 !important;
+                    width: 100% !important;
+                    height: auto !important;
+                    background: #fff !important;
                     box-shadow: none !important;
                   }
-                  body * {
-                    visibility: hidden !important;
+                  #tour-voucher-modal-portal .voucher-modal-card {
+                    position: static !important;
+                    display: block !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    max-height: none !important;
+                    height: auto !important;
+                    overflow: visible !important;
+                    background: #fff !important;
+                    box-shadow: none !important;
+                    border: none !important;
                   }
-                  #tour-voucher-print-area, #tour-voucher-print-area * {
-                    visibility: visible !important;
+                  .print\\:hidden, [class*="print:hidden"] {
+                    display: none !important;
+                  }
+                  .voucher-paper-container {
+                    position: static !important;
+                    display: block !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #fff !important;
+                    overflow: visible !important;
                   }
                   #tour-voucher-print-area {
                     position: static !important;
+                    display: block !important;
                     width: 100% !important;
+                    max-width: 100% !important;
                     margin: 0 !important;
                     padding: 0 !important;
-                    display: block !important;
+                  }
+                  #tour-voucher-print-area > * {
+                    margin-top: 0 !important;
+                    margin-bottom: 0 !important;
                   }
                   .voucher-page-pair {
                     box-sizing: border-box !important;
-                    height: 284mm !important;
-                    max-height: 284mm !important;
+                    width: 100% !important;
+                    height: 282mm !important;
+                    max-height: 282mm !important;
                     page-break-after: always !important;
                     break-after: page !important;
                     page-break-inside: avoid !important;
@@ -3899,8 +3921,8 @@ export const TourLedgerSection = ({
                     display: flex !important;
                     flex-direction: column !important;
                     justify-content: space-between !important;
-                    margin-bottom: 0 !important;
-                    padding-bottom: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
                   }
                   .voucher-page-pair:last-child {
                     page-break-after: auto !important;
@@ -3908,15 +3930,17 @@ export const TourLedgerSection = ({
                   }
                   .voucher-slip-card {
                     box-sizing: border-box !important;
+                    width: 100% !important;
                     height: 136mm !important;
                     max-height: 136mm !important;
                     border: 1.5px solid #000 !important;
-                    padding: 4.5mm 6.5mm !important;
+                    padding: 3.5mm 5.5mm !important;
                     page-break-inside: avoid !important;
                     break-inside: avoid !important;
                     display: flex !important;
                     flex-direction: column !important;
                     justify-content: space-between !important;
+                    background: #fff !important;
                   }
                   .voucher-cut-line {
                     height: 6mm !important;
@@ -4121,13 +4145,62 @@ export const TourLedgerSection = ({
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body
+      ) : null}
 
       {/* ================= MODAL: PRINTABLE ACCOUNT STATEMENT (A4) ================= */}
-      {isPrintStatementOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs print:p-0 print:bg-white print:static">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl p-4 sm:p-6 print:p-0 print:shadow-none print:max-w-none print:max-h-none print:w-full">
+      {isPrintStatementOpen && typeof document !== 'undefined' ? createPortal(
+        <div id="tour-statement-modal-portal" className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs print:p-0 print:bg-white print:static">
+          <div className="statement-modal-card bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl p-4 sm:p-6 print:p-0 print:shadow-none print:max-w-none print:max-h-none print:w-full">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 portrait;
+                  margin: 8mm 10mm;
+                }
+                html, body {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #fff !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                  overflow: visible !important;
+                  height: auto !important;
+                  width: 100% !important;
+                }
+                body > *:not(#tour-statement-modal-portal) {
+                  display: none !important;
+                }
+                #tour-statement-modal-portal {
+                  position: static !important;
+                  display: block !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  background: #fff !important;
+                  box-shadow: none !important;
+                }
+                #tour-statement-modal-portal .statement-modal-card {
+                  position: static !important;
+                  display: block !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  max-height: none !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                  background: #fff !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                }
+                .print\\:hidden, [class*="print:hidden"] {
+                  display: none !important;
+                }
+              }
+            `}</style>
             {/* Top Modal Controls (Hidden in Print) */}
             <div className="print:hidden flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
               <div className="flex items-center gap-2">
@@ -4280,9 +4353,6 @@ export const TourLedgerSection = ({
                     <tr key={idx} className="border-b border-slate-200">
                       <td className="p-1.5 border-r border-slate-300 font-mono whitespace-nowrap">
                         <div>{tx.date ? formatIndianDateOnly(tx.date) : '-'}</div>
-                        {tx.time_formatted && (
-                          <div className="text-[9px] text-slate-500 font-mono">{tx.time_formatted}</div>
-                        )}
                       </td>
                       <td className="p-1.5 border-r border-slate-300 font-mono font-bold">{tx.reference_no}</td>
                       <td className="p-1.5 border-r border-slate-300 font-mono">{tx.ticket_id || 'General'}</td>
@@ -4318,8 +4388,9 @@ export const TourLedgerSection = ({
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body
+      ) : null}
 
       {/* ================= LIGHTBOX PREVIEW ================= */}
       {receiptLightbox && (
