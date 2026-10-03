@@ -1,22 +1,20 @@
 const { Client } = require('pg');
-const DB_CONN = 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres';
 
-async function main() {
-  const client = new Client({ connectionString: DB_CONN });
+async function run() {
+  const client = new Client({
+    connectionString: 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres',
+    ssl: { rejectUnauthorized: false }
+  });
   await client.connect();
-  const tables = await client.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
-  console.log('Tables:', tables.rows.map(r => r.table_name));
 
-  // If notification_templates or whatsapp_templates exists, show rows
-  for (const t of tables.rows.map(r => r.table_name)) {
-    if (t.includes('template') || t.includes('notif')) {
-      console.log(`\nTable ${t}:`);
-      const rows = await client.query(`SELECT * FROM ${t} LIMIT 10`);
-      console.log(rows.rows);
-    }
-  }
+  const cols = await client.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'notification_templates'");
+  console.log('Columns in DB:', cols.rows.map(c => c.column_name));
+
+  const all = await client.query('SELECT id, template_key, meta_template_name, meta_status FROM notification_templates ORDER BY id ASC');
+  console.log('Total templates in DB:', all.rows.length);
+  console.log('Templates in DB:', all.rows);
 
   await client.end();
 }
 
-main().catch(console.error);
+run().catch(console.error);
