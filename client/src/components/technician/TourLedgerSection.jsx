@@ -3739,7 +3739,7 @@ export const TourLedgerSection = ({
         <div id="tour-voucher-modal-portal" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
           <div className="voucher-modal-card bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
             {/* Modal Actions Bar */}
-            <div className="p-3 sm:p-4 bg-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
+            <div className="print:hidden no-print p-3 sm:p-4 bg-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 <Printer className="w-5 h-5 text-emerald-400" />
                 <span className="font-bold text-sm">Voucher Book Print (2 Vouchers per A4 Page)</span>
@@ -3785,7 +3785,7 @@ export const TourLedgerSection = ({
             </div>
 
             {/* Print Selection & Status Filter Bar */}
-            <div className="bg-slate-900 px-4 py-2 text-white flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 text-xs">
+            <div className="print:hidden no-print bg-slate-900 px-4 py-2 text-white flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 text-xs">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-slate-400 font-bold text-[11px] uppercase tracking-wider mr-1">Print Filter:</span>
                 <button
@@ -3886,7 +3886,10 @@ export const TourLedgerSection = ({
                     box-shadow: none !important;
                     border: none !important;
                   }
-                  .print\\:hidden, [class*="print:hidden"] {
+                  #tour-voucher-modal-portal .voucher-modal-card > :not(.voucher-paper-container) {
+                    display: none !important;
+                  }
+                  .print\\:hidden, [class*="print:hidden"], .no-print {
                     display: none !important;
                   }
                   .voucher-paper-container {
