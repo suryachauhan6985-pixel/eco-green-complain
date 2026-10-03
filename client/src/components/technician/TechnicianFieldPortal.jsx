@@ -101,7 +101,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const st = getInitialJobStatus();
       setJobStatusFilter(st);
       const tid = getUrlParam('tech_id');
-      if (tid) setSelectedAdminTechId(tid);
+      setSelectedAdminTechId(tid || '');
     };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);

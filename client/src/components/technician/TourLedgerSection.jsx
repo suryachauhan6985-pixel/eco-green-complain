@@ -637,6 +637,8 @@ export const TourLedgerSection = ({
       setSubTab(st);
       setIsVoucherModalOpen(getUrlParam('voucher_modal') === '1' || getUrlParam('modal') === 'voucher');
       setIsPrintStatementOpen(getUrlParam('print_statement') === '1' || getUrlParam('modal') === 'statement');
+      const pr = getUrlParam('preset');
+      setStatementPreset(pr || 'current_fy');
     };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);

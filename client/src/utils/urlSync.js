@@ -25,19 +25,44 @@ export function getUrlParam(key) {
 export function updateUrlParams(updates, replace = true) {
   try {
     const url = new URL(window.location.href);
+    let changed = false;
+
     Object.entries(updates).forEach(([key, val]) => {
       if (val === null || val === undefined || val === '') {
-        url.searchParams.delete(key);
+        if (url.searchParams.has(key)) {
+          url.searchParams.delete(key);
+          changed = true;
+        }
       } else {
-        url.searchParams.set(key, String(val));
+        if (url.searchParams.get(key) !== String(val)) {
+          url.searchParams.set(key, String(val));
+          changed = true;
+        }
       }
     });
+
+    if (!changed) return;
 
     const newUrl = url.pathname + (url.searchParams.toString() ? `?${url.searchParams.toString()}` : '');
     if (replace) {
       window.history.replaceState(null, '', newUrl);
     } else {
       window.history.pushState(null, '', newUrl);
+    }
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  } catch (_) {}
+}
+
+export function clearUrlParams(replace = true) {
+  try {
+    if (window.location.search) {
+      const newUrl = window.location.pathname;
+      if (replace) {
+        window.history.replaceState(null, '', newUrl);
+      } else {
+        window.history.pushState(null, '', newUrl);
+      }
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
   } catch (_) {}
 }
@@ -57,5 +82,7 @@ export function navigateWithParams(path, params = {}, replace = false) {
     } else {
       window.history.pushState(null, '', targetUrl);
     }
+    window.dispatchEvent(new PopStateEvent('popstate'));
   } catch (_) {}
 }
+

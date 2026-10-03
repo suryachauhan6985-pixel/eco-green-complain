@@ -157,27 +157,35 @@ function AppContent() {
   // Keep URL in sync with currentTab
   const handleTabChange = (tab, sec = null) => {
     const normalized = normalizeTab(tab) || tab;
+    const isSameTab = normalized === currentTab;
     setCurrentTab(normalized);
     try {
       localStorage.setItem('egs_active_tab', normalized);
-      const currentUrl = new URL(window.location.href);
-      // Clean previous tab-specific parameters when switching main tabs
-      if (normalized !== currentTab) {
-        currentUrl.searchParams.delete('status');
-        currentUrl.searchParams.delete('subtab');
-        currentUrl.searchParams.delete('product');
-        currentUrl.searchParams.delete('audience');
-        currentUrl.searchParams.delete('voucher_modal');
-        currentUrl.searchParams.delete('print_statement');
-      }
+
+      // Always close ticket drawer and new complaint modal when navigating via tab click
+      setSelectedComplaintId(null);
+      setIsNewComplaintOpen(false);
+      setHistoryPhone(null);
+
+      let targetUrl = `/${normalized}`;
       if (sec) {
-        currentUrl.searchParams.set('section', sec);
         setTechSection(sec);
-      } else if (normalized !== 'technician') {
-        currentUrl.searchParams.delete('section');
+        targetUrl = `/${normalized}?section=${sec}`;
+      } else if (normalized === 'technician') {
+        setTechSection('field_ops');
       }
-      const search = currentUrl.searchParams.toString() ? `?${currentUrl.searchParams.toString()}` : '';
-      window.history.pushState(null, '', `/${normalized}${search}`);
+
+      // If user clicked the same tab (e.g. double-click or clicking active tab to reset):
+      // Use replaceState to clear all query params and avoid duplicating history entries!
+      // If switching to another tab, use pushState with the clean target URL.
+      if (isSameTab) {
+        window.history.replaceState(null, '', targetUrl);
+      } else {
+        window.history.pushState(null, '', targetUrl);
+      }
+
+      // Dispatch popstate event so all mounted components immediately reset their internal filter/tab state
+      window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (e) {}
   };
 
@@ -202,9 +210,10 @@ function AppContent() {
         currentUrl.searchParams.delete('ticketId');
         currentUrl.searchParams.delete('complaintId');
         currentUrl.searchParams.delete('id');
-        // Also normalize /ticket/:id or /complaints/:id path back to /:currentTab
-        window.history.pushState(null, '', `/${currentTab}${currentUrl.search}`);
+        // When closing drawer, use replaceState so user doesn't get trapped in back history
+        window.history.replaceState(null, '', currentUrl.pathname + (currentUrl.searchParams.toString() ? `?${currentUrl.searchParams.toString()}` : ''));
       }
+      window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (_) {}
   };
 

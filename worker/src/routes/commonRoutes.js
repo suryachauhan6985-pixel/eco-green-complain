@@ -348,7 +348,7 @@ commonRoutes.get('/reports/metrics', authenticateToken, async (c) => {
 // GET /api/products
 commonRoutes.get('/products', async (c) => {
   try {
-    const res = await query('SELECT id, name, icon, description FROM products ORDER BY id ASC', [], c.env, c.executionCtx);
+    const res = await query('SELECT id, name, icon, description, is_custom FROM products ORDER BY id ASC', [], c.env, c.executionCtx);
     if (res.rows.length > 0) {
       return c.json({ products: res.rows });
     }
@@ -363,13 +363,124 @@ commonRoutes.get('/products', async (c) => {
   });
 });
 
+// POST /api/products
+commonRoutes.post('/products', authenticateToken, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { name, description, icon } = body;
+    if (!name || !name.trim()) {
+      return c.json({ error: 'Product name is required' }, 400);
+    }
+    const cleanName = name.trim();
+    const cleanDesc = description ? description.trim() : '';
+    const cleanIcon = icon ? icon.trim() : 'Sun';
+
+    const existing = await query('SELECT id FROM products WHERE LOWER(name) = LOWER($1)', [cleanName], c.env, c.executionCtx);
+    if (existing.rows.length > 0) {
+      return c.json({ error: `Product "${cleanName}" already exists in catalog` }, 409);
+    }
+
+    const res = await query(
+      'INSERT INTO products (name, description, icon, is_custom) VALUES ($1, $2, $3, 1) RETURNING *',
+      [cleanName, cleanDesc, cleanIcon],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      product: res.rows[0],
+      message: 'Product added successfully'
+    }, 201);
+  } catch (err) {
+    console.error('[Add Product Error]', err);
+    return c.json({ error: 'Failed to add product: ' + err.message }, 500);
+  }
+});
+
+// DELETE /api/products/:id
+commonRoutes.delete('/products/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    await query('DELETE FROM products WHERE id = $1', [id], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'Product deleted' });
+  } catch (err) {
+    console.error('[Delete Product Error]', err);
+    return c.json({ error: 'Failed to delete product: ' + err.message }, 500);
+  }
+});
+
 // GET /api/categories
 commonRoutes.get('/categories', async (c) => {
   try {
-    const res = await query('SELECT id, product_type, category_name FROM issue_categories ORDER BY id ASC', [], c.env, c.executionCtx);
+    const productType = c.req.query('product_type');
+    let res;
+    if (productType) {
+      res = await query(
+        'SELECT id, product_type, category_name, is_default FROM issue_categories WHERE product_type = $1 ORDER BY category_name ASC',
+        [productType],
+        c.env,
+        c.executionCtx
+      );
+    } else {
+      res = await query(
+        'SELECT id, product_type, category_name, is_default FROM issue_categories ORDER BY id ASC',
+        [],
+        c.env,
+        c.executionCtx
+      );
+    }
     return c.json({ categories: res.rows });
   } catch (err) {
     return c.json({ categories: [] });
+  }
+});
+
+// POST /api/categories
+commonRoutes.post('/categories', authenticateToken, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { product_type, category_name } = body;
+    if (!product_type || !category_name || !category_name.trim()) {
+      return c.json({ error: 'product_type and category_name required' }, 400);
+    }
+    const cleanCat = category_name.trim();
+
+    const existing = await query(
+      'SELECT id FROM issue_categories WHERE product_type = $1 AND LOWER(category_name) = LOWER($2)',
+      [product_type, cleanCat],
+      c.env,
+      c.executionCtx
+    );
+    if (existing.rows.length > 0) {
+      return c.json({ error: 'Category already exists for this product' }, 409);
+    }
+
+    const res = await query(
+      'INSERT INTO issue_categories (product_type, category_name, is_default) VALUES ($1, $2, 0) RETURNING *',
+      [product_type, cleanCat],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      category: res.rows[0],
+      message: 'Category added'
+    }, 201);
+  } catch (err) {
+    console.error('[Add Category Error]', err);
+    return c.json({ error: 'Failed to add category: ' + err.message }, 500);
+  }
+});
+
+// DELETE /api/categories/:id
+commonRoutes.delete('/categories/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    await query('DELETE FROM issue_categories WHERE id = $1', [id], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'Category deleted' });
+  } catch (err) {
+    console.error('[Delete Category Error]', err);
+    return c.json({ error: 'Failed to delete category: ' + err.message }, 500);
   }
 });
 
