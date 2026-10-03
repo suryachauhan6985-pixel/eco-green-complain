@@ -12,6 +12,8 @@ import {
 export const TRIGGER_OPTIONS = [
   { id: 'complaint_registered', label: 'Ticket Lodged (With Quoted Charges)', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket with service charge quote' },
   { id: 'complaint_registered_no_charges', label: 'Ticket Lodged (Standard / No Charges)', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket without charges' },
+  { id: 'charges_added', label: 'Service Charges Added / Updated', audience: 'customer', desc: 'Fires when service charges are added or updated on an existing ticket during edit' },
+  { id: 'charges_removed', label: 'Service Charges Removed / Waived', audience: 'customer', desc: 'Fires when quoted service charges are removed, waived, or marked ₹0 under warranty' },
   { id: 'technician_assigned', label: 'Technician First Assigned', audience: 'all', desc: 'Fires to customer when technician is initially allocated' },
   { id: 'technician_reassigned', label: 'Technician Reassigned (In-Progress Job Transferred)', audience: 'all', desc: 'Fires when assigned technician is changed during active complaint (New Tech Work Order + Old Tech Notice)' },
   { id: 'status_update', label: 'Status & Visit Note Update', audience: 'customer', desc: 'Fires when progress or note is recorded on ticket' },
@@ -91,6 +93,7 @@ export const ALL_PLACEHOLDERS = [
   { key: '{{status}}', desc: 'Current Ticket Status' },
   { key: '{{notes}}', desc: 'Latest Follow-up / Issue Description / Resolution Notes' },
   { key: '{{charges_line}}', desc: 'Estimated Service Charge line (if enabled)' },
+  { key: '{{estimated_charges}}', desc: 'Quoted Service Charges Amount (e.g. 500)' },
   { key: '{{feedback_url}}', desc: 'Online Ticket Tracking & Rating Link' },
   { key: '{{date}}', desc: 'Current Date' }
 ];
@@ -206,7 +209,7 @@ export const TemplateManager = () => {
     const isTech = isTechnicianTemplate(tmpl);
 
     const verifiedKeys = [
-      'complaint_registered', 'complaint_registered_no_charges', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
+      'complaint_registered', 'complaint_registered_no_charges', 'charges_added', 'charges_removed', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
       'technician_work_order', 'technician_team_work_order', 'technician_reminder', 'technician_reach_out_customer',
       'technician_reopened_work_order', 'technician_reopen_job_transferred',

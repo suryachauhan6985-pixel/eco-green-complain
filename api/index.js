@@ -237,6 +237,54 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
           }]
         };
       }
+    } else if (templateName === 'charges_added') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const estCharges = Number(variables.estimated_charges || 0);
+
+      renderedBody = `☀️ *Eco Green Solar - Service Charges Update*\n\nDear *${custName}*,\n\nEstimated service charges have been updated for your complaint ticket *${ticketId}*.\n\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n💰 *Estimated Service Charges:* ₹${estCharges}\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nOur service team will attend to your request. For any questions, please contact our support.\n- Eco Green Solar Care`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'charges_added',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: prodType },
+            { type: 'text', text: issueCat },
+            { type: 'text', text: `₹${estCharges}` },
+            { type: 'text', text: trackingUrl }
+          ]
+        }]
+      };
+    } else if (templateName === 'charges_removed') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+
+      renderedBody = `☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear *${custName}*,\n\nThe service charges for your complaint ticket *${ticketId}* have been waived / removed (₹0).\n\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'charges_removed',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: custName },
+            { type: 'text', text: ticketId },
+            { type: 'text', text: prodType },
+            { type: 'text', text: issueCat },
+            { type: 'text', text: trackingUrl }
+          ]
+        }]
+      };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
@@ -2892,35 +2940,51 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
     const updatedRes = await query('SELECT * FROM complaints WHERE id = $1', [current.id]);
     const updatedComp = updatedRes.rows[0];
 
-    // Check if customer notification was requested
-    const shouldNotifyCustomer = (b.notify_customer === true || b.notify_customer === 1 || b.notify_customer === '1' || b.notify_customer === 'true' || cleanNotifyCharges === 1);
+    // Check if service charges were added, updated, or removed
+    const prevCharges = parseFloat(current.estimated_charges) || 0;
+    const prevNotify = (current.notify_charges === 1 || current.notify_charges === '1' || current.notify_charges === true);
+    const newCharges = cleanEstimatedCharges;
+    const newNotify = cleanNotifyCharges === 1;
+
+    let chargeAction = null;
+    if (newNotify && newCharges > 0) {
+      if (!prevNotify || prevCharges === 0 || prevCharges !== newCharges) {
+        chargeAction = 'charges_added';
+      }
+    } else if (prevNotify && prevCharges > 0 && (!newNotify || newCharges === 0)) {
+      chargeAction = 'charges_removed';
+    }
 
     let waResult = null;
-    if (shouldNotifyCustomer && updatedComp?.customer_phone) {
+    let waNotified = false;
+    if (chargeAction && updatedComp?.customer_phone) {
       try {
-        const estCharges = Number(updatedComp.estimated_charges || 0);
-        const shouldCharge = (cleanNotifyCharges === 1 && estCharges > 0);
-        const templateToUse = shouldCharge ? 'complaint_registered' : 'complaint_registered_no_charges';
-
         waResult = await sendWhatsApp({
           to: updatedComp.customer_phone,
-          templateName: templateToUse,
+          templateName: chargeAction,
           variables: {
             customer_name: updatedComp.customer_name,
             ticket_id: updatedComp.ticket_id,
+            complaint_id: updatedComp.ticket_id,
             product_type: updatedComp.product_type,
             issue_category: updatedComp.issue_category,
-            estimated_charges: updatedComp.estimated_charges,
+            estimated_charges: newCharges,
             notify_charges: cleanNotifyCharges,
             db_complaint_id: updatedComp.id
           }
         });
+        waNotified = true;
 
         const performerName = req.user?.name || 'Supervisor';
         const performerRole = req.user?.role || 'staff';
+        const tlNotes = chargeAction === 'charges_added'
+          ? `Estimated service charges updated to ₹${newCharges}. Customer notified via WhatsApp.`
+          : `Service charges waived / removed (₹0). Customer notified via WhatsApp.`;
+        const tlAction = chargeAction === 'charges_added' ? 'Charges Updated' : 'Charges Waived';
+
         await query(
           'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-          [updatedComp.id, 'Customer Re-Notified', `Ticket updated and notification dispatched to customer via WhatsApp (${shouldCharge ? 'With Quoted Charges ₹' + estCharges : 'Standard / No Charges'})`, performerName, performerRole]
+          [updatedComp.id, tlAction, tlNotes, performerName, performerRole]
         ).catch(() => {});
       } catch (waErr) {
         console.warn('[Edit Complaint WhatsApp Error]', waErr.message);
@@ -4463,6 +4527,8 @@ let metaTemplatesCache = {
 const META_TEMPLATE_MAPPING = {
   complaint_registered: { metaName: 'complaint_registered', language: 'en_US' },
   complaint_registered_no_charges: { metaName: 'complaint_registered_no_charges', language: 'en_US' },
+  charges_added: { metaName: 'charges_added', language: 'en_US' },
+  charges_removed: { metaName: 'charges_removed', language: 'en_US' },
   technician_assigned: { metaName: 'technician_assigned', language: 'en_US' },
   customer_technician_reassigned: { metaName: 'customer_technician_reassigned', language: 'en' },
   status_update: { metaName: 'status__followup_note_update', language: 'en' },
@@ -6716,6 +6782,22 @@ async function ensureNotificationTemplatesTable() {
         trigger: 'complaint_registered_no_charges',
         metaName: 'complaint_registered_no_charges',
         body: '☀️ *Eco Green Solar - Complaint Registered*\n\nDear {{customer_name}}, your service complaint has been registered under ticket *{{complaint_id}}*.\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n\n🔗 *Track Live:* {{feedback_url}}\n\nOur team will attend to your request promptly.\n- Eco Green Solar Care'
+      },
+      {
+        key: 'charges_added',
+        name: 'Service Charges Added / Updated',
+        audience: 'customer',
+        trigger: 'charges_added',
+        metaName: 'charges_added',
+        body: '☀️ *Eco Green Solar - Service Charges Update*\n\nDear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket *{{complaint_id}}*.\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Estimated Service Charges:* ₹{{estimated_charges}}\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur service team will attend to your request. For any questions, please contact our support.\n- Eco Green Solar Care'
+      },
+      {
+        key: 'charges_removed',
+        name: 'Service Charges Removed / Waived',
+        audience: 'customer',
+        trigger: 'charges_removed',
+        metaName: 'charges_removed',
+        body: '☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear {{customer_name}},\n\nThe service charges for your complaint ticket *{{complaint_id}}* have been waived / removed (₹0).\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care'
       },
       {
         key: 'technician_assigned',

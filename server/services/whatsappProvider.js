@@ -45,6 +45,8 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       'complaint_registered',
       'complaint_registered_no_charges',
       'complaint_registered_customer',
+      'charges_added',
+      'charges_removed',
       'technician_assigned',
       'technician_assigned_customer',
       'customer_technician_reassigned',
@@ -154,6 +156,58 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           ]
         };
       }
+    } else if (templateName === 'charges_added') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const estCharges = Number(variables.estimated_charges || 0);
+
+      deliveredText = `☀️ *Eco Green Solar - Service Charges Update*\n\nDear *${custName}*,\n\nEstimated service charges have been updated for your complaint ticket *${ticketId}*.\n\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n💰 *Estimated Service Charges:* ₹${estCharges}\n\n🔗 *Track Live Status:* ${cleanTrackingUrl}\n\nOur service team will attend to your request. For any questions, please contact our support.\n- Eco Green Solar Care`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'charges_added',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: custName },
+              { type: 'text', text: ticketId },
+              { type: 'text', text: prodType },
+              { type: 'text', text: issueCat },
+              { type: 'text', text: `₹${estCharges}` },
+              { type: 'text', text: cleanTrackingUrl }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'charges_removed') {
+      const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const ticketId = cleanParam(variables.complaint_id || ticket_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+
+      deliveredText = `☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear *${custName}*,\n\nThe service charges for your complaint ticket *${ticketId}* have been waived / removed (₹0).\n\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* ${cleanTrackingUrl}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'charges_removed',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: custName },
+              { type: 'text', text: ticketId },
+              { type: 'text', text: prodType },
+              { type: 'text', text: issueCat },
+              { type: 'text', text: cleanTrackingUrl }
+            ]
+          }
+        ]
+      };
     } else if (templateName === 'technician_assigned' || templateName === 'technician_assigned_customer') {
       deliveredText = `Dear ${cleanParam(variables.customer_name, 'Valued Customer')},\n\nA certified technician of Eco Green Solar has been assigned to your ticket No: ${cleanParam(variables.complaint_id || ticket_id, 'Ticket')}.\n\nTechnician Name: *${cleanParam(variables.technician_name, 'Field Technician')}*\n\nTrack visit live: ${cleanTrackingUrl}\n\nEco Green Solar Customer Care.`;
 

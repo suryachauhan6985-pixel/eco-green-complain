@@ -1629,7 +1629,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
   try {
     const id = c.req.param('id');
     const existingComp = await query(
-      'SELECT id, status, is_in_warranty, estimated_charges, notify_charges FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+      'SELECT id, ticket_id, customer_name, customer_phone, product_type, issue_category, status, is_in_warranty, estimated_charges, notify_charges FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
       [id],
       c.env,
       c.executionCtx
@@ -1758,11 +1758,72 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       }
     }
 
+    // Trigger WhatsApp notification if service charges were added, updated, or removed
+    const prevCharges = parseFloat(current.estimated_charges) || 0;
+    const prevNotify = (current.notify_charges === 1 || current.notify_charges === '1' || current.notify_charges === true);
+    const newCharges = cleanEstimatedCharges;
+    const newNotify = cleanNotifyCharges === 1;
+
+    let chargeAction = null;
+    if (newNotify && newCharges > 0) {
+      if (!prevNotify || prevCharges === 0 || prevCharges !== newCharges) {
+        chargeAction = 'charges_added';
+      }
+    } else if (prevNotify && prevCharges > 0 && (!newNotify || newCharges === 0)) {
+      chargeAction = 'charges_removed';
+    }
+
+    const targetPhone = b.customer_phone ? b.customer_phone.trim() : current.customer_phone;
+    const custName = b.customer_name ? b.customer_name.trim() : current.customer_name;
+    const prodType = b.product_type ? b.product_type.trim() : current.product_type;
+    const issueCat = b.issue_category ? b.issue_category.trim() : current.issue_category;
+
+    let waNotified = false;
+    if (chargeAction && targetPhone) {
+      const user = c.get('user');
+      const actorName = user?.name || user?.username || 'Customer Care';
+      const actorRole = user?.role || 'staff';
+
+      c.executionCtx?.waitUntil?.(
+        sendWhatsApp({
+          to: targetPhone,
+          templateName: chargeAction,
+          variables: {
+            customer_name: custName,
+            ticket_id: current.ticket_id,
+            complaint_id: current.ticket_id,
+            product_type: prodType,
+            issue_category: issueCat,
+            estimated_charges: newCharges,
+            db_complaint_id: current.id
+          },
+          env: c.env
+        }).catch(err => {
+          console.warn('[Charges WhatsApp Alert Warn]', err.message);
+          return null;
+        })
+      );
+      waNotified = true;
+
+      const tlNotes = chargeAction === 'charges_added'
+        ? `Estimated service charges updated to ₹${newCharges}. Customer notified via WhatsApp.`
+        : `Service charges waived / removed (₹0). Customer notified via WhatsApp.`;
+      const tlAction = chargeAction === 'charges_added' ? 'Charges Updated' : 'Charges Waived';
+
+      await query(`
+        INSERT INTO complaint_timelines (
+          complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at
+        ) VALUES ($1, $2, $3, $4, $5, 1, CURRENT_TIMESTAMP)
+      `, [current.id, tlAction, tlNotes, actorName, actorRole], c.env, c.executionCtx).catch(() => {});
+    }
+
     const updated = await query('SELECT * FROM complaints WHERE id = $1', [current.id], c.env, c.executionCtx);
     return c.json({
       message: 'Complaint updated successfully',
       complaint: updated.rows[0],
-      ticket: updated.rows[0]
+      ticket: updated.rows[0],
+      whatsapp_notified: waNotified,
+      charge_action: chargeAction
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);

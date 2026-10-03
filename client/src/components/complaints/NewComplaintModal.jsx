@@ -69,13 +69,23 @@ const getProductComponentIcon = (type) => {
   return Layers;
 };
 
-export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewComplaint, initialData = null }) => {
+export const NewComplaintModal = ({ 
+  isOpen, 
+  onClose, 
+  onComplaintCreated, 
+  onComplaintUpdated,
+  onViewComplaint, 
+  initialData = null,
+  mode = 'create'
+}) => {
   const { currentUser } = useAuth();
   const { showToast } = useDialog();
   const { addNotification } = useNotifications();
   const [directSending, setDirectSending] = useState(false);
   const [directSent, setDirectSent] = useState(false);
   const [directSendError, setDirectSendError] = useState(null);
+
+  const isEditMode = mode === 'edit' || Boolean(initialData?.id && (initialData?.ticket_id || initialData?.created_at));
 
   const [formData, setFormData] = useState({
     customer_name: '',
@@ -113,18 +123,52 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
     totalFiles: 0
   });
 
-  // Populate from initialData (e.g. from WhatsApp conversion)
+  // Populate from initialData (supports both Edit Mode and New Ticket Lead Conversion)
   useEffect(() => {
     if (initialData && isOpen) {
-      setFormData(prev => ({
-        ...prev,
-        customer_name: initialData.customer_name || prev.customer_name,
-        customer_phone: initialData.customer_phone || prev.customer_phone,
-        issue_description: initialData.issue_description || prev.issue_description
-      }));
-      setStep('form');
+      if (isEditMode) {
+        setFormData({
+          customer_name: initialData.customer_name || '',
+          customer_phone: initialData.customer_phone || '',
+          customer_email: initialData.customer_email || '',
+          customer_address: initialData.customer_address || '',
+          city: initialData.city || '',
+          pincode: initialData.pincode || '',
+          district: initialData.district || '',
+          state: initialData.state || '',
+          post_office: initialData.post_office || '',
+          consumer_no: initialData.consumer_no || '',
+          order_no: initialData.order_no || '',
+          dealer_name: initialData.dealer_name || '',
+          invoice_no: initialData.invoice_no || '',
+          invoice_date: initialData.invoice_date || '',
+          location_url: initialData.location_url || '',
+          is_in_warranty: initialData.is_in_warranty !== undefined ? initialData.is_in_warranty : 1,
+          estimated_charges: (initialData.estimated_charges !== undefined && initialData.estimated_charges !== null) ? String(initialData.estimated_charges) : '',
+          notify_charges: initialData.notify_charges !== undefined ? Boolean(initialData.notify_charges === 1 || initialData.notify_charges === '1' || initialData.notify_charges === true) : true,
+          product_type: initialData.product_type || 'Solar Rooftop Systems',
+          product_serial: initialData.product_serial || '',
+          installation_id: initialData.installation_id || '',
+          issue_category: initialData.issue_category || 'No Power Output',
+          issue_description: initialData.issue_description || initialData.description || '',
+          priority: initialData.priority || 'Medium',
+          status: initialData.status || 'Unassigned'
+        });
+        if (initialData.pincode) {
+          setPincodeStatus('valid');
+        }
+        setStep('form');
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          customer_name: initialData.customer_name || prev.customer_name,
+          customer_phone: initialData.customer_phone || prev.customer_phone,
+          issue_description: initialData.issue_description || prev.issue_description
+        }));
+        setStep('form');
+      }
     }
-  }, [initialData, isOpen]);
+  }, [initialData, isOpen, isEditMode]);
 
   const [fileList, setFileList] = useState([]); // [{ file, preview, id }]
   const [submitting, setSubmitting] = useState(false);
@@ -203,7 +247,11 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       try {
         const res = await api.checkActiveComplaint(formData.customer_phone, formData.customer_name, formData.product_type);
         if (res && res.hasActiveComplaint && res.complaint) {
-          setActiveComplaintWarning(res.complaint);
+          if (isEditMode && (String(res.complaint.id) === String(initialData?.id) || res.complaint.ticket_id === initialData?.ticket_id)) {
+            setActiveComplaintWarning(null);
+          } else {
+            setActiveComplaintWarning(res.complaint);
+          }
         } else {
           setActiveComplaintWarning(null);
         }
@@ -341,10 +389,14 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
       loadProducts();
       loadCategories();
       if (!createdTicket) {
-        setStep('product');
+        if (isEditMode) {
+          setStep('form');
+        } else {
+          setStep('product');
+        }
       }
     }
-  }, [isOpen]);
+  }, [isOpen, isEditMode]);
 
   const loadCategories = async () => {
     try {
@@ -728,6 +780,24 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
         }
       }
 
+      if (isEditMode) {
+        const updateId = initialData.id || initialData.ticket_id;
+        const res = await api.updateComplaint(updateId, data);
+        const updatedTicket = res.complaint || res.ticket || res;
+        broadcastComplaintsUpdate({ ticketId: initialData.ticket_id, action: 'edited' });
+        if (onComplaintUpdated) {
+          onComplaintUpdated(updatedTicket);
+        }
+        showToast(
+          res?.whatsapp_notified 
+            ? 'Ticket updated & customer notified via WhatsApp! 📲' 
+            : 'Complaint ticket updated successfully!', 
+          'success'
+        );
+        resetAndClose();
+        return;
+      }
+
       const res = await api.createComplaint(data);
       setCreatedTicket(res.complaint);
       setCreatedWhatsApp(res.whatsapp || null);
@@ -785,7 +855,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
   };
 
   const resetAndClose = () => {
-    setStep('product');
+    setStep(isEditMode ? 'form' : 'product');
     setCreatedTicket(null);
     setCreatedWhatsApp(null);
     setPreviewItem(null);
@@ -858,7 +928,7 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
         {/* Header */}
         <div className="px-6 py-4 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {step === 'form' && !createdTicket ? (
+            {step === 'form' && !createdTicket && !isEditMode ? (
               <button
                 type="button"
                 onClick={() => setStep('product')}
@@ -873,19 +943,32 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
               </div>
             )}
             <div>
-              <h2 className="text-lg font-bold">
-                {createdTicket 
-                  ? 'Complaint Registered Successfully' 
-                  : step === 'product' 
-                    ? 'Step 1: Select Product Category' 
-                    : `Step 2: ${formData.product_type} Complaint Form`}
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                {isEditMode ? (
+                  <>
+                    <span>Edit Complaint Ticket</span>
+                    {initialData?.ticket_id && (
+                      <span className="text-xs bg-amber-400/20 text-amber-300 border border-amber-300/30 px-2.5 py-0.5 rounded-full font-mono font-bold tracking-wide">
+                        #{initialData.ticket_id}
+                      </span>
+                    )}
+                  </>
+                ) : createdTicket ? (
+                  'Complaint Registered Successfully' 
+                ) : step === 'product' ? (
+                  'Step 1: Select Product Category' 
+                ) : (
+                  `Step 2: ${formData.product_type} Complaint Form`
+                )}
               </h2>
               <p className="text-xs text-emerald-200">
-                {createdTicket 
-                  ? 'Ticket registered & automated notifications ready' 
-                  : step === 'product'
-                    ? 'Choose product to start complaint registration'
-                    : 'Fill customer & defect details to register ticket'}
+                {isEditMode
+                  ? 'Update customer details, warranty status, defect category, or service charges'
+                  : createdTicket 
+                    ? 'Ticket registered & automated notifications ready' 
+                    : step === 'product'
+                      ? 'Choose product to start complaint registration'
+                      : 'Fill customer & defect details to register ticket'}
               </p>
             </div>
           </div>
@@ -2025,18 +2108,20 @@ export const NewComplaintModal = ({ isOpen, onClose, onComplaintCreated, onViewC
                       ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed opacity-90'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 disabled:opacity-50 cursor-pointer'
                   }`}
-                  title={activeComplaintWarning ? `Cannot register: Ticket #${activeComplaintWarning.ticket_id} for "${activeComplaintWarning.product_type || formData.product_type}" is still open (${activeComplaintWarning.status})` : ''}
+                  title={activeComplaintWarning ? `Cannot proceed: Ticket #${activeComplaintWarning.ticket_id} for "${activeComplaintWarning.product_type || formData.product_type}" is still open (${activeComplaintWarning.status})` : ''}
                 >
                   {submitting ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : isEditMode ? (
+                    <Check className="w-3.5 h-3.5" />
                   ) : (
                     <Send className="w-3.5 h-3.5" />
                   )}
                   {submitting
-                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : 'Registering & Dispatching...')
+                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : (isEditMode ? 'Saving Changes...' : 'Registering & Dispatching...'))
                     : activeComplaintWarning
-                    ? `Cannot Register: Open Ticket for ${activeComplaintWarning.product_type || formData.product_type}`
-                    : 'Register Complaint & Send Alerts'}
+                    ? `Cannot Proceed: Open Ticket for ${activeComplaintWarning.product_type || formData.product_type}`
+                    : (isEditMode ? 'Save & Update Ticket' : 'Register Complaint & Send Alerts')}
                 </button>
               </div>
             </form>

@@ -612,31 +612,44 @@ async function updateComplaint(req, res) {
       WHERE c.id = ?
     `).get(id);
 
-    const shouldNotifyCust = (req.body.notify_customer === true || req.body.notify_customer === 1 || req.body.notify_customer === '1' || shouldNotifyCharges === 1);
+    const prevCharges = parseFloat(existing.estimated_charges) || 0;
+    const prevNotify = (existing.notify_charges === 1 || existing.notify_charges === '1' || existing.notify_charges === true);
+    const newCharges = cleanCharges;
+    const newNotify = shouldNotifyCharges === 1;
 
-    if (shouldNotifyCust && updated?.customer_phone) {
+    let chargeAction = null;
+    if (newNotify && newCharges > 0) {
+      if (!prevNotify || prevCharges === 0 || prevCharges !== newCharges) {
+        chargeAction = 'charges_added';
+      }
+    } else if (prevNotify && prevCharges > 0 && (!newNotify || newCharges === 0)) {
+      chargeAction = 'charges_removed';
+    }
+
+    if (chargeAction && updated?.customer_phone) {
       try {
-        const estCharges = Number(updated.estimated_charges || 0);
-        const shouldCharge = (shouldNotifyCharges === 1 && estCharges > 0);
-        const templateKey = shouldCharge ? 'complaint_registered' : 'complaint_registered_no_charges';
-
         notificationService.dispatchAsync({
           complaintId: id,
-          templateKey,
+          templateKey: chargeAction,
           data: {
             customer_name: updated.customer_name,
             ticket_id: updated.ticket_id,
             product_type: updated.product_type,
             issue_category: updated.issue_category,
-            estimated_charges: updated.estimated_charges,
+            estimated_charges: newCharges,
             notify_charges: shouldNotifyCharges
           }
         });
 
+        const tlNotes = chargeAction === 'charges_added'
+          ? `Estimated service charges updated to ₹${newCharges}. Customer notified via WhatsApp.`
+          : `Service charges waived / removed (₹0). Customer notified via WhatsApp.`;
+        const tlAction = chargeAction === 'charges_added' ? 'Charges Updated' : 'Charges Waived';
+
         db.prepare(`
           INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
-          VALUES (?, 'Customer Re-Notified', ?, ?, ?, 1, CURRENT_TIMESTAMP)
-        `).run(id, `Ticket updated and notification dispatched to customer via WhatsApp (${shouldCharge ? 'With Quoted Charges ₹' + estCharges : 'Standard / No Charges'})`, actorName, actorRole);
+          VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+        `).run(id, tlAction, tlNotes, actorName, actorRole);
       } catch (e) {
         console.warn('Dispatch notification on update error:', e.message);
       }

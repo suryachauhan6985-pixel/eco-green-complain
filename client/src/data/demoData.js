@@ -56,6 +56,38 @@ export const INITIAL_TEMPLATES = [
     email_body: 'Dear {{customer_name}},\n\nYour complaint {{complaint_id}} has been received. Our team will contact you soon.'
   },
   {
+    id: 101,
+    template_key: 'charges_added',
+    name: 'Service Charges Added / Updated',
+    audience: 'customer',
+    trigger_event: 'charges_added',
+    meta_template_name: 'charges_added',
+    meta_language: 'en_US',
+    meta_category: 'UTILITY',
+    meta_status: 'APPROVED',
+    is_active: 1,
+    channel: 'whatsapp',
+    whatsapp_body: '☀️ *Eco Green Solar - Service Charges Update*\n\nDear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket *{{complaint_id}}*.\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Estimated Service Charges:* ₹{{estimated_charges}}\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur service team will attend to your request. For any questions, please contact our support.\n- Eco Green Solar Care',
+    email_subject: '[Eco Green Solar] Service Charges Updated - Ticket #{{complaint_id}}',
+    email_body: 'Dear {{customer_name}},\n\nEstimated service charges have been updated for your complaint ticket #{{complaint_id}}.\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nEstimated Charges: ₹{{estimated_charges}}\n\nTrack live status at: {{feedback_url}}'
+  },
+  {
+    id: 102,
+    template_key: 'charges_removed',
+    name: 'Service Charges Removed / Waived',
+    audience: 'customer',
+    trigger_event: 'charges_removed',
+    meta_template_name: 'charges_removed',
+    meta_language: 'en_US',
+    meta_category: 'UTILITY',
+    meta_status: 'APPROVED',
+    is_active: 1,
+    channel: 'whatsapp',
+    whatsapp_body: '☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear {{customer_name}},\n\nThe service charges for your complaint ticket *{{complaint_id}}* have been waived / removed (₹0).\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care',
+    email_subject: '[Eco Green Solar] Service Charges Waived - Ticket #{{complaint_id}}',
+    email_body: 'Dear {{customer_name}},\n\nThe service charges for your complaint ticket #{{complaint_id}} have been waived / removed (₹0).\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nRevised Charges: ₹0 (Covered Under Warranty)\n\nTrack live status at: {{feedback_url}}'
+  },
+  {
     id: 3,
     template_key: 'technician_assigned',
     name: 'Technician Assigned Notification',
