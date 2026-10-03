@@ -1,6 +1,28 @@
 import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
+import { META_WABA_ID, DEFAULT_META_ACCESS_TOKEN } from '../whatsapp.js';
+
+async function fetchMetaTemplatesFromGraph(env) {
+  const token = env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+  const wabaId = env?.META_WABA_ID || META_WABA_ID;
+  if (!token || !wabaId) return { success: false, templates: [] };
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?fields=id,name,status,category,language&limit=100`;
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      return { success: false, error: err?.error?.message || `Meta API HTTP ${resp.status}`, templates: [] };
+    }
+    const data = await resp.json();
+    return { success: true, templates: Array.isArray(data?.data) ? data.data : [] };
+  } catch (err) {
+    return { success: false, error: err.message, templates: [] };
+  }
+}
 
 const commonRoutes = new Hono();
 
@@ -397,7 +419,7 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
           INSERT INTO notification_templates (
             template_key, name, whatsapp_body, email_subject, email_body,
             audience, trigger_event, meta_template_name, meta_status, is_active, channel, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'APPROVED', 1, 'whatsapp', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', 1, 'whatsapp', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           ON CONFLICT (template_key) DO NOTHING
         `, [
           d.template_key, d.name, d.whatsapp_body, d.email_subject, d.email_body,
@@ -418,6 +440,32 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
       `, [], c.env, c.executionCtx);
     }
 
+    // Live query Meta Graph API to reflect real Meta approval statuses
+    try {
+      const metaRes = await fetchMetaTemplatesFromGraph(c.env);
+      if (metaRes.success && Array.isArray(metaRes.templates) && metaRes.templates.length > 0) {
+        const metaMap = new Map();
+        for (const mt of metaRes.templates) {
+          if (mt.name) metaMap.set(mt.name.toLowerCase(), mt.status);
+        }
+        for (const row of res.rows) {
+          const key = (row.meta_template_name || row.template_key || '').toLowerCase();
+          if (metaMap.has(key)) {
+            const liveStatus = metaMap.get(key);
+            if (row.meta_status !== liveStatus) {
+              row.meta_status = liveStatus;
+              await query(
+                'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP WHERE id = $2',
+                [liveStatus, row.id],
+                c.env,
+                c.executionCtx
+              ).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     return c.json({ success: true, templates: res.rows });
   } catch (err) {
     return c.json({ error: 'Failed to fetch templates: ' + err.message }, 500);
@@ -427,6 +475,23 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
 // GET /api/notifications/templates/meta-status
 commonRoutes.get('/notifications/templates/meta-status', authenticateToken, async (c) => {
   try {
+    const metaRes = await fetchMetaTemplatesFromGraph(c.env);
+    if (metaRes.success && Array.isArray(metaRes.templates) && metaRes.templates.length > 0) {
+      const metaMap = new Map();
+      for (const mt of metaRes.templates) {
+        if (mt.name) metaMap.set(mt.name.toLowerCase(), mt.status);
+      }
+      const dbRows = await query('SELECT id, template_key, meta_template_name, meta_status FROM notification_templates', [], c.env, c.executionCtx);
+      for (const row of dbRows.rows) {
+        const key = (row.meta_template_name || row.template_key || '').toLowerCase();
+        if (metaMap.has(key)) {
+          const liveStatus = metaMap.get(key);
+          if (row.meta_status !== liveStatus) {
+            await query('UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP WHERE id = $2', [liveStatus, row.id], c.env, c.executionCtx).catch(() => {});
+          }
+        }
+      }
+    }
     const res = await query('SELECT id, template_key, meta_status, last_synced_at FROM notification_templates ORDER BY id ASC', [], c.env, c.executionCtx);
     return c.json({ success: true, templates: res.rows });
   } catch (err) {
@@ -534,7 +599,29 @@ commonRoutes.post('/notifications/templates/:id/sync-meta', authenticateToken, a
   try {
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    const manualStatus = body?.manualStatus || 'APPROVED';
+    let finalStatus = body?.manualStatus || body?.manual_status || null;
+
+    if (!finalStatus) {
+      const existing = await query('SELECT * FROM notification_templates WHERE id::text = $1 OR template_key = $1 LIMIT 1', [String(id)], c.env, c.executionCtx);
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        const targetMetaName = (row.meta_template_name || row.template_key || '').toLowerCase();
+        const metaRes = await fetchMetaTemplatesFromGraph(c.env);
+        if (metaRes.success && Array.isArray(metaRes.templates)) {
+          const found = metaRes.templates.find(mt => {
+            const mtName = (mt.name || '').toLowerCase();
+            return mtName === targetMetaName || mtName.startsWith(targetMetaName) || targetMetaName.startsWith(mtName);
+          });
+          if (found) {
+            finalStatus = found.status || 'PENDING';
+          } else {
+            finalStatus = 'PENDING';
+          }
+        }
+      }
+    }
+
+    if (!finalStatus) finalStatus = 'PENDING';
 
     const res = await query(`
       UPDATE notification_templates SET
@@ -544,12 +631,69 @@ commonRoutes.post('/notifications/templates/:id/sync-meta', authenticateToken, a
         updated_at = CURRENT_TIMESTAMP
       WHERE id::text = $2 OR template_key = $2
       RETURNING *
-    `, [manualStatus, String(id)], c.env, c.executionCtx);
+    `, [finalStatus, String(id)], c.env, c.executionCtx);
 
     if (!res.rows.length) {
       return c.json({ error: 'Template not found' }, 404);
     }
-    return c.json({ success: true, message: 'Template synced with Meta', template: res.rows[0] });
+    return c.json({ 
+      success: true, 
+      message: `Template synced with Meta! Live status: ${finalStatus}`, 
+      meta_status: finalStatus,
+      template: res.rows[0] 
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/notifications/templates/sync-from-meta
+commonRoutes.post('/notifications/templates/sync-from-meta', authenticateToken, async (c) => {
+  try {
+    const metaRes = await fetchMetaTemplatesFromGraph(c.env);
+    if (!metaRes.success) {
+      return c.json({ error: metaRes.error || 'Failed to connect to Meta API' }, 500);
+    }
+
+    const metaMap = new Map();
+    for (const mt of metaRes.templates) {
+      if (mt.name) metaMap.set(mt.name.toLowerCase(), mt.status);
+    }
+
+    const dbRows = await query('SELECT id, template_key, meta_template_name, meta_status FROM notification_templates', [], c.env, c.executionCtx);
+    let syncedCount = 0;
+    for (const row of dbRows.rows) {
+      const key = (row.meta_template_name || row.template_key || '').toLowerCase();
+      if (metaMap.has(key)) {
+        const liveStatus = metaMap.get(key);
+        syncedCount++;
+        await query(
+          'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP, sync_status = \'SYNCED\', updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [liveStatus, row.id],
+          c.env,
+          c.executionCtx
+        ).catch(() => {});
+      }
+    }
+
+    const refreshed = await query(`
+      SELECT * FROM notification_templates 
+      ORDER BY 
+        CASE audience 
+          WHEN 'customer' THEN 1 
+          WHEN 'technician' THEN 2 
+          WHEN 'staff' THEN 3 
+          ELSE 4 
+        END ASC, 
+        id ASC
+    `, [], c.env, c.executionCtx);
+
+    return c.json({ 
+      success: true, 
+      syncedCount, 
+      message: `Successfully synced ${syncedCount} templates directly with Meta Graph API!`,
+      templates: refreshed.rows 
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
