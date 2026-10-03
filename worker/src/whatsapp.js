@@ -100,7 +100,7 @@ export async function sendWhatsApp({
             { type: 'text', text: ticketId },
             { type: 'text', text: prodType },
             { type: 'text', text: issueCat },
-            { type: 'text', text: `₹${estCharges}` },
+            { type: 'text', text: String(estCharges) },
             { type: 'text', text: trackingUrl }
           ]
         }]

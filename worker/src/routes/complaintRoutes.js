@@ -1654,13 +1654,20 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       ? ((b.is_in_warranty === 'true' || b.is_in_warranty === 1 || b.is_in_warranty === true || b.is_in_warranty === '1') ? 1 : 0)
       : current.is_in_warranty;
 
-    const cleanEstimatedCharges = b.estimated_charges !== undefined
+    const cleanEstimatedCharges = b.estimated_charges !== undefined && b.estimated_charges !== null && b.estimated_charges !== ''
       ? (parseFloat(b.estimated_charges) || 0)
-      : current.estimated_charges;
+      : (current.estimated_charges !== null ? (parseFloat(current.estimated_charges) || 0) : 0);
 
     const cleanNotifyCharges = b.notify_charges !== undefined
       ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
-      : current.notify_charges;
+      : (cleanEstimatedCharges > 0 ? 1 : (current.notify_charges ? 1 : 0));
+
+    let newPaymentStatus = current.payment_status;
+    if (cleanEstimatedCharges > 0 && (!current.payment_status || current.payment_status === 'Not Applicable')) {
+      newPaymentStatus = 'Unpaid';
+    } else if (cleanEstimatedCharges === 0 && (!current.payment_status || current.payment_status === 'Unpaid')) {
+      newPaymentStatus = 'Not Applicable';
+    }
 
     await query(`
       UPDATE complaints SET
@@ -1680,14 +1687,15 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         is_in_warranty = $14,
         estimated_charges = $15,
         notify_charges = $16,
-        invoice_no = COALESCE($17, invoice_no),
-        invoice_date = COALESCE($18, invoice_date),
-        location_url = COALESCE($19, location_url),
-        installation_id = COALESCE($20, installation_id),
-        dealer_name = COALESCE($21, dealer_name),
+        payment_status = $17,
+        invoice_no = COALESCE($18, invoice_no),
+        invoice_date = COALESCE($19, invoice_date),
+        location_url = COALESCE($20, location_url),
+        installation_id = COALESCE($21, installation_id),
+        dealer_name = COALESCE($22, dealer_name),
         updated_at = CURRENT_TIMESTAMP,
         status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $22
+      WHERE id = $23
     `, [
       b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
       b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
@@ -1705,6 +1713,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       cleanIsInWarranty,
       cleanEstimatedCharges,
       cleanNotifyCharges,
+      newPaymentStatus,
       b.invoice_no !== undefined ? (b.invoice_no ? b.invoice_no.trim() : null) : null,
       b.invoice_date !== undefined ? (b.invoice_date ? b.invoice_date.trim() : null) : null,
       b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
@@ -1760,16 +1769,16 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
 
     // Trigger WhatsApp notification if service charges were added, updated, or removed
     const prevCharges = parseFloat(current.estimated_charges) || 0;
-    const prevNotify = (current.notify_charges === 1 || current.notify_charges === '1' || current.notify_charges === true);
+    const prevNotify = Boolean(current.notify_charges === 1 || current.notify_charges === '1' || current.notify_charges === true);
     const newCharges = cleanEstimatedCharges;
     const newNotify = cleanNotifyCharges === 1;
 
     let chargeAction = null;
-    if (newNotify && newCharges > 0) {
-      if (!prevNotify || prevCharges === 0 || prevCharges !== newCharges) {
+    if (newCharges > 0 && newNotify) {
+      if (prevCharges === 0 || Math.abs(prevCharges - newCharges) >= 0.01) {
         chargeAction = 'charges_added';
       }
-    } else if (prevNotify && prevCharges > 0 && (!newNotify || newCharges === 0)) {
+    } else if (prevCharges > 0 && (newCharges === 0 || !newNotify)) {
       chargeAction = 'charges_removed';
     }
 
@@ -1779,13 +1788,14 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
     const issueCat = b.issue_category ? b.issue_category.trim() : current.issue_category;
 
     let waNotified = false;
+    let waResult = null;
     if (chargeAction && targetPhone) {
       const user = c.get('user');
       const actorName = user?.name || user?.username || 'Customer Care';
       const actorRole = user?.role || 'staff';
 
-      c.executionCtx?.waitUntil?.(
-        sendWhatsApp({
+      try {
+        waResult = await sendWhatsApp({
           to: targetPhone,
           templateName: chargeAction,
           variables: {
@@ -1798,12 +1808,11 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
             db_complaint_id: current.id
           },
           env: c.env
-        }).catch(err => {
-          console.warn('[Charges WhatsApp Alert Warn]', err.message);
-          return null;
-        })
-      );
-      waNotified = true;
+        });
+        waNotified = Boolean(waResult && (waResult.success !== false));
+      } catch (err) {
+        console.warn('[Charges WhatsApp Alert Error]', err.message);
+      }
 
       const tlNotes = chargeAction === 'charges_added'
         ? `Estimated service charges updated to ₹${newCharges}. Customer notified via WhatsApp.`
@@ -1823,6 +1832,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       complaint: updated.rows[0],
       ticket: updated.rows[0],
       whatsapp_notified: waNotified,
+      whatsapp: waResult,
       charge_action: chargeAction
     });
   } catch (err) {

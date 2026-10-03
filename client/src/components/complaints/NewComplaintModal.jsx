@@ -144,8 +144,12 @@ export const NewComplaintModal = ({
           invoice_date: initialData.invoice_date || '',
           location_url: initialData.location_url || '',
           is_in_warranty: initialData.is_in_warranty !== undefined ? initialData.is_in_warranty : 1,
-          estimated_charges: (initialData.estimated_charges !== undefined && initialData.estimated_charges !== null) ? String(initialData.estimated_charges) : '',
-          notify_charges: initialData.notify_charges !== undefined ? Boolean(initialData.notify_charges === 1 || initialData.notify_charges === '1' || initialData.notify_charges === true) : true,
+          estimated_charges: (initialData.estimated_charges !== undefined && initialData.estimated_charges !== null && Number(initialData.estimated_charges) > 0)
+            ? String(Number(initialData.estimated_charges))
+            : '',
+          notify_charges: initialData.notify_charges !== undefined
+            ? (Number(initialData.estimated_charges) > 0 ? Boolean(initialData.notify_charges === 1 || initialData.notify_charges === '1' || initialData.notify_charges === true) : true)
+            : true,
           product_type: initialData.product_type || 'Solar Rooftop Systems',
           product_serial: initialData.product_serial || '',
           installation_id: initialData.installation_id || '',
@@ -732,6 +736,8 @@ export const NewComplaintModal = ({
           data.append('notify_charges', formData.notify_charges ? '1' : '0');
         } else if (key === 'is_in_warranty') {
           data.append('is_in_warranty', (formData.is_in_warranty === 1 || formData.is_in_warranty === '1' || formData.is_in_warranty === true) ? '1' : '0');
+        } else if (key === 'estimated_charges') {
+          data.append('estimated_charges', (formData.estimated_charges !== undefined && formData.estimated_charges !== null && formData.estimated_charges !== '') ? String(formData.estimated_charges) : '0');
         } else if (formData[key] !== undefined && formData[key] !== null && formData[key] !== '') {
           data.append(key, formData[key]);
         }
@@ -1869,7 +1875,14 @@ export const NewComplaintModal = ({
                         step="50"
                         placeholder="0 (Free for In-Warranty)"
                         value={formData.estimated_charges}
-                        onChange={(e) => setFormData({ ...formData, estimated_charges: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData(prev => ({
+                            ...prev,
+                            estimated_charges: val,
+                            notify_charges: Number(val) > 0 ? true : prev.notify_charges
+                          }));
+                        }}
                         className="w-full text-xs pl-7 pr-3 py-2 bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold text-slate-900"
                       />
                     </div>

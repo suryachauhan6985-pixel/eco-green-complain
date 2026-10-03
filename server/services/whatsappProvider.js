@@ -177,7 +177,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
               { type: 'text', text: ticketId },
               { type: 'text', text: prodType },
               { type: 'text', text: issueCat },
-              { type: 'text', text: `₹${estCharges}` },
+              { type: 'text', text: String(estCharges) },
               { type: 'text', text: cleanTrackingUrl }
             ]
           }

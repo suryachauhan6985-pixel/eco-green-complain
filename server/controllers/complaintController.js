@@ -551,10 +551,12 @@ async function updateComplaint(req, res) {
       ? ((is_in_warranty === 'true' || is_in_warranty === 1 || is_in_warranty === true || is_in_warranty === '1') ? 1 : 0)
       : existing.is_in_warranty;
 
-    const cleanCharges = estimated_charges !== undefined ? parseFloat(estimated_charges) || 0 : existing.estimated_charges;
+    const cleanCharges = (estimated_charges !== undefined && estimated_charges !== null && estimated_charges !== '')
+      ? (parseFloat(estimated_charges) || 0)
+      : (existing.estimated_charges !== null ? (parseFloat(existing.estimated_charges) || 0) : 0);
     const shouldNotifyCharges = notify_charges !== undefined
       ? (notify_charges === 'true' || notify_charges === 1 || notify_charges === true || notify_charges === '1' ? 1 : 0)
-      : existing.notify_charges;
+      : (cleanCharges > 0 ? 1 : (existing.notify_charges ? 1 : 0));
 
     db.prepare(`
       UPDATE complaints SET
@@ -571,6 +573,11 @@ async function updateComplaint(req, res) {
         is_in_warranty = ?,
         estimated_charges = ?,
         notify_charges = ?,
+        payment_status = CASE
+          WHEN ? > 0 AND (payment_status IS NULL OR payment_status = 'Not Applicable') THEN 'Unpaid'
+          WHEN ? = 0 AND (payment_status IS NULL OR payment_status = 'Unpaid') THEN 'Not Applicable'
+          ELSE payment_status
+        END,
         product_type = ?,
         product_serial = ?,
         installation_id = ?,
@@ -593,6 +600,8 @@ async function updateComplaint(req, res) {
       warrantyVal,
       cleanCharges,
       shouldNotifyCharges,
+      cleanCharges,
+      cleanCharges,
       product_type || existing.product_type,
       product_serial !== undefined ? (product_serial ? product_serial.trim() : null) : existing.product_serial,
       installation_id !== undefined ? (installation_id ? installation_id.trim() : null) : existing.installation_id,
@@ -613,16 +622,16 @@ async function updateComplaint(req, res) {
     `).get(id);
 
     const prevCharges = parseFloat(existing.estimated_charges) || 0;
-    const prevNotify = (existing.notify_charges === 1 || existing.notify_charges === '1' || existing.notify_charges === true);
+    const prevNotify = Boolean(existing.notify_charges === 1 || existing.notify_charges === '1' || existing.notify_charges === true);
     const newCharges = cleanCharges;
     const newNotify = shouldNotifyCharges === 1;
 
     let chargeAction = null;
-    if (newNotify && newCharges > 0) {
-      if (!prevNotify || prevCharges === 0 || prevCharges !== newCharges) {
+    if (newCharges > 0 && newNotify) {
+      if (prevCharges === 0 || Math.abs(prevCharges - newCharges) >= 0.01) {
         chargeAction = 'charges_added';
       }
-    } else if (prevNotify && prevCharges > 0 && (!newNotify || newCharges === 0)) {
+    } else if (prevCharges > 0 && (newCharges === 0 || !newNotify)) {
       chargeAction = 'charges_removed';
     }
 
