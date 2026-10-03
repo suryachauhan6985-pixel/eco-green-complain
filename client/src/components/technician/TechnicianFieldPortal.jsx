@@ -29,7 +29,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState(activeSection || 'field_ops');
-  const [jobStatusFilter, setJobStatusFilter] = useState('all');
+  const [jobStatusFilter, setJobStatusFilter] = useState('Assigned');
   const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
   const [techProfile, setTechProfile] = useState(null);
@@ -934,23 +934,6 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold scrollbar-none">
           <button
             type="button"
-            onClick={() => setJobStatusFilter('all')}
-            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
-              jobStatusFilter === 'all'
-                ? 'bg-emerald-800 text-white shadow-xs'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <span>All Tasks</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-              jobStatusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-            }`}>
-              {counts.all}
-            </span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => setJobStatusFilter('Assigned')}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'Assigned'
@@ -1033,6 +1016,23 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               jobStatusFilter === 'Completed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
             }`}>
               {counts.completed}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setJobStatusFilter('all')}
+            className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              jobStatusFilter === 'all'
+                ? 'bg-emerald-800 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>All Tasks</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              jobStatusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {counts.all}
             </span>
           </button>
         </div>

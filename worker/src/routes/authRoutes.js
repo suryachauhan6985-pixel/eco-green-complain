@@ -31,8 +31,7 @@ authRoutes.post('/login', async (c) => {
            ELSE 3
          END ASC,
          is_active DESC,
-         id DESC
-       LIMIT 2`,
+         id DESC`,
       [loginId, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : ''],
       c.env,
       c.executionCtx
@@ -70,7 +69,10 @@ authRoutes.post('/login', async (c) => {
         `SELECT id FROM technicians 
          WHERE user_id = $1 
             OR ($2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%'))
-         ORDER BY id DESC LIMIT 1`,
+         ORDER BY 
+           CASE WHEN user_id = $1 THEN 0 ELSE 1 END ASC,
+           id DESC 
+         LIMIT 1`,
         [user.id, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : ''],
         c.env,
         c.executionCtx
@@ -162,16 +164,44 @@ authRoutes.post('/create-user', authenticateToken, requireRole('admin'), async (
     if (!validRoles.includes(role)) role = 'staff';
 
     const cleanPhone = (phone || '').replace(/\D/g, '');
-    const cleanUsername = (username || '').trim().toLowerCase() || cleanPhone || (email ? email.split('@')[0] : 'user_' + Date.now());
+    let finalUsername = (username || '').trim().toLowerCase();
+    if (!finalUsername) {
+      finalUsername = cleanPhone ? `${cleanPhone}_${role}` : (email ? email.split('@')[0] : 'user_' + Date.now());
+    }
 
-    const existing = await query(
-      'SELECT id FROM users WHERE LOWER(username) = LOWER($1) OR ($2 != \'\' AND LOWER(email) = LOWER($2)) LIMIT 1',
-      [cleanUsername, email || ''],
+    // Check username uniqueness; if it's auto-generated and taken, add a unique suffix
+    const existingUsername = await query(
+      'SELECT id FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1',
+      [finalUsername],
       c.env,
       c.executionCtx
     );
-    if (existing.rows.length > 0) {
-      return c.json({ error: 'User with this username or email already exists' }, 400);
+    if (existingUsername.rows.length > 0) {
+      if (username && username.trim()) {
+        return c.json({ error: 'User with this username already exists' }, 400);
+      }
+      finalUsername = `${cleanPhone || 'user'}_${role}_${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    // Handle email
+    let finalEmail = email ? email.trim().toLowerCase() : null;
+    if (!finalEmail && cleanPhone) {
+      finalEmail = `${cleanPhone}_${role}@ecogreensolar.internal`;
+    }
+    if (finalEmail) {
+      const existingEmail = await query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+        [finalEmail],
+        c.env,
+        c.executionCtx
+      );
+      if (existingEmail.rows.length > 0) {
+        if (finalEmail.endsWith('.internal')) {
+          finalEmail = `${cleanPhone || 'user'}_${role}_${Math.floor(100 + Math.random() * 900)}@ecogreensolar.internal`;
+        } else {
+          return c.json({ error: 'User with this email already exists' }, 400);
+        }
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -179,7 +209,7 @@ authRoutes.post('/create-user', authenticateToken, requireRole('admin'), async (
       `INSERT INTO users (name, username, email, password_hash, role, phone, is_active, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, 1, CURRENT_TIMESTAMP)
        RETURNING id, name, username, email, role, phone, is_active, created_at`,
-      [name.trim(), cleanUsername, email ? email.trim().toLowerCase() : null, passwordHash, role, cleanPhone || null],
+      [name.trim(), finalUsername, finalEmail, passwordHash, role, cleanPhone || null],
       c.env,
       c.executionCtx
     );
@@ -380,9 +410,12 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
         const cleanPhone = (tech.phone || '').replace(/\D/g, '');
         const userRes = await query(
           `SELECT id FROM users 
-           WHERE (email IS NOT NULL AND LOWER(email) = LOWER($1)) 
-              OR ($2 != '' AND phone LIKE '%' || $2) 
-           LIMIT 1`,
+           WHERE role = 'technician'
+             AND (
+               (email IS NOT NULL AND LOWER(email) = LOWER($1)) 
+               OR ($2 != '' AND phone LIKE '%' || $2) 
+             )
+           ORDER BY id DESC LIMIT 1`,
           [tech.email || '', cleanPhone.length >= 10 ? cleanPhone.slice(-10) : ''],
           c.env,
           c.executionCtx
@@ -391,8 +424,8 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
           targetUserId = userRes.rows[0].id;
           await query('UPDATE technicians SET user_id = $1 WHERE id = $2', [targetUserId, technicianId], c.env, c.executionCtx);
         } else {
-          const username = cleanPhone || (tech.name ? tech.name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + tech.id : 'tech_' + Date.now());
-          const email = tech.email || `${cleanPhone || 'tech_' + tech.id}@ecogreensolar.internal`;
+          const username = cleanPhone ? `${cleanPhone}_tech` : (tech.name ? tech.name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + tech.id : 'tech_' + Date.now());
+          const email = tech.email || `${cleanPhone ? cleanPhone + '_tech' : 'tech_' + tech.id}@ecogreensolar.internal`;
           const hash = await bcrypt.hash(newPassword, 8);
           const created = await query(
             'INSERT INTO users (name, username, email, password_hash, role, phone, is_active, created_at) VALUES ($1, $2, $3, $4, $5, $6, 1, CURRENT_TIMESTAMP) RETURNING id',
@@ -426,17 +459,6 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
     }
 
     const updatedUser = updRes.rows[0];
-    if (updatedUser.phone) {
-      const cleanP = updatedUser.phone.replace(/[^0-9]/g, '');
-      if (cleanP.length >= 10) {
-        await query(
-          'UPDATE users SET password_hash = $1 WHERE phone LIKE \'%\' || $2 AND id != $3',
-          [hash, cleanP.slice(-10), updatedUser.id],
-          c.env,
-          c.executionCtx
-        ).catch(() => {});
-      }
-    }
 
     return c.json({
       success: true,

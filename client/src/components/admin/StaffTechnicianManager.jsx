@@ -154,10 +154,12 @@ export const StaffTechnicianManager = () => {
     try {
       const payload = {
         name: editFormData.name,
-        username: cleanPhone,
         phone: cleanPhone,
         email: editFormData.email?.trim() || undefined
       };
+      if (editFormData.username?.trim()) {
+        payload.username = editFormData.username.trim().toLowerCase();
+      }
 
       if (editingMember?.isTech) {
         await api.updateTechnician(editingMember.id, payload);
@@ -365,10 +367,11 @@ export const StaffTechnicianManager = () => {
       return;
     }
     try {
-      const safeUsername = cleanPhone;
+      const rolePrefix = formData.role || 'technician';
+      const safeUsername = formData.username?.trim() || `${cleanPhone}_${rolePrefix}`;
       const safeEmail = formData.email?.trim() 
         ? formData.email.trim() 
-        : `${cleanPhone}@ecogreensolar.internal`;
+        : `${cleanPhone}_${rolePrefix}@ecogreensolar.internal`;
 
       await api.createUser({
         ...formData,

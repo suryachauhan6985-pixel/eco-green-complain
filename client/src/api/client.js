@@ -1329,11 +1329,12 @@ function fallbackHandler(endpoint, options) {
       };
     }
     const users = mockStore.getUsers();
-    const found = users.find(u => (u.phone === identifier || u.email === identifier || u.name === identifier || u.username === identifier));
-    if (found && (password === savedAdminPass || password === found.password || password === 'admin3636')) {
+    const matchingUsers = users.filter(u => (u.phone === identifier || u.email === identifier || u.name === identifier || u.username === identifier));
+    const foundWithPass = matchingUsers.find(u => (password === u.password || (u.role === 'admin' && password === savedAdminPass)));
+    if (foundWithPass) {
       return {
-        token: `session-token-${found.id}`,
-        user: found
+        token: `session-token-${foundWithPass.id}`,
+        user: foundWithPass
       };
     }
     const err = new Error('Invalid mobile number or password. Please verify your credentials.');

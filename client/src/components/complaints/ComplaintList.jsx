@@ -61,7 +61,7 @@ export const ComplaintList = ({
 
   // Filters
   const [search, setSearch] = useState(initialFilters?.search || '');
-  const [statusFilter, setStatusFilter] = useState(initialFilters?.status || 'all');
+  const [statusFilter, setStatusFilter] = useState(initialFilters?.status || 'Unassigned');
   const [productFilter, setProductFilter] = useState(initialFilters?.product_type || 'all');
   const [priorityFilter, setPriorityFilter] = useState(initialFilters?.priority || 'all');
   const [technicianFilter, setTechnicianFilter] = useState(initialFilters?.technician_id || '');
@@ -243,7 +243,16 @@ export const ComplaintList = ({
     return <Layers className="w-4 h-4 text-slate-500" />;
   };
 
-  const statusPills = ['all', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened'];
+  const statusPills = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
+
+  const getStatusCount = (st) => {
+    const list = allComplaints.length > 0 ? allComplaints : complaints;
+    if (st === 'all') return list.length;
+    if (st === 'Unassigned') {
+      return list.filter(c => c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id).length;
+    }
+    return list.filter(c => c.status === st).length;
+  };
 
   const getStatusBadgeStyle = (status) => {
     switch (status) {
@@ -475,20 +484,29 @@ export const ComplaintList = ({
         </div>
 
         {/* Status Pills Ribbon */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1">
-          {statusPills.map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center ${
-                statusFilter === st
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-              }`}
-            >
-              {st === 'all' ? 'All Statuses' : st}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
+          {statusPills.map((st) => {
+            const count = getStatusCount(st);
+            return (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilter(st)}
+                className={`px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  statusFilter === st
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <span>{st === 'all' ? 'All Tasks' : st}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  statusFilter === st ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
