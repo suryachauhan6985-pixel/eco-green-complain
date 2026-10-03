@@ -11,6 +11,7 @@ import {
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
+import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -60,12 +61,56 @@ export const ComplaintList = ({
     localStorage.setItem('egs_complaints_view_mode', mode);
   };
 
+  const getInitialStatusFilter = () => {
+    if (initialFilters?.status !== undefined) return initialFilters.status;
+    const urlStatus = getUrlParam('status');
+    if (urlStatus) {
+      const valid = ['all', 'Unassigned', 'Assigned', 'In Progress', 'Resolved', 'Closed', 'On Hold', 'Reopened', 'Overdue'];
+      const found = valid.find(v => v.toLowerCase() === urlStatus.toLowerCase());
+      if (found) return found;
+    }
+    return 'Unassigned';
+  };
+
   // Filters
-  const [search, setSearch] = useState(initialFilters?.search || '');
-  const [statusFilter, setStatusFilter] = useState(initialFilters?.status || 'Unassigned');
-  const [productFilter, setProductFilter] = useState(initialFilters?.product_type || 'all');
-  const [priorityFilter, setPriorityFilter] = useState(initialFilters?.priority || 'all');
-  const [technicianFilter, setTechnicianFilter] = useState(initialFilters?.technician_id || '');
+  const [search, setSearch] = useState(() => initialFilters?.search || getUrlParam('q') || getUrlParam('search') || '');
+  const [statusFilter, setStatusFilter] = useState(() => getInitialStatusFilter());
+  const [productFilter, setProductFilter] = useState(() => initialFilters?.product_type || getUrlParam('product') || 'all');
+  const [priorityFilter, setPriorityFilter] = useState(() => initialFilters?.priority || getUrlParam('priority') || 'all');
+  const [technicianFilter, setTechnicianFilter] = useState(() => initialFilters?.technician_id || getUrlParam('tech_id') || '');
+
+  const handleStatusFilterChange = (st) => {
+    setStatusFilter(st);
+    updateUrlParams({ status: st === 'Unassigned' ? null : st });
+  };
+
+  const handleProductFilterChange = (prod) => {
+    setProductFilter(prod);
+    updateUrlParams({ product: prod === 'all' ? null : prod });
+  };
+
+  const handlePriorityFilterChange = (prio) => {
+    setPriorityFilter(prio);
+    updateUrlParams({ priority: prio === 'all' ? null : prio });
+  };
+
+  const handleTechnicianFilterChange = (tid) => {
+    setTechnicianFilter(tid);
+    updateUrlParams({ tech_id: tid || null });
+  };
+
+  useEffect(() => {
+    const handlePop = () => {
+      const st = getInitialStatusFilter();
+      setStatusFilter(st);
+      setProductFilter(getUrlParam('product') || 'all');
+      setPriorityFilter(getUrlParam('priority') || 'all');
+      setTechnicianFilter(getUrlParam('tech_id') || '');
+      setSearch(getUrlParam('q') || getUrlParam('search') || '');
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
 
   useEffect(() => {
     if (initialFilters) {
@@ -457,7 +502,7 @@ export const ComplaintList = ({
           <select
             aria-label="Filter by Product Category"
             value={productFilter}
-            onChange={(e) => setProductFilter(e.target.value)}
+            onChange={(e) => handleProductFilterChange(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
           >
             <option value="all">All Products</option>
@@ -471,7 +516,7 @@ export const ComplaintList = ({
           <select
             aria-label="Filter by Priority Level"
             value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
+            onChange={(e) => handlePriorityFilterChange(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
           >
             <option value="all">All Priorities</option>
@@ -484,7 +529,7 @@ export const ComplaintList = ({
             <select
               aria-label="Filter by Assigned Technician"
               value={technicianFilter}
-              onChange={(e) => setTechnicianFilter(e.target.value)}
+              onChange={(e) => handleTechnicianFilterChange(e.target.value)}
               className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
             >
               <option value="">All Technicians</option>
@@ -505,7 +550,7 @@ export const ComplaintList = ({
               <button
                 key={st}
                 type="button"
-                onClick={() => setStatusFilter(st)}
+                onClick={() => handleStatusFilterChange(st)}
                 className={`px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
                   statusFilter === st
                     ? 'bg-emerald-700 text-white shadow-xs'

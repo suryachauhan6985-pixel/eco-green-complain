@@ -32,6 +32,8 @@ const LoadingFallback = () => (
   <GlobalLoadingOverlay isVisible={true} />
 );
 
+import { getUrlParam, updateUrlParams } from './utils/urlSync';
+
 function getTrackingInfoFromUrl() {
   const path = window.location.pathname;
   const match = path.match(/^\/track(?:\/([^\/?#]+))?/i);
@@ -104,6 +106,18 @@ function normalizeTab(tab) {
   return null;
 }
 
+function getTechSectionFromUrl() {
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const sec = (searchParams.get('section') || searchParams.get('tab') || '').toLowerCase();
+    if (['collection', 'field_ops', 'tour_ledger'].includes(sec)) return sec;
+    if (['ledger', 'statement', 'expenses', 'advances', 'settlements', 'vouchers', 'voucher'].includes(sec)) {
+      return 'tour_ledger';
+    }
+  } catch (_) {}
+  return 'field_ops';
+}
+
 function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
@@ -115,7 +129,11 @@ function AppContent() {
     const validFromPath = normalizeTab(rawPath);
     if (validFromPath) return validFromPath;
 
-    // 2. Check hash (e.g. #/complaints or #complaints)
+    // 2. Check query param ?tab=
+    const paramTab = normalizeTab(getUrlParam('tab'));
+    if (paramTab) return paramTab;
+
+    // 3. Check hash (e.g. #/complaints or #complaints)
     const hash = window.location.hash.replace(/^#\/?/, '').split('/')[0].toLowerCase();
     const validFromHash = normalizeTab(hash);
     if (validFromHash) return validFromHash;
@@ -129,15 +147,36 @@ function AppContent() {
     return 'complaints';
   });
 
-  const [techSection, setTechSection] = useState('field_ops'); // 'field_ops' | 'collection'
+  const [techSection, setTechSection] = useState(() => getTechSectionFromUrl());
+
+  const handleTechSectionChange = (sec) => {
+    setTechSection(sec);
+    updateUrlParams({ section: sec === 'field_ops' ? null : sec });
+  };
 
   // Keep URL in sync with currentTab
-  const handleTabChange = (tab) => {
+  const handleTabChange = (tab, sec = null) => {
     const normalized = normalizeTab(tab) || tab;
     setCurrentTab(normalized);
     try {
       localStorage.setItem('egs_active_tab', normalized);
-      const search = window.location.search;
+      const currentUrl = new URL(window.location.href);
+      // Clean previous tab-specific parameters when switching main tabs
+      if (normalized !== currentTab) {
+        currentUrl.searchParams.delete('status');
+        currentUrl.searchParams.delete('subtab');
+        currentUrl.searchParams.delete('product');
+        currentUrl.searchParams.delete('audience');
+        currentUrl.searchParams.delete('voucher_modal');
+        currentUrl.searchParams.delete('print_statement');
+      }
+      if (sec) {
+        currentUrl.searchParams.set('section', sec);
+        setTechSection(sec);
+      } else if (normalized !== 'technician') {
+        currentUrl.searchParams.delete('section');
+      }
+      const search = currentUrl.searchParams.toString() ? `?${currentUrl.searchParams.toString()}` : '';
       window.history.pushState(null, '', `/${normalized}${search}`);
     } catch (e) {}
   };
@@ -169,6 +208,38 @@ function AppContent() {
     } catch (_) {}
   };
 
+  const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(() => {
+    const m = getUrlParam('modal');
+    return m === 'new_complaint' || m === 'new-ticket' || m === 'new' || getUrlParam('new') === '1';
+  });
+  const [newComplaintInitialData, setNewComplaintInitialData] = useState(null);
+
+  const handleOpenNewComplaint = (initialData = null) => {
+    if (initialData) setNewComplaintInitialData(initialData);
+    setIsNewComplaintOpen(true);
+    updateUrlParams({ modal: 'new_complaint' });
+  };
+
+  const handleCloseNewComplaint = () => {
+    setIsNewComplaintOpen(false);
+    setNewComplaintInitialData(null);
+    updateUrlParams({ modal: null });
+  };
+
+  const [historyPhone, setHistoryPhone] = useState(() => {
+    return getUrlParam('history_phone') || getUrlParam('history') || null;
+  });
+
+  const handleOpenHistory = (phone) => {
+    setHistoryPhone(phone);
+    updateUrlParams({ history_phone: phone });
+  };
+
+  const handleCloseHistory = () => {
+    setHistoryPhone(null);
+    updateUrlParams({ history_phone: null });
+  };
+
   // Listen to browser forward/back buttons and URL changes
   useEffect(() => {
     const handleLocationChange = () => {
@@ -177,6 +248,10 @@ function AppContent() {
       if (active) setCurrentTab(active);
       const deepLinkedTicket = getTicketIdFromUrl();
       setSelectedComplaintId(deepLinkedTicket);
+      setTechSection(getTechSectionFromUrl());
+      const m = getUrlParam('modal');
+      setIsNewComplaintOpen(m === 'new_complaint' || m === 'new-ticket' || m === 'new' || getUrlParam('new') === '1');
+      setHistoryPhone(getUrlParam('history_phone') || getUrlParam('history') || null);
     };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
@@ -203,10 +278,8 @@ function AppContent() {
   useEffect(() => {
     getNotificationTemplates(true).catch(() => {});
   }, []);
-  const [isNewComplaintOpen, setIsNewComplaintOpen] = useState(false);
-  const [newComplaintInitialData, setNewComplaintInitialData] = useState(null);
+
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
-  const [historyPhone, setHistoryPhone] = useState(null);
   const [activeWhatsAppPhone, setActiveWhatsAppPhone] = useState(null);
 
   const handleOpenWhatsAppChat = (phone, customerName, ticketId, complaintId) => {
@@ -321,8 +394,8 @@ function AppContent() {
           currentTab={currentTab}
           setCurrentTab={handleTabChange}
           techSection={techSection}
-          onSelectTechSection={setTechSection}
-          onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+          onSelectTechSection={handleTechSectionChange}
+          onOpenNewComplaint={() => handleOpenNewComplaint()}
           onToggleNotificationDrawer={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
           onOpenTour={currentUser?.role === 'admin' ? () => setIsTourOpen(true) : undefined}
         />
@@ -341,7 +414,7 @@ function AppContent() {
               refreshKey={refreshKey}
               initialFilters={complaintFilters}
               onSelectComplaint={handleSelectComplaint}
-              onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+              onOpenNewComplaint={() => handleOpenNewComplaint()}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
             />
           )}
@@ -350,7 +423,7 @@ function AppContent() {
             <TechnicianFieldPortal
               key={`tech-${refreshKey}`}
               activeSection={techSection}
-              onSectionChange={setTechSection}
+              onSectionChange={handleTechSectionChange}
               onSelectComplaint={handleSelectComplaint}
             />
           )}
@@ -382,8 +455,7 @@ function AppContent() {
               onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
               onOpenComplaint={handleSelectComplaint}
               onNewComplaintWithData={(data) => {
-                setNewComplaintInitialData(data);
-                setIsNewComplaintOpen(true);
+                handleOpenNewComplaint(data);
               }}
             />
           )}
@@ -391,7 +463,7 @@ function AppContent() {
           {currentTab === 'customer' && (
             <CustomerPublicPortal
               key={`cust-${refreshKey}`}
-              onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+              onOpenNewComplaint={() => handleOpenNewComplaint()}
             />
           )}
         </React.Suspense>
@@ -408,10 +480,7 @@ function AppContent() {
       <NewComplaintModal
         isOpen={isNewComplaintOpen}
         initialData={newComplaintInitialData}
-        onClose={() => {
-          setIsNewComplaintOpen(false);
-          setNewComplaintInitialData(null);
-        }}
+        onClose={handleCloseNewComplaint}
         onComplaintCreated={(newTicket) => {
           // Refresh complaints list without popping drawer underneath success modal
           setRefreshKey(k => k + 1);
@@ -426,11 +495,10 @@ function AppContent() {
         isOpen={Boolean(selectedComplaintId)}
         onClose={() => handleSelectComplaint(null)}
         onComplaintUpdated={() => setRefreshKey(k => k + 1)}
-        onViewCustomerHistory={(phone) => setHistoryPhone(phone)}
+        onViewCustomerHistory={(phone) => handleOpenHistory(phone)}
         onNewComplaintWithData={(data) => {
           setSelectedComplaintId(null);
-          setNewComplaintInitialData(data);
-          setIsNewComplaintOpen(true);
+          handleOpenNewComplaint(data);
         }}
       />
 
@@ -451,7 +519,7 @@ function AppContent() {
           <CustomerHistoryModal
             phone={historyPhone}
             isOpen={Boolean(historyPhone)}
-            onClose={() => setHistoryPhone(null)}
+            onClose={handleCloseHistory}
             onSelectTicket={handleSelectComplaint}
           />
         )}

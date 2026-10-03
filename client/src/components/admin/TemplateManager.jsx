@@ -9,6 +9,7 @@ import {
   Eye, Layers, Send, Plus, Trash2, Power, ToggleLeft, ToggleRight,
   ExternalLink, X, Filter, CheckCircle
 } from 'lucide-react';
+import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 
 export const TRIGGER_OPTIONS = [
   { id: 'complaint_registered', label: 'Ticket Lodged (With Quoted Charges)', audience: 'customer', desc: 'Fires when customer or desk registers a new ticket with service charge quote' },
@@ -106,9 +107,21 @@ export const TemplateManager = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [filterAudience, setFilterAudience] = useState('all'); // 'all' | 'customer' | 'technician' | 'staff'
+
+  // Initialize audience filter from URL (?audience=all|customer|technician|staff)
+  const initialAudience = (() => {
+    const a = getUrlParam('audience');
+    if (['all', 'customer', 'technician', 'staff'].includes(a)) return a;
+    return 'all';
+  })();
+  const [filterAudience, setFilterAudience] = useState(initialAudience); // 'all' | 'customer' | 'technician' | 'staff'
   const [searchQuery, setSearchQuery] = useState('');
   const [showPreview, setShowPreview] = useState(true);
+
+  const handleAudienceFilterChange = (aud) => {
+    setFilterAudience(aud);
+    updateUrlParams({ audience: aud === 'all' ? null : aud });
+  };
 
   // Live Meta verification state
   const [metaStatusData, setMetaStatusData] = useState(null);
@@ -162,6 +175,38 @@ export const TemplateManager = () => {
     }
   };
 
+  const selectTemplate = (tmpl, updateUrl = true) => {
+    if (!tmpl) return;
+    const isTech = isTechnicianTemplate(tmpl);
+
+    const verifiedKeys = [
+      'complaint_registered', 'complaint_registered_no_charges', 'charges_added', 'charges_removed', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
+      'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
+      'technician_work_order', 'technician_team_work_order', 'technician_reminder', 'technician_reach_out_customer',
+      'technician_reopened_work_order', 'technician_reopen_job_transferred',
+      'technician_reassigned_work_order', 'technician_reassigned'
+    ];
+    const isVerified = verifiedKeys.includes(tmpl.template_key);
+    const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
+
+    setSelectedTemplate(tmpl);
+    setTemplateName(tmpl.name || '');
+    setTemplateAudience(tmpl.audience || (isTech ? 'technician' : 'customer'));
+    setTemplateTrigger(tmpl.trigger_event || tmpl.template_key || 'manual');
+    setMetaTemplateName(tmpl.meta_template_name || tmpl.template_key || '');
+    setMetaStatus(finalMetaStatus);
+    setIsActive(tmpl.is_active !== undefined ? tmpl.is_active : 1);
+    setChannel(tmpl.channel || 'whatsapp');
+    setWhatsappBody(tmpl.whatsapp_body || '');
+    setEmailSubject(tmpl.email_subject || '');
+    setEmailBody(tmpl.email_body || '');
+    setSavedSuccess(false);
+
+    if (updateUrl && tmpl?.template_key) {
+      updateUrlParams({ tmpl: tmpl.template_key });
+    }
+  };
+
   const fetchTemplates = async () => {
     try {
       setLoading(true);
@@ -200,11 +245,15 @@ export const TemplateManager = () => {
       setTemplates(finalList);
 
       if (finalList.length > 0) {
-        if (!selectedTemplate) {
-          selectTemplate(finalList[0]);
+        const targetKey = getUrlParam('tmpl') || getUrlParam('template');
+        const matched = targetKey ? finalList.find(t => t.template_key === targetKey || String(t.id) === targetKey) : null;
+        if (matched) {
+          selectTemplate(matched, false);
+        } else if (!selectedTemplate) {
+          selectTemplate(finalList[0], false);
         } else {
           const reSelected = finalList.find(t => t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key) || finalList[0];
-          selectTemplate(reSelected);
+          selectTemplate(reSelected, false);
         }
       }
     } catch (err) {
@@ -220,33 +269,27 @@ export const TemplateManager = () => {
     fetchMetaStatus(false);
   }, []);
 
-  const selectTemplate = (tmpl) => {
-    if (!tmpl) return;
-    const isTech = isTechnicianTemplate(tmpl);
+  useEffect(() => {
+    const handlePopState = () => {
+      const a = getUrlParam('audience');
+      if (['all', 'customer', 'technician', 'staff'].includes(a)) {
+        setFilterAudience(a);
+      } else {
+        setFilterAudience('all');
+      }
 
-    const verifiedKeys = [
-      'complaint_registered', 'complaint_registered_no_charges', 'charges_added', 'charges_removed', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
-      'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-      'technician_work_order', 'technician_team_work_order', 'technician_reminder', 'technician_reach_out_customer',
-      'technician_reopened_work_order', 'technician_reopen_job_transferred',
-      'technician_reassigned_work_order', 'technician_reassigned'
-    ];
-    const isVerified = verifiedKeys.includes(tmpl.template_key);
-    const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
+      const targetKey = getUrlParam('tmpl') || getUrlParam('template');
+      if (targetKey && templates.length > 0) {
+        const matched = templates.find(t => t.template_key === targetKey || String(t.id) === targetKey);
+        if (matched && matched.id !== selectedTemplate?.id) {
+          selectTemplate(matched, false);
+        }
+      }
+    };
 
-    setSelectedTemplate(tmpl);
-    setTemplateName(tmpl.name || '');
-    setTemplateAudience(tmpl.audience || (isTech ? 'technician' : 'customer'));
-    setTemplateTrigger(tmpl.trigger_event || tmpl.template_key || 'manual');
-    setMetaTemplateName(tmpl.meta_template_name || tmpl.template_key || '');
-    setMetaStatus(finalMetaStatus);
-    setIsActive(tmpl.is_active !== undefined ? tmpl.is_active : 1);
-    setChannel(tmpl.channel || 'whatsapp');
-    setWhatsappBody(tmpl.whatsapp_body || '');
-    setEmailSubject(tmpl.email_subject || '');
-    setEmailBody(tmpl.email_body || '');
-    setSavedSuccess(false);
-  };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [templates, selectedTemplate]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -593,7 +636,7 @@ export const TemplateManager = () => {
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs">
             <button
               type="button"
-              onClick={() => setFilterAudience('all')}
+              onClick={() => handleAudienceFilterChange('all')}
               className={`flex-1 py-1.5 px-2 rounded-xl font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
                 filterAudience === 'all'
                   ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
@@ -605,7 +648,7 @@ export const TemplateManager = () => {
 
             <button
               type="button"
-              onClick={() => setFilterAudience('customer')}
+              onClick={() => handleAudienceFilterChange('customer')}
               className={`flex-1 py-1.5 px-2 rounded-xl font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
                 filterAudience === 'customer'
                   ? 'bg-sky-600 text-white shadow-xs'
@@ -618,7 +661,7 @@ export const TemplateManager = () => {
 
             <button
               type="button"
-              onClick={() => setFilterAudience('technician')}
+              onClick={() => handleAudienceFilterChange('technician')}
               className={`flex-1 py-1.5 px-2 rounded-xl font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
                 filterAudience === 'technician'
                   ? 'bg-amber-600 text-white shadow-xs'

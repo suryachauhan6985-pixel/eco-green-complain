@@ -9,18 +9,44 @@ import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 import { StaffTeamSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
+import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 
 export const StaffTechnicianManager = () => {
   const { confirm, alert, showToast: showGlobalToast } = useDialog();
   const { currentUser, setCurrentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState('technicians'); // 'technicians' | 'staff' | 'catalog'
+  // Read subtab from URL (?subtab=technicians|staff|admin|catalog)
+  const initialSubTab = (() => {
+    const p = getUrlParam('subtab');
+    if (['technicians', 'staff', 'admin', 'catalog'].includes(p)) return p;
+    return 'technicians';
+  })();
+
+  const [activeTab, setActiveTab] = useState(initialSubTab); // 'technicians' | 'staff' | 'catalog'
   const [technicians, setTechnicians] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
+
+  const handleTabSwitch = (tab) => {
+    setActiveTab(tab);
+    updateUrlParams({ subtab: tab === 'technicians' ? null : tab });
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const p = getUrlParam('subtab');
+      if (['technicians', 'staff', 'admin', 'catalog'].includes(p)) {
+        setActiveTab(p);
+      } else {
+        setActiveTab('technicians');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Product & Category Management State
   const [products, setProducts] = useState([]);
@@ -460,7 +486,7 @@ export const StaffTechnicianManager = () => {
           {/* Tab Switcher */}
           <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs font-bold overflow-x-auto max-w-full">
             <button
-              onClick={() => setActiveTab('technicians')}
+              onClick={() => handleTabSwitch('technicians')}
               className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'technicians'
                   ? 'bg-white text-emerald-800 shadow-xs'
@@ -472,7 +498,7 @@ export const StaffTechnicianManager = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('staff')}
+              onClick={() => handleTabSwitch('staff')}
               className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'staff'
                   ? 'bg-white text-blue-800 shadow-xs'
@@ -484,7 +510,7 @@ export const StaffTechnicianManager = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('admin')}
+              onClick={() => handleTabSwitch('admin')}
               className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'admin'
                   ? 'bg-white text-purple-800 shadow-xs'
@@ -496,7 +522,7 @@ export const StaffTechnicianManager = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('catalog')}
+              onClick={() => handleTabSwitch('catalog')}
               className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === 'catalog'
                   ? 'bg-white text-emerald-800 shadow-xs'

@@ -14,6 +14,8 @@ import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { TourLedgerSection } from './TourLedgerSection';
 import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
 
+import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
+
 const checkHasLocation = (job) => {
   if (!job) return false;
   const invalid = ['n/a', 'na', '-', 'none', 'null', 'undefined', ''];
@@ -29,12 +31,28 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const [complaints, setComplaints] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState(activeSection || 'field_ops');
-  const [jobStatusFilter, setJobStatusFilter] = useState('Assigned');
+
+  const getInitialSection = () => {
+    const s = (getUrlParam('section') || activeSection || 'field_ops').toLowerCase();
+    if (['collection', 'field_ops', 'tour_ledger'].includes(s)) return s;
+    if (['ledger', 'statement', 'expenses', 'advances', 'settlements', 'vouchers', 'voucher'].includes(s)) return 'tour_ledger';
+    return 'field_ops';
+  };
+
+  const getInitialJobStatus = () => {
+    const st = getUrlParam('status');
+    if (!st) return 'Assigned';
+    const valid = ['Assigned', 'In Progress', 'On Hold', 'Reopened', 'Completed', 'all', 'Overdue'];
+    const found = valid.find(v => v.toLowerCase() === st.toLowerCase());
+    return found || 'Assigned';
+  };
+
+  const [section, setSection] = useState(() => getInitialSection());
+  const [jobStatusFilter, setJobStatusFilter] = useState(() => getInitialJobStatus());
   const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
   const [techProfile, setTechProfile] = useState(null);
-  const [selectedAdminTechId, setSelectedAdminTechId] = useState('');
+  const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getUrlParam('tech_id') || '');
 
   // Mobile & Desktop view mode: default 'card'
   const [viewMode, setViewMode] = useState(() => {
@@ -55,7 +73,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   };
 
   useEffect(() => {
-    if (activeSection) {
+    if (activeSection && activeSection !== section) {
       setSection(activeSection);
     }
   }, [activeSection]);
@@ -63,7 +81,31 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const handleSectionSwitch = (newSec) => {
     setSection(newSec);
     if (onSectionChange) onSectionChange(newSec);
+    updateUrlParams({ section: newSec === 'field_ops' ? null : newSec });
   };
+
+  const handleJobStatusFilterChange = (st) => {
+    setJobStatusFilter(st);
+    updateUrlParams({ status: st === 'Assigned' ? null : st });
+  };
+
+  const handleAdminTechSelect = (id) => {
+    setSelectedAdminTechId(id);
+    updateUrlParams({ tech_id: id || null });
+  };
+
+  useEffect(() => {
+    const handlePop = () => {
+      const s = getInitialSection();
+      setSection(s);
+      const st = getInitialJobStatus();
+      setJobStatusFilter(st);
+      const tid = getUrlParam('tech_id');
+      if (tid) setSelectedAdminTechId(tid);
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
 
   const getStageBorderClass = (status, isOverdue) => {
     if (isOverdue) return '!border-t-rose-500 sm:!border-t-transparent sm:!border-l-rose-500';
@@ -547,7 +589,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               value={selectedAdminTechId}
               onChange={(e) => {
                 const val = e.target.value;
-                setSelectedAdminTechId(val);
+                handleAdminTechSelect(val);
                 setExpandedTechId(val);
               }}
               className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
@@ -934,7 +976,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           allTechnicians={technicians} 
           complaints={complaints}
           activeTechId={selectedAdminTechId}
-          onTechChange={(id) => setSelectedAdminTechId(id)}
+          onTechChange={(id) => handleAdminTechSelect(id)}
         />
       )}
 
@@ -945,7 +987,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold scrollbar-none">
           <button
             type="button"
-            onClick={() => setJobStatusFilter('Assigned')}
+            onClick={() => handleJobStatusFilterChange('Assigned')}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'Assigned'
                 ? 'bg-blue-600 text-white shadow-xs'
@@ -962,7 +1004,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
           <button
             type="button"
-            onClick={() => setJobStatusFilter('In Progress')}
+            onClick={() => handleJobStatusFilterChange('In Progress')}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'In Progress'
                 ? 'bg-amber-600 text-white shadow-xs'
@@ -979,7 +1021,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
           <button
             type="button"
-            onClick={() => setJobStatusFilter('On Hold')}
+            onClick={() => handleJobStatusFilterChange('On Hold')}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'On Hold'
                 ? 'bg-purple-600 text-white shadow-xs'
@@ -997,7 +1039,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           {counts.reopened > 0 && (
             <button
               type="button"
-              onClick={() => setJobStatusFilter('Reopened')}
+              onClick={() => handleJobStatusFilterChange('Reopened')}
               className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                 jobStatusFilter === 'Reopened'
                   ? 'bg-rose-600 text-white shadow-xs'
@@ -1015,7 +1057,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
           <button
             type="button"
-            onClick={() => setJobStatusFilter('Completed')}
+            onClick={() => handleJobStatusFilterChange('Completed')}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'Completed'
                 ? 'bg-emerald-600 text-white shadow-xs'
@@ -1032,7 +1074,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
           <button
             type="button"
-            onClick={() => setJobStatusFilter('all')}
+            onClick={() => handleJobStatusFilterChange('all')}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'all'
                 ? 'bg-emerald-800 text-white shadow-xs'

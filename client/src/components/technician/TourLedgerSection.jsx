@@ -13,6 +13,7 @@ import {
 import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { GREEN_ENERGY_LOGO_BASE64 } from '../../assets/greenEnergyLogo';
 import { subscribeLiveSync, broadcastLedgerUpdate as emitLedgerUpdate } from '../../utils/liveSync';
+import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 
 const EXPENSE_CATEGORIES = [
   'Bus / Train Fare',
@@ -152,17 +153,40 @@ export const TourLedgerSection = ({
     reconciliation: null
   });
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState('advances'); // 'advances' | 'expenses' | 'settlements' | 'statement' | 'complaints' | 'admin_summary'
+
+  const getInitialSubTab = () => {
+    const raw = (getUrlParam('subtab') || getUrlParam('tab') || '').toLowerCase();
+    if (['advances', 'expenses', 'settlements', 'statement', 'complaints', 'admin_summary'].includes(raw)) {
+      return raw;
+    }
+    const sec = (getUrlParam('section') || '').toLowerCase();
+    if (sec === 'statement') return 'statement';
+    if (sec === 'expenses' || sec === 'vouchers' || sec === 'voucher') return 'expenses';
+    if (sec === 'advances') return 'advances';
+    if (sec === 'settlements') return 'settlements';
+    return 'advances';
+  };
+
+  const [subTab, setSubTab] = useState(() => getInitialSubTab());
+
+  const handleSubTabSwitch = (newSubTab) => {
+    setSubTab(newSubTab);
+    updateUrlParams({ subtab: newSubTab === 'advances' ? null : newSubTab });
+  };
 
   // Statement generation & filters
-  const [statementPreset, setStatementPreset] = useState('current_fy');
+  const [statementPreset, setStatementPreset] = useState(() => getUrlParam('preset') || 'current_fy');
   const [statementFromDate, setStatementFromDate] = useState(() => {
+    const pFrom = getUrlParam('from_date');
+    if (pFrom) return pFrom;
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
     return month >= 3 ? `${year}-04-01` : `${year - 1}-04-01`;
   });
   const [statementToDate, setStatementToDate] = useState(() => {
+    const pTo = getUrlParam('to_date');
+    if (pTo) return pTo;
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -170,11 +194,25 @@ export const TourLedgerSection = ({
   });
   const [statementTicketId, setStatementTicketId] = useState('all');
   const [statementTxType, setStatementTxType] = useState('all');
-  const [isPrintStatementOpen, setIsPrintStatementOpen] = useState(false);
+  const [isPrintStatementOpen, setIsPrintStatementOpen] = useState(() => {
+    return getUrlParam('print_statement') === '1' || getUrlParam('modal') === 'statement';
+  });
+
+  const openPrintStatementModal = () => {
+    setIsPrintStatementOpen(true);
+    updateUrlParams({ print_statement: '1' });
+  };
+
+  const closePrintStatementModal = () => {
+    setIsPrintStatementOpen(false);
+    updateUrlParams({ print_statement: null });
+  };
+
   const [advanceAdjustBalance, setAdvanceAdjustBalance] = useState(false);
 
   const handleApplyStatementPreset = (presetKey) => {
     setStatementPreset(presetKey);
+    updateUrlParams({ preset: presetKey === 'current_fy' ? null : presetKey });
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -578,7 +616,32 @@ export const TourLedgerSection = ({
   });
   const [submittingSettle, setSubmittingSettle] = useState(false);
 
-  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
+  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(() => {
+    return getUrlParam('voucher_modal') === '1' || getUrlParam('modal') === 'voucher';
+  });
+
+  const openVoucherModal = (filter = null) => {
+    if (filter) setPrintFilter(filter);
+    setIsVoucherModalOpen(true);
+    updateUrlParams({ voucher_modal: '1' });
+  };
+
+  const closeVoucherModal = () => {
+    setIsVoucherModalOpen(false);
+    updateUrlParams({ voucher_modal: null });
+  };
+
+  useEffect(() => {
+    const handlePop = () => {
+      const st = getInitialSubTab();
+      setSubTab(st);
+      setIsVoucherModalOpen(getUrlParam('voucher_modal') === '1' || getUrlParam('modal') === 'voucher');
+      setIsPrintStatementOpen(getUrlParam('print_statement') === '1' || getUrlParam('modal') === 'statement');
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
+
   const [receiptLightbox, setReceiptLightbox] = useState(null);
   const [copiedWord, setCopiedWord] = useState(false);
   const [startingVoucherNo, setStartingVoucherNo] = useState(341);
@@ -1782,12 +1845,7 @@ export const TourLedgerSection = ({
             <button
               type="button"
               onClick={() => {
-                if (selectedVoucherKeys.size > 0) {
-                  setPrintFilter('selected');
-                } else {
-                  setPrintFilter('all');
-                }
-                setIsVoucherModalOpen(true);
+                openVoucherModal(selectedVoucherKeys.size > 0 ? 'selected' : 'all');
               }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
                 selectedVoucherKeys.size > 0
@@ -1957,7 +2015,7 @@ export const TourLedgerSection = ({
             {/* 1. Tour Advances */}
             <button
               type="button"
-              onClick={() => setSubTab('advances')}
+              onClick={() => handleSubTabSwitch('advances')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'advances'
                   ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
@@ -1978,7 +2036,7 @@ export const TourLedgerSection = ({
             {/* 2. Expense Vouchers */}
             <button
               type="button"
-              onClick={() => setSubTab('expenses')}
+              onClick={() => handleSubTabSwitch('expenses')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'expenses'
                   ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
@@ -1999,7 +2057,7 @@ export const TourLedgerSection = ({
             {/* 3. Account Statement & Ledger */}
             <button
               type="button"
-              onClick={() => setSubTab('statement')}
+              onClick={() => handleSubTabSwitch('statement')}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer border ${
                 subTab === 'statement'
                   ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-500/25'
@@ -2503,7 +2561,7 @@ export const TourLedgerSection = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsPrintStatementOpen(true)}
+                    onClick={openPrintStatementModal}
                     className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5" />
@@ -3776,7 +3834,7 @@ export const TourLedgerSection = ({
 
                 <button
                   type="button"
-                  onClick={() => setIsVoucherModalOpen(false)}
+                  onClick={closeVoucherModal}
                   className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors ml-1 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -4221,7 +4279,7 @@ export const TourLedgerSection = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsPrintStatementOpen(false)}
+                  onClick={closePrintStatementModal}
                   className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
                 >
                   <X className="w-5 h-5" />
