@@ -141,7 +141,7 @@ authRoutes.get('/me', authenticateToken, async (c) => {
 authRoutes.get('/users', authenticateToken, async (c) => {
   try {
     const r = await query(
-      'SELECT id, name, username, email, role, phone, is_active, created_at FROM users ORDER BY id ASC',
+      'SELECT id, name, username, email, role, phone, is_active, created_at FROM users WHERE is_active = 1 OR is_active IS NULL ORDER BY id ASC',
       [],
       c.env,
       c.executionCtx
@@ -533,8 +533,42 @@ authRoutes.put('/profile', authenticateToken, async (c) => {
 authRoutes.delete('/users/:id', authenticateToken, requireRole('admin'), async (c) => {
   try {
     const id = c.req.param('id');
-    await query('UPDATE users SET is_active = 0 WHERE id = $1', [id], c.env, c.executionCtx);
-    return c.json({ success: true, message: 'User deactivated' });
+    const user = c.get('user');
+
+    if (user && String(user.id) === String(id)) {
+      return c.json({ error: 'Cannot delete your own active administrator account while logged in.' }, 400);
+    }
+
+    const targetRes = await query('SELECT role, name, phone FROM users WHERE id = $1 LIMIT 1', [id], c.env, c.executionCtx);
+    if (!targetRes.rows.length) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+    const targetUser = targetRes.rows[0];
+
+    if (user && targetUser.phone && user.phone && String(user.phone) === String(targetUser.phone)) {
+      return c.json({ error: 'Cannot delete your own active administrator account while logged in.' }, 400);
+    }
+
+    if (targetUser.role === 'admin') {
+      const adminCountRes = await query("SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND (is_active = 1 OR is_active IS NULL)", [], c.env, c.executionCtx);
+      const adminCount = parseInt(adminCountRes.rows[0]?.count || '0', 10);
+      if (adminCount <= 1) {
+        return c.json({ error: 'Cannot delete the only remaining administrator account.' }, 400);
+      }
+    }
+
+    // Detach references in complaints & technicians
+    await query('UPDATE complaints SET registered_by_user_id = NULL WHERE registered_by_user_id = $1', [id], c.env, c.executionCtx).catch(() => {});
+    await query('DELETE FROM technicians WHERE user_id = $1', [id], c.env, c.executionCtx).catch(() => {});
+
+    // Try hard delete, fallback to soft deactivate
+    try {
+      await query('DELETE FROM users WHERE id = $1', [id], c.env, c.executionCtx);
+    } catch (_) {
+      await query('UPDATE users SET is_active = 0 WHERE id = $1', [id], c.env, c.executionCtx);
+    }
+
+    return c.json({ success: true, message: `User "${targetUser.name}" deleted successfully` });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

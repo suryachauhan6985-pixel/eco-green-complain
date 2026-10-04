@@ -391,22 +391,44 @@ export const StaffTechnicianManager = () => {
     }
   };
 
-  const handleDeleteUser = async (id, name) => {
+  const handleDeleteUser = async (id, name, role = 'staff') => {
+    const isTargetAdmin = role === 'admin';
+
+    if (isTargetAdmin && adminUsers.length <= 1) {
+      showGlobalToast('Cannot remove administrator: At least one active administrator is required to manage the system.', 'error');
+      return;
+    }
+
+    const isSelf = currentUser && (
+      String(currentUser.id) === String(id) || 
+      (currentUser.phone && String(currentUser.phone) === String(users.find(u => String(u.id) === String(id))?.phone))
+    );
+
+    if (isSelf) {
+      showGlobalToast('Cannot delete your own active administrator account while logged in.', 'error');
+      return;
+    }
+
+    const title = isTargetAdmin ? 'Delete Administrator' : 'Remove Staff Member';
+    const message = isTargetAdmin
+      ? `Are you sure you want to permanently delete administrator "${name}"? This will revoke all administrative access.`
+      : `Are you sure you want to remove staff member "${name}"?`;
+
     const ok = await confirm({
-      title: 'Remove Staff Member',
-      message: `Are you sure you want to remove staff member "${name}"?`,
+      title,
+      message,
       type: 'danger',
-      confirmText: 'Remove Staff'
+      confirmText: isTargetAdmin ? 'Delete Administrator' : 'Remove Staff'
     });
     if (!ok) return;
 
     try {
       await api.deleteUser(id);
-      showToast(`Staff member ${name} removed`);
-      broadcastTechniciansUpdate({ action: 'member_deleted', userId: id });
+      showToast(`${isTargetAdmin ? 'Administrator' : 'Staff member'} ${name} removed successfully`);
+      broadcastTechniciansUpdate({ action: 'member_deleted', userId: id, role });
       loadData(true);
     } catch (err) {
-      showGlobalToast('Failed to delete user: ' + err.message, 'error');
+      showGlobalToast(`Failed to delete ${isTargetAdmin ? 'administrator' : 'user'}: ` + err.message, 'error');
     }
   };
 
@@ -457,11 +479,11 @@ export const StaffTechnicianManager = () => {
   };
 
   const adminUsers = Array.isArray(users) 
-    ? users.filter(u => u && u.role === 'admin') 
+    ? users.filter(u => u && u.role === 'admin' && (u.is_active === 1 || u.is_active === true || u.is_active === undefined || u.is_active === null)) 
     : [];
 
   const staffUsers = Array.isArray(users) 
-    ? users.filter(u => u && u.role === 'staff') 
+    ? users.filter(u => u && u.role === 'staff' && (u.is_active === 1 || u.is_active === true || u.is_active === undefined || u.is_active === null)) 
     : [];
 
   const editType = editingMember?.isTech ? 'technician' : (editingMember?.role === 'admin' ? 'admin' : 'staff');
@@ -919,7 +941,7 @@ export const StaffTechnicianManager = () => {
                 {/* Actions */}
                 <div className="flex items-center justify-between pt-2 border-t border-purple-100 text-xs gap-1.5">
                   <span className="text-[10px] text-slate-400 font-medium italic">
-                    Primary Administrator
+                    {u.id === 1 || u.username === 'admin' ? 'Primary Administrator' : 'Administrator'}
                   </span>
                   <div className="flex items-center gap-1.5">
                     {isAdmin && (
@@ -942,6 +964,27 @@ export const StaffTechnicianManager = () => {
                       <Edit3 className="w-3.5 h-3.5 text-purple-600" />
                       <span>Edit</span>
                     </button>
+
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(u.id, u.name, 'admin')}
+                        disabled={currentUser && (String(currentUser.id) === String(u.id) || (currentUser.phone && String(currentUser.phone) === String(u.phone)))}
+                        className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-[11px] font-semibold cursor-pointer border ${
+                          currentUser && (String(currentUser.id) === String(u.id) || (currentUser.phone && String(currentUser.phone) === String(u.phone)))
+                            ? 'text-slate-300 border-slate-100 cursor-not-allowed opacity-40'
+                            : 'text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200/80'
+                        }`}
+                        title={
+                          currentUser && (String(currentUser.id) === String(u.id) || (currentUser.phone && String(currentUser.phone) === String(u.phone)))
+                            ? 'Cannot delete your own active administrator account'
+                            : 'Delete Administrator'
+                        }
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Delete</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
