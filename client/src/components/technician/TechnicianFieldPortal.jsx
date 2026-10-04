@@ -50,6 +50,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const [section, setSection] = useState(() => getInitialSection());
   const [jobStatusFilter, setJobStatusFilter] = useState(() => getInitialJobStatus());
   const [productFilter, setProductFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [products, setProducts] = useState(() => {
     try {
       const cached = JSON.parse(localStorage.getItem('egs_cached_products') || '[]');
