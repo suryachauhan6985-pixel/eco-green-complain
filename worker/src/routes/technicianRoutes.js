@@ -1600,6 +1600,82 @@ technicianRoutes.put('/tour-expenses/:id/status', authenticateToken, requireRole
   }
 });
 
+// DELETE /api/tour-expenses/:id - Delete single expense item
+technicianRoutes.delete('/tour-expenses/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const isAdminOrStaff = ['admin', 'staff'].includes(user.role);
+
+    // Fetch existing expense item to check permissions & voucher status
+    const existing = await query('SELECT * FROM technician_tour_expenses WHERE id::text = $1', [id], c.env, c.executionCtx);
+    if (existing.rows.length === 0) {
+      return c.json({ success: true, message: 'Tour expense item already removed or not found' });
+    }
+
+    const exp = existing.rows[0];
+
+    // If technician, can only delete their own non-approved expenses
+    if (!isAdminOrStaff) {
+      const techId = String(user.technicianId || user.technician_id || user.id);
+      if (String(exp.technician_id) !== techId) {
+        return c.json({ error: 'Unauthorized to delete this expense' }, 403);
+      }
+      if ((exp.status || '').toLowerCase() === 'approved') {
+        return c.json({ error: 'Approved expense items cannot be deleted' }, 400);
+      }
+    }
+
+    await query('DELETE FROM technician_tour_expenses WHERE id::text = $1', [id], c.env, c.executionCtx);
+    return c.json({ success: true, message: 'Tour expense deleted successfully' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// DELETE /api/tour-vouchers/:voucherNo - Delete an entire voucher and all its line items
+technicianRoutes.delete('/tour-vouchers/:voucherNo', authenticateToken, async (c) => {
+  try {
+    const rawVoucherNo = c.req.param('voucherNo');
+    const voucherNo = decodeURIComponent(rawVoucherNo).trim();
+    const user = c.get('user');
+    const isAdminOrStaff = ['admin', 'staff'].includes(user.role);
+
+    if (!voucherNo) {
+      return c.json({ error: 'Voucher number is required' }, 400);
+    }
+
+    // Check if voucher exists and check permissions
+    const existing = await query(
+      'SELECT id, status, technician_id FROM technician_tour_expenses WHERE voucher_no = $1',
+      [voucherNo],
+      c.env,
+      c.executionCtx
+    );
+
+    if (existing.rows.length === 0) {
+      return c.json({ success: true, message: 'Voucher not found or already deleted' });
+    }
+
+    if (!isAdminOrStaff) {
+      const techId = String(user.technicianId || user.technician_id || user.id);
+      const isOwner = existing.rows.every(r => String(r.technician_id) === techId);
+      if (!isOwner) {
+        return c.json({ error: 'Unauthorized to delete this voucher' }, 403);
+      }
+      const hasApproved = existing.rows.some(r => (r.status || '').toLowerCase() === 'approved');
+      if (hasApproved) {
+        return c.json({ error: 'Approved voucher cannot be deleted. Contact Admin to revert approval first.' }, 400);
+      }
+    }
+
+    await query('DELETE FROM technician_tour_expenses WHERE voucher_no = $1', [voucherNo], c.env, c.executionCtx);
+    return c.json({ success: true, message: `Voucher ${voucherNo} deleted successfully` });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // POST /api/tour-settlements - Record Return, Reimbursement or Adjustment
 technicianRoutes.post('/tour-settlements', authenticateToken, requireRole('admin', 'staff'), async (c) => {
   try {

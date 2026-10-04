@@ -1310,12 +1310,23 @@ export const TourLedgerSection = ({
     if (!ok) return;
 
     try {
-      await Promise.all(group.items.map(it => api.deleteTourExpense(it.id)));
-      showToast(`Voucher ${group.voucher_no} deleted successfully`, 'success');
+      if (group.voucher_no) {
+        await api.deleteTourVoucher(group.voucher_no);
+      } else {
+        await Promise.all(group.items.map(it => api.deleteTourExpense(it.id)));
+      }
+      showToast(`Voucher ${group.voucher_no || ''} deleted successfully`, 'success');
       await fetchLedger(true);
       broadcastLedgerUpdate();
     } catch (err) {
-      showToast('Failed to delete voucher: ' + err.message, 'error');
+      try {
+        await Promise.all(group.items.map(it => api.deleteTourExpense(it.id)));
+        showToast(`Voucher ${group.voucher_no || ''} deleted successfully`, 'success');
+        await fetchLedger(true);
+        broadcastLedgerUpdate();
+      } catch (subErr) {
+        showToast('Failed to delete voucher: ' + (subErr.message || err.message), 'error');
+      }
     }
   };
 

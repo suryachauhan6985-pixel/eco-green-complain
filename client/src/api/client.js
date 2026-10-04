@@ -879,6 +879,13 @@ class LocalMockStore {
     return { success: true };
   }
 
+  deleteTourVoucher(voucherNo) {
+    let expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
+    expenses = expenses.filter(e => String(e.voucher_no) !== String(voucherNo));
+    localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
+    return { success: true };
+  }
+
   settleTourBalance(data = {}) {
     const settlements = JSON.parse(localStorage.getItem('egs_mock_tour_settlements') || '[]');
     const newSettlement = {
@@ -1601,6 +1608,13 @@ export const api = {
   }),
   deleteTourExpense: (id) => request(`/tour-expenses/${id}`, {
     method: 'DELETE'
+  }).catch(() => {
+    return mockStore.deleteTourExpense(id);
+  }),
+  deleteTourVoucher: (voucherNo) => request(`/tour-vouchers/${encodeURIComponent(voucherNo)}`, {
+    method: 'DELETE'
+  }).catch(() => {
+    return mockStore.deleteTourVoucher(voucherNo);
   }),
   settleTourBalance: (data) => request('/tour-settlements', {
     method: 'POST',
