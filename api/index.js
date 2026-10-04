@@ -253,12 +253,12 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: String(estCharges) },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'estimated_charges', text: String(estCharges) },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };
@@ -277,11 +277,11 @@ async function sendWhatsApp({ to, message, templateName, variables = {}, mediaUr
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };

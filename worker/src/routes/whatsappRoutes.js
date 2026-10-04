@@ -660,6 +660,78 @@ whatsappRoutes.post('/update-contact-name', authenticateToken, async (c) => {
   }
 });
 
+// POST /api/whatsapp/retry-message/:id - Smart Retry failed WhatsApp message
+whatsappRoutes.post('/retry-message/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const msgRes = await query('SELECT * FROM whatsapp_messages WHERE id::text = $1 LIMIT 1', [String(id)], c.env, c.executionCtx);
+    if (!msgRes.rows.length) {
+      return c.json({ error: 'Message record not found' }, 404);
+    }
+    const msg = msgRes.rows[0];
+
+    let complaint = null;
+    if (msg.complaint_id) {
+      const cmpRes = await query('SELECT * FROM complaints WHERE id::text = $1 LIMIT 1', [String(msg.complaint_id)], c.env, c.executionCtx);
+      complaint = cmpRes.rows[0] || null;
+    }
+    const cleanPhone = (msg.phone || '').replace(/\D/g, '');
+    const last10 = cleanPhone.slice(-10);
+
+    if (!complaint && last10) {
+      const cmpRes = await query(`SELECT * FROM complaints WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE $1 ORDER BY id DESC LIMIT 1`, [`%${last10}%`], c.env, c.executionCtx);
+      complaint = cmpRes.rows[0] || null;
+    }
+
+    let tech = null;
+    if (complaint?.assigned_technician_id) {
+      const techRes = await query('SELECT * FROM technicians WHERE id::text = $1 LIMIT 1', [String(complaint.assigned_technician_id)], c.env, c.executionCtx);
+      tech = techRes.rows[0] || null;
+    } else if (last10) {
+      const techRes = await query(`SELECT * FROM technicians WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 LIMIT 1`, [`%${last10}%`], c.env, c.executionCtx);
+      tech = techRes.rows[0] || null;
+    }
+
+    const appUrl = (c.env?.APP_URL && !c.env.APP_URL.includes('localhost')) ? c.env.APP_URL : 'https://complain.ecogreensolar.co.in';
+    const variables = {
+      customer_name: complaint?.customer_name || 'Valued Customer',
+      complaint_id: complaint?.ticket_id || 'Ticket',
+      ticket_id: complaint?.ticket_id || 'Ticket',
+      customer_phone: complaint?.customer_phone || '-',
+      customer_address: complaint?.customer_address || '-',
+      product_type: complaint?.product_type || 'Solar Rooftop Systems',
+      issue_category: complaint?.issue_category || 'Service Request',
+      notes: complaint?.issue_description || 'Inspection required',
+      priority: complaint?.priority || 'Normal',
+      expected_visit_date: complaint?.expected_visit_date || 'Immediate / Today',
+      technician_name: tech?.name || 'Technician',
+      technician_phone: tech?.phone || msg.phone,
+      estimated_charges: Number(complaint?.estimated_charges || 0),
+      notify_charges: complaint?.notify_charges ?? 1,
+      feedback_url: `${appUrl}/track/${complaint?.ticket_id || ''}`,
+      db_complaint_id: complaint?.id || msg.complaint_id || null
+    };
+
+    const sendRes = await sendWhatsApp({
+      to: msg.phone,
+      message: msg.message_body,
+      templateName: msg.template_name,
+      variables,
+      senderName: msg.sender_name || 'Eco Green Solar',
+      existingMessageId: msg.id,
+      env: c.env
+    });
+
+    if (sendRes.success) {
+      return c.json({ success: true, status: 'sent', wamid: sendRes.wamid });
+    } else {
+      return c.json({ success: false, status: 'failed', error: sendRes.error });
+    }
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // DELETE /api/whatsapp/messages/:id - Delete Message
 whatsappRoutes.delete('/messages/:id', authenticateToken, async (c) => {
   try {

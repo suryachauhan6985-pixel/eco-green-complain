@@ -15,6 +15,7 @@ export async function sendWhatsApp({
   mediaType,
   mediaFileName,
   senderName,
+  existingMessageId,
   env
 }) {
   const cleanDigits = (to || '').replace(/[^0-9]/g, '');
@@ -96,12 +97,12 @@ export async function sendWhatsApp({
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: String(estCharges) },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'estimated_charges', text: String(estCharges) },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };
@@ -120,11 +121,11 @@ export async function sendWhatsApp({
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
           ]
         }]
       };
@@ -326,17 +327,18 @@ export async function sendWhatsApp({
           }
         ]
       };
-    } else if (templateName === 'technician_reopen_job_transferred' || templateName === 'technician_reopened_transferred') {
+    } else if (templateName === 'technician_reopen_job_transferred' || templateName === 'technician_reopened_transferred' || templateName === 'technician_re_job_transferred_notice') {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
+      const newTechName = cleanParam(variables.new_technician_name, 'Field Specialist');
       const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up requested');
 
-      renderedBody = `*Eco Green Solar - Reopened Job Transferred*\n\nHello ${techName}, please note that ticket *${ticketId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician.\n\n*Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Solar`;
+      renderedBody = `*Eco Green Solar - Reopened Job Transferred*\n\nHello ${techName}, please note that ticket *${ticketId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTechName}*).\n\n*Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {
-        name: 'technician_job_transferred_notice',
+        name: 'technician_re_job_transferred_notice',
         language: { code: 'en' },
         components: [
           {
@@ -344,7 +346,34 @@ export async function sendWhatsApp({
             parameters: [
               { type: 'text', parameter_name: 'technician_name', text: techName },
               { type: 'text', parameter_name: 'complaint_id', text: ticketId },
-              { type: 'text', parameter_name: 'customer_name', text: custName }
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'new_technician_name', text: newTechName },
+              { type: 'text', parameter_name: 'reopen_reason', text: reopenReason }
+            ]
+          }
+        ]
+      };
+    } else if (templateName === 'status_update' || templateName === 'status_followup_note_update' || templateName === 'status__followup_note_update') {
+      const ticketId = cleanParam(variables.complaint_id || variables.ticket_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'Solar System');
+      const status = cleanParam(variables.status, 'In Progress');
+      const notes = cleanParam(variables.notes || variables.issue_description, 'Update added');
+
+      renderedBody = `Update on Complaint *${ticketId}* (${prodType}):\nStatus: *${status}*\n\n*Notes:* ${notes}\n\n*Track Live:* ${trackingUrl}\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'status__followup_note_update',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'status', text: status },
+              { type: 'text', parameter_name: 'notes', text: notes },
+              { type: 'text', parameter_name: 'feedback_url', text: trackingUrl }
             ]
           }
         ]
@@ -588,32 +617,52 @@ export async function sendWhatsApp({
 
     // Persist to whatsapp_messages table
     try {
-      await query(
-        `INSERT INTO whatsapp_messages (
-          complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, wam_id, status, failure_reason, template_name, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (wam_id) DO UPDATE SET
-          status = EXCLUDED.status,
-          failure_reason = EXCLUDED.failure_reason,
-          updated_at = CURRENT_TIMESTAMP`,
-        [
-          variables.db_complaint_id || null,
-          formattedPhone,
-          'company',
-          senderName || 'Eco Green Solar',
-          renderedBody,
-          mediaUrl || null,
-          mediaType || null,
-          mediaFileName || null,
-          wamid,
-          isSuccess ? 'sent' : 'failed',
-          errorMsg,
-          templateName || null
-        ],
-        env
-      );
+      if (existingMessageId) {
+        await query(
+          `UPDATE whatsapp_messages 
+           SET wam_id = COALESCE($1, wam_id),
+               status = $2,
+               failure_reason = $3,
+               message_body = COALESCE($4, message_body),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          [
+            wamid,
+            isSuccess ? 'sent' : 'failed',
+            errorMsg,
+            renderedBody || null,
+            existingMessageId
+          ],
+          env
+        );
+      } else {
+        await query(
+          `INSERT INTO whatsapp_messages (
+            complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, wam_id, status, failure_reason, template_name, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON CONFLICT (wam_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            failure_reason = EXCLUDED.failure_reason,
+            updated_at = CURRENT_TIMESTAMP`,
+          [
+            variables.db_complaint_id || null,
+            formattedPhone,
+            'company',
+            senderName || 'Eco Green Solar',
+            renderedBody,
+            mediaUrl || null,
+            mediaType || null,
+            mediaFileName || null,
+            wamid,
+            isSuccess ? 'sent' : 'failed',
+            errorMsg,
+            templateName || null
+          ],
+          env
+        );
+      }
     } catch (dbErr) {
-      console.warn('[WhatsApp DB Insert Warn]', dbErr.message);
+      console.warn('[WhatsApp DB Insert/Update Warn]', dbErr.message);
     }
 
     return { success: isSuccess, wamid, error: errorMsg, data };

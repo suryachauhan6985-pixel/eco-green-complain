@@ -178,12 +178,12 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: custName },
-              { type: 'text', text: ticketId },
-              { type: 'text', text: prodType },
-              { type: 'text', text: issueCat },
-              { type: 'text', text: String(estCharges) },
-              { type: 'text', text: cleanTrackingUrl }
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'issue_category', text: issueCat },
+              { type: 'text', parameter_name: 'estimated_charges', text: String(estCharges) },
+              { type: 'text', parameter_name: 'feedback_url', text: cleanTrackingUrl }
             ]
           }
         ]
@@ -204,11 +204,11 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: custName },
-              { type: 'text', text: ticketId },
-              { type: 'text', text: prodType },
-              { type: 'text', text: issueCat },
-              { type: 'text', text: cleanTrackingUrl }
+              { type: 'text', parameter_name: 'customer_name', text: custName },
+              { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+              { type: 'text', parameter_name: 'product_type', text: prodType },
+              { type: 'text', parameter_name: 'issue_category', text: issueCat },
+              { type: 'text', parameter_name: 'feedback_url', text: cleanTrackingUrl }
             ]
           }
         ]
