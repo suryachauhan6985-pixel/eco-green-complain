@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -11,7 +11,8 @@ import {
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
-  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera, Info
+  Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera, Info,
+  ClipboardCheck
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -51,6 +52,22 @@ const PRODUCT_CATEGORIES = {
     'Motor Overheating / Burning Smell',
     'Other Pressure Pump Issue'
   ],
+  'SITE SURVEY': [
+    'Site Feasibility & Shadow Analysis',
+    'Rooftop Structural Assessment',
+    'Electrical Load & Metering Survey',
+    'Solar Water Heater Location Assessment',
+    'Heat Pump Feasibility Survey',
+    'General Site Survey & Measurements'
+  ],
+  'Site Survey': [
+    'Site Feasibility & Shadow Analysis',
+    'Rooftop Structural Assessment',
+    'Electrical Load & Metering Survey',
+    'Solar Water Heater Location Assessment',
+    'Heat Pump Feasibility Survey',
+    'General Site Survey & Measurements'
+  ],
   'Other': [
     'Equipment Not Turning On',
     'Performance Degradation',
@@ -62,6 +79,8 @@ const PRODUCT_CATEGORIES = {
 };
 
 const getProductComponentIcon = (type) => {
+  const norm = String(type || '').toUpperCase();
+  if (norm.includes('SURVEY')) return ClipboardCheck;
   if (type === 'Solar Rooftop Systems') return Sun;
   if (type === 'Solar Water Heaters') return Droplets;
   if (type === 'Heat Pumps') return Wind;
@@ -191,6 +210,12 @@ export const NewComplaintModal = ({
   const [waData, setWaData] = useState(null);
   const [copied, setCopied] = useState(false);
   const [copiedWaMsg, setCopiedWaMsg] = useState(false);
+
+  const isSurveyProduct = useMemo(() => {
+    const p = String(formData.product_type || '').toUpperCase();
+    const c = String(formData.issue_category || '').toUpperCase();
+    return p.includes('SURVEY') || c.includes('SURVEY');
+  }, [formData.product_type, formData.issue_category]);
 
   // Dynamic template rendering for WhatsApp message
   useEffect(() => {
@@ -449,7 +474,8 @@ export const NewComplaintModal = ({
           { id: 2, name: 'Solar Water Heaters', description: 'Domestic & Commercial ETC / FPC Water Heaters' },
           { id: 3, name: 'Heat Pumps', description: 'Commercial & Residential High-Efficiency Heat Pumps' },
           { id: 4, name: 'Pressure Pumps', description: 'Booster & Hydro-Pneumatic Pressure Pumps' },
-          { id: 5, name: 'Other', description: 'Other Solar & Renewable Energy Equipment' }
+          { id: 5, name: 'SITE SURVEY', description: 'Rooftop Feasibility, Shadow Analysis & Measurement' },
+          { id: 6, name: 'Other', description: 'Other Solar & Renewable Energy Equipment' }
         ]);
       }
     } catch (e) {
@@ -458,7 +484,8 @@ export const NewComplaintModal = ({
         { id: 2, name: 'Solar Water Heaters', description: 'Domestic & Commercial ETC / FPC Water Heaters' },
         { id: 3, name: 'Heat Pumps', description: 'Commercial & Residential High-Efficiency Heat Pumps' },
         { id: 4, name: 'Pressure Pumps', description: 'Booster & Hydro-Pneumatic Pressure Pumps' },
-        { id: 5, name: 'Other', description: 'Other Solar & Renewable Energy Equipment' }
+        { id: 5, name: 'SITE SURVEY', description: 'Rooftop Feasibility, Shadow Analysis & Measurement' },
+        { id: 6, name: 'Other', description: 'Other Solar & Renewable Energy Equipment' }
       ]);
     } finally {
       setLoadingProducts(false);
@@ -962,7 +989,7 @@ export const NewComplaintModal = ({
               <h2 className="text-lg font-bold flex items-center gap-2">
                 {isEditMode ? (
                   <>
-                    <span>Edit Complaint Ticket</span>
+                    <span>{isSurveyProduct ? 'Edit Site Survey Ticket' : 'Edit Complaint Ticket'}</span>
                     {initialData?.ticket_id && (
                       <span className="text-xs bg-amber-400/20 text-amber-300 border border-amber-300/30 px-2.5 py-0.5 rounded-full font-mono font-bold tracking-wide">
                         #{initialData.ticket_id}
@@ -970,21 +997,21 @@ export const NewComplaintModal = ({
                     )}
                   </>
                 ) : createdTicket ? (
-                  'Complaint Registered Successfully' 
+                  isSurveyProduct ? 'Site Survey Scheduled Successfully' : 'Complaint Registered Successfully' 
                 ) : step === 'product' ? (
                   'Step 1: Select Product Category' 
                 ) : (
-                  `Step 2: ${formData.product_type} Complaint Form`
+                  isSurveyProduct ? 'Step 2: Site Survey Booking Form' : `Step 2: ${formData.product_type} Complaint Form`
                 )}
               </h2>
               <p className="text-xs text-emerald-200">
                 {isEditMode
-                  ? 'Update customer details, warranty status, defect category, or service charges'
+                  ? (isSurveyProduct ? 'Update customer details, site location, survey scope, or estimated visit fee' : 'Update customer details, warranty status, defect category, or service charges')
                   : createdTicket 
-                    ? 'Ticket registered & automated notifications ready' 
+                    ? (isSurveyProduct ? 'Survey ticket registered & automated notifications dispatched' : 'Ticket registered & automated notifications ready') 
                     : step === 'product'
-                      ? 'Choose product to start complaint registration'
-                      : 'Fill customer & defect details to register ticket'}
+                      ? 'Choose product or survey category to start registration'
+                      : (isSurveyProduct ? 'Fill customer & site location details to schedule site survey' : 'Fill customer & defect details to register ticket')}
               </p>
             </div>
           </div>
@@ -1008,7 +1035,7 @@ export const NewComplaintModal = ({
                 </div>
                 <div>
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-3 py-0.5 rounded-full uppercase tracking-wider">
-                    Complaint Registered Successfully
+                    {isSurveyProduct ? 'Site Survey Scheduled Successfully' : 'Complaint Registered Successfully'}
                   </span>
                   <h3 className="text-2xl font-black text-slate-900 font-mono mt-1.5 tracking-tight">
                     {createdTicket.ticket_id}
@@ -1937,7 +1964,9 @@ export const NewComplaintModal = ({
               {/* Issue Details & Priority (Low, Medium, High) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Issue Category *</label>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    {isSurveyProduct ? 'Survey Category / Feasibility Scope *' : 'Issue Category *'}
+                  </label>
                   <select
                     value={formData.issue_category}
                     onChange={(e) => setFormData({ ...formData, issue_category: e.target.value })}
@@ -1976,11 +2005,17 @@ export const NewComplaintModal = ({
 
               {/* Description */}
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Detailed Issue Description *</label>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  {isSurveyProduct ? 'Site Survey Requirements & Rooftop Feasibility Scope *' : 'Detailed Issue Description *'}
+                </label>
                 <textarea
                   rows={3}
                   required
-                  placeholder="Describe the symptoms, error codes, inverter indicators, or when the problem started..."
+                  placeholder={
+                    isSurveyProduct 
+                      ? 'Describe site survey requirements, roof type (RCC slab, tin shed, slope), shadow/obstruction concerns, proposed capacity (kW), or customer site notes...' 
+                      : 'Describe the symptoms, error codes, inverter indicators, or when the problem started...'
+                  }
                   value={formData.issue_description}
                   onChange={(e) => setFormData({ ...formData, issue_description: e.target.value })}
                   className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -1990,7 +2025,7 @@ export const NewComplaintModal = ({
               {/* Attachments with Drag & Drop, Live Preview & Remove */}
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Upload Photo/Video Proof (Optional, Max 5)
+                  {isSurveyProduct ? 'Upload Site Photos / Rooftop Videos (Optional, Max 5)' : 'Upload Photo/Video Proof (Optional, Max 5)'}
                 </label>
                 <div 
                   onDragOver={handleDragOver}
@@ -2158,10 +2193,10 @@ export const NewComplaintModal = ({
                     <Send className="w-3.5 h-3.5" />
                   )}
                   {submitting
-                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : (isEditMode ? 'Saving Changes...' : 'Registering & Dispatching...'))
+                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : (isEditMode ? 'Saving Changes...' : (isSurveyProduct ? 'Scheduling Survey...' : 'Registering & Dispatching...')))
                     : activeComplaintWarning
                     ? `Cannot Proceed: Open Ticket for ${activeComplaintWarning.product_type || formData.product_type}`
-                    : (isEditMode ? 'Save & Update Ticket' : 'Register Complaint & Send Alerts')}
+                    : (isEditMode ? (isSurveyProduct ? 'Save & Update Survey Ticket' : 'Save & Update Ticket') : (isSurveyProduct ? 'Schedule Site Survey & Dispatch' : 'Register Complaint & Send Alerts'))}
                 </button>
               </div>
             </form>

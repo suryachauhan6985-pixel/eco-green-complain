@@ -6,7 +6,7 @@ import {
   Search, Filter, Plus, Download, RefreshCw, Sun, Droplets, Wind, 
   User, Calendar, Clock, ChevronRight, AlertCircle, CheckCircle2, Wrench,
   MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
-  AlertTriangle, Gauge, Layers, Trash2
+  AlertTriangle, Gauge, Layers, Trash2, ClipboardCheck
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/SkeletonLoader';
@@ -43,6 +43,20 @@ export const ComplaintList = ({
     } catch {
       return [];
     }
+  });
+  const [products, setProducts] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_cached_products') || '[]');
+      if (Array.isArray(cached) && cached.length > 0) return cached;
+    } catch (_) {}
+    return [
+      { id: '1', name: 'Solar Rooftop Systems' },
+      { id: '2', name: 'Solar Water Heaters' },
+      { id: '3', name: 'Heat Pumps' },
+      { id: '4', name: 'Pressure Pumps' },
+      { id: '6', name: 'SITE SURVEY' },
+      { id: '5', name: 'Other Products' }
+    ];
   });
   const [loading, setLoading] = useState(() => {
     const cached = getCachedComplaints();
@@ -146,6 +160,20 @@ export const ComplaintList = ({
     }
   };
 
+  const fetchProducts = async (silent = false) => {
+    try {
+      const res = await api.getProducts();
+      if (res && Array.isArray(res.products) && res.products.length > 0) {
+        setProducts(res.products);
+        try {
+          localStorage.setItem('egs_cached_products', JSON.stringify(res.products));
+        } catch (_) {}
+      }
+    } catch (e) {
+      if (!silent) console.warn('Failed to load products for filter:', e);
+    }
+  };
+
   const handleManualRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
@@ -154,6 +182,7 @@ export const ComplaintList = ({
       const [data] = await Promise.all([
         api.getComplaints({}),
         fetchTechnicians(),
+        fetchProducts(true),
         minRotatePromise
       ]);
       if (data && Array.isArray(data.complaints)) {
@@ -172,11 +201,13 @@ export const ComplaintList = ({
   useEffect(() => {
     fetchComplaints();
     fetchTechnicians();
+    fetchProducts();
 
     // Real-Time Live Sync across tabs, windows, and roles without browser refresh
-    const unsubscribe = subscribeLiveSync(['complaints', 'techs'], () => {
+    const unsubscribe = subscribeLiveSync(['complaints', 'techs', 'catalog'], () => {
       fetchComplaints(true);
       fetchTechnicians(true);
+      fetchProducts(true);
     });
 
     // Resilient background heartbeat sync every 5 seconds when visible
@@ -184,6 +215,7 @@ export const ComplaintList = ({
       if (document.visibilityState === 'visible') {
         fetchComplaints(true);
         fetchTechnicians(true);
+        fetchProducts(true);
       }
     }, 5000);
 
@@ -299,6 +331,7 @@ export const ComplaintList = ({
     if (type === 'Solar Water Heaters') return <Droplets className="w-4 h-4 text-blue-500" />;
     if (type === 'Heat Pumps') return <Wind className="w-4 h-4 text-teal-500" />;
     if (type === 'Pressure Pumps') return <Gauge className="w-4 h-4 text-indigo-500" />;
+    if (String(type || '').toUpperCase().includes('SURVEY')) return <ClipboardCheck className="w-4 h-4 text-purple-600" />;
     return <Layers className="w-4 h-4 text-slate-500" />;
   };
 
@@ -506,11 +539,11 @@ export const ComplaintList = ({
             className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
           >
             <option value="all">All Products</option>
-            <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
-            <option value="Solar Water Heaters">Solar Water Heaters</option>
-            <option value="Heat Pumps">Heat Pumps</option>
-            <option value="Pressure Pumps">Pressure Pumps</option>
-            <option value="Other">Other Products</option>
+            {products.map((prod) => (
+              <option key={prod.id || prod.name} value={prod.name}>
+                {prod.name}
+              </option>
+            ))}
           </select>
 
           <select
@@ -687,8 +720,13 @@ export const ComplaintList = ({
                             {getProductIcon(c.product_type)}
                           </div>
                           <div>
-                            <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 block">
+                            <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 flex items-center gap-1.5">
                               {c.ticket_id}
+                              {String(c.product_type || '').toUpperCase().includes('SURVEY') && (
+                                <span className="px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-800 text-[9px] font-bold tracking-wide uppercase shrink-0">
+                                  Survey
+                                </span>
+                              )}
                             </span>
                             <span className="text-[10px] text-slate-500 truncate block max-w-[160px]">
                               {c.product_type}
@@ -910,6 +948,11 @@ export const ComplaintList = ({
                         <span className="font-mono text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
                           {c.ticket_id}
                         </span>
+                        {String(c.product_type || '').toUpperCase().includes('SURVEY') && (
+                          <span className="px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-800 text-[9px] font-bold tracking-wide uppercase shrink-0">
+                            Survey
+                          </span>
+                        )}
                         <span className="text-[11px] text-slate-400 font-medium truncate hidden sm:inline">
                           • {c.product_type}
                         </span>

@@ -7,13 +7,15 @@
 const SYNC_KEYS = {
   COMPLAINTS: 'egs_live_complaints_sync',
   LEDGER: 'egs_live_ledger_sync',
-  TECHS: 'egs_live_techs_sync'
+  TECHS: 'egs_live_techs_sync',
+  CATALOG: 'egs_live_catalog_sync'
 };
 
 const SYNC_EVENTS = {
   COMPLAINTS: 'complaints-updated',
   LEDGER: 'tour-ledger-updated',
-  TECHS: 'technicians-updated'
+  TECHS: 'technicians-updated',
+  CATALOG: 'catalog-updated'
 };
 
 // Create a BroadcastChannel instance if supported by the browser
@@ -71,9 +73,13 @@ export function broadcastTechniciansUpdate(detail = {}) {
   emitSync(SYNC_KEYS.TECHS, SYNC_EVENTS.TECHS, detail);
 }
 
+export function broadcastCatalogUpdate(detail = {}) {
+  emitSync(SYNC_KEYS.CATALOG, SYNC_EVENTS.CATALOG, detail);
+}
+
 /**
  * Subscribe a component to live synchronization events
- * @param {string|string[]} types - 'complaints' | 'ledger' | 'techs' or ['complaints', 'techs']
+ * @param {string|string[]} types - 'complaints' | 'ledger' | 'techs' | 'catalog' or array of types
  * @param {Function} callback - Function called with payload when sync event occurs
  * @param {Object} options - { onFocus: boolean (default true), onVisible: boolean (default true) }
  * @returns {Function} unsubscribe cleanup function
@@ -100,6 +106,10 @@ export function subscribeLiveSync(types, callback, options = { onFocus: true, on
     if (norm.includes('tech') || norm.includes('staff') || norm.includes('team')) {
       targetKeys.add(SYNC_KEYS.TECHS);
       targetEvents.add(SYNC_EVENTS.TECHS);
+    }
+    if (norm.includes('catalog') || norm.includes('product') || norm.includes('category')) {
+      targetKeys.add(SYNC_KEYS.CATALOG);
+      targetEvents.add(SYNC_EVENTS.CATALOG);
     }
   });
 

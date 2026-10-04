@@ -29,6 +29,11 @@ export const TRIGGER_OPTIONS = [
   { id: 'technician_reopen_job_transferred', label: 'Technician Reopened Job Transferred (Previous Tech Notice)', audience: 'technician', desc: 'Fires on reopen to notify previous technician that job was transferred to another specialist' },
   { id: 'technician_reach_out_customer', label: 'Technician WhatsApp Message (Quick Chat to Customer)', audience: 'customer', desc: 'Pre-fills technician greeting message when clicking WhatsApp button on job card in Field Workspace' },
   { id: 'technician_direct_reachout', label: 'Technician Direct Reach Out (Quick Chat)', audience: 'customer', desc: 'Pre-fills technician greeting message when clicking WhatsApp on complaint card' },
+  { id: 'site_survey_registered', label: 'Site Survey Scheduled (Customer)', audience: 'customer', desc: 'Fires to customer when a new site survey is booked' },
+  { id: 'site_survey_assigned', label: 'Site Survey Engineer Assigned (Customer)', audience: 'customer', desc: 'Fires to customer when survey engineer is assigned for site feasibility' },
+  { id: 'site_survey_work_order', label: 'Site Survey Work Order (Technician Dispatch)', audience: 'technician', desc: 'Fires to technician/engineer with site location, roof feasibility instructions' },
+  { id: 'site_survey_resolved', label: 'Site Survey Completed / Feasibility Done (Customer)', audience: 'customer', desc: 'Fires to customer when survey engineer completes measurements and report' },
+  { id: 'site_survey_reach_out', label: 'Site Survey WhatsApp Reachout (Technician Quick Chat)', audience: 'customer', desc: 'Pre-fills surveyor message when contacting customer before site visit' },
   { id: 'custom_trigger', label: 'Custom Outbound Trigger', audience: 'all', desc: 'Triggered via custom API or manual supervisor broadcast' }
 ];
 
@@ -41,7 +46,7 @@ export const isTechnicianTemplate = (t) => {
 
   const key = (t.template_key || '').toLowerCase();
   // Specifically: technician_assigned and customer_technician_reassigned are ALWAYS customer notifications
-  if (key === 'technician_assigned' || key === 'customer_technician_reassigned') return false;
+  if (key === 'technician_assigned' || key === 'customer_technician_reassigned' || key === 'site_survey_assigned') return false;
 
   // Actual technician templates:
   if (
@@ -56,7 +61,8 @@ export const isTechnicianTemplate = (t) => {
     key === 'technician_reopened_work_order' ||
     key === 'technician_reopen_job_transferred' ||
     key === 'technician_reopened_job_transferred' ||
-    key === 'technician_complaint_reopened'
+    key === 'technician_complaint_reopened' ||
+    key === 'site_survey_work_order'
   ) {
     return true;
   }
@@ -67,7 +73,8 @@ export const isTechnicianTemplate = (t) => {
     trig === 'technician_team_work_order' ||
     trig === 'technician_reminder' || 
     trig === 'technician_reopened_work_order' ||
-    trig === 'technician_reopen_job_transferred'
+    trig === 'technician_reopen_job_transferred' ||
+    trig === 'site_survey_work_order'
   ) {
     return true;
   }
@@ -184,7 +191,8 @@ export const TemplateManager = () => {
       'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
       'technician_work_order', 'technician_team_work_order', 'technician_reminder', 'technician_reach_out_customer',
       'technician_reopened_work_order', 'technician_reopen_job_transferred',
-      'technician_reassigned_work_order', 'technician_reassigned'
+      'technician_reassigned_work_order', 'technician_reassigned',
+      'site_survey_registered', 'site_survey_assigned', 'site_survey_work_order', 'site_survey_resolved', 'site_survey_reach_out'
     ];
     const isVerified = verifiedKeys.includes(tmpl.template_key);
     const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');

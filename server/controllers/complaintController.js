@@ -32,6 +32,12 @@ function generateTicketId() {
   return `${prefix}${paddedNum}`;
 }
 
+function isSurveyTicket(productType, issueCategory) {
+  const p = String(productType || '').trim().toLowerCase();
+  const c = String(issueCategory || '').trim().toLowerCase();
+  return p.includes('survey') || c.includes('survey') || p === 'site survey' || c === 'site survey';
+}
+
 function listComplaints(req, res) {
   try {
     const {
@@ -456,16 +462,17 @@ async function createComplaint(req, res) {
       }
     }
 
+    const isSurvey = isSurveyTicket(product_type, issue_category);
     // Initial timeline record
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at)
       VALUES (?, 'Unassigned', ?, ?, ?, 1, CURRENT_TIMESTAMP)
-    `).run(complaintId, `Complaint registered for ${product_type}. Issue: ${issue_category}`, actorName, actorRole);
+    `).run(complaintId, isSurvey ? `Site survey request registered for ${product_type}. Scope: ${issue_category}` : `Complaint registered for ${product_type}. Issue: ${issue_category}`, actorName, actorRole);
 
     // Auto-dispatch WhatsApp & Email notification asynchronously
     notificationService.dispatchAsync({
       complaintId,
-      templateKey: 'complaint_registered',
+      templateKey: isSurvey ? 'site_survey_registered' : 'complaint_registered',
       data: {
         customer_name,
         ticket_id: ticketId,
@@ -978,10 +985,11 @@ async function assignTechnician(req, res) {
       : (!isSameTechnician || !alreadyNotifiedCustomer);
 
     const isReassignment = complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(technician_id);
+    const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
 
     if (shouldNotifyCustomer) {
       // 1. Notify Customer via WhatsApp & Email
-      const custTemplateKey = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
+      const custTemplateKey = isReassignment ? 'customer_technician_reassigned' : (isSurvey ? 'site_survey_assigned' : 'technician_assigned');
       const custTechDisplay = secTech ? `${technician.name} & ${secTech.name} (Field Team)` : technician.name;
       notificationService.dispatchAsync({
         complaintId: id,
@@ -990,7 +998,7 @@ async function assignTechnician(req, res) {
           customer_name: complaint.customer_name,
           ticket_id: complaint.ticket_id,
           complaint_id: complaint.ticket_id,
-          product_type: complaint.product_type || 'Solar System',
+          product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar System'),
           technician_name: custTechDisplay,
           technician_phone: technician.phone || (secTech?.phone || ''),
           expected_visit_date: expected_visit_date || 'Within 24-48 Hours'
@@ -1000,7 +1008,7 @@ async function assignTechnician(req, res) {
 
     // 2. Notify Primary Technician via WhatsApp
     if (technician.phone) {
-      const techTemplateKey = secTech ? 'technician_team_work_order' : (isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order');
+      const techTemplateKey = secTech ? 'technician_team_work_order' : (isReassignment ? 'technician_reassigned_work_order' : (isSurvey ? 'site_survey_work_order' : 'technician_work_order'));
       notificationService.dispatchAsync({
         complaintId: id,
         templateKey: techTemplateKey,
@@ -1419,14 +1427,15 @@ async function resolveComplaint(req, res) {
     if (!resolvedTechName && complaint.technician_name) resolvedTechName = complaint.technician_name;
     resolvedTechName = resolvedTechName || performer || 'Service Engineer';
 
+    const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
     notificationService.dispatchAsync({
       complaintId: id,
-      templateKey: 'complaint_resolved',
+      templateKey: isSurvey ? 'site_survey_resolved' : 'complaint_resolved',
       data: {
         customer_name: complaint.customer_name,
         ticket_id: complaint.ticket_id,
         technician_name: resolvedTechName,
-        notes: resolution_notes
+        notes: resolution_notes || (isSurvey ? 'Site survey report, shadow analysis, and technical feasibility completed.' : 'Service successfully completed.')
       }
     });
 

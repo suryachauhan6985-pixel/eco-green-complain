@@ -521,6 +521,56 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
         whatsapp_body: '☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear {{customer_name}},\n\nThe service charges for your complaint ticket *{{complaint_id}}* have been waived / removed (₹0).\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care',
         email_subject: '[Eco Green Solar] Service Charges Waived - Ticket #{{complaint_id}}',
         email_body: 'Dear {{customer_name}},\n\nThe service charges for your complaint ticket #{{complaint_id}} have been waived / removed (₹0).\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nRevised Charges: ₹0 (Covered Under Warranty)\n\nTrack live status at: {{feedback_url}}'
+      },
+      {
+        template_key: 'site_survey_registered',
+        name: 'Site Survey Request Registered',
+        audience: 'customer',
+        trigger_event: 'site_survey_registered',
+        meta_template_name: 'site_survey_registered',
+        whatsapp_body: '☀️ *Eco Green Solar - Site Survey Request Registered*\n\nDear {{customer_name}},\n\nYour site feasibility survey request has been registered with Ticket ID: *{{ticket_id}}*.\n\n📋 *Scope:* {{product_type}} - {{issue_category}}\n\nOur engineering team will review the details and assign a field surveyor shortly to conduct your site inspection.\n\nThank you for choosing Eco Green Solar!',
+        email_subject: '[Eco Green Solar] Site Survey Registered - Ticket #{{ticket_id}}',
+        email_body: 'Dear {{customer_name}},\n\nYour site survey request #{{ticket_id}} has been registered.\nScope: {{product_type}} - {{issue_category}}\n\nA technical surveyor will be assigned soon.'
+      },
+      {
+        template_key: 'site_survey_assigned',
+        name: 'Site Survey Technician Assigned',
+        audience: 'customer',
+        trigger_event: 'site_survey_assigned',
+        meta_template_name: 'site_survey_assigned',
+        whatsapp_body: '☀️ *Eco Green Solar - Site Surveyor Assigned*\n\nDear {{customer_name}},\n\nA technical surveyor has been assigned for your Site Survey Ticket *{{ticket_id}}*.\n\n👷 *Surveyor Name:* {{technician_name}}\n📞 *Contact:* {{technician_phone}}\n📅 *Scheduled Date:* {{expected_visit_date}}\n\nThe surveyor will visit your location to inspect feasibility, rooftop structure, shadow analysis, and electrical provisions.\n\nThank you,\nEco Green Solar Team',
+        email_subject: '[Eco Green Solar] Site Surveyor Assigned - Ticket #{{ticket_id}}',
+        email_body: 'Dear {{customer_name}},\n\nSurveyor {{technician_name}} (Phone: {{technician_phone}}) has been assigned for your site survey #{{ticket_id}}.\nScheduled: {{expected_visit_date}}.'
+      },
+      {
+        template_key: 'site_survey_work_order',
+        name: 'Site Survey Work Order (Technician)',
+        audience: 'technician',
+        trigger_event: 'site_survey_work_order',
+        meta_template_name: 'site_survey_work_order',
+        whatsapp_body: '📋 *Eco Green Solar - New Site Survey Work Order*\n\nHello {{technician_name}},\n\nA new site survey request has been assigned to you:\n\n*Survey Ticket:* #{{ticket_id}}\n👤 *Client:* {{customer_name}} ({{customer_phone}})\n📍 *Site Address:* {{customer_address}}\n🔍 *System Scope:* {{product_type}} - {{issue_category}}\n📝 *Requirements / Notes:* {{notes}}\n📅 *Visit Date:* {{expected_visit_date}}\n\n*Instructions:*\n1. Conduct structural feasibility, shadow analysis & electrical intake audit.\n2. Capture rooftop / site photos and video walkthrough.\n3. Submit survey findings and documentation via Technician Portal.',
+        email_subject: '[Eco Green Solar] New Site Survey Work Order - #{{ticket_id}}',
+        email_body: 'Hello {{technician_name}},\n\nYou have been assigned a new site survey work order #{{ticket_id}}.\nClient: {{customer_name}} ({{customer_phone}})\nSite Address: {{customer_address}}\nScope: {{product_type}} - {{issue_category}}\nNotes: {{notes}}'
+      },
+      {
+        template_key: 'site_survey_resolved',
+        name: 'Site Survey Completed',
+        audience: 'customer',
+        trigger_event: 'site_survey_resolved',
+        meta_template_name: 'site_survey_resolved',
+        whatsapp_body: '☀️ *Eco Green Solar - Site Survey Completed*\n\nDear {{customer_name}},\n\nThe site survey for your project (Ticket *{{ticket_id}}*) has been successfully completed by {{technician_name}}.\n\n📑 *Survey Findings & Feasibility Summary:*\n{{resolution_notes}}\n\nOur engineering team will prepare your custom solar proposal and quotation based on these survey measurements.\n\nThank you for choosing Eco Green Solar!',
+        email_subject: '[Eco Green Solar] Site Survey Completed - Ticket #{{ticket_id}}',
+        email_body: 'Dear {{customer_name}},\n\nThe site survey for ticket #{{ticket_id}} has been completed by {{technician_name}}.\nFindings: {{resolution_notes}}\n\nOur engineering team will prepare your custom proposal shortly.'
+      },
+      {
+        template_key: 'site_survey_reach_out',
+        name: 'Site Surveyor Direct Client Reachout',
+        audience: 'customer',
+        trigger_event: 'site_survey_reach_out',
+        meta_template_name: 'site_survey_reach_out',
+        whatsapp_body: '☀️ *Eco Green Solar - Site Survey Coordination*\n\nHello {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Solar engineering team. I am assigned for your site survey (Ticket *{{ticket_id}}* - {{product_type}}).\n\nI will be arriving to evaluate your site and rooftop layout. Please let me know if the location is accessible or if there are specific directions.\n\nThank you!',
+        email_subject: '[Eco Green Solar] Site Survey Coordination - Ticket #{{ticket_id}}',
+        email_body: 'Hello {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Solar regarding your site survey ticket #{{ticket_id}}.'
       }
     ].filter(d => !existingKeys.has(d.template_key));
 

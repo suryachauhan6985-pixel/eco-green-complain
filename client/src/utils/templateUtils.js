@@ -41,13 +41,27 @@ export function renderTemplateText(templateString, data = {}) {
 }
 
 /**
- * Build WhatsApp URL and text for Complaint Registered
+ * Check if a ticket represents a Site Survey
+ */
+export function isSiteSurvey(ticket) {
+  if (!ticket) return false;
+  const p = String(ticket.product_type || '').toUpperCase();
+  const c = String(ticket.issue_category || '').toUpperCase();
+  return p.includes('SURVEY') || c.includes('SURVEY');
+}
+
+/**
+ * Build WhatsApp URL and text for Complaint Registered or Site Survey Registered
  */
 export async function buildComplaintRegisteredWhatsApp(ticket) {
   const templates = await getNotificationTemplates();
-  const tmpl = templates.find(t => t.template_key === 'complaint_registered');
+  const isSurvey = isSiteSurvey(ticket);
+  const targetKey = isSurvey ? 'site_survey_registered' : 'complaint_registered';
+  const tmpl = templates.find(t => t.template_key === targetKey) || (!isSurvey ? templates.find(t => t.template_key === 'complaint_registered') : null);
 
-  const defaultBody = `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+  const defaultBody = isSurvey
+    ? `☀️ *Eco Green Solar Site Survey*\n\nDear {{customer_name}}, your site survey request has been registered successfully.\n\n📌 *Survey Ticket ID:* {{complaint_id}}\n🔍 *Type:* {{product_type}}\n📋 *Scope:* {{issue_category}}\n📅 *Registered Date:* {{date}}{{charges_line}}\n\nOur engineering team is reviewing your site requirements and will assign an expert site survey engineer shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`
+    : `☀️ *Eco Green Solar Support*\n\nDear {{customer_name}}, your service complaint has been successfully registered.\n\n📌 *Ticket ID:* {{complaint_id}}\n🔧 *Product:* {{product_type}}\n📅 *Date:* {{date}}{{charges_line}}\n\nOur team is reviewing your ticket and will assign a technician shortly.\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
 
   const rawBody = tmpl?.whatsapp_body || defaultBody;
 
@@ -85,9 +99,13 @@ export async function buildComplaintRegisteredWhatsApp(ticket) {
  */
 export async function buildTechnicianAssignedWhatsApp(ticket, technician, expectedVisitDate) {
   const templates = await getNotificationTemplates();
-  const tmpl = templates.find(t => t.template_key === 'technician_assigned');
+  const isSurvey = isSiteSurvey(ticket);
+  const targetKey = isSurvey ? 'site_survey_assigned' : 'technician_assigned';
+  const tmpl = templates.find(t => t.template_key === targetKey) || (!isSurvey ? templates.find(t => t.template_key === 'technician_assigned') : null);
 
-  const defaultBody = `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`;
+  const defaultBody = isSurvey
+    ? `☀️ *Eco Green Solar Site Survey Update*\n\nHello {{customer_name}}, a technical survey engineer has been assigned for your site feasibility assessment (Ticket *{{complaint_id}}*).\n\n👨‍💼 *Survey Engineer:* {{technician_name}}\n📅 *Scheduled Visit:* {{expected_visit_date}}\n\nKindly provide rooftop and electrical meter access to our engineer upon arrival for accurate measurement and shadow analysis.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar Operations`
+    : `☀️ *Eco Green Solar Update*\n\nHello {{customer_name}}, a service technician has been assigned to your complaint *{{complaint_id}}*.\n\n👨‍🔧 *Technician:* {{technician_name}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nKindly provide site and rooftop access to our service technician upon arrival.\n\n🔗 *Track Status:* {{feedback_url}}\n- Eco Green Solar`;
 
   const rawBody = tmpl?.whatsapp_body || defaultBody;
 
@@ -133,26 +151,14 @@ export function buildTechnicianWorkOrderWhatsApp(ticket, technician, expectedVis
     : 'Immediate / Next Available Slot';
 
   const portalLink = `${window.location.origin}/technician?ticket=${encodeURIComponent(ticket.ticket_id)}`;
+  const isSurvey = isSiteSurvey(ticket);
 
-  const workOrderText = `🛠️ *Eco Green Solar — New Field Work Order*
-
-Dear ${technician?.name || 'Technician'}, a new complaint ticket has been assigned to you.
-
-📌 *Ticket ID:* ${ticket.ticket_id}
-👤 *Customer:* ${ticket.customer_name}
-📞 *Customer Phone:* ${ticket.customer_phone}
-📍 *Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}
-${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔧 *Product:* ${ticket.product_type}
-⚠️ *Issue:* ${ticket.issue_category}
-📝 *Description:* ${ticket.issue_description}
-🛡️ *Warranty:* ${ticket.is_in_warranty ? 'In-Warranty (Free Service)' : 'Out-of-Warranty'}
-📅 *Scheduled Visit:* ${formattedDate}
-
-🔗 *Direct Field Ticket Link:*
-${portalLink}
-
-Please call the customer before visiting and confirm site access.
-- Eco Green Solar Operations Desk`;
+  let workOrderText;
+  if (isSurvey) {
+    workOrderText = `📐 *Eco Green Solar — Site Survey Field Assignment*\n\nDear ${technician?.name || 'Engineer'}, a new rooftop site survey has been assigned to you.\n\n📌 *Survey Ticket ID:* ${ticket.ticket_id}\n👤 *Customer:* ${ticket.customer_name}\n📞 *Customer Phone:* ${ticket.customer_phone}\n📍 *Site Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}\n${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔍 *Survey Category:* ${ticket.issue_category}\n📝 *Survey Scope / Notes:* ${ticket.issue_description || 'Site feasibility assessment'}\n📅 *Scheduled Visit:* ${formattedDate}\n\n🔗 *Direct Field Portal Link:*\n${portalLink}\n\nPlease call the customer before visiting, verify rooftop structure, take photos/videos, and complete the feasibility checklist.\n- Eco Green Solar Projects Desk`;
+  } else {
+    workOrderText = `🛠️ *Eco Green Solar — New Field Work Order*\n\nDear ${technician?.name || 'Technician'}, a new complaint ticket has been assigned to you.\n\n📌 *Ticket ID:* ${ticket.ticket_id}\n👤 *Customer:* ${ticket.customer_name}\n📞 *Customer Phone:* ${ticket.customer_phone}\n📍 *Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}\n${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔧 *Product:* ${ticket.product_type}\n⚠️ *Issue:* ${ticket.issue_category}\n📝 *Description:* ${ticket.issue_description}\n🛡️ *Warranty:* ${ticket.is_in_warranty ? 'In-Warranty (Free Service)' : 'Out-of-Warranty'}\n📅 *Scheduled Visit:* ${formattedDate}\n\n🔗 *Direct Field Ticket Link:*\n${portalLink}\n\nPlease call the customer before visiting and confirm site access.\n- Eco Green Solar Operations Desk`;
+  }
 
   const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(workOrderText)}`;
 
@@ -175,30 +181,14 @@ export function buildTechnicianTeamWorkOrderWhatsApp(ticket, technician, partner
     : 'Immediate / Next Available Slot';
 
   const portalLink = `${window.location.origin}/technician?ticket=${encodeURIComponent(ticket.ticket_id)}`;
+  const isSurvey = isSiteSurvey(ticket);
 
-  const workOrderText = `🛠️ *Eco Green Solar — Joint Team Work Order (2 Technicians)*
-
-Dear ${technician?.name || 'Technician'}, you have been assigned to a field complaint along with your co-technician teammate.
-
-👥 *Assigned Team:*
-1. ${technician?.name || 'Technician'} (${technician?.phone || 'N/A'})
-2. ${partnerTechnician?.name || 'Partner Specialist'} (${partnerTechnician?.phone || 'N/A'})
-
-📌 *Ticket ID:* ${ticket.ticket_id}
-👤 *Customer:* ${ticket.customer_name}
-📞 *Customer Phone:* ${ticket.customer_phone}
-📍 *Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}
-${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔧 *Product:* ${ticket.product_type}
-⚠️ *Issue:* ${ticket.issue_category}
-📝 *Description:* ${ticket.issue_description || 'N/A'}
-🛡️ *Warranty:* ${ticket.is_in_warranty ? 'In-Warranty (Free Service)' : 'Out-of-Warranty'}
-📅 *Scheduled Visit:* ${formattedDate}
-
-🔗 *Direct Field Ticket Link:*
-${portalLink}
-
-🤝 Coordinate with your teammate ${partnerTechnician?.name || ''} and call the customer before visiting site.
-- Eco Green Solar Operations Desk`;
+  let workOrderText;
+  if (isSurvey) {
+    workOrderText = `📐 *Eco Green Solar — Joint Site Survey Assignment (2 Engineers)*\n\nDear ${technician?.name || 'Engineer'}, you and *${partnerTechnician?.name || 'Partner Engineer'}* have been assigned to conduct a joint rooftop site survey.\n\n👥 *Assigned Survey Team:*\n1. ${technician?.name || 'Engineer'} (${technician?.phone || 'N/A'})\n2. ${partnerTechnician?.name || 'Partner Specialist'} (${partnerTechnician?.phone || 'N/A'})\n\n📌 *Survey Ticket ID:* ${ticket.ticket_id}\n👤 *Customer:* ${ticket.customer_name}\n📞 *Customer Phone:* ${ticket.customer_phone}\n📍 *Site Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}\n${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔍 *Survey Category:* ${ticket.issue_category}\n📝 *Survey Scope / Notes:* ${ticket.issue_description || 'Site feasibility assessment'}\n📅 *Scheduled Visit:* ${formattedDate}\n\n🔗 *Direct Field Portal Link:*\n${portalLink}\n\n🤝 Coordinate with your teammate ${partnerTechnician?.name || ''} and call the customer before visiting site.\n- Eco Green Solar Projects Desk`;
+  } else {
+    workOrderText = `🛠️ *Eco Green Solar — Joint Team Work Order (2 Technicians)*\n\nDear ${technician?.name || 'Technician'}, you have been assigned to a field complaint along with your co-technician teammate.\n\n👥 *Assigned Team:*\n1. ${technician?.name || 'Technician'} (${technician?.phone || 'N/A'})\n2. ${partnerTechnician?.name || 'Partner Specialist'} (${partnerTechnician?.phone || 'N/A'})\n\n📌 *Ticket ID:* ${ticket.ticket_id}\n👤 *Customer:* ${ticket.customer_name}\n📞 *Customer Phone:* ${ticket.customer_phone}\n📍 *Address:* ${ticket.customer_address}${ticket.city ? ', ' + ticket.city : ''}\n${ticket.location_url ? `🗺️ *Location Map:* ${ticket.location_url}\n` : ''}🔧 *Product:* ${ticket.product_type}\n⚠️ *Issue:* ${ticket.issue_category}\n📝 *Description:* ${ticket.issue_description || 'N/A'}\n🛡️ *Warranty:* ${ticket.is_in_warranty ? 'In-Warranty (Free Service)' : 'Out-of-Warranty'}\n📅 *Scheduled Visit:* ${formattedDate}\n\n🔗 *Direct Field Ticket Link:*\n${portalLink}\n\n🤝 Coordinate with your teammate ${partnerTechnician?.name || ''} and call the customer before visiting site.\n- Eco Green Solar Operations Desk`;
+  }
 
   const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(workOrderText)}`;
 
@@ -231,22 +221,24 @@ export function getTemplateSync(templateKey) {
 
 /**
  * Standardized single template for Technician -> Customer WhatsApp greeting (ECO-13)
- * Dynamic and editable from Admin Panel (Template Manager > technician_reach_out_customer).
- * Sends exactly one unified message.
+ * Dynamic and editable from Admin Panel (Template Manager).
+ * Sends exactly one unified message (handles Site Survey if applicable).
  */
 export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
   const cleanPhone = (ticket?.customer_phone || '').replace(/[^0-9]/g, '');
   const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
   
-  const tmpl = getTemplateSync('technician_reach_out_customer');
+  const isSurvey = isSiteSurvey(ticket);
+  const tmpl = isSurvey ? getTemplateSync('site_survey_reach_out') : getTemplateSync('technician_reach_out_customer');
 
-  const defaultBody = 
-    `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
-    `Dear *{{customer_name}}*,\n\n` +
-    `This is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\n` +
-    `I am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n` +
-    `📞 Helpdesk: +91 78784 44414\n` +
-    `- Eco Green Technical Services`;
+  const defaultBody = isSurvey
+    ? `Namaste {{customer_name}} ji,\n\nI am {{technician_name}} from *Eco Green Solar Care*. I have received your site survey request (Ticket: {{complaint_id}}).\n\nI am planning to visit your site at {{customer_address}} on {{expected_visit_date}} for rooftop measurement and feasibility assessment.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n{{technician_name}}\nEco Green Solar Team`
+    : `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
+      `Dear *{{customer_name}}*,\n\n` +
+      `This is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\n` +
+      `I am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n` +
+      `📞 Helpdesk: +91 78784 44414\n` +
+      `- Eco Green Technical Services`;
 
   const rawBody = (tmpl && tmpl.whatsapp_body && tmpl.whatsapp_body.trim()) ? tmpl.whatsapp_body : defaultBody;
 
@@ -260,7 +252,7 @@ export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
     customer_phone: ticket?.customer_phone || '',
     customer_address: ticket?.customer_address || '',
     complaint_id: ticket?.ticket_id || ticket?.id || '',
-    product_type: ticket?.product_type || 'Solar System',
+    product_type: ticket?.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar System'),
     issue_category: ticket?.issue_category || '',
     priority: ticket?.priority || 'Normal',
     technician_name: technicianName || ticket?.technician_name || 'your assigned service technician',

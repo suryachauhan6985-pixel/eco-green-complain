@@ -8,7 +8,7 @@ import {
 import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 import { StaffTeamSkeleton } from '../common/SkeletonLoader';
-import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
+import { subscribeLiveSync, broadcastTechniciansUpdate, broadcastCatalogUpdate } from '../../utils/liveSync';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 
 export const StaffTechnicianManager = () => {
@@ -91,14 +91,16 @@ export const StaffTechnicianManager = () => {
     loadCatalog();
 
     // Real-Time Live Sync across tabs, windows, and roles without browser refresh
-    const unsubscribe = subscribeLiveSync(['techs', 'complaints'], () => {
+    const unsubscribe = subscribeLiveSync(['techs', 'complaints', 'catalog'], () => {
       loadData(true);
+      loadCatalog();
     });
 
     // Resilient background heartbeat sync every 6 seconds when visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         loadData(true);
+        loadCatalog();
       }
     }, 6000);
 
@@ -268,6 +270,7 @@ export const StaffTechnicianManager = () => {
       setNewCatName('');
       showToast(`Category "${newCatName.trim()}" added to ${selectedProductForCat}!`);
       await loadCatalog();
+      broadcastCatalogUpdate({ action: 'add_category', product: selectedProductForCat });
     } catch (err) {
       showGlobalToast('Failed to add category: ' + err.message, 'error');
     } finally {
@@ -288,6 +291,7 @@ export const StaffTechnicianManager = () => {
       await api.deleteCategory(id);
       showToast(`Category "${name}" removed`);
       await loadCatalog();
+      broadcastCatalogUpdate({ action: 'delete_category', id });
     } catch (err) {
       showGlobalToast('Failed to delete category: ' + err.message, 'error');
     }
@@ -306,6 +310,7 @@ export const StaffTechnicianManager = () => {
       setNewProdDesc('');
       showToast(`Product "${newProdName.trim()}" added to catalog!`);
       await loadCatalog();
+      broadcastCatalogUpdate({ action: 'add_product', name: newProdName.trim() });
     } catch (err) {
       showGlobalToast('Failed to add product: ' + err.message, 'error');
     } finally {
@@ -326,6 +331,7 @@ export const StaffTechnicianManager = () => {
       await api.deleteProduct(id);
       showToast(`Product "${name}" deleted`);
       await loadCatalog();
+      broadcastCatalogUpdate({ action: 'delete_product', id, name });
     } catch (err) {
       showGlobalToast('Failed to delete product: ' + err.message, 'error');
     }

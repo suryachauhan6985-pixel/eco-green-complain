@@ -9,7 +9,8 @@ import {
   History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
-  Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX
+  Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX,
+  ClipboardCheck
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -39,6 +40,12 @@ export const ComplaintDetailDrawer = ({
   const { addNotification } = useNotifications();
   const { confirm, alert, showToast } = useDialog();
   const [ticket, setTicket] = useState(null);
+  const isSiteSurveyTicket = useMemo(() => {
+    if (!ticket) return false;
+    const p = String(ticket.product_type || '').toUpperCase();
+    const c = String(ticket.issue_category || '').toUpperCase();
+    return p.includes('SURVEY') || c.includes('SURVEY');
+  }, [ticket]);
   const [attachments, setAttachments] = useState([]);
   const [timeline, setTimeline] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -2584,8 +2591,17 @@ export const ComplaintDetailDrawer = ({
                     {!isResolvedOrClosed && (
                       <div id="technician-resolution-section" className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-200 space-y-3 scroll-mt-20">
                         <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <CheckCircle className="w-4 h-4 text-emerald-700" />
-                          Mark as Resolved (Technician Resolution)
+                          {isSiteSurveyTicket ? (
+                            <>
+                              <ClipboardCheck className="w-4 h-4 text-purple-700" />
+                              Complete Site Survey (Field Assessment Report)
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-4 h-4 text-emerald-700" />
+                              Mark as Resolved (Technician Resolution)
+                            </>
+                          )}
                         </h4>
 
                         {/* Warning if ticket has service charges and payment is uncollected */}
@@ -2649,12 +2665,16 @@ export const ComplaintDetailDrawer = ({
 
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                              Resolution Summary & Action Taken *
+                              {isSiteSurveyTicket ? 'Site Survey Findings & Technical Feasibility Report *' : 'Resolution Summary & Action Taken *'}
                             </label>
                             <textarea
                               rows={2}
                               required
-                              placeholder="e.g., Replaced MC4 connector and DC breaker. Tested inverter power generation at 4.5 kW."
+                              placeholder={
+                                isSiteSurveyTicket
+                                  ? 'e.g., Rooftop measurement: 550 sq.ft South-facing RCC roof, zero shading. Feasible for 6 kW on-grid solar plant. Structural integrity verified.'
+                                  : 'e.g., Replaced MC4 connector and DC breaker. Tested inverter power generation at 4.5 kW.'
+                              }
                               value={resolutionNotes}
                               onChange={(e) => setResolutionNotes(e.target.value)}
                               className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -2664,11 +2684,11 @@ export const ComplaintDetailDrawer = ({
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                                Spare Parts Used (Optional)
+                                {isSiteSurveyTicket ? 'Proposed Capacity / Equipment Specs (Optional)' : 'Spare Parts Used (Optional)'}
                               </label>
                               <input
                                 type="text"
-                                placeholder="e.g., 2x MC4 Connectors, 1x 32A MCB"
+                                placeholder={isSiteSurveyTicket ? 'e.g., 6 kW DCR Panels, 6 kW Inverter, Elevated Structure' : 'e.g., 2x MC4 Connectors, 1x 32A MCB'}
                                 value={spareParts}
                                 onChange={(e) => setSpareParts(e.target.value)}
                                 className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -2678,7 +2698,7 @@ export const ComplaintDetailDrawer = ({
                             <div>
                               <div className="flex items-center justify-between mb-1">
                                 <label className="block text-[11px] font-semibold text-slate-700">
-                                  Closing Proof Photos / Videos / Documents (Multiple Allowed)
+                                  {isSiteSurveyTicket ? 'Survey Measurements, Rooftop Photos & Video Panorama' : 'Closing Proof Photos / Videos / Documents (Multiple Allowed)'}
                                 </label>
                                 {resolutionPhotos.length > 0 && (
                                   <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
@@ -2818,9 +2838,9 @@ export const ComplaintDetailDrawer = ({
                           <button
                             type="submit"
                             disabled={resolving || !resolutionNotes.trim()}
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-md shadow-emerald-700/20 transition-all disabled:opacity-50"
+                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-md shadow-emerald-700/20 transition-all disabled:opacity-50 cursor-pointer"
                           >
-                            {resolving ? 'Submitting Resolution...' : 'Mark Complaint as Resolved'}
+                            {resolving ? 'Submitting Resolution...' : (isSiteSurveyTicket ? 'Complete Site Survey & Submit Report' : 'Mark Complaint as Resolved')}
                           </button>
                         </form>
                         )}
@@ -2842,6 +2862,11 @@ export const ComplaintDetailDrawer = ({
                               <>
                                 <History className="w-4 h-4 text-amber-700" />
                                 Previous Resolution & Visit History
+                              </>
+                            ) : isSiteSurveyTicket ? (
+                              <>
+                                <ClipboardCheck className="w-4 h-4 text-purple-600" />
+                                Technician Site Survey Report & Rooftop Feasibility Proof
                               </>
                             ) : (
                               <>

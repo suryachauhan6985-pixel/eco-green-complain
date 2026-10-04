@@ -49,8 +49,20 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
   const [section, setSection] = useState(() => getInitialSection());
   const [jobStatusFilter, setJobStatusFilter] = useState(() => getInitialJobStatus());
-  const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
+  const [products, setProducts] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_cached_products') || '[]');
+      if (Array.isArray(cached) && cached.length > 0) return cached;
+    } catch (_) {}
+    return [
+      { id: '1', name: 'Solar Rooftop Systems' },
+      { id: '2', name: 'Solar Water Heaters' },
+      { id: '3', name: 'Heat Pumps' },
+      { id: '4', name: 'Pressure Pumps' },
+      { id: '6', name: 'SITE SURVEY' }
+    ];
+  });
   const [techProfile, setTechProfile] = useState(null);
   const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getUrlParam('tech_id') || '');
 
@@ -167,24 +179,41 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     }
   };
 
+  const fetchProductsList = async () => {
+    try {
+      const res = await api.getProducts();
+      if (res && Array.isArray(res.products) && res.products.length > 0) {
+        setProducts(res.products);
+        try {
+          localStorage.setItem('egs_cached_products', JSON.stringify(res.products));
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.warn('Failed to load products in tech portal:', e);
+    }
+  };
+
   useEffect(() => {
     fetchMyJobs();
     fetchTechniciansList();
+    fetchProductsList();
 
     // Resilient background interval (polls every 5s when tab is active)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchMyJobs(true);
+        fetchProductsList();
       }
     }, 5000);
 
     const handleSync = () => {
       fetchMyJobs(true);
       fetchTechniciansList();
+      fetchProductsList();
     };
 
     // Real-Time Live Sync across tabs, windows, and roles without browser refresh
-    const unsubscribe = subscribeLiveSync(['complaints', 'ledger', 'techs'], handleSync);
+    const unsubscribe = subscribeLiveSync(['complaints', 'ledger', 'techs', 'catalog'], handleSync);
 
     return () => {
       clearInterval(interval);
@@ -1117,11 +1146,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               onChange={(e) => setProductFilter(e.target.value)}
               className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700 flex-1 sm:flex-initial"
             >
-              <option value="all">All Solar Products</option>
-              <option value="Solar Rooftop Systems">Solar Rooftop Systems</option>
-              <option value="Solar Water Heaters">Solar Water Heaters</option>
-              <option value="Heat Pumps">Heat Pumps</option>
-              <option value="Pressure Pumps">Pressure Pumps</option>
+              <option value="all">All Products</option>
+              {products.map((prod) => (
+                <option key={prod.id || prod.name} value={prod.name}>
+                  {prod.name}
+                </option>
+              ))}
             </select>
 
             {/* Mobile & PC View Mode Toggle: Cards (Default) vs Compact List */}
@@ -1202,6 +1232,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
                         {job.ticket_id}
                       </span>
+                      {String(job.product_type || '').toUpperCase().includes('SURVEY') && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                          Survey
+                        </span>
+                      )}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                         job.status === 'In Progress' ? 'bg-blue-600 text-white' :
                         job.status === 'Resolved' ? 'bg-emerald-600 text-white' :
@@ -1321,6 +1356,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded truncate">
                         {job.ticket_id}
                       </span>
+                      {String(job.product_type || '').toUpperCase().includes('SURVEY') && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                          Survey
+                        </span>
+                      )}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                         job.status === 'In Progress' ? 'bg-blue-600 text-white' :
                         job.status === 'Resolved' ? 'bg-emerald-600 text-white' :

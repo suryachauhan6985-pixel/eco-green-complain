@@ -29,6 +29,12 @@ async function generateNextTicketId(env, ctx) {
   return `${prefix}${String(nextNum).padStart(6, '0')}`;
 }
 
+export function isSurveyTicket(productType, issueCategory) {
+  const p = String(productType || '').toUpperCase();
+  const c = String(issueCategory || '').toUpperCase();
+  return p.includes('SURVEY') || c.includes('SURVEY');
+}
+
 // Self-healing check for retention schema
 let retentionSchemaEnsured = false;
 async function ensureRetentionSchema(env, ctx) {
@@ -691,10 +697,12 @@ async function handleCreateComplaint(c, isPublic = false) {
 
   // WhatsApp Notification in Background
   let waResult = null;
+  const isSurvey = isSurveyTicket(newComp.product_type, newComp.issue_category);
+  const regTemplate = isSurvey ? 'site_survey_registered' : 'complaint_registered';
   c.executionCtx?.waitUntil?.(
     sendWhatsApp({
       to: newComp.customer_phone,
-      templateName: 'complaint_registered',
+      templateName: regTemplate,
       variables: {
         customer_name: newComp.customer_name,
         ticket_id: newComp.ticket_id,
@@ -788,8 +796,9 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       c.executionCtx
     );
 
-    // 1. Send WhatsApp to Customer (customer_technician_reassigned if reassigned, technician_assigned if new)
-    const custTemplate = isReassignment ? 'customer_technician_reassigned' : 'technician_assigned';
+    // 1. Send WhatsApp to Customer (customer_technician_reassigned if reassigned, site_survey_assigned or technician_assigned if new)
+    const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
+    const custTemplate = isReassignment ? 'customer_technician_reassigned' : (isSurvey ? 'site_survey_assigned' : 'technician_assigned');
     const custPromise = complaint.customer_phone ? sendWhatsApp({
       to: complaint.customer_phone,
       templateName: custTemplate,
@@ -797,7 +806,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         ticket_id: complaint.ticket_id,
         complaint_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
-        product_type: complaint.product_type || 'Solar System',
+        product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar System'),
         technician_name: secondaryTech ? `${primaryTech.name} & ${secondaryTech.name}` : primaryTech.name,
         technician_phone: primaryTech.phone || '',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
@@ -825,7 +834,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     }
 
     // 3. Send WhatsApp Work Order to Primary Technician
-    const techTemplate = isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order';
+    const techTemplate = isReassignment ? 'technician_reassigned_work_order' : (isSurvey ? 'site_survey_work_order' : 'technician_work_order');
     const techPromise = primaryTech.phone ? sendWhatsApp({
       to: primaryTech.phone,
       templateName: techTemplate,
@@ -836,9 +845,9 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
-        product_type: complaint.product_type || 'Solar Rooftop Systems',
-        issue_category: complaint.issue_category || 'Service Request',
-        notes: (complaint.issue_description || notes || 'Inspect and diagnose site').slice(0, 1000),
+        product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
+        issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
+        notes: (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -857,9 +866,9 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
-        product_type: complaint.product_type || 'Solar Rooftop Systems',
-        issue_category: complaint.issue_category || 'Service Request',
-        notes: (complaint.issue_description || notes || 'Inspect and diagnose site').slice(0, 1000),
+        product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
+        issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
+        notes: (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -1055,15 +1064,17 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
     }
 
     // Notify Customer asynchronously
+    const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
+    const resolvedTemplate = isSurvey ? 'site_survey_resolved' : 'complaint_resolved';
     c.executionCtx?.waitUntil?.(
       sendWhatsApp({
         to: complaint.customer_phone,
-        templateName: 'complaint_resolved',
+        templateName: resolvedTemplate,
         variables: {
           ticket_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
           technician_name: solver,
-          resolution_notes: resolution_notes || 'Service successfully completed.'
+          resolution_notes: resolution_notes || (isSurvey ? 'Site survey report, shadow analysis, and technical feasibility completed.' : 'Service successfully completed.')
         },
         env: c.env
       }).catch(() => {})
@@ -1482,18 +1493,21 @@ async function handleResendTechnicianWorkOrder(c) {
       return c.json({ error: `Assigned technician "${complaint.technician_name || 'Technician'}" has no phone number on file.` }, 400);
     }
 
+    const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
+    const techTemplate = isSurvey ? 'site_survey_work_order' : 'technician_work_order';
+
     const techRes = await sendWhatsApp({
       to: complaint.technician_phone,
-      templateName: 'technician_work_order',
+      templateName: techTemplate,
       variables: {
         technician_name: complaint.technician_name || 'Technician',
         ticket_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
-        product_type: complaint.product_type || 'Solar Rooftop Systems',
-        issue_category: complaint.issue_category || 'Service Request',
-        notes: (complaint.issue_description || 'Inspect and diagnose site').slice(0, 1000),
+        product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
+        issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
+        notes: (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -1504,16 +1518,16 @@ async function handleResendTechnicianWorkOrder(c) {
     if (complaint.secondary_technician_phone) {
       sendWhatsApp({
         to: complaint.secondary_technician_phone,
-        templateName: 'technician_work_order',
+        templateName: techTemplate,
         variables: {
           technician_name: complaint.secondary_technician_name || 'Co-Specialist',
           ticket_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
           customer_phone: complaint.customer_phone,
           customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
-          product_type: complaint.product_type || 'Solar Rooftop Systems',
-          issue_category: complaint.issue_category || 'Service Request',
-          notes: (complaint.issue_description || 'Inspect and diagnose site').slice(0, 1000),
+          product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
+          issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
+          notes: (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
           priority: complaint.priority || 'Medium',
           expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
           db_complaint_id: complaint.id
