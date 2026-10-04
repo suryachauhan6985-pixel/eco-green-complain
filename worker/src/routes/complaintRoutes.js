@@ -798,7 +798,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
 
     // 1. Send WhatsApp to Customer (customer_technician_reassigned if reassigned, site_survey_assigned or technician_assigned if new)
     const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
-    const custTemplate = isReassignment ? 'customer_technician_reassigned' : (isSurvey ? 'site_survey_assigned' : 'technician_assigned');
+    const custTemplate = isSurvey ? 'site_survey_assigned' : (isReassignment ? 'customer_technician_reassigned' : 'technician_assigned');
     const custPromise = complaint.customer_phone ? sendWhatsApp({
       to: complaint.customer_phone,
       templateName: custTemplate,
@@ -834,7 +834,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     }
 
     // 3. Send WhatsApp Work Order to Primary Technician
-    const techTemplate = isReassignment ? 'technician_reassigned_work_order' : (isSurvey ? 'site_survey_work_order' : 'technician_work_order');
+    const techTemplate = isSurvey ? 'site_survey_work_order' : (isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order');
     const techPromise = primaryTech.phone ? sendWhatsApp({
       to: primaryTech.phone,
       templateName: techTemplate,

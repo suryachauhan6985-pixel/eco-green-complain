@@ -408,12 +408,9 @@ export async function sendWhatsApp({
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const prodType = cleanParam(variables.product_type, 'SITE SURVEY');
-      const issueCat = cleanParam(variables.issue_category, 'Site Feasibility & Shadow Analysis');
-      const estCharges = Number(variables.estimated_charges || 0);
-      const isNotifyActive = (variables.notify_charges === 1 || variables.notify_charges === '1' || variables.notify_charges === true || variables.notify_charges === 'true');
-      const chargesLine = (estCharges > 0 && isNotifyActive) ? `\n💰 *Estimated Survey Charge:* ₹${estCharges}` : '';
+      const issueCat = cleanParam(variables.issue_category, 'SITE SURVEY');
 
-      renderedBody = `☀️ *Eco Green Solar Site Survey*\n\nDear ${custName}, your site survey request has been registered successfully.\n\n📌 *Survey Ticket ID:* ${ticketId}\n🔍 *Type:* ${prodType}\n📋 *Scope:* ${issueCat}${chargesLine}\n\nOur engineering team is reviewing your site requirements and will assign an expert site survey engineer shortly.\n\n🔗 *Track Live Status:* ${trackingUrl}\n\nHelpline: +91 78784 44414 | Eco Green Solar Care`;
+      renderedBody = `Dear ${custName},\n\nYour site feasibility survey request has been registered with Ticket ID: *${ticketId}*.\n\n*Scope:* ${prodType} - ${issueCat}\n\nOur engineering team will review the details and assign a field surveyor shortly to conduct your site inspection.\n\nThank you for choosing Eco Green Solar!`;
 
       payload.type = 'template';
       payload.template = {
@@ -422,11 +419,10 @@ export async function sendWhatsApp({
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: custName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: prodType },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'ticket_id', text: ticketId },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat }
           ]
         }]
       };
@@ -434,9 +430,8 @@ export async function sendWhatsApp({
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Survey Engineer');
-      const visitDate = cleanParam(variables.expected_visit_date, 'Within 24-48 Hours');
 
-      renderedBody = `☀️ *Eco Green Solar Site Survey Update*\n\nHello ${custName}, a technical survey engineer has been assigned for your site feasibility assessment (Ticket *${ticketId}*).\n\n👨‍💼 *Survey Engineer:* ${techName}\n📅 *Scheduled Visit:* ${visitDate}\n\nKindly provide rooftop and electrical meter access to our engineer upon arrival for accurate measurement and shadow analysis.\n\n🔗 *Track Status:* ${trackingUrl}\n- Eco Green Solar Operations`;
+      renderedBody = `Dear ${custName}, a certified survey engineer has been assigned for your Site Survey Ticket ${ticketId}.\n\nSurveyor Name: ${techName}\n\nKindly provide site and rooftop access for inspection and feasibility audit.\n\nThank you,\nEco Green Solar Team`;
 
       payload.type = 'template';
       payload.template = {
@@ -447,9 +442,7 @@ export async function sendWhatsApp({
           parameters: [
             { type: 'text', text: custName },
             { type: 'text', text: ticketId },
-            { type: 'text', text: techName },
-            { type: 'text', text: visitDate },
-            { type: 'text', text: trackingUrl }
+            { type: 'text', text: techName }
           ]
         }]
       };
@@ -459,12 +452,12 @@ export async function sendWhatsApp({
       const custName = cleanParam(variables.customer_name, 'Customer');
       const custPhone = cleanParam(variables.customer_phone, 'Phone');
       const custAddress = cleanParam(variables.customer_address, 'Address on file');
-      const issueCat = cleanParam(variables.issue_category, 'Site Feasibility');
+      const prodType = cleanParam(variables.product_type, 'SITE SURVEY');
+      const issueCat = cleanParam(variables.issue_category, 'SITE SURVEY');
       const notes = cleanParam(variables.notes || variables.issue_description, 'Conduct roof measurements and shadow analysis');
       const visitDate = cleanParam(variables.expected_visit_date, 'Immediate');
-      const portalLink = `${appUrl}/technician?ticket=${encodeURIComponent(ticketId)}`;
 
-      renderedBody = `📐 *Eco Green Solar — Site Survey Field Assignment*\n\nDear ${techName}, a new rooftop site survey has been assigned to you.\n\n📌 *Survey Ticket ID:* ${ticketId}\n👤 *Customer:* ${custName} (${custPhone})\n📍 *Site Address:* ${custAddress}\n🔍 *Survey Category:* ${issueCat}\n📝 *Survey Scope:* ${notes}\n📅 *Scheduled Visit:* ${visitDate}\n\n🔗 *Portal:* ${portalLink}`;
+      renderedBody = `Hello ${techName},\n\nA new site survey request has been assigned to you:\n\n*Survey Ticket:* #${ticketId}\n*Client:* ${custName} (${custPhone})\n*Site Address:* ${custAddress}\n*System Scope:* ${prodType} - ${issueCat}\n*Requirements / Notes:* ${notes}\n*Visit Date:* ${visitDate}\n\n*Instructions:*\n1. Conduct structural feasibility, shadow analysis & electrical intake audit.\n2. Capture site photos and video walkthrough.\n3. Submit survey findings and documentation via Technician Portal.`;
 
       payload.type = 'template';
       payload.template = {
@@ -473,14 +466,15 @@ export async function sendWhatsApp({
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', text: techName },
-            { type: 'text', text: ticketId },
-            { type: 'text', text: custName },
-            { type: 'text', text: custPhone },
-            { type: 'text', text: custAddress },
-            { type: 'text', text: issueCat },
-            { type: 'text', text: notes },
-            { type: 'text', text: visitDate }
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'ticket_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'notes', text: notes },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
           ]
         }]
       };
@@ -488,9 +482,9 @@ export async function sendWhatsApp({
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Survey Engineer');
-      const resNotes = cleanParam(variables.resolution_notes || variables.notes || 'Site feasibility assessment completed');
+      const resNotes = cleanParam(variables.resolution_notes || variables.notes, 'Site feasibility assessment completed');
 
-      renderedBody = `☀️ *Eco Green Solar - Site Survey Completed*\n\nDear ${custName},\n\nYour site feasibility survey for Ticket *${ticketId}* has been completed by survey engineer *${techName}*.\n\n📋 *Survey Findings & Summary:* ${resNotes}\n\nOur design & engineering department will prepare your customized solar proposal based on these rooftop measurements.\n\n🔗 *View Survey Report & Status:* ${trackingUrl}\n- Eco Green Solar Care`;
+      renderedBody = `Dear ${custName}, the site feasibility survey for your project (Ticket ${ticketId}) has been completed by ${techName}.\n\nSurvey Summary:\n${resNotes}\n\nOur engineering team will prepare your customized solar proposal shortly.\n\nTrack report: ${trackingUrl}\n\nThank you for choosing Eco Green Solar.`;
 
       payload.type = 'template';
       payload.template = {
@@ -509,12 +503,11 @@ export async function sendWhatsApp({
       };
     } else if (templateName === 'site_survey_reach_out') {
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
-      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const techName = cleanParam(variables.technician_name, 'Survey Engineer');
-      const custAddress = cleanParam(variables.customer_address, 'your site');
-      const visitDate = cleanParam(variables.expected_visit_date, 'the scheduled visit');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const prodType = cleanParam(variables.product_type, 'SITE SURVEY');
 
-      renderedBody = `Namaste ${custName} ji,\n\nI am ${techName} from *Eco Green Solar Care*. I have received your site survey request (Ticket: ${ticketId}).\n\nI am planning to visit your site at ${custAddress} on ${visitDate} for rooftop measurement and feasibility assessment.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n${techName}\nEco Green Solar Team`;
+      renderedBody = `Hello ${custName}, this is ${techName} from Eco Green Solar engineering team regarding your site survey (Ticket ${ticketId} - ${prodType}).\n\nI will be arriving to evaluate your site and rooftop layout. Please confirm if the premises are accessible.\n\nThank you,\nEco Green Solar`;
 
       payload.type = 'template';
       payload.template = {
@@ -526,8 +519,7 @@ export async function sendWhatsApp({
             { type: 'text', text: custName },
             { type: 'text', text: techName },
             { type: 'text', text: ticketId },
-            { type: 'text', text: custAddress },
-            { type: 'text', text: visitDate }
+            { type: 'text', text: prodType }
           ]
         }]
       };
