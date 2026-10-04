@@ -186,16 +186,7 @@ export const TemplateManager = () => {
     if (!tmpl) return;
     const isTech = isTechnicianTemplate(tmpl);
 
-    const verifiedKeys = [
-      'complaint_registered', 'complaint_registered_no_charges', 'charges_added', 'charges_removed', 'technician_assigned', 'customer_technician_reassigned', 'status_update', 
-      'complaint_resolved', 'complaint_closed', 'complaint_reopened', 
-      'technician_work_order', 'technician_team_work_order', 'technician_reminder', 'technician_reach_out_customer',
-      'technician_reopened_work_order', 'technician_reopen_job_transferred',
-      'technician_reassigned_work_order', 'technician_reassigned',
-      'site_survey_registered', 'site_survey_assigned', 'site_survey_work_order', 'site_survey_resolved', 'site_survey_reach_out'
-    ];
-    const isVerified = verifiedKeys.includes(tmpl.template_key);
-    const finalMetaStatus = tmpl.meta_status || (isVerified ? 'APPROVED' : 'PENDING');
+    const finalMetaStatus = String(tmpl.meta_status || 'PENDING').toUpperCase();
 
     setSelectedTemplate(tmpl);
     setTemplateName(tmpl.name || '');
@@ -218,6 +209,9 @@ export const TemplateManager = () => {
   const fetchTemplates = async () => {
     try {
       setLoading(true);
+      try {
+        localStorage.removeItem('egs_mock_templates');
+      } catch (_) {}
       const res = await api.getTemplates();
       const rawList = Array.isArray(res?.templates) 
         ? res.templates 
@@ -225,7 +219,7 @@ export const TemplateManager = () => {
 
       const list = rawList.map(t => {
         const isTech = isTechnicianTemplate(t);
-        const resolvedMetaStatus = t.meta_status || (t.sync_status === 'SYNCED' ? 'APPROVED' : 'PENDING');
+        const resolvedMetaStatus = String(t.meta_status || 'PENDING').toUpperCase();
 
         return {
           ...t,
@@ -244,7 +238,7 @@ export const TemplateManager = () => {
           return {
             ...dt,
             audience: dt.audience || (isTech ? 'technician' : 'customer'),
-            meta_status: dt.meta_status || 'APPROVED',
+            meta_status: String(dt.meta_status || 'PENDING').toUpperCase(),
             is_active: dt.is_active !== undefined ? dt.is_active : 1
           };
         });

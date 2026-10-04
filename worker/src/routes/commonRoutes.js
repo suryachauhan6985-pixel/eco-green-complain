@@ -611,17 +611,15 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
         }
         for (const row of res.rows) {
           const key = (row.meta_template_name || row.template_key || '').toLowerCase();
-          if (metaMap.has(key)) {
-            const liveStatus = metaMap.get(key);
-            if (row.meta_status !== liveStatus) {
-              row.meta_status = liveStatus;
-              await query(
-                'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP WHERE id = $2',
-                [liveStatus, row.id],
-                c.env,
-                c.executionCtx
-              ).catch(() => {});
-            }
+          const liveStatus = metaMap.has(key) ? metaMap.get(key) : 'PENDING';
+          if (row.meta_status !== liveStatus) {
+            row.meta_status = liveStatus;
+            await query(
+              'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP WHERE id = $2',
+              [liveStatus, row.id],
+              c.env,
+              c.executionCtx
+            ).catch(() => {});
           }
         }
       }
@@ -645,11 +643,9 @@ commonRoutes.get('/notifications/templates/meta-status', authenticateToken, asyn
       const dbRows = await query('SELECT id, template_key, meta_template_name, meta_status FROM notification_templates', [], c.env, c.executionCtx);
       for (const row of dbRows.rows) {
         const key = (row.meta_template_name || row.template_key || '').toLowerCase();
-        if (metaMap.has(key)) {
-          const liveStatus = metaMap.get(key);
-          if (row.meta_status !== liveStatus) {
-            await query('UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP WHERE id = $2', [liveStatus, row.id], c.env, c.executionCtx).catch(() => {});
-          }
+        const liveStatus = metaMap.has(key) ? metaMap.get(key) : 'PENDING';
+        if (row.meta_status !== liveStatus) {
+          await query('UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP WHERE id = $2', [liveStatus, row.id], c.env, c.executionCtx).catch(() => {});
         }
       }
     }
@@ -825,16 +821,14 @@ commonRoutes.post('/notifications/templates/sync-from-meta', authenticateToken, 
     let syncedCount = 0;
     for (const row of dbRows.rows) {
       const key = (row.meta_template_name || row.template_key || '').toLowerCase();
-      if (metaMap.has(key)) {
-        const liveStatus = metaMap.get(key);
-        syncedCount++;
-        await query(
-          'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP, sync_status = \'SYNCED\', updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-          [liveStatus, row.id],
-          c.env,
-          c.executionCtx
-        ).catch(() => {});
-      }
+      const liveStatus = metaMap.has(key) ? metaMap.get(key) : 'PENDING';
+      syncedCount++;
+      await query(
+        'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP, sync_status = \'SYNCED\', updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [liveStatus, row.id],
+        c.env,
+        c.executionCtx
+      ).catch(() => {});
     }
 
     const refreshed = await query(`
