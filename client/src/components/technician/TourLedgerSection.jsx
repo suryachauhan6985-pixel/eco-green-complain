@@ -2161,20 +2161,6 @@ export const TourLedgerSection = ({
                 <span>Add Tour Expense / Voucher</span>
               </button>
 
-              {isAdminOrStaff && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    loadVoucherSettings();
-                    setIsVoucherSettingsModalOpen(true);
-                  }}
-                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                  title="Configure Starting Voucher Number & Prefix (Admin Only)"
-                >
-                  <Settings className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Voucher Settings</span>
-                </button>
-              )}
 
               {isAdminOrStaff && (
                 <button
@@ -2346,20 +2332,7 @@ export const TourLedgerSection = ({
 
                     {/* Toolbar Actions: Admin Voucher Settings & Quick Print */}
                     <div className="flex items-center gap-2 shrink-0">
-                      {isAdminOrStaff && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            loadVoucherSettings();
-                            setIsVoucherSettingsModalOpen(true);
-                          }}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                          title="Configure Starting Voucher Number & Prefix (Admin Only)"
-                        >
-                          <Settings className="w-3.5 h-3.5 text-slate-600" />
-                          <span className="hidden sm:inline">Voucher Settings</span>
-                        </button>
-                      )}
+
                       <button
                         type="button"
                         onClick={() => openVoucherModal(selectedVoucherKeys.size > 0 ? 'selected' : 'all')}
