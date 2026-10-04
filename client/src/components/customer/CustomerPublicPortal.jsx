@@ -364,8 +364,12 @@ export const CustomerPublicPortal = ({
   if (isStandalone) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-        {/* Top Standalone Header */}
-        <header className="bg-white border-b border-slate-200 shadow-2xs px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-30">
+        <header 
+          className="bg-white border-b border-slate-200 shadow-2xs px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-30"
+          style={{
+            paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))'
+          }}
+        >
           <div className="flex items-center gap-2.5">
             <img src="/company-logo.png" alt="Eco Green Support" className="h-9 sm:h-10 w-auto object-contain shrink-0" />
             <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded tracking-wide uppercase hidden sm:inline-block">

@@ -160,11 +160,12 @@ export const AppUpdateModal = () => {
           onTouchEnd={handleToastTouchEnd}
           style={{
             touchAction: 'pan-y',
+            top: 'calc(env(safe-area-inset-top, 0px) + 1rem)',
             transform: `translateX(calc(-50% + ${toastDragX}px))`,
             transition: toastDragX === 0 ? 'transform 0.2s ease, opacity 0.2s ease' : 'none',
             opacity: Math.max(0.3, 1 - Math.abs(toastDragX) / 180)
           }}
-          className="fixed top-4 left-1/2 z-[9999] w-[92%] max-w-md animate-in slide-in-from-top-4 duration-300"
+          className="fixed left-1/2 z-[9999] w-[92%] max-w-md animate-in slide-in-from-top-4 duration-300"
         >
           <div className="bg-slate-900/95 backdrop-blur-md text-white border border-emerald-500/40 rounded-2xl p-4 shadow-2xl flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
@@ -188,7 +189,13 @@ export const AppUpdateModal = () => {
 
       {/* Mandatory Native App Update Modal */}
       {updateAvailable && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+        <div 
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300"
+          style={{
+            paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))',
+            paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
+          }}
+        >
           <div className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
             {/* Header Gradient Banner */}
             <div className="bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 text-white p-5 sm:p-6 relative overflow-hidden">

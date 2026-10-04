@@ -40,6 +40,10 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
   return (
     <div 
       className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+      style={{
+        paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))',
+        paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();

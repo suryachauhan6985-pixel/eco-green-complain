@@ -253,7 +253,10 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
 
   return (
     <div 
-      className="fixed top-16 sm:top-18 right-3 sm:right-6 z-[99999] max-w-sm sm:max-w-md w-full animate-in slide-in-from-top-4 fade-in duration-200 pointer-events-auto select-none"
+      className="fixed right-3 sm:right-6 z-[99999] max-w-sm sm:max-w-md w-full animate-in slide-in-from-top-4 fade-in duration-200 pointer-events-auto select-none"
+      style={{
+        top: 'calc(env(safe-area-inset-top, 0px) + 4.25rem)'
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >

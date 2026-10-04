@@ -1268,7 +1268,12 @@ export const ComplaintDetailDrawer = ({
       <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto max-w-full flex w-full sm:w-auto">
         <div className="w-full sm:w-screen sm:max-w-2xl bg-white shadow-2xl flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2 shrink-0">
+          <div 
+            className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2 shrink-0"
+            style={{
+              paddingTop: 'max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.65rem))'
+            }}
+          >
             <div className="min-w-0 flex-1">
               {!ticket ? (
                 <div className="flex items-center gap-2 py-0.5">
@@ -3520,7 +3525,12 @@ export const ComplaintDetailDrawer = ({
           </div>
 
           {/* Mobile Bottom Quick Close Bar */}
-          <div className="p-3 bg-white border-t border-slate-200 sm:hidden shrink-0 flex items-center justify-between gap-2 shadow-lg">
+          <div 
+            className="p-3 bg-white border-t border-slate-200 sm:hidden shrink-0 flex items-center justify-between gap-2 shadow-lg"
+            style={{
+              paddingBottom: 'max(0.75rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
+            }}
+          >
             <button
               onClick={handleDrawerClose}
               className="w-full py-2.5 bg-slate-900 active:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"

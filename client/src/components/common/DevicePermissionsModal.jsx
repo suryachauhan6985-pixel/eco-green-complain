@@ -198,7 +198,13 @@ export const DevicePermissionsModal = () => {
     permissionStates.camera === 'granted';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-xs animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-xs animate-in fade-in duration-200"
+      style={{
+        paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem))',
+        paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))'
+      }}
+    >
       <div 
         className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200 text-left"
         role="dialog"

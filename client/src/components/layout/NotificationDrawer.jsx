@@ -366,7 +366,12 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
         <div className="w-screen max-w-md md:max-w-lg bg-white shadow-2xl flex flex-col">
           {/* Header */}
-          <div className="p-4 bg-emerald-800 text-white flex items-center justify-between shadow-xs">
+          <div 
+            className="p-4 bg-emerald-800 text-white flex items-center justify-between shadow-xs"
+            style={{
+              paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))'
+            }}
+          >
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-emerald-700/80 rounded-xl relative">
                 <Bell className="w-5 h-5 text-emerald-100" />

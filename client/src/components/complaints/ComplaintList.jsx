@@ -337,13 +337,58 @@ export const ComplaintList = ({
 
   const statusPills = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
 
+  // Dynamically compute tickets matching all non-status filters (Product, Priority, Technician, Search)
+  // so that status tab badges update dynamically whenever any filter is applied!
+  const nonStatusFilteredComplaints = React.useMemo(() => {
+    const listToFilter = allComplaints.length > 0 ? allComplaints : complaints;
+    const q = (search || '').trim().toLowerCase();
+
+    return listToFilter.filter(c => {
+      // 1. Product Filter
+      if (productFilter !== 'all' && c.product_type !== productFilter) return false;
+
+      // 2. Priority Filter
+      if (priorityFilter !== 'all' && c.priority !== priorityFilter) return false;
+
+      // 3. Technician Filter
+      if (technicianFilter && String(c.assigned_technician_id) !== String(technicianFilter)) return false;
+
+      // 4. Instant Real-Time Search Match (0ms filter)
+      if (q) {
+        const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
+        const ticketId = (c.ticket_id || '').toLowerCase();
+        const custName = (c.customer_name || '').toLowerCase();
+        const city = (c.city || '').toLowerCase();
+        const addr = (c.customer_address || '').toLowerCase();
+        const consNo = (c.consumer_no || '').toLowerCase();
+        const ordNo = (c.order_no || '').toLowerCase();
+        const issueCat = (c.issue_category || '').toLowerCase();
+        const issueDesc = (c.issue_description || '').toLowerCase();
+        const techName = (c.technician_name || getAssignedTechName(c) || '').toLowerCase();
+
+        const matches = ticketId.includes(q) ||
+                        custName.includes(q) ||
+                        cleanPhone.includes(q) ||
+                        city.includes(q) ||
+                        addr.includes(q) ||
+                        consNo.includes(q) ||
+                        ordNo.includes(q) ||
+                        issueCat.includes(q) ||
+                        issueDesc.includes(q) ||
+                        techName.includes(q);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [allComplaints, complaints, productFilter, priorityFilter, technicianFilter, search, technicians]);
+
   const getStatusCount = (st) => {
-    const list = allComplaints.length > 0 ? allComplaints : complaints;
-    if (st === 'all') return list.length;
+    if (st === 'all') return nonStatusFilteredComplaints.length;
     if (st === 'Unassigned') {
-      return list.filter(c => c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id).length;
+      return nonStatusFilteredComplaints.filter(c => c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id).length;
     }
-    return list.filter(c => c.status === st).length;
+    return nonStatusFilteredComplaints.filter(c => c.status === st).length;
   };
 
   const getStatusBadgeStyle = (status) => {
@@ -605,11 +650,8 @@ export const ComplaintList = ({
       {/* Complaints Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {(() => {
-          const listToFilter = allComplaints.length > 0 ? allComplaints : complaints;
-          const q = (search || '').trim().toLowerCase();
-
-          const displayedComplaints = listToFilter.filter(c => {
-            // 1. Status Filter
+          const displayedComplaints = nonStatusFilteredComplaints.filter(c => {
+            // Status Filter
             if (statusFilter !== 'all') {
               const isUnassigned = c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id;
               if (statusFilter.toLowerCase() === 'unassigned') {
@@ -618,42 +660,6 @@ export const ComplaintList = ({
                 return false;
               }
             }
-
-            // 2. Product Filter
-            if (productFilter !== 'all' && c.product_type !== productFilter) return false;
-
-            // 3. Priority Filter
-            if (priorityFilter !== 'all' && c.priority !== priorityFilter) return false;
-
-            // 4. Technician Filter
-            if (technicianFilter && String(c.assigned_technician_id) !== String(technicianFilter)) return false;
-
-            // 5. Instant Real-Time Search Match (0ms filter)
-            if (q) {
-              const cleanPhone = (c.customer_phone || '').replace(/[^0-9]/g, '');
-              const ticketId = (c.ticket_id || '').toLowerCase();
-              const custName = (c.customer_name || '').toLowerCase();
-              const city = (c.city || '').toLowerCase();
-              const addr = (c.customer_address || '').toLowerCase();
-              const consNo = (c.consumer_no || '').toLowerCase();
-              const ordNo = (c.order_no || '').toLowerCase();
-              const issueCat = (c.issue_category || '').toLowerCase();
-              const issueDesc = (c.issue_description || '').toLowerCase();
-              const techName = (c.technician_name || getAssignedTechName(c) || '').toLowerCase();
-
-              const matches = ticketId.includes(q) ||
-                              custName.includes(q) ||
-                              cleanPhone.includes(q) ||
-                              city.includes(q) ||
-                              addr.includes(q) ||
-                              consNo.includes(q) ||
-                              ordNo.includes(q) ||
-                              issueCat.includes(q) ||
-                              issueDesc.includes(q) ||
-                              techName.includes(q);
-              if (!matches) return false;
-            }
-
             return true;
           });
 
