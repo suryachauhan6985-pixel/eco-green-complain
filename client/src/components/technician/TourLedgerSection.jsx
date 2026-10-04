@@ -8,7 +8,7 @@ import {
   Trash2, Eye, Upload, Filter, Calendar, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, ChevronLeft, ChevronDown, X, ArrowUpRight, ArrowDownLeft, ShieldCheck,
   Building, User, Tag, Sparkles, Image as ImageIcon, ExternalLink, Loader2,
-  Camera, Ticket, Edit2, Lock, RotateCcw, XCircle
+  Camera, Ticket, Edit2, Lock, RotateCcw, XCircle, Search, Settings
 } from 'lucide-react';
 import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { GREEN_ENERGY_LOGO_BASE64 } from '../../assets/greenEnergyLogo';
@@ -649,6 +649,62 @@ export const TourLedgerSection = ({
   const [startingVoucherNo, setStartingVoucherNo] = useState(341);
   const [selectedVoucherKeys, setSelectedVoucherKeys] = useState(new Set());
   const [printFilter, setPrintFilter] = useState('all'); // 'all' | 'selected' | 'pending' | 'approved'
+  const [tourSearchTerm, setTourSearchTerm] = useState('');
+  const [voucherStatusFilter, setVoucherStatusFilter] = useState('all'); // 'all' | 'submitted' | 'approved'
+  const [isVoucherSettingsModalOpen, setIsVoucherSettingsModalOpen] = useState(false);
+  const [voucherSettings, setVoucherSettings] = useState({
+    prefix: 'TT-',
+    starting_number: 1001,
+    next_voucher_no: 'TT-1001'
+  });
+  const [isSavingVoucherSettings, setIsSavingVoucherSettings] = useState(false);
+
+  const loadVoucherSettings = async () => {
+    try {
+      const res = await api.getVoucherSettings();
+      if (res && res.success) {
+        setVoucherSettings({
+          prefix: res.prefix || 'TT-',
+          starting_number: res.starting_number || 1001,
+          next_voucher_no: res.next_voucher_no || `${res.prefix || 'TT-'}${res.starting_number || 1001}`
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load voucher settings:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdminOrStaff) {
+      loadVoucherSettings();
+    }
+  }, [isAdminOrStaff]);
+
+  const handleSaveVoucherSettings = async (e) => {
+    if (e) e.preventDefault();
+    setIsSavingVoucherSettings(true);
+    try {
+      const res = await api.updateVoucherSettings({
+        prefix: (voucherSettings.prefix || 'TT-').trim().toUpperCase(),
+        starting_number: parseInt(voucherSettings.starting_number, 10) || 1
+      });
+      if (res && res.success) {
+        showToast('Voucher starting sequence settings updated successfully', 'success');
+        setIsVoucherSettingsModalOpen(false);
+        const nextRes = await api.getNextVoucherSequence();
+        if (nextRes && nextRes.next_seq) {
+          setStartingVoucherNo(nextRes.next_seq);
+        }
+        loadVoucherSettings();
+      } else {
+        showToast(res?.error || 'Failed to update voucher settings', 'error');
+      }
+    } catch (err) {
+      showToast('Error saving settings: ' + err.message, 'error');
+    } finally {
+      setIsSavingVoucherSettings(false);
+    }
+  };
 
   // Sync latest global voucher sequence when modal opens
   useEffect(() => {
@@ -1120,6 +1176,12 @@ export const TourLedgerSection = ({
 
   // Delete Expense
   const handleDeleteExpense = async (exp) => {
+    const isApproved = (exp.status || '').toLowerCase() === 'approved';
+    if (!isAdminOrStaff && isApproved) {
+      showToast('Approved voucher items cannot be deleted. Contact Admin to revert approval first.', 'error');
+      return;
+    }
+
     const ok = await confirm({
       title: 'Delete Tour Expense?',
       message: `Are you sure you want to delete voucher ${exp.voucher_no || ''} (₹${exp.amount})?`,
@@ -1166,6 +1228,12 @@ export const TourLedgerSection = ({
 
   // Delete all items in a voucher group
   const handleDeleteVoucherGroup = async (group) => {
+    const isApproved = (group.status || '').toLowerCase() === 'approved';
+    if (!isAdminOrStaff && isApproved) {
+      showToast('Approved vouchers cannot be deleted. Contact Admin to revert approval first.', 'error');
+      return;
+    }
+
     const itemCount = group.items.length;
     const ok = await confirm({
       title: 'Delete Tour Expense Voucher?',
@@ -1642,6 +1710,30 @@ export const TourLedgerSection = ({
     return Array.from(map.values());
   }, [expenses]);
 
+  const filteredVoucherLogs = useMemo(() => {
+    let list = voucherLogs;
+    if (voucherStatusFilter !== 'all') {
+      list = list.filter(grp => (grp.status || '').toLowerCase() === voucherStatusFilter.toLowerCase());
+    }
+    if (!tourSearchTerm.trim()) return list;
+    const term = tourSearchTerm.trim().toLowerCase();
+    return list.filter(grp => {
+      const matchVoucher = (grp.voucher_no || '').toLowerCase().includes(term);
+      const matchTicket = (grp.ticket_id || '').toLowerCase().includes(term);
+      const matchStatus = (grp.status || '').toLowerCase().includes(term);
+      const matchApprover = (grp.approved_by_name || '').toLowerCase().includes(term);
+      const matchTotal = (grp.totalAmount || 0).toString().includes(term);
+      const matchDate = (grp.expense_date || '').toLowerCase().includes(term);
+      const matchItems = grp.items.some(it => 
+        ((it.category || '').toLowerCase().includes(term)) ||
+        ((it.title || '').toLowerCase().includes(term)) ||
+        ((it.description || '').toLowerCase().includes(term)) ||
+        ((it.amount || '').toString().includes(term))
+      );
+      return matchVoucher || matchTicket || matchStatus || matchApprover || matchTotal || matchDate || matchItems;
+    });
+  }, [voucherLogs, tourSearchTerm, voucherStatusFilter]);
+
   const computedTotalAdvance = useMemo(() => advances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), [advances]);
   // Strictly count only vouchers approved by admin/staff (not submitted or pending)
   const computedApprovedExpenses = useMemo(() => expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
@@ -1718,6 +1810,24 @@ export const TourLedgerSection = ({
     return [...advList, ...reimList].sort((a, b) => new Date(b.allocated_at || 0) - new Date(a.allocated_at || 0));
   }, [advances, settlements, showAllDisbursements, currentTech]);
 
+  const filteredDisbursements = useMemo(() => {
+    if (!tourSearchTerm.trim()) return displayedDisbursements;
+    const term = tourSearchTerm.trim().toLowerCase();
+    return displayedDisbursements.filter(adv => {
+      return (
+        (adv.reference_no || '').toLowerCase().includes(term) ||
+        (adv.technician_name || '').toLowerCase().includes(term) ||
+        (adv.technician_phone || '').toLowerCase().includes(term) ||
+        (adv.purpose || '').toLowerCase().includes(term) ||
+        (adv.notes || '').toLowerCase().includes(term) ||
+        (adv.payment_mode || '').toLowerCase().includes(term) ||
+        (adv.disbursement_type || '').toLowerCase().includes(term) ||
+        (adv.amount || '').toString().includes(term) ||
+        (adv.allocated_by || '').toLowerCase().includes(term)
+      );
+    });
+  }, [displayedDisbursements, tourSearchTerm]);
+
   const openSettleModal = (targetTechId = null) => {
     let effectiveTechId = targetTechId;
     if (!effectiveTechId && selectedTechId !== 'all') {
@@ -1782,10 +1892,10 @@ export const TourLedgerSection = ({
   };
 
   const toggleSelectAllVouchers = () => {
-    if (selectedVoucherKeys.size === voucherLogs.length) {
+    if (selectedVoucherKeys.size === filteredVoucherLogs.length) {
       setSelectedVoucherKeys(new Set());
     } else {
-      setSelectedVoucherKeys(new Set(voucherLogs.map(v => v.key)));
+      setSelectedVoucherKeys(new Set(filteredVoucherLogs.map(v => v.key)));
     }
   };
 
@@ -1987,6 +2097,21 @@ export const TourLedgerSection = ({
               {isAdminOrStaff && (
                 <button
                   type="button"
+                  onClick={() => {
+                    loadVoucherSettings();
+                    setIsVoucherSettingsModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                  title="Configure Starting Voucher Number & Prefix (Admin Only)"
+                >
+                  <Settings className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Voucher Settings</span>
+                </button>
+              )}
+
+              {isAdminOrStaff && (
+                <button
+                  type="button"
                   onClick={openSettleModal}
                   className={`px-3.5 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
                     summary.net_balance < 0
@@ -2031,7 +2156,7 @@ export const TourLedgerSection = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
                 subTab === 'advances' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
-                {advances.length}
+                {tourSearchTerm.trim() ? `${filteredDisbursements.length} / ${advances.length}` : advances.length}
               </span>
             </button>
 
@@ -2052,7 +2177,7 @@ export const TourLedgerSection = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
                 subTab === 'expenses' ? 'bg-emerald-950/70 text-white border border-emerald-700/50' : 'bg-slate-100 text-slate-700 border border-slate-200'
               }`}>
-                {voucherLogs.length}
+                {tourSearchTerm.trim() || voucherStatusFilter !== 'all' ? `${filteredVoucherLogs.length} / ${voucherLogs.length}` : voucherLogs.length}
               </span>
             </button>
 
@@ -2099,31 +2224,137 @@ export const TourLedgerSection = ({
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="py-2.5 px-3 w-8 text-center" title="Select All for Print">
-                        <input
-                          type="checkbox"
-                          checked={voucherLogs.length > 0 && selectedVoucherKeys.size === voucherLogs.length}
-                          onChange={toggleSelectAllVouchers}
-                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                        />
-                      </th>
-                      <th className="py-2.5 px-3">Voucher #</th>
-                      <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">Ticket / Purpose</th>
-                      <th className="py-2.5 px-3">Categories</th>
-                      <th className="py-2.5 px-3">Receipt / Bill</th>
-                      <th className="py-2.5 px-3 text-right">Total Amount</th>
-                      <th className="py-2.5 px-3 text-center">Status</th>
-                      <th className="py-2.5 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {voucherLogs.map((grp) => {
-                      const isExpanded = expandedVouchers.has(grp.key);
+              <>
+                {/* Search & Actions Bar for Vouchers */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-3.5 mb-4 space-y-3">
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                    {/* Search Input */}
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={tourSearchTerm}
+                        onChange={(e) => setTourSearchTerm(e.target.value)}
+                        placeholder="Search vouchers by #, ticket ID, category, particulars, amount, or approver..."
+                        className="w-full text-xs pl-9 pr-8 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium placeholder-slate-400 shadow-2xs"
+                      />
+                      {tourSearchTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setTourSearchTerm('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+                          title="Clear Search"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Status Quick Filter Tabs */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto shrink-0">
+                      {[
+                        { key: 'all', label: 'All Vouchers', count: voucherLogs.length },
+                        { key: 'submitted', label: 'Pending', count: voucherLogs.filter(v => (v.status || '').toLowerCase() !== 'approved').length },
+                        { key: 'approved', label: 'Approved', count: voucherLogs.filter(v => (v.status || '').toLowerCase() === 'approved').length }
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => setVoucherStatusFilter(f.key)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                            voucherStatusFilter === f.key
+                              ? 'bg-emerald-700 text-white shadow-xs'
+                              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                          }`}
+                        >
+                          <span>{f.label}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                            voucherStatusFilter === f.key ? 'bg-emerald-900 text-emerald-100' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {f.count}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Toolbar Actions: Admin Voucher Settings & Quick Print */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isAdminOrStaff && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            loadVoucherSettings();
+                            setIsVoucherSettingsModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                          title="Configure Starting Voucher Number & Prefix (Admin Only)"
+                        >
+                          <Settings className="w-3.5 h-3.5 text-slate-600" />
+                          <span className="hidden sm:inline">Voucher Settings</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openVoucherModal(selectedVoucherKeys.size > 0 ? 'selected' : 'all')}
+                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>{selectedVoucherKeys.size > 0 ? `Print (${selectedVoucherKeys.size})` : 'Print Slip'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openExpenseModal}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Voucher</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredVoucherLogs.length === 0 ? (
+                  <div className="text-center py-10 px-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <h4 className="text-sm font-bold text-slate-700">No Vouchers Found</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      No tour expense vouchers match your search criteria. Try a different query or clear filters.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setTourSearchTerm(''); setVoucherStatusFilter('all'); }}
+                      className="mt-3 px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Clear Search & Filters
+                    </button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="py-2.5 px-3 w-8 text-center" title="Select All for Print">
+                            <input
+                              type="checkbox"
+                              checked={filteredVoucherLogs.length > 0 && selectedVoucherKeys.size === filteredVoucherLogs.length}
+                              onChange={toggleSelectAllVouchers}
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                          </th>
+                          <th className="py-2.5 px-3">Voucher #</th>
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3">Ticket / Purpose</th>
+                          <th className="py-2.5 px-3">Categories</th>
+                          <th className="py-2.5 px-3">Receipt / Bill</th>
+                          <th className="py-2.5 px-3 text-right">Total Amount</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredVoucherLogs.map((grp) => {
+                          const isExpanded = expandedVouchers.has(grp.key);
+                          const isApproved = (grp.status || '').toLowerCase() === 'approved';
                       const uniqueCats = Array.from(new Set(grp.items.map(it => it.category).filter(Boolean)));
                       let receiptUrls = [];
                       if (grp.receipt_url) {
@@ -2302,14 +2533,16 @@ export const TourLedgerSection = ({
                                   </>
                                 )}
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteVoucherGroup(grp)}
-                                  className="p-1.5 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
-                                  title="Delete Voucher"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {(!isApproved || isAdminOrStaff) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteVoucherGroup(grp)}
+                                    className="p-1.5 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                    title="Delete Voucher"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -2355,14 +2588,16 @@ export const TourLedgerSection = ({
                                               <RotateCcw className="w-3 h-3" />
                                             </button>
                                           )}
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteExpense(item)}
-                                            className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                                            title="Delete this line item"
-                                          >
-                                            <Trash2 className="w-3 h-3" />
-                                          </button>
+                                          {(!isApproved || isAdminOrStaff) && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteExpense(item)}
+                                              className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                              title="Delete this line item"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </button>
+                                          )}
                                         </div>
                                       </div>
                                     ))}
@@ -2378,8 +2613,10 @@ export const TourLedgerSection = ({
                 </table>
               </div>
             )}
-          </div>
+          </>
         )}
+      </div>
+    )}
 
         {/* ================= 2. ADVANCES TAB ================= */}
         {subTab === 'advances' && (
@@ -2416,23 +2653,62 @@ export const TourLedgerSection = ({
                 <p className="text-xs">No tour advances have been recorded yet for this specialist.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="py-2.5 px-3">Date & Time</th>
-                      <th className="py-2.5 px-3">Specialist (Recipient)</th>
-                      <th className="py-2.5 px-3">Disbursement Type</th>
-                      <th className="py-2.5 px-3">Purpose / Remarks</th>
-                      <th className="py-2.5 px-3">Payment Mode</th>
-                      <th className="py-2.5 px-3">Ref No</th>
-                      <th className="py-2.5 px-3">Allocated By</th>
-                      <th className="py-2.5 px-3 text-right">Amount</th>
-                      <th className="py-2.5 px-3 text-center">Status / Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {displayedDisbursements.map((adv) => (
+              <>
+                {/* Search Bar for Advances */}
+                <div className="relative mb-3">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={tourSearchTerm}
+                    onChange={(e) => setTourSearchTerm(e.target.value)}
+                    placeholder="Search advances by ref #, recipient, purpose, remarks, amount, payment mode, or allocated by..."
+                    className="w-full text-xs pl-9 pr-8 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium placeholder-slate-400 shadow-2xs"
+                  />
+                  {tourSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setTourSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+                      title="Clear Search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {filteredDisbursements.length === 0 ? (
+                  <div className="text-center py-10 px-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <h4 className="text-sm font-bold text-slate-700">No Advances Found</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      No tour advances or cash disbursements match "{tourSearchTerm}".
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setTourSearchTerm('')}
+                      className="mt-3 px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Clear Search
+                    </button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="py-2.5 px-3">Date & Time</th>
+                          <th className="py-2.5 px-3">Specialist (Recipient)</th>
+                          <th className="py-2.5 px-3">Disbursement Type</th>
+                          <th className="py-2.5 px-3">Purpose / Remarks</th>
+                          <th className="py-2.5 px-3">Payment Mode</th>
+                          <th className="py-2.5 px-3">Ref No</th>
+                          <th className="py-2.5 px-3">Allocated By</th>
+                          <th className="py-2.5 px-3 text-right">Amount</th>
+                          <th className="py-2.5 px-3 text-center">Status / Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredDisbursements.map((adv) => (
                       <tr key={adv.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
                           {adv.allocated_at ? formatIndianDateTime(adv.allocated_at) : '-'}
@@ -2522,8 +2798,10 @@ export const TourLedgerSection = ({
                 </table>
               </div>
             )}
-          </div>
+          </>
         )}
+      </div>
+    )}
 
 
 
@@ -3793,6 +4071,104 @@ export const TourLedgerSection = ({
           </div>
         );
       })()}
+
+      {/* ================= MODAL: VOUCHER SEQUENCE SETTINGS (ADMIN ONLY) ================= */}
+      {isVoucherSettingsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm leading-tight">Voucher Sequence Settings</h3>
+                  <p className="text-[11px] text-slate-300">Configure starting sequence & prefix for vouchers</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsVoucherSettingsModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveVoucherSettings} className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Voucher Prefix *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={voucherSettings.prefix}
+                  onChange={(e) => setVoucherSettings(prev => ({ ...prev, prefix: e.target.value.toUpperCase() }))}
+                  placeholder="e.g. TT-, VCH-, EXP-"
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Default prefix for all sequential tour vouchers (e.g. <strong className="font-mono text-slate-700">TT-</strong>).
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Starting Sequence Number *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="1"
+                  value={voucherSettings.starting_number}
+                  onChange={(e) => setVoucherSettings(prev => ({ ...prev, starting_number: parseInt(e.target.value, 10) || 1 }))}
+                  placeholder="e.g. 1001"
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Admin decides from which number vouchers start (e.g. <strong className="font-mono text-slate-700">1001</strong>).
+                </span>
+              </div>
+
+              {/* Preview Box */}
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-900">Configured Starting Sequence:</span>
+                  <span className="font-mono font-black text-emerald-800 text-sm">
+                    {voucherSettings.prefix}{voucherSettings.starting_number}
+                  </span>
+                </div>
+                <p className="text-[10px] text-emerald-700 leading-relaxed">
+                  The system will automatically generate new vouchers starting from this sequence (or continue forward from existing vouchers if higher).
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsVoucherSettingsModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingVoucherSettings}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isSavingVoucherSettings && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSavingVoucherSettings ? 'Saving...' : 'Save Settings'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ================= MODAL: PRINT & WORD EXPORT VOUCHER ================= */}
       {isVoucherModalOpen && typeof document !== 'undefined' ? createPortal(

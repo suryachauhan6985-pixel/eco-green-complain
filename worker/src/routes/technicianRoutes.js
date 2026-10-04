@@ -735,9 +735,29 @@ technicianRoutes.post('/tour-ledger/clear-all', authenticateToken, requireRole('
   }
 });
 
-// GET /api/tour-vouchers/next-sequence
-technicianRoutes.get('/tour-vouchers/next-sequence', authenticateToken, async (c) => {
+async function getVoucherSequenceConfig(env, ctx) {
   try {
+    const res = await query(
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'voucher_sequence_config' LIMIT 1",
+      [],
+      env,
+      ctx
+    );
+    if (res.rows && res.rows.length > 0) {
+      const parsed = JSON.parse(res.rows[0].setting_value);
+      return {
+        prefix: parsed.prefix || 'TT-',
+        starting_number: parseInt(parsed.starting_number, 10) || 341
+      };
+    }
+  } catch (_) {}
+  return { prefix: 'TT-', starting_number: 341 };
+}
+
+// GET /api/tour-vouchers/settings - Get voucher sequence prefix and starting number
+technicianRoutes.get('/tour-vouchers/settings', authenticateToken, async (c) => {
+  try {
+    const config = await getVoucherSequenceConfig(c.env, c.executionCtx);
     const res = await query(
       `SELECT voucher_no FROM technician_tour_expenses 
        WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
@@ -745,20 +765,86 @@ technicianRoutes.get('/tour-vouchers/next-sequence', authenticateToken, async (c
       c.env,
       c.executionCtx
     );
-    let maxSeq = 340;
+    let maxSeq = Math.max(0, config.starting_number - 1);
     for (const row of res.rows) {
       const v = String(row.voucher_no || '');
       const match = v.match(/\d+/g);
       if (match) {
         const num = parseInt(match[match.length - 1], 10);
-        if (!isNaN(num) && num > maxSeq && num < 100000) {
+        if (!isNaN(num) && num > maxSeq && num < 1000000) {
           maxSeq = num;
         }
       }
     }
     const nextSeq = maxSeq + 1;
-    const nextVoucherNo = `TT-${nextSeq}`;
-    return c.json({ success: true, next_voucher_no: nextVoucherNo, next_seq: String(nextSeq) });
+    const nextVoucherNo = `${config.prefix}${nextSeq}`;
+    return c.json({
+      success: true,
+      prefix: config.prefix,
+      starting_number: config.starting_number,
+      next_seq: String(nextSeq),
+      next_voucher_no: nextVoucherNo
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/tour-vouchers/settings - Admin update voucher sequence configuration
+technicianRoutes.post('/tour-vouchers/settings', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const user = c.get('user');
+    const prefix = String(body.prefix || 'TT-').trim();
+    const starting_number = parseInt(body.starting_number, 10) || 1;
+
+    const payload = JSON.stringify({ prefix, starting_number });
+    await query(
+      `INSERT INTO system_settings (setting_key, setting_value, updated_at, updated_by)
+       VALUES ('voucher_sequence_config', $1, CURRENT_TIMESTAMP, $2)
+       ON CONFLICT (setting_key) DO UPDATE
+       SET setting_value = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2`,
+      [payload, user?.name || user?.username || 'Admin'],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      success: true,
+      message: 'Voucher sequence settings saved successfully',
+      prefix,
+      starting_number
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/tour-vouchers/next-sequence
+technicianRoutes.get('/tour-vouchers/next-sequence', authenticateToken, async (c) => {
+  try {
+    const config = await getVoucherSequenceConfig(c.env, c.executionCtx);
+    const res = await query(
+      `SELECT voucher_no FROM technician_tour_expenses 
+       WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
+      [],
+      c.env,
+      c.executionCtx
+    );
+    let maxSeq = Math.max(0, config.starting_number - 1);
+    for (const row of res.rows) {
+      const v = String(row.voucher_no || '');
+      const match = v.match(/\d+/g);
+      if (match) {
+        const num = parseInt(match[match.length - 1], 10);
+        if (!isNaN(num) && num > maxSeq && num < 1000000) {
+          maxSeq = num;
+        }
+      }
+    }
+    const nextSeq = maxSeq + 1;
+    const nextVoucherNo = `${config.prefix}${nextSeq}`;
+    return c.json({ success: true, next_voucher_no: nextVoucherNo, next_seq: String(nextSeq), prefix: config.prefix });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -1414,6 +1500,7 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
 
     // Otherwise, generate the next sequential voucher number across all records
     if (!finalVoucherNo) {
+      const config = await getVoucherSequenceConfig(c.env, c.executionCtx);
       const res = await query(
         `SELECT voucher_no FROM technician_tour_expenses 
          WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
@@ -1421,16 +1508,16 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
         c.env,
         c.executionCtx
       );
-      let maxSeq = 340;
+      let maxSeq = Math.max(0, config.starting_number - 1);
       for (const row of res.rows) {
         const v = String(row.voucher_no || '');
         const match = v.match(/\d+/g);
         if (match) {
           const num = parseInt(match[match.length - 1], 10);
-          if (!isNaN(num) && num > maxSeq && num < 100000) maxSeq = num;
+          if (!isNaN(num) && num > maxSeq && num < 1000000) maxSeq = num;
         }
       }
-      finalVoucherNo = `TT-${maxSeq + 1}`;
+      finalVoucherNo = `${config.prefix}${maxSeq + 1}`;
     }
 
     // Support multi-item submission in a single call

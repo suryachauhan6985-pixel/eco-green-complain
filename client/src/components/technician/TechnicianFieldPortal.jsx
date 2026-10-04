@@ -51,6 +51,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const [jobStatusFilter, setJobStatusFilter] = useState(() => getInitialJobStatus());
   const [productFilter, setProductFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [collectionSearchTerm, setCollectionSearchTerm] = useState('');
   const [products, setProducts] = useState(() => {
     try {
       const cached = JSON.parse(localStorage.getItem('egs_cached_products') || '[]');
@@ -483,6 +484,20 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     showToast(`Field tasks statement exported successfully (${listToExport.length} tickets)`, 'success');
   };
 
+  // Helper to format date & time in Indian Standard Time (IST) for CSV & UI
+  const formatISTDateTime = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+      const timePart = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+      return `${datePart}, ${timePart}`;
+    } catch (_) {
+      return String(dateStr);
+    }
+  };
+
   // Export Statement for Cash Collection Register (CSV)
   const handleExportCollectionStatement = () => {
     let cashList = [];
@@ -498,37 +513,80 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         }
       });
     }
+
+    // Filter by search term if user is searching
+    if (collectionSearchTerm.trim()) {
+      const q = collectionSearchTerm.trim().toLowerCase();
+      cashList = cashList.filter(c => {
+        const ticketId = String(c.ticket_id || '').toLowerCase();
+        const custName = String(c.customer_name || '').toLowerCase();
+        const custPhone = String(c.customer_phone || '').toLowerCase();
+        const fault = String(c.issue_category || '').toLowerCase();
+        const prod = String(c.product_type || '').toLowerCase();
+        const amt = String(c.payment_collected || '').toLowerCase();
+        const settledBy = String(c.company_settled_by || '').toLowerCase();
+        const status = String(c.company_settlement_status || '').toLowerCase();
+        const city = String(c.city || '').toLowerCase();
+        const address = String(c.customer_address || '').toLowerCase();
+        return ticketId.includes(q) || custName.includes(q) || custPhone.includes(q) ||
+               fault.includes(q) || prod.includes(q) || amt.includes(q) ||
+               settledBy.includes(q) || status.includes(q) || city.includes(q) || address.includes(q);
+      });
+    }
+
     if (cashList.length === 0) {
-      showToast('No cash collection records available to export', 'warning');
+      showToast('No matching cash collection records available to export', 'warning');
       return;
     }
+
     const headers = [
-      'Ticket ID', 'Customer Name', 'Customer Mobile', 'Address & City',
-      'Technician Specialist', 'Product Type', 'Issue', 'Amount Collected (Rs)',
-      'Payment Status', 'Company Settlement Status', 'Settled Date & Time', 'Ticket Registered At'
+      'Ticket ID',
+      'Customer Name',
+      'Customer Mobile',
+      'Address & Location',
+      'Technician Specialist',
+      'Product Type',
+      'Fault / Issue Category',
+      'Amount Collected (Rs)',
+      'Payment Status',
+      'Customer Payment Date & Time (IST)',
+      'Payment Mode',
+      'Payment Notes / Reason',
+      'Company Settlement Status',
+      'Company Received By',
+      'Company Settled Date & Time (IST)',
+      'Ticket Registered Date & Time (IST)'
     ];
+
     const escapeCsv = (val) => {
       if (val === null || val === undefined) return '""';
       const str = String(val).replace(/"/g, '""');
       return `"${str}"`;
     };
+
     const rows = [headers.join(',')];
     for (const c of cashList) {
+      const isSettled = c.company_settlement_status === 'Settled with Company';
       rows.push([
         escapeCsv(c.ticket_id),
         escapeCsv(c.customer_name),
-        escapeCsv(c.customer_phone),
-        escapeCsv(`${c.customer_address || ''} ${c.city ? '• ' + c.city : ''}`.trim()),
+        escapeCsv(c.customer_phone ? (String(c.customer_phone).startsWith('+') ? c.customer_phone : `+${c.customer_phone}`) : ''),
+        escapeCsv([c.customer_address, c.city].filter(Boolean).join(' • ')),
         escapeCsv(c.techName || c.technician_name || ''),
-        escapeCsv(c.product_type),
-        escapeCsv(c.issue_category),
-        escapeCsv(c.payment_collected || 0),
-        escapeCsv(c.payment_status || 'Paid Cash with Tech'),
-        escapeCsv(c.company_settlement_status || 'Pending'),
-        escapeCsv(c.company_settled_at || ''),
-        escapeCsv(c.created_at)
+        escapeCsv(c.product_type || ''),
+        escapeCsv(c.issue_category || ''),
+        escapeCsv(c.payment_collected ? Number(c.payment_collected).toFixed(2) : '0.00'),
+        escapeCsv(c.payment_status || 'Paid'),
+        escapeCsv(formatISTDateTime(c.payment_collected_at)),
+        escapeCsv(c.payment_mode || 'Cash'),
+        escapeCsv(c.collection_reason || c.payment_notes || ''),
+        escapeCsv(isSettled ? 'Settled with Company' : 'Pending Deposit'),
+        escapeCsv(c.company_settled_by || (isSettled ? 'Company Finance' : 'Pending')),
+        escapeCsv(isSettled ? formatISTDateTime(c.company_settled_at) : 'Pending Deposit'),
+        escapeCsv(formatISTDateTime(c.created_at))
       ].join(','));
     }
+
     const csvContent = '\uFEFF' + rows.join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
@@ -794,9 +852,47 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
         {/* Cash Details & Applications Breakdown: ONLY show logged-in tech for technicians, or full list for admin/staff */}
         <div className="space-y-3 pt-2">
-          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            {currentUser?.role === 'technician' ? 'My Cash Collection Tickets & Timestamp History' : 'Technicians Cash Details & Applications Breakdown'}
-          </h4>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              {currentUser?.role === 'technician' ? 'My Cash Collection Tickets & Timestamp History' : 'Technicians Cash Details & Applications Breakdown'}
+            </h4>
+          </div>
+
+          {/* Search Bar for Cash Collection Register */}
+          <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={collectionSearchTerm}
+                onChange={(e) => setCollectionSearchTerm(e.target.value)}
+                placeholder="Search collection by ticket ID, customer name, mobile, fault/issue, product, or amount..."
+                className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white text-slate-800 placeholder-slate-400 transition-all font-medium"
+              />
+              {collectionSearchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setCollectionSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                  title="Clear Search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {collectionSearchTerm && (
+              <span className="text-[11px] text-emerald-800 font-semibold px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-xl shrink-0 flex items-center gap-1.5">
+                <span>Filtering: <strong>"{collectionSearchTerm}"</strong></span>
+                <button 
+                  type="button" 
+                  onClick={() => setCollectionSearchTerm('')}
+                  className="text-emerald-700 hover:text-rose-600 font-bold ml-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
+          </div>
 
           <div className="space-y-3">
             {visibleTechs.length === 0 ? (
@@ -805,7 +901,33 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               </div>
             ) : (
               visibleTechs.map((tech) => {
-                const isExpanded = currentUser?.role === 'technician' || expandedTechId === tech.id || String(selectedAdminTechId) === String(tech.id);
+                const filteredCashJobs = tech.cashJobs.filter(comp => {
+                  if (!collectionSearchTerm.trim()) return true;
+                  const q = collectionSearchTerm.trim().toLowerCase();
+                  const ticketId = String(comp.ticket_id || '').toLowerCase();
+                  const custName = String(comp.customer_name || '').toLowerCase();
+                  const custPhone = String(comp.customer_phone || '').toLowerCase();
+                  const fault = String(comp.issue_category || '').toLowerCase();
+                  const prod = String(comp.product_type || '').toLowerCase();
+                  const amt = String(comp.payment_collected || '').toLowerCase();
+                  const settledBy = String(comp.company_settled_by || '').toLowerCase();
+                  const status = String(comp.company_settlement_status || '').toLowerCase();
+                  const city = String(comp.city || '').toLowerCase();
+                  const address = String(comp.customer_address || '').toLowerCase();
+                  return ticketId.includes(q) || custName.includes(q) || custPhone.includes(q) ||
+                         fault.includes(q) || prod.includes(q) || amt.includes(q) ||
+                         settledBy.includes(q) || status.includes(q) || city.includes(q) || address.includes(q);
+                });
+
+                // Skip tech card if search term is active and there are no matches for this tech
+                if (collectionSearchTerm.trim() && filteredCashJobs.length === 0) {
+                  return null;
+                }
+
+                const isExpanded = currentUser?.role === 'technician' || 
+                                   expandedTechId === tech.id || 
+                                   String(selectedAdminTechId) === String(tech.id) || 
+                                   (Boolean(collectionSearchTerm.trim()) && filteredCashJobs.length > 0);
                 const hasDue = tech.cashInHandDue > 0;
 
                 return (
@@ -877,7 +999,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         onClick={() => setExpandedTechId(isExpanded ? null : tech.id)}
                         className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        <span>{tech.cashJobs.length} Tickets</span>
+                        <span>{filteredCashJobs.length} Tickets</span>
                         {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
                     </div>
@@ -895,9 +1017,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         </span>
                       </div>
 
-                      {tech.cashJobs.length === 0 ? (
+                      {filteredCashJobs.length === 0 ? (
                         <div className="py-6 text-center text-slate-400 text-xs bg-white rounded-xl border border-slate-200">
-                          No cash payments collected by this technician yet.
+                          {collectionSearchTerm ? 'No cash records match your search query.' : 'No cash payments collected by this technician yet.'}
                         </div>
                       ) : (
                         <div className="overflow-x-auto">
@@ -908,12 +1030,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                 <th className="py-2.5 px-3">Customer & Location</th>
                                 <th className="py-2.5 px-3">Product / Issue</th>
                                 <th className="py-2.5 px-3">Amount Collected</th>
-                                <th className="py-2.5 px-3">Status</th>
+                                <th className="py-2.5 px-3">Company Settlement</th>
                                 <th className="py-2.5 px-3 text-right">Settlement Action</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-xs">
-                              {tech.cashJobs.map((comp) => {
+                              {filteredCashJobs.map((comp) => {
                                 const isSettled = comp.company_settlement_status === 'Settled with Company';
                                 return (
                                   <tr key={comp.id} className="hover:bg-slate-50 transition-colors">
@@ -944,9 +1066,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                         </span>
                                       )}
                                       {comp.payment_collected_at ? (
-                                        <span className="text-[9px] text-slate-600 font-sans block mt-0.5" title="Payment Collection Date & Timestamp">
-                                          📅 {new Date(comp.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{' '}
-                                          ⏰ {new Date(comp.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                        <span className="text-[9px] text-slate-600 font-sans block mt-0.5" title="Customer Payment Collection Date & Timestamp">
+                                          📅 {new Date(comp.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}{' '}
+                                          ⏰ {new Date(comp.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
                                         </span>
                                       ) : (
                                         <span className="text-[9px] text-slate-400 font-sans block mt-0.5">Date recorded</span>
@@ -954,10 +1076,24 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                     </td>
                                     <td className="py-2.5 px-3">
                                       {isSettled ? (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1 w-fit">
-                                          <CheckCheck className="w-3 h-3 text-emerald-700" />
-                                          <span>Deposited</span>
-                                        </span>
+                                        <div className="space-y-1">
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1 w-fit">
+                                            <CheckCheck className="w-3 h-3 text-emerald-700" />
+                                            <span>Deposited</span>
+                                          </span>
+                                          {comp.company_settled_by && (
+                                            <div className="text-[10px] text-slate-700 flex items-center gap-1" title={`Received in company by ${comp.company_settled_by}`}>
+                                              <span className="text-slate-400">Received by:</span>
+                                              <strong className="text-slate-900 font-bold">{comp.company_settled_by}</strong>
+                                            </div>
+                                          )}
+                                          {comp.company_settled_at && (
+                                            <div className="text-[9px] text-slate-500 font-mono">
+                                              📅 {new Date(comp.company_settled_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}{' '}
+                                              ⏰ {new Date(comp.company_settled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
+                                            </div>
+                                          )}
+                                        </div>
                                       ) : (
                                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 flex items-center gap-1 w-fit">
                                           <Clock className="w-3 h-3 text-amber-700" />
@@ -967,7 +1103,17 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                     </td>
                                     <td className="py-2.5 px-3 text-right">
                                       {isSettled ? (
-                                        <span className="text-[11px] text-slate-400 font-mono">Verified in Account</span>
+                                        <div className="text-right">
+                                          <span className="text-[11px] font-bold text-emerald-700 font-mono inline-flex items-center gap-1">
+                                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                            Verified in Account
+                                          </span>
+                                          {comp.company_settled_by && (
+                                            <span className="text-[10px] text-slate-400 block font-sans">
+                                              Handed over to {comp.company_settled_by}
+                                            </span>
+                                          )}
+                                        </div>
                                       ) : ['admin', 'staff'].includes(currentUser?.role) ? (
                                         <button
                                           type="button"

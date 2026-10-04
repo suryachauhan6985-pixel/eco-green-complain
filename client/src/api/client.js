@@ -1629,6 +1629,16 @@ export const api = {
     success: true,
     next_voucher_no: `TT-${parseInt(localStorage.getItem('egs_global_voucher_seq') || '341', 10)}`
   })),
+  getVoucherSettings: () => request('/tour-vouchers/settings').catch(() => ({
+    success: true,
+    prefix: localStorage.getItem('egs_voucher_prefix') || 'TT-',
+    starting_number: parseInt(localStorage.getItem('egs_global_voucher_seq') || '341', 10),
+    next_voucher_no: `${localStorage.getItem('egs_voucher_prefix') || 'TT-'}${localStorage.getItem('egs_global_voucher_seq') || '341'}`
+  })),
+  updateVoucherSettings: (data) => request('/tour-vouchers/settings', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
 
   // Notifications & Outbound Rules
   getTemplates: () => request('/notifications/templates'),

@@ -1647,33 +1647,79 @@ async function ensureTourLedgerAndSecondaryTechTables() {
   }
 }
 
+async function getVoucherSequenceConfigFromDb() {
+  try {
+    const res = await query("SELECT setting_value FROM system_settings WHERE setting_key = 'voucher_sequence_config' LIMIT 1");
+    if (res.rows && res.rows.length > 0) {
+      const parsed = JSON.parse(res.rows[0].setting_value);
+      return {
+        prefix: parsed.prefix || 'TT-',
+        starting_number: parseInt(parsed.starting_number, 10) || 341
+      };
+    }
+  } catch (_) {}
+  return { prefix: 'TT-', starting_number: 341 };
+}
+
 async function getNextPostgresVoucherNo() {
   try {
+    const config = await getVoucherSequenceConfigFromDb();
     const rows = await query(`
       SELECT voucher_no FROM technician_tour_expenses 
-      WHERE voucher_no LIKE 'TT-%' 
-      ORDER BY id DESC LIMIT 100
+      WHERE voucher_no IS NOT NULL AND voucher_no != ''
+      ORDER BY id DESC LIMIT 200
     `);
-    let maxSeq = 340;
+    let maxSeq = Math.max(0, config.starting_number - 1);
     for (const r of rows.rows) {
       if (r.voucher_no) {
-        const num = parseInt(r.voucher_no.replace('TT-', ''), 10);
-        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        const match = String(r.voucher_no).match(/\d+/g);
+        if (match) {
+          const num = parseInt(match[match.length - 1], 10);
+          if (!isNaN(num) && num > maxSeq && num < 1000000) maxSeq = num;
+        }
       }
     }
-    return `TT-${maxSeq + 1}`;
+    const nextSeq = maxSeq + 1;
+    return { next_voucher_no: `${config.prefix}${nextSeq}`, next_seq: nextSeq, prefix: config.prefix, starting_number: config.starting_number };
   } catch (_) {
-    return 'TT-341';
+    return { next_voucher_no: 'TT-341', next_seq: 341, prefix: 'TT-', starting_number: 341 };
   }
 }
+
+// GET /api/tour-vouchers/settings: Fetch settings & next sequence
+app.get('/api/tour-vouchers/settings', authenticateToken, async (req, res) => {
+  try {
+    const info = await getNextPostgresVoucherNo();
+    return res.json({ success: true, ...info });
+  } catch (err) {
+    return res.json({ success: true, prefix: 'TT-', starting_number: 341, next_seq: '341', next_voucher_no: 'TT-341' });
+  }
+});
+
+// POST /api/tour-vouchers/settings: Save voucher sequence settings
+app.post('/api/tour-vouchers/settings', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const prefix = String(req.body.prefix || 'TT-').trim();
+    const starting_number = parseInt(req.body.starting_number, 10) || 1;
+    const payload = JSON.stringify({ prefix, starting_number });
+    await query(`
+      INSERT INTO system_settings (setting_key, setting_value, updated_at, updated_by)
+      VALUES ('voucher_sequence_config', $1, CURRENT_TIMESTAMP, $2)
+      ON CONFLICT (setting_key) DO UPDATE
+      SET setting_value = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
+    `, [payload, req.user?.name || req.user?.username || 'Admin']);
+    return res.json({ success: true, message: 'Settings saved', prefix, starting_number });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/tour-vouchers/next-sequence: Fetch next global voucher sequence number
 app.get('/api/tour-vouchers/next-sequence', authenticateToken, async (req, res) => {
   try {
     await ensureTourLedgerAndSecondaryTechTables();
-    const nextSeq = await getNextPostgresVoucherNo();
-    const num = parseInt(nextSeq.replace('TT-', ''), 10) || 341;
-    return res.json({ success: true, next_seq: num, next_voucher_no: nextSeq });
+    const info = await getNextPostgresVoucherNo();
+    return res.json({ success: true, next_seq: info.next_seq, next_voucher_no: info.next_voucher_no, prefix: info.prefix });
   } catch (err) {
     return res.json({ success: true, next_seq: 341, next_voucher_no: 'TT-341' });
   }
