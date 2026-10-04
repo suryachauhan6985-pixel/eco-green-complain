@@ -7005,7 +7005,7 @@ async function ensureNotificationTemplatesTable() {
         audience: 'customer',
         trigger: 'technician_direct_reachout',
         metaName: 'technician_reach_out_customer',
-        body: 'Namaste {{customer_name}} ji,\n\nI am {{technician_name}} from *Eco Green Solar Care*. I have received your service request for your {{product_type}} (Ticket: {{complaint_id}}).\n\nI am planning to visit your site at {{customer_address}} on {{expected_visit_date}}.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n{{technician_name}}\nEco Green Solar Team'
+        body: '*Eco Green Support - Field Service Desk*\n\nDear *{{customer_name}}*,\n\nThis is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\nI am preparing to visit your site for inspection and service. Please confirm if the premises are accessible.\n\n- Eco Green Support Desk'
       }
     ];
 

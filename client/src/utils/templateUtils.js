@@ -18,6 +18,9 @@ export async function getNotificationTemplates(forceRefresh = false) {
     if (res && Array.isArray(res.templates) && res.templates.length > 0) {
       cachedTemplates = res.templates;
       lastFetchTime = now;
+      try {
+        localStorage.setItem('egs_cached_templates', JSON.stringify(res.templates));
+      } catch (_) {}
       return cachedTemplates;
     }
   } catch (err) {
@@ -25,7 +28,17 @@ export async function getNotificationTemplates(forceRefresh = false) {
   }
 
   // Fallback to local defaults if API fails or is offline
-  cachedTemplates = INITIAL_TEMPLATES;
+  if (!cachedTemplates) {
+    try {
+      const stored = localStorage.getItem('egs_cached_templates');
+      if (stored) {
+        cachedTemplates = JSON.parse(stored);
+      }
+    } catch (_) {}
+  }
+  if (!cachedTemplates) {
+    cachedTemplates = INITIAL_TEMPLATES;
+  }
   lastFetchTime = now;
   return cachedTemplates;
 }
@@ -206,6 +219,15 @@ export function getTemplateSync(templateKey) {
   let list = cachedTemplates;
   if (!list || !Array.isArray(list) || list.length === 0) {
     try {
+      const cached = localStorage.getItem('egs_cached_templates');
+      if (cached) {
+        list = JSON.parse(cached);
+        cachedTemplates = list;
+      }
+    } catch (_) {}
+  }
+  if (!list || !Array.isArray(list) || list.length === 0) {
+    try {
       const stored = localStorage.getItem('egs_mock_templates');
       if (stored) {
         list = JSON.parse(stored);
@@ -232,13 +254,16 @@ export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
   const tmpl = isSurvey ? getTemplateSync('site_survey_reach_out') : getTemplateSync('technician_reach_out_customer');
 
   const defaultBody = isSurvey
-    ? `Namaste {{customer_name}} ji,\n\nI am {{technician_name}} from *Eco Green Solar Care*. I have received your site survey request (Ticket: {{complaint_id}}).\n\nI am planning to visit your site at {{customer_address}} on {{expected_visit_date}} for rooftop measurement and feasibility assessment.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n{{technician_name}}\nEco Green Solar Team`
-    : `☀️ *Eco Green Solar - Field Service Desk*\n\n` +
+    ? `☀️ *Eco Green Solar - Site Survey Coordination*\n\n` +
+      `Hello {{customer_name}},\n\n` +
+      `This is {{technician_name}} from Eco Green Solar engineering team. I am assigned for your site survey (Ticket *{{complaint_id}}* - {{product_type}}).\n\n` +
+      `I will be arriving to evaluate your site and rooftop layout. Please let me know if the location is accessible or if there are specific directions.\n\n` +
+      `Thank you!`
+    : `*Eco Green Support - Field Service Desk*\n\n` +
       `Dear *{{customer_name}}*,\n\n` +
       `This is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\n` +
-      `I am preparing to visit your site for the inspection and service. Please confirm if the premises are accessible.\n\n` +
-      `📞 Helpdesk: +91 78784 44414\n` +
-      `- Eco Green Technical Services`;
+      `I am preparing to visit your site for inspection and service. Please confirm if the premises are accessible.\n\n` +
+      `- Eco Green Support Desk`;
 
   const rawBody = (tmpl && tmpl.whatsapp_body && tmpl.whatsapp_body.trim()) ? tmpl.whatsapp_body : defaultBody;
 
@@ -252,6 +277,7 @@ export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
     customer_phone: ticket?.customer_phone || '',
     customer_address: ticket?.customer_address || '',
     complaint_id: ticket?.ticket_id || ticket?.id || '',
+    ticket_id: ticket?.ticket_id || ticket?.id || '',
     product_type: ticket?.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar System'),
     issue_category: ticket?.issue_category || '',
     priority: ticket?.priority || 'Normal',

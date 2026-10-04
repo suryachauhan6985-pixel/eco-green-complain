@@ -243,9 +243,9 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'APPROVED',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: 'Namaste {{customer_name}} ji,\n\nI am {{technician_name}} from *Eco Green Solar Care*. I have received your service request for your {{product_type}} (Ticket: {{complaint_id}}).\n\nI am planning to visit your site at {{customer_address}} on {{expected_visit_date}}.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n{{technician_name}}\nEco Green Solar Team',
+    whatsapp_body: '*Eco Green Support - Field Service Desk*\n\nDear *{{customer_name}}*,\n\nThis is *{{technician_name}}* regarding complaint ticket *#{{complaint_id}}* ({{product_type}}).\n\nI am preparing to visit your site for inspection and service. Please confirm if the premises are accessible.\n\n- Eco Green Support Desk',
     email_subject: '[Eco Green Solar] Technician Visiting Soon - Ticket {{complaint_id}}',
-    email_body: 'Dear {{customer_name}},\n\nI am {{technician_name}} from Eco Green Solar. I will visit your premises on {{expected_visit_date}} regarding Ticket {{complaint_id}}.'
+    email_body: 'Dear {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Support regarding complaint ticket #{{complaint_id}} ({{product_type}}).'
   },
   {
     id: 13,
@@ -323,9 +323,9 @@ export const INITIAL_TEMPLATES = [
     meta_status: 'PENDING',
     is_active: 1,
     channel: 'whatsapp',
-    whatsapp_body: 'Namaste {{customer_name}} ji,\n\nI am {{technician_name}} from *Eco Green Solar Care*. I have been assigned to conduct your site survey (Ticket: {{complaint_id}}).\n\nI am planning to visit your site at {{customer_address}} on {{expected_visit_date}} for rooftop measurement and feasibility assessment.\n\nPlease let me know if this time suits you or share your current location/directions if required.\n\nThank you!\n{{technician_name}}\nEco Green Solar Team',
-    email_subject: '[Eco Green Solar] Site Surveyor Visiting Soon - Ticket {{complaint_id}}',
-    email_body: 'Dear {{customer_name}},\n\nI am {{technician_name}} from Eco Green Solar. I will visit your premises on {{expected_visit_date}} for your rooftop site survey regarding Ticket {{complaint_id}}.'
+    whatsapp_body: '☀️ *Eco Green Solar - Site Survey Coordination*\n\nHello {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Solar engineering team. I am assigned for your site survey (Ticket *{{complaint_id}}* - {{product_type}}).\n\nI will be arriving to evaluate your site and rooftop layout. Please let me know if the location is accessible or if there are specific directions.\n\nThank you!',
+    email_subject: '[Eco Green Solar] Site Survey Coordination - Ticket #{{complaint_id}}',
+    email_body: 'Hello {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Solar regarding your site survey ticket #{{complaint_id}}.'
   }
 ];
 

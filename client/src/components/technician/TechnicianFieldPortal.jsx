@@ -1307,6 +1307,10 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       href={buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name).sendUrl}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => {
+                        const fresh = buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name);
+                        if (fresh?.sendUrl) e.currentTarget.href = fresh.sendUrl;
+                      }}
                       className="p-2 sm:px-3 sm:py-1.5 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1 active:scale-95 transition-transform"
                       title="WhatsApp Customer"
                     >
@@ -1466,6 +1470,10 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                           href={buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name).sendUrl}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={(e) => {
+                            const fresh = buildTechnicianCustomerWhatsApp(job, currentUser?.name || techProfile?.name);
+                            if (fresh?.sendUrl) e.currentTarget.href = fresh.sendUrl;
+                          }}
                           className="py-1.5 px-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-transform"
                         >
                           <MessageCircle className="w-3 h-3" />
