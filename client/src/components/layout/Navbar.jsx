@@ -257,15 +257,15 @@ export const Navbar = ({
                   </button>
 
                   <button
-                    onClick={() => setCurrentTab('templates')}
+                    onClick={() => setCurrentTab('settings')}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'templates'
+                      currentTab === 'settings' || currentTab === 'templates'
                         ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
-                    <Settings className={`w-3.5 h-3.5 ${currentTab === 'templates' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Templates</span>
+                    <Settings className={`w-3.5 h-3.5 ${currentTab === 'settings' || currentTab === 'templates' ? 'text-white' : 'text-slate-500'}`} />
+                    <span>Settings</span>
                   </button>
                 </>
               )}
@@ -739,23 +739,23 @@ export const Navbar = ({
                   )}
                 </button>
 
-                {/* Templates */}
+                {/* Settings Hub */}
                 <button
-                  onClick={() => handleNavClick('templates')}
+                  onClick={() => handleNavClick('settings')}
                   className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
-                    currentTab === 'templates'
+                    currentTab === 'settings' || currentTab === 'templates'
                       ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
                       : 'text-slate-700 hover:bg-slate-100 font-medium'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Settings className={`w-4 h-4 shrink-0 ${currentTab === 'templates' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <Settings className={`w-4 h-4 shrink-0 ${currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-700' : 'text-slate-500'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'templates' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Notification Templates</p>
-                      <p className="text-[10px] text-slate-400 font-normal">WhatsApp & system messaging</p>
+                      <p className={currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Settings</p>
+                      <p className="text-[10px] text-slate-400 font-normal">Account, Templates, Items & Voucher</p>
                     </div>
                   </div>
-                  {currentTab === 'templates' ? (
+                  {currentTab === 'settings' || currentTab === 'templates' ? (
                     <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
                   ) : (
                     <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />

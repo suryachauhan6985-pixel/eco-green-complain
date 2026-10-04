@@ -377,6 +377,8 @@ export const ComplaintDetailDrawer = ({
         setNotifications(data.notifications || []);
         if (data.complaint.assigned_technician_id) {
           setSelectedTechId(String(data.complaint.assigned_technician_id));
+        } else {
+          setSelectedTechId('');
         }
         if (data.complaint.secondary_technician_id) {
           setSecondaryTechId(String(data.complaint.secondary_technician_id));
@@ -385,6 +387,8 @@ export const ComplaintDetailDrawer = ({
         }
         if (data.complaint.expected_visit_date) {
           setExpectedDate(String(data.complaint.expected_visit_date).split('T')[0]);
+        } else {
+          setExpectedDate('');
         }
         if (data.complaint.resolved_by_technician_id) {
           setResolvedByTechId(String(data.complaint.resolved_by_technician_id));
@@ -427,6 +431,9 @@ export const ComplaintDetailDrawer = ({
   };
 
   const resetAllDraftInputs = () => {
+    setSelectedTechId('');
+    setSecondaryTechId('');
+    setExpectedDate('');
     setFollowUpNote('');
     setResolutionNotes('');
     setSpareParts('');

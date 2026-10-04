@@ -21,6 +21,7 @@ const TechnicianFieldPortal = React.lazy(() => import('./components/technician/T
 const CustomerPublicPortal = React.lazy(() => import('./components/customer/CustomerPublicPortal').then(m => ({ default: m.CustomerPublicPortal })));
 const AnalyticsDashboard = React.lazy(() => import('./components/admin/AnalyticsDashboard').then(m => ({ default: m.AnalyticsDashboard })));
 const TemplateManager = React.lazy(() => import('./components/admin/TemplateManager').then(m => ({ default: m.TemplateManager })));
+const AdminSettingsHub = React.lazy(() => import('./components/admin/AdminSettingsHub').then(m => ({ default: m.AdminSettingsHub })));
 const StaffTechnicianManager = React.lazy(() => import('./components/admin/StaffTechnicianManager').then(m => ({ default: m.StaffTechnicianManager })));
 const OnboardingTour = React.lazy(() => import('./components/common/OnboardingTour').then(m => ({ default: m.OnboardingTour })));
 const WhatsAppWebInbox = React.lazy(() => import('./components/whatsapp/WhatsAppWebInbox').then(m => ({ default: m.WhatsAppWebInbox })));
@@ -100,7 +101,8 @@ function normalizeTab(tab) {
   if (!tab) return null;
   const t = String(tab).toLowerCase().replace(/^#\/?/, '').replace(/^\/+/, '');
   if (t === 'staff') return 'team';
-  if (['complaints', 'technician', 'whatsapp-inbox', 'team', 'analytics', 'templates', 'customer'].includes(t)) {
+  if (t === 'setting') return 'settings';
+  if (['complaints', 'technician', 'whatsapp-inbox', 'team', 'analytics', 'settings', 'templates', 'customer'].includes(t)) {
     return t;
   }
   return null;
@@ -453,8 +455,11 @@ function AppContent() {
             />
           )}
 
-          {currentTab === 'templates' && (
-            <TemplateManager key={`tmpl-${refreshKey}`} />
+          {(currentTab === 'settings' || currentTab === 'templates') && (
+            <AdminSettingsHub 
+              key={`settings-${refreshKey}`} 
+              initialTab={currentTab === 'templates' ? 'templates' : undefined} 
+            />
           )}
 
           {currentTab === 'whatsapp-inbox' && (

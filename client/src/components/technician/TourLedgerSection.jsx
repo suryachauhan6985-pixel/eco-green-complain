@@ -900,6 +900,71 @@ export const TourLedgerSection = ({
     };
   }, [loadedTechs, selectedTechId, scopedTechProfile]);
 
+  // Helper to extract Ticket City and Multi-Technician team names for voucher printing
+  const getVoucherMetadata = (chunk) => {
+    const ticketId = chunk?.ticketId;
+    let city = '';
+    let ticketTechName = '';
+
+    if (ticketId) {
+      const cleanId = String(ticketId).trim();
+      const comp = (loadedComplaints || []).find(c => 
+        String(c.ticket_id || '').trim().toLowerCase() === cleanId.toLowerCase() ||
+        String(c.id || '').trim() === cleanId
+      );
+
+      if (comp) {
+        city = (comp.city || comp.district || comp.village || '').trim();
+
+        // Primary tech
+        let t1 = comp.technician_name;
+        let p1 = comp.technician_phone;
+        if (!t1 && comp.assigned_technician_id) {
+          const matchedT = (loadedTechs || []).find(t => String(t.id) === String(comp.assigned_technician_id));
+          if (matchedT) {
+            t1 = matchedT.name;
+            p1 = matchedT.phone;
+          }
+        }
+        if (!t1 && currentTech?.name && selectedTechId !== 'all') {
+          t1 = currentTech.name;
+          p1 = currentTech.phone;
+        }
+
+        // Secondary / Team tech
+        let t2 = comp.secondary_technician_name;
+        let p2 = comp.secondary_technician_phone;
+        if (!t2 && comp.secondary_technician_id) {
+          const matchedT = (loadedTechs || []).find(t => String(t.id) === String(comp.secondary_technician_id));
+          if (matchedT) {
+            t2 = matchedT.name;
+            p2 = matchedT.phone;
+          }
+        }
+
+        const t1Full = t1 ? `${t1}${p1 ? ` (${p1})` : ''}` : '';
+        const t2Full = t2 ? `${t2}${p2 ? ` (${p2})` : ''}` : '';
+
+        if (t1Full && t2Full && t1Full !== t2Full) {
+          ticketTechName = `${t1Full}, ${t2Full}`;
+        } else if (t1Full) {
+          ticketTechName = t1Full;
+        } else if (t2Full) {
+          ticketTechName = t2Full;
+        }
+      }
+    }
+
+    const fallbackTechName = selectedTechId === 'all'
+      ? 'All Specialists (Consolidated)'
+      : (currentTech.name + (currentTech.phone ? ` (${currentTech.phone})` : ''));
+
+    return {
+      city: city ? city.toUpperCase() : '',
+      techName: ticketTechName || fallbackTechName
+    };
+  };
+
   const broadcastLedgerUpdate = () => {
     try {
       emitLedgerUpdate({ selectedTechId });
@@ -1483,10 +1548,9 @@ export const TourLedgerSection = ({
 
   // Export to Microsoft Word (.doc) - Matching physical Voucher Book (2 vouchers per A4 page)
   const handleExportWord = () => {
-    const techName = currentTech.name || 'Technician';
-
     let vouchersHtml = '';
     voucherChunks.forEach((chunk, cIdx) => {
+      const vMeta = getVoucherMetadata(chunk);
       // Build 9 rows (total 11 rows: 1 header + 9 entries + 1 total)
       let rowsHtml = '';
       const items = chunk.items || [];
@@ -1531,18 +1595,21 @@ export const TourLedgerSection = ({
             </tr>
           </table>
 
-          <!-- Name & Account with Ticket No on Right -->
+          <!-- Name & Account with Ticket No and City on Right -->
           <div style="font-size: 8.5pt; margin: 4px 0 2px 0;">
-            <b>Name :</b> ${techName}
+            <b>Name :</b> ${vMeta.techName}
           </div>
           <div style="border-bottom: 1px dashed #94a3b8; margin: 4px 0 6px 0;"></div>
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 8.5pt;">
             <tr>
-              <td style="width: 60%; vertical-align: middle;">
+              <td style="width: 44%; vertical-align: middle;">
                 <b>Account :</b> TECHNICIAN TOUR EXPENSES
               </td>
-              <td style="width: 40%; vertical-align: middle; text-align: right;">
+              <td style="width: 32%; vertical-align: middle; text-align: center;">
                 <b>Ticket No :</b> <span style="color: #1e3a8a; font-weight: bold;">${chunk.ticketId || 'General Tour'}</span>
+              </td>
+              <td style="width: 24%; vertical-align: middle; text-align: right;">
+                <b>City :</b> <span style="color: #0f766e; font-weight: bold; text-transform: uppercase;">${vMeta.city || '-'}</span>
               </td>
             </tr>
           </table>
@@ -4401,9 +4468,7 @@ export const TourLedgerSection = ({
                     {pageChunks.map((chunk, cIdx) => {
                       const items = chunk.items || [];
                       const emptySlots = Math.max(0, 9 - items.length);
-                      const displayTechName = selectedTechId === 'all' 
-                        ? 'All Specialists (Consolidated)' 
-                        : (currentTech.name + (currentTech.phone ? ` (${currentTech.phone})` : ''));
+                      const vMeta = getVoucherMetadata(chunk);
 
                       return (
                         <React.Fragment key={chunk.voucherNo + '-' + cIdx}>
@@ -4442,7 +4507,7 @@ export const TourLedgerSection = ({
                               <div className="flex items-baseline gap-2">
                                 <span className="font-bold text-slate-900 shrink-0">Name :</span>
                                 <span className="font-bold text-slate-900">
-                                  {displayTechName}
+                                  {vMeta.techName}
                                 </span>
                               </div>
                               {/* Full width dashed line between Name and Account */}
@@ -4458,6 +4523,12 @@ export const TourLedgerSection = ({
                                   <span className="font-bold text-slate-900">Ticket No :</span>
                                   <span className="font-mono font-bold text-blue-900">
                                     {chunk.ticketId || 'General Tour'}
+                                  </span>
+                                </div>
+                                <div className="flex items-baseline gap-1 text-[10px]">
+                                  <span className="font-bold text-slate-900">City :</span>
+                                  <span className="font-mono font-bold text-teal-800 uppercase">
+                                    {vMeta.city || '-'}
                                   </span>
                                 </div>
                               </div>
