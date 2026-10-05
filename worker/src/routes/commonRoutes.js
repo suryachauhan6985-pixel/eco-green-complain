@@ -589,6 +589,36 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
         whatsapp_body: '🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello {{technician_name}}, you and *{{partner_technician_name}}* have been assigned as a 2-member service team for Ticket *{{complaint_id}}*.\n\n👥 *Assigned Team:* {{technician_name}} & {{partner_technician_name}}\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease coordinate with {{partner_technician_name}} and call the customer before visiting the site.',
         email_subject: '[Eco Green Solar] Team Work Order: Ticket #{{complaint_id}} - {{customer_name}}',
         email_body: 'Dear {{technician_name}},\n\nYou and {{partner_technician_name}} have been assigned as a joint service team for complaint ticket #{{complaint_id}}.\n\nAssigned Team: {{technician_name}} & {{partner_technician_name}} (Phone: {{partner_technician_phone}})\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue: {{issue_category}} - {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease coordinate with your partner specialist and log into the Technician Portal to update progress.'
+      },
+      {
+        template_key: 'technician_team_work_order_reassigned',
+        name: 'Team Work Order Reassigned (Dual Technicians Reallocated)',
+        audience: 'technician',
+        trigger_event: 'technician_team_work_order_reassigned',
+        meta_template_name: 'technician_team_work_order_reassigned',
+        whatsapp_body: '🛠️ *Eco Green Solar - Team Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you and *{{partner_technician_name}}* as a 2-member service team.\n\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Category:* {{issue_category}}\n📝 *Issue Details:* {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.',
+        email_subject: '[Eco Green Solar] Team Reassigned Work Order: Ticket #{{complaint_id}}',
+        email_body: 'Dear {{technician_name}},\n\nTicket #{{complaint_id}} has been reassigned to you and {{partner_technician_name}} as a 2-member service team.\nCustomer: {{customer_name}}\nAddress: {{customer_address}}\nExpected Visit: {{expected_visit_date}}'
+      },
+      {
+        template_key: 'technician_team_partner_updated',
+        name: 'Team Partner Updated (Co-Specialist Changed)',
+        audience: 'technician',
+        trigger_event: 'technician_team_partner_updated',
+        meta_template_name: 'technician_team_partner_updated',
+        whatsapp_body: '🛠️ *Eco Green Solar - Team Partner Update*\n\nHello {{technician_name}}, your service team partner for ticket *{{complaint_id}}* has been updated to *{{partner_technician_name}}*.\n\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Category:* {{issue_category}}\n📝 *Issue Details:* {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with your partner.',
+        email_subject: '[Eco Green Solar] Team Partner Updated: Ticket #{{complaint_id}}',
+        email_body: 'Dear {{technician_name}},\n\nYour co-partner for ticket #{{complaint_id}} has been updated to {{partner_technician_name}}.\nContact: {{partner_technician_phone}}\nCustomer: {{customer_name}}'
+      },
+      {
+        template_key: 'technician_team_removed_notice',
+        name: 'Team Removed Member Notice (Transferred/Unassigned)',
+        audience: 'technician',
+        trigger_event: 'technician_team_removed_notice',
+        meta_template_name: 'technician_team_removed_notice',
+        whatsapp_body: '*Eco Green Solar - Team Assignment Notice*\n\nHello {{technician_name}}, please note that your 2-member service team assignment for ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been updated/transferred.\n\nYou are no longer required to visit this site for this ticket. Please check your technician portal for updated schedules.\n- Eco Green Solar',
+        email_subject: '[Eco Green Solar] Team Assignment Notice: Ticket #{{complaint_id}}',
+        email_body: 'Hello {{technician_name}},\n\nPlease note that your team assignment for ticket #{{complaint_id}} has been transferred. You are no longer required to visit this site.'
       }
     ].filter(d => !existingKeys.has(d.template_key));
 
@@ -860,14 +890,19 @@ commonRoutes.post('/notifications/templates/sync-from-meta', authenticateToken, 
 
     const metaMap = new Map();
     for (const mt of metaRes.templates) {
-      if (mt.name) metaMap.set(mt.name.toLowerCase(), mt.status);
+      if (mt.name) metaMap.set(mt.name.toLowerCase(), mt);
     }
 
     const dbRows = await query('SELECT id, template_key, meta_template_name, meta_status FROM notification_templates', [], c.env, c.executionCtx);
+    const existingMetaNames = new Set();
+    const existingKeys = new Set();
     let syncedCount = 0;
+
     for (const row of dbRows.rows) {
+      if (row.meta_template_name) existingMetaNames.add(row.meta_template_name.toLowerCase());
+      if (row.template_key) existingKeys.add(row.template_key.toLowerCase());
       const key = (row.meta_template_name || row.template_key || '').toLowerCase();
-      const liveStatus = metaMap.has(key) ? metaMap.get(key) : 'PENDING';
+      const liveStatus = metaMap.has(key) ? metaMap.get(key).status : 'PENDING';
       syncedCount++;
       await query(
         'UPDATE notification_templates SET meta_status = $1, last_synced_at = CURRENT_TIMESTAMP, sync_status = \'SYNCED\', updated_at = CURRENT_TIMESTAMP WHERE id = $2',
@@ -875,6 +910,35 @@ commonRoutes.post('/notifications/templates/sync-from-meta', authenticateToken, 
         c.env,
         c.executionCtx
       ).catch(() => {});
+    }
+
+    // Auto-discover and insert any templates present in Meta that are not in the database
+    for (const mt of metaRes.templates) {
+      const mtName = (mt.name || '').toLowerCase();
+      if (!existingMetaNames.has(mtName) && !existingKeys.has(mtName)) {
+        const isTech = mtName.startsWith('technician_') || mtName.includes('work_order') || mtName.includes('technician');
+        const audience = isTech ? 'technician' : 'customer';
+        const prettyName = mt.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const bodyComp = (mt.components || []).find(comp => comp.type === 'BODY')?.text || `[WhatsApp Template: ${mt.name}]`;
+        await query(`
+          INSERT INTO notification_templates (
+            template_key, name, whatsapp_body, email_subject, email_body,
+            audience, trigger_event, meta_template_name, meta_status, is_active, channel, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, 'whatsapp', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON CONFLICT (template_key) DO NOTHING
+        `, [
+          mt.name,
+          prettyName,
+          bodyComp,
+          `[Eco Green Solar] ${prettyName}`,
+          `Template: ${prettyName}\n${bodyComp}`,
+          audience,
+          mt.name,
+          mt.name,
+          mt.status || 'APPROVED'
+        ], c.env, c.executionCtx).catch(() => {});
+        syncedCount++;
+      }
     }
 
     const refreshed = await query(`

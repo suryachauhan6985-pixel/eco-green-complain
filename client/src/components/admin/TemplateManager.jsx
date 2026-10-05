@@ -23,6 +23,9 @@ export const TRIGGER_OPTIONS = [
   { id: 'complaint_reopened', label: 'Ticket Reopened Alert', audience: 'customer', desc: 'Fires if customer or supervisor reopens an issue' },
   { id: 'technician_work_order', label: 'Work Order Dispatch (New Job)', audience: 'technician', desc: 'Fires to newly assigned technician with customer address' },
   { id: 'technician_team_work_order', label: 'Team Work Order (Dual Technicians Assigned)', audience: 'technician', desc: 'Fires to both technicians when a complaint is assigned to 2 technicians with both names' },
+  { id: 'technician_team_work_order_reassigned', label: 'Team Work Order Reassigned (Dual Technicians Reallocated)', audience: 'technician', desc: 'Fires to both technicians when an existing ticket is reassigned to a 2-member team' },
+  { id: 'technician_team_partner_updated', label: 'Team Partner Updated (Co-Specialist Changed)', audience: 'technician', desc: 'Fires when the partner specialist is updated for a team-assigned ticket' },
+  { id: 'technician_team_removed_notice', label: 'Team Removed Member Notice (Transferred/Unassigned)', audience: 'technician', desc: 'Fires to notify a technician when they are removed from a 2-member team or team is cancelled' },
   { id: 'technician_reminder', label: 'Pending Visit Reminder', audience: 'technician', desc: 'Fires as schedule reminder for upcoming service visit' },
   { id: 'technician_reopened_work_order', label: 'Technician Reopened Work Order (Reopened Case)', audience: 'technician', desc: 'Fires to assigned technician when a closed complaint is reopened' },
   { id: 'technician_reopen_job_transferred', label: 'Technician Reopened Job Transferred (Previous Tech Notice)', audience: 'technician', desc: 'Fires on reopen to notify previous technician that job was transferred to another specialist' },
@@ -51,6 +54,9 @@ export const isTechnicianTemplate = (t) => {
   if (
     key === 'technician_work_order' ||
     key === 'technician_team_work_order' ||
+    key === 'technician_team_work_order_reassigned' ||
+    key === 'technician_team_partner_updated' ||
+    key === 'technician_team_removed_notice' ||
     key === 'technician_reassigned_work_order' ||
     key === 'technician_reminder' ||
     key === 'technician_pending_visit_reminder' ||
@@ -70,6 +76,9 @@ export const isTechnicianTemplate = (t) => {
   if (
     trig === 'technician_work_order' || 
     trig === 'technician_team_work_order' ||
+    trig === 'technician_team_work_order_reassigned' ||
+    trig === 'technician_team_partner_updated' ||
+    trig === 'technician_team_removed_notice' ||
     trig === 'technician_reminder' || 
     trig === 'technician_reopened_work_order' ||
     trig === 'technician_reopen_job_transferred' ||

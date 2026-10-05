@@ -37,6 +37,46 @@ function getTemplates(req, res) {
         whatsapp_body: '☀️ *Eco Green Solar - Charges Waived / Removed*\n\nDear {{customer_name}},\n\nThe service charges for your complaint ticket *{{complaint_id}}* have been waived / removed (₹0).\n\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}}\n💰 *Revised Service Charges:* ₹0 (Free / Covered Under Warranty)\n\n🔗 *Track Live Status:* {{feedback_url}}\n\nOur technician will proceed with the service visit without additional charges.\n- Eco Green Solar Care',
         email_subject: '[Eco Green Solar] Service Charges Waived - Ticket #{{complaint_id}}',
         email_body: 'Dear {{customer_name}},\n\nThe service charges for your complaint ticket #{{complaint_id}} have been waived / removed (₹0).\n\nProduct: {{product_type}}\nIssue: {{issue_category}}\nRevised Charges: ₹0 (Covered Under Warranty)\n\nTrack live status at: {{feedback_url}}'
+      },
+      {
+        template_key: 'technician_team_work_order',
+        name: 'Team Work Order (Dual Technicians Assigned)',
+        audience: 'technician',
+        trigger_event: 'technician_team_work_order',
+        meta_template_name: 'technician_dual_team_work_order',
+        whatsapp_body: '🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello {{technician_name}}, you and *{{partner_technician_name}}* have been assigned as a 2-member service team for Ticket *{{complaint_id}}*.\n\n👥 *Assigned Team:* {{technician_name}} & {{partner_technician_name}}\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease coordinate with {{partner_technician_name}} and call the customer before visiting the site.',
+        email_subject: '[Eco Green Solar] Team Work Order: Ticket #{{complaint_id}} - {{customer_name}}',
+        email_body: 'Dear {{technician_name}},\n\nYou and {{partner_technician_name}} have been assigned as a joint service team for complaint ticket #{{complaint_id}}.\n\nAssigned Team: {{technician_name}} & {{partner_technician_name}} (Phone: {{partner_technician_phone}})\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue: {{issue_category}} - {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease coordinate with your partner specialist and log into the Technician Portal to update progress.'
+      },
+      {
+        template_key: 'technician_team_work_order_reassigned',
+        name: 'Team Work Order Reassigned (Dual Technicians Reallocated)',
+        audience: 'technician',
+        trigger_event: 'technician_team_work_order_reassigned',
+        meta_template_name: 'technician_team_work_order_reassigned',
+        whatsapp_body: '🛠️ *Eco Green Solar - Team Reassigned Work Order*\n\nHello {{technician_name}}, ticket *{{complaint_id}}* has been transferred & assigned to you and *{{partner_technician_name}}* as a 2-member service team.\n\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Category:* {{issue_category}}\n📝 *Issue Details:* {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.',
+        email_subject: '[Eco Green Solar] Team Reassigned Work Order: Ticket #{{complaint_id}}',
+        email_body: 'Dear {{technician_name}},\n\nTicket #{{complaint_id}} has been reassigned to you and {{partner_technician_name}} as a 2-member service team.\nCustomer: {{customer_name}}\nAddress: {{customer_address}}\nExpected Visit: {{expected_visit_date}}'
+      },
+      {
+        template_key: 'technician_team_partner_updated',
+        name: 'Team Partner Updated (Co-Specialist Changed)',
+        audience: 'technician',
+        trigger_event: 'technician_team_partner_updated',
+        meta_template_name: 'technician_team_partner_updated',
+        whatsapp_body: '🛠️ *Eco Green Solar - Team Partner Update*\n\nHello {{technician_name}}, your service team partner for ticket *{{complaint_id}}* has been updated to *{{partner_technician_name}}*.\n\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Category:* {{issue_category}}\n📝 *Issue Details:* {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\nPlease check your Eco Green technician portal for details and coordinate with your partner.',
+        email_subject: '[Eco Green Solar] Team Partner Updated: Ticket #{{complaint_id}}',
+        email_body: 'Dear {{technician_name}},\n\nYour co-partner for ticket #{{complaint_id}} has been updated to {{partner_technician_name}}.\nContact: {{partner_technician_phone}}\nCustomer: {{customer_name}}'
+      },
+      {
+        template_key: 'technician_team_removed_notice',
+        name: 'Team Removed Member Notice (Transferred/Unassigned)',
+        audience: 'technician',
+        trigger_event: 'technician_team_removed_notice',
+        meta_template_name: 'technician_team_removed_notice',
+        whatsapp_body: '*Eco Green Solar - Team Assignment Notice*\n\nHello {{technician_name}}, please note that your 2-member service team assignment for ticket *{{complaint_id}}* (Customer: {{customer_name}}) has been updated/transferred.\n\nYou are no longer required to visit this site for this ticket. Please check your technician portal for updated schedules.\n- Eco Green Solar',
+        email_subject: '[Eco Green Solar] Team Assignment Notice: Ticket #{{complaint_id}}',
+        email_body: 'Hello {{technician_name}},\n\nPlease note that your team assignment for ticket #{{complaint_id}} has been transferred. You are no longer required to visit this site.'
       }
     ].filter(d => !existingKeys.has(d.template_key));
 
