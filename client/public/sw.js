@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-support-v262';
+const CACHE_NAME = 'ecogreen-support-v263';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
@@ -80,6 +80,25 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Auto-renew push subscription if refreshed by mobile OS/browser
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    self.registration.pushManager.subscribe(event.oldSubscription?.options || { userVisibleOnly: true })
+      .then((newSub) => {
+        const subJson = newSub.toJSON();
+        return fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: subJson.endpoint,
+            keys: subJson.keys
+          })
+        });
+      })
+      .catch((err) => console.warn('[SW] Push subscription renewal failed:', err))
+  );
 });
 
 // User taps on the notification in the phone lock screen or notification drawer

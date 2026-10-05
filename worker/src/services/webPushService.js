@@ -1,0 +1,193 @@
+import webpush from 'web-push';
+import { query } from '../db.js';
+
+export const VAPID_PUBLIC_KEY = 'BG7RGa45M_-DXtXhZsTXDBUrBfFGtXp9INDkked5RDSRTt2zSF-1Hs3wvcDVFVuVJ__DVMgDnT1MSvFONbXED4g';
+export const VAPID_PRIVATE_KEY = 'GIcMcXDimGXyGgZxkrclowVeZHarWWhPFJkKzChdC1A';
+export const VAPID_SUBJECT = 'mailto:info@ecogreensolar.co.in';
+
+let isConfigured = false;
+function ensureVapidConfig() {
+  if (!isConfigured) {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    isConfigured = true;
+  }
+}
+
+/**
+ * Register or update a browser push subscription
+ */
+export async function savePushSubscription({ endpoint, p256dh, auth, userId, role, phone }, env, ctx) {
+  if (!endpoint || !p256dh || !auth) {
+    throw new Error('endpoint, p256dh, and auth keys are required');
+  }
+
+  const sql = `
+    INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_id, role, phone, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+    ON CONFLICT (endpoint) DO UPDATE SET
+      p256dh = EXCLUDED.p256dh,
+      auth = EXCLUDED.auth,
+      user_id = COALESCE(EXCLUDED.user_id, push_subscriptions.user_id),
+      role = COALESCE(EXCLUDED.role, push_subscriptions.role),
+      phone = COALESCE(EXCLUDED.phone, push_subscriptions.phone),
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id;
+  `;
+
+  const res = await query(sql, [
+    endpoint,
+    p256dh,
+    auth,
+    userId ? String(userId) : null,
+    role || 'staff',
+    phone ? String(phone) : null
+  ], env, ctx);
+
+  return res.rows[0];
+}
+
+/**
+ * Unsubscribe / delete a push subscription
+ */
+export async function removePushSubscription(endpoint, env, ctx) {
+  if (!endpoint) return;
+  await query('DELETE FROM push_subscriptions WHERE endpoint = $1', [endpoint], env, ctx);
+}
+
+/**
+ * Send a web push notification to a single subscription
+ */
+async function sendToSubscription(subRow, payload, env, ctx) {
+  ensureVapidConfig();
+
+  const pushSubscription = {
+    endpoint: subRow.endpoint,
+    keys: {
+      p256dh: subRow.p256dh,
+      auth: subRow.auth
+    }
+  };
+
+  const stringifiedPayload = typeof payload === 'string' ? payload : JSON.stringify(payload);
+
+  try {
+    await webpush.sendNotification(pushSubscription, stringifiedPayload, {
+      TTL: 86400, // 24 hours retention on push servers if device offline
+      urgency: 'high'
+    });
+    return { success: true, endpoint: subRow.endpoint };
+  } catch (err) {
+    console.warn(`[WebPush] Failed sending to ${subRow.endpoint?.slice(0, 35)}...:`, err.statusCode || err.message);
+    // 404 or 410 indicates the subscription is expired or revoked by user
+    if (err.statusCode === 404 || err.statusCode === 410) {
+      console.log(`[WebPush] Pruning expired subscription: ${subRow.endpoint?.slice(0, 35)}...`);
+      await removePushSubscription(subRow.endpoint, env, ctx).catch(() => {});
+    }
+    return { success: false, endpoint: subRow.endpoint, error: err.message };
+  }
+}
+
+/**
+ * Dispatch push notifications to roles (e.g. ['admin', 'staff'] or 'technician' or 'all')
+ */
+export async function dispatchPushToRoles(roles, payload, env, ctx) {
+  try {
+    const roleList = Array.isArray(roles) ? roles : [roles];
+    const isAll = roleList.includes('all');
+
+    let rows = [];
+    if (isAll) {
+      const res = await query('SELECT * FROM push_subscriptions', [], env, ctx);
+      rows = res.rows || [];
+    } else {
+      const placeholders = roleList.map((_, i) => `$${i + 1}`).join(', ');
+      const res = await query(`SELECT * FROM push_subscriptions WHERE role IN (${placeholders})`, roleList, env, ctx);
+      rows = res.rows || [];
+    }
+
+    if (!rows.length) {
+      return { sent: 0, total: 0 };
+    }
+
+    const promises = rows.map(sub => sendToSubscription(sub, payload, env, ctx));
+    const results = await Promise.allSettled(promises);
+    const sentCount = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+
+    return { sent: sentCount, total: rows.length };
+  } catch (err) {
+    console.error('[WebPush] Error dispatching to roles:', err.message);
+    return { sent: 0, error: err.message };
+  }
+}
+
+/**
+ * Dispatch push notification to a specific technician by ID or phone
+ */
+export async function dispatchPushToTechnician(techId, techPhone, payload, env, ctx) {
+  try {
+    const conditions = [];
+    const params = [];
+
+    if (techId) {
+      params.push(String(techId));
+      conditions.push(`user_id = $${params.length}`);
+    }
+    if (techPhone) {
+      const cleanPhone = String(techPhone).replace(/\D/g, '').slice(-10);
+      params.push(`%${cleanPhone}%`);
+      conditions.push(`phone LIKE $${params.length}`);
+    }
+
+    if (!conditions.length) return { sent: 0 };
+
+    const sql = `SELECT * FROM push_subscriptions WHERE role = 'technician' AND (${conditions.join(' OR ')})`;
+    const res = await query(sql, params, env, ctx);
+    const rows = res.rows || [];
+
+    if (!rows.length) return { sent: 0, total: 0 };
+
+    const promises = rows.map(sub => sendToSubscription(sub, payload, env, ctx));
+    const results = await Promise.allSettled(promises);
+    const sentCount = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+
+    return { sent: sentCount, total: rows.length };
+  } catch (err) {
+    console.error('[WebPush] Error dispatching to technician:', err.message);
+    return { sent: 0, error: err.message };
+  }
+}
+
+/**
+ * Dispatch push notification to a specific user by user_id
+ */
+export async function dispatchPushToUser(userId, payload, env, ctx) {
+  try {
+    if (!userId) return { sent: 0 };
+    const res = await query('SELECT * FROM push_subscriptions WHERE user_id = $1', [String(userId)], env, ctx);
+    const rows = res.rows || [];
+
+    if (!rows.length) return { sent: 0, total: 0 };
+
+    const promises = rows.map(sub => sendToSubscription(sub, payload, env, ctx));
+    const results = await Promise.allSettled(promises);
+    const sentCount = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+
+    return { sent: sentCount, total: rows.length };
+  } catch (err) {
+    console.error('[WebPush] Error dispatching to user:', err.message);
+    return { sent: 0, error: err.message };
+  }
+}
+
+/**
+ * Send an immediate test push to a specific endpoint
+ */
+export async function sendTestPush(subscription, env, ctx) {
+  ensureVapidConfig();
+  return sendToSubscription(subscription, {
+    title: '☀️ Eco Green Support — Test Alert',
+    body: 'OS-level background push notification is active and working properly!',
+    url: '/complaints',
+    tag: `test-push-${Date.now()}`
+  }, env, ctx);
+}

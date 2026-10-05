@@ -963,6 +963,77 @@ app.put('/api/in-app-notifications/read-all', optionalAuth, notificationControll
 app.put('/api/in-app-notifications/:id/read', optionalAuth, notificationController.markInAppNotificationRead);
 app.delete('/api/in-app-notifications', optionalAuth, notificationController.clearInAppNotifications);
 
+// ================= OS WEB PUSH NOTIFICATION ROUTES =================
+const webPushService = require('./services/webPushService');
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  res.json({ publicKey: webPushService.VAPID_PUBLIC_KEY });
+});
+
+app.post('/api/push/subscribe', optionalAuth, (req, res) => {
+  try {
+    const { endpoint, keys, role, userId, phone } = req.body || {};
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ error: 'Valid push subscription is required' });
+    }
+    webPushService.savePushSubscription({
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+      userId: userId || req.user?.id,
+      role: role || req.user?.role || 'staff',
+      phone: phone || req.user?.phone
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/push/unsubscribe', optionalAuth, (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    if (endpoint) webPushService.removePushSubscription(endpoint);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/push/test', optionalAuth, async (req, res) => {
+  try {
+    const { subscription, delaySeconds = 0 } = req.body || {};
+    const delayMs = Math.min(Math.max(Number(delaySeconds) * 1000, 0), 10000);
+
+    const testPayload = {
+      title: '☀️ Eco Green Support — Test Alert',
+      body: 'OS-level background push notification is active on this device!',
+      url: '/complaints',
+      tag: `test-push-${Date.now()}`
+    };
+
+    if (subscription && subscription.endpoint && subscription.keys) {
+      if (delayMs > 0) {
+        setTimeout(async () => {
+          try {
+            await webPushService.dispatchPushToRoles(['admin', 'staff', 'technician'], testPayload);
+          } catch (_) {}
+        }, delayMs);
+        return res.json({ success: true, message: `Test push scheduled in ${delaySeconds}s. Lock screen now!` });
+      }
+      await webPushService.dispatchPushToRoles(['admin', 'staff', 'technician'], testPayload);
+      return res.json({ success: true, message: 'Test push dispatched' });
+    }
+
+    const role = req.user?.role || 'staff';
+    webPushService.dispatchPushToRoles(role, testPayload);
+    res.json({ success: true, message: 'Test push dispatched to your role' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ================= WHATSAPP MASTER RELAY (OFFICE PC ZERO-BAN QUEUE) =================
 // Table for outgoing WhatsApp messages & Master PC heartbeat
 db.exec(`

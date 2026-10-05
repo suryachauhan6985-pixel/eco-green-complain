@@ -4,11 +4,13 @@ import {
   Check, Save, RefreshCw, Key, Phone, Mail, Sparkles, Copy, 
   Lock, Eye, EyeOff, AlertCircle, CheckCircle2, Package, 
   HelpCircle, Tag, Plus, Trash2, ExternalLink, Printer, Compass,
-  Users, Wrench, Search, Edit3, X, UserPlus, IndianRupee
+  Users, Wrench, Search, Edit3, X, UserPlus, IndianRupee,
+  Bell, Smartphone
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { TemplateManager } from './TemplateManager';
 
@@ -113,6 +115,7 @@ const ISSUE_DIAGNOSTICS_DATA = {
 export const AdminSettingsHub = ({ initialTab = 'account' }) => {
   const { currentUser, setCurrentUser } = useAuth();
   const { showToast, confirm } = useDialog();
+  const { testBackgroundPush } = useNotifications();
 
   const [activeTab, setActiveTab] = useState(() => {
     const urlTab = getUrlParam('tab');
@@ -884,6 +887,38 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                   <p className="leading-snug text-emerald-800/90 text-[11px]">
                     Role-based access control (Admin, Staff, Technician, Public Customer). Data retention rule: media auto-purged 30 days post ticket closure while preserving core audit registers.
                   </p>
+                </div>
+
+                {/* OS Web Push Notification System Card */}
+                <div className="bg-gradient-to-br from-slate-900 to-emerald-950 border border-emerald-500/20 p-4 rounded-2xl text-white text-xs shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold flex items-center gap-1.5 text-emerald-400">
+                      <Smartphone className="w-4 h-4 text-emerald-400" />
+                      OS Background Push Engine
+                    </p>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      VAPID Active
+                    </span>
+                  </div>
+                  <p className="leading-snug text-slate-300 text-[11px]">
+                    Receives system notifications on Android, iOS (Home Screen PWA), Windows, and Mac lock screens even when the app is completely closed.
+                  </p>
+                  <div className="pt-1 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        showToast('Test push dispatched! Lock your screen or switch apps now to verify in 3s.', 'info');
+                        if (typeof testBackgroundPush === 'function') {
+                          await testBackgroundPush(3);
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    >
+                      <Bell className="w-3.5 h-3.5" />
+                      <span>Test Background Push (3s Delay)</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

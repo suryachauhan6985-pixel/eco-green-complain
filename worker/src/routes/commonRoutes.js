@@ -2,6 +2,14 @@ import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { META_WABA_ID, DEFAULT_META_ACCESS_TOKEN } from '../whatsapp.js';
+import {
+  VAPID_PUBLIC_KEY,
+  savePushSubscription,
+  removePushSubscription,
+  dispatchPushToRoles,
+  dispatchPushToTechnician,
+  sendTestPush
+} from '../services/webPushService.js';
 
 async function fetchMetaTemplatesFromGraph(env) {
   const token = env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
@@ -948,6 +956,26 @@ commonRoutes.post('/in-app-notifications', optionalAuth, async (c) => {
       JSON.stringify(b.readBy || []),
       JSON.stringify(b.acknowledgedBy || [])
     ], c.env, c.executionCtx);
+    // Dispatch OS background Web Push
+    c.executionCtx?.waitUntil?.(
+      (async () => {
+        const targetRole = b.targetRole || 'all';
+        const targetTechId = b.targetTechnicianId;
+        const pushPayload = {
+          title: b.title || 'Eco Green Support Alert',
+          body: b.message || 'New complaint or service update received.',
+          ticketId: b.ticketId || '',
+          url: b.ticketId ? `/complaints?ticket=${b.ticketId}` : '/complaints',
+          tag: b.ticketId ? `ticket-${b.ticketId}` : `egs-notif-${Date.now()}`
+        };
+        if (targetTechId) {
+          await dispatchPushToTechnician(targetTechId, null, pushPayload, c.env, c.executionCtx).catch(() => {});
+        } else {
+          await dispatchPushToRoles(targetRole, pushPayload, c.env, c.executionCtx).catch(() => {});
+        }
+      })()
+    );
+
     return c.json({ success: true, id }, 201);
   } catch (err) {
     return c.json({ error: err.message }, 500);
@@ -1013,6 +1041,102 @@ commonRoutes.delete('/in-app-notifications', optionalAuth, async (c) => {
   try {
     await query('DELETE FROM in_app_notifications', [], c.env, c.executionCtx);
     return c.json({ success: true, message: 'All in-app notifications cleared' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ==========================================
+// OS WEB PUSH NOTIFICATION ROUTES
+// ==========================================
+
+// GET /api/push/vapid-public-key
+commonRoutes.get('/push/vapid-public-key', (c) => {
+  return c.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+// POST /api/push/subscribe
+commonRoutes.post('/push/subscribe', optionalAuth, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { endpoint, keys, role, userId, phone } = body;
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return c.json({ error: 'Valid push subscription (endpoint, p256dh, auth) is required' }, 400);
+    }
+    const user = c.get('user');
+    const saved = await savePushSubscription({
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+      userId: userId || user?.id,
+      role: role || user?.role || 'staff',
+      phone: phone || user?.phone
+    }, c.env, c.executionCtx);
+    return c.json({ success: true, id: saved?.id });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/push/unsubscribe
+commonRoutes.post('/push/unsubscribe', optionalAuth, async (c) => {
+  try {
+    const { endpoint } = await c.req.json().catch(() => ({}));
+    if (endpoint) {
+      await removePushSubscription(endpoint, c.env, c.executionCtx);
+    }
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/push/test
+commonRoutes.post('/push/test', optionalAuth, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const delaySeconds = Math.min(Math.max(Number(body.delaySeconds || 0), 0), 10);
+    const subscription = body.subscription;
+
+    if (subscription && subscription.endpoint && subscription.keys) {
+      const targetSub = {
+        endpoint: subscription.endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth
+      };
+
+      if (delaySeconds > 0) {
+        c.executionCtx?.waitUntil?.(
+          new Promise((resolve) => {
+            setTimeout(async () => {
+              try {
+                await sendTestPush(targetSub, c.env, c.executionCtx);
+              } catch (_) {}
+              resolve();
+            }, delaySeconds * 1000);
+          })
+        );
+        return c.json({
+          success: true,
+          message: `Test push scheduled in ${delaySeconds} seconds. Lock screen or switch app now!`
+        });
+      }
+
+      const res = await sendTestPush(targetSub, c.env, c.executionCtx);
+      return c.json(res);
+    }
+
+    const user = c.get('user');
+    const role = user?.role || 'staff';
+    c.executionCtx?.waitUntil?.(
+      dispatchPushToRoles(role, {
+        title: '☀️ Eco Green Support — Test Alert',
+        body: 'Background OS push notification is active on this device!',
+        url: '/complaints',
+        tag: `test-push-${Date.now()}`
+      }, c.env, c.executionCtx)
+    );
+    return c.json({ success: true, message: 'Test push dispatched to your role' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

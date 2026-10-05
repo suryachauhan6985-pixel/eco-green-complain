@@ -1,8 +1,26 @@
 /**
  * Eco Green Solar CMS - Native OS / PWA Web Push Notification Engine
  * Displays system-level notifications on mobile phone lock screens, Android status bar,
- * Windows Action Center, and macOS Notification Center even when PWA is minimized or in background.
+ * Windows Action Center, and macOS Notification Center even when PWA is closed or in background.
  */
+
+export const VAPID_PUBLIC_KEY = 'BG7RGa45M_-DXtXhZsTXDBUrBfFGtXp9INDkked5RDSRTt2zSF-1Hs3wvcDVFVuVJ__DVMgDnT1MSvFONbXED4g';
+
+/**
+ * Convert base64 VAPID public key to Uint8Array for browser pushManager.subscribe()
+ */
+export function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export const getPushPermissionState = () => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -11,17 +29,80 @@ export const getPushPermissionState = () => {
   return Notification.permission; // 'granted' | 'denied' | 'default'
 };
 
-export const requestPushPermission = async () => {
+/**
+ * Register device for OS background push with PushManager and backend API
+ */
+export const subscribeUserToPush = async (currentUser) => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return { success: false, reason: 'unsupported' };
+  }
+
+  if (Notification.permission !== 'granted') {
+    return { success: false, reason: 'permission_not_granted' };
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let subscription = await reg.pushManager.getSubscription();
+
+    // If subscription doesn't exist, create one using VAPID key
+    if (!subscription) {
+      const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+    }
+
+    if (!subscription) {
+      return { success: false, reason: 'subscription_failed' };
+    }
+
+    const subJson = subscription.toJSON();
+    if (!subJson.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) {
+      return { success: false, reason: 'incomplete_keys' };
+    }
+
+    const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        endpoint: subJson.endpoint,
+        keys: subJson.keys,
+        role: currentUser?.role || 'staff',
+        userId: currentUser?.id || null,
+        phone: currentUser?.phone || null
+      })
+    });
+
+    return { success: true, subscription: subJson };
+  } catch (err) {
+    console.warn('Failed to subscribe user to background push:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Request OS permission and immediately register push subscription
+ */
+export const requestPushPermission = async (currentUser = null) => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'unsupported';
   }
   try {
     const perm = await Notification.requestPermission();
     if (perm === 'granted') {
+      // Subscribe device to background push
+      await subscribeUserToPush(currentUser);
+
       // Fire confirmation notification
       showOSNotification({
         title: 'Eco Green Support Alerts Active',
-        body: 'You will receive lock screen alerts and service updates even when the app is minimized.',
+        body: 'You will receive lock screen alerts and service updates even when the app is closed.',
         tag: 'egs-perm-granted'
       });
     }
@@ -33,7 +114,7 @@ export const requestPushPermission = async () => {
 };
 
 /**
- * Display native OS notification with vibration pattern and ticket link
+ * Display native OS notification with vibration pattern and ticket link (Foreground/In-App)
  */
 export const showOSNotification = async ({ title, body, ticketId, url, tag }) => {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
@@ -59,7 +140,6 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
   };
 
   try {
-    // 1. Try Service Worker showNotification (Best for Android / PWA mobile lock screen)
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready.catch(() => null);
       if (reg && typeof reg.showNotification === 'function') {
@@ -67,10 +147,48 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
         return;
       }
     }
-
-    // 2. Fallback to window Notification constructor
     new Notification(targetTitle, options);
   } catch (err) {
     console.warn('OS notification display error:', err);
+  }
+};
+
+/**
+ * Trigger a background push test (with optional countdown delay so user can lock screen)
+ */
+export const testBackgroundPush = async (delaySeconds = 3) => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return { success: false, message: 'Push notifications are not supported on this browser.' };
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let subscription = await reg.pushManager.getSubscription();
+
+    if (!subscription) {
+      const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+    }
+
+    const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
+    const response = await fetch('/api/push/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        subscription: subscription ? subscription.toJSON() : null,
+        delaySeconds
+      })
+    });
+
+    return await response.json();
+  } catch (err) {
+    console.warn('Test background push error:', err);
+    return { success: false, message: err.message };
   }
 };

@@ -3,6 +3,7 @@ import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { sendWhatsApp } from '../whatsapp.js';
 import { deleteR2Object, moveR2Object } from '../r2.js';
+import { dispatchPushToRoles, dispatchPushToTechnician } from '../services/webPushService.js';
 
 const complaintRoutes = new Hono();
 
@@ -695,6 +696,17 @@ async function handleCreateComplaint(c, isPublic = false) {
     user?.role || (isPublic ? 'customer' : 'staff')
   ], c.env, c.executionCtx).catch(() => {});
 
+  // OS Background Web Push for Admin & Staff
+  c.executionCtx?.waitUntil?.(
+    dispatchPushToRoles(['admin', 'staff'], {
+      title: `☀️ New Ticket: ${newComp.ticket_id}`,
+      body: `${newComp.customer_name} • ${newComp.product_type} (${newComp.issue_category})`,
+      ticketId: newComp.ticket_id,
+      url: `/complaints?ticket=${newComp.ticket_id}`,
+      tag: `ticket-${newComp.ticket_id}`
+    }, c.env, c.executionCtx).catch(() => {})
+  );
+
   // WhatsApp Notification in Background
   let waResult = null;
   const isSurvey = isSurveyTicket(newComp.product_type, newComp.issue_category);
@@ -903,6 +915,40 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     if (!custResult?.success) {
       warningMsg = (warningMsg ? `${warningMsg}. ` : '') + `WhatsApp dispatch to customer failed: ${custResult?.error || 'Meta API error'}`;
     }
+
+    // Dispatch OS Background Web Push to Assigned Technician(s) and Staff
+    c.executionCtx?.waitUntil?.(
+      (async () => {
+        // Push to primary technician
+        await dispatchPushToTechnician(primaryTech.id, primaryTech.phone, {
+          title: `🔧 Work Order Assigned: ${complaint.ticket_id}`,
+          body: `${complaint.customer_name} • ${complaint.product_type} (${complaint.city || 'Site Visit'})`,
+          ticketId: complaint.ticket_id,
+          url: `/technician?ticket=${complaint.ticket_id}`,
+          tag: `assign-${complaint.ticket_id}`
+        }, c.env, c.executionCtx).catch(() => {});
+
+        // Push to secondary technician if team assignment
+        if (secondaryTech) {
+          await dispatchPushToTechnician(secondaryTech.id, secondaryTech.phone, {
+            title: `🔧 Team Work Order: ${complaint.ticket_id}`,
+            body: `Co-assigned with ${primaryTech.name}: ${complaint.customer_name}`,
+            ticketId: complaint.ticket_id,
+            url: `/technician?ticket=${complaint.ticket_id}`,
+            tag: `assign-${complaint.ticket_id}`
+          }, c.env, c.executionCtx).catch(() => {});
+        }
+
+        // Push update to Admin & Staff
+        await dispatchPushToRoles(['admin', 'staff'], {
+          title: `Technician Assigned: ${complaint.ticket_id}`,
+          body: `${primaryTech.name} assigned to ${complaint.customer_name}`,
+          ticketId: complaint.ticket_id,
+          url: `/complaints?ticket=${complaint.ticket_id}`,
+          tag: `assign-${complaint.ticket_id}`
+        }, c.env, c.executionCtx).catch(() => {});
+      })()
+    );
 
     return c.json({
       success: true,

@@ -2,7 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useAuth } from './AuthContext';
 import { api } from '../api/client';
 import { playNotificationChime } from '../utils/sound';
-import { showOSNotification, requestPushPermission, getPushPermissionState } from '../utils/pushNotification';
+import {
+  showOSNotification,
+  requestPushPermission as baseRequestPushPermission,
+  getPushPermissionState,
+  subscribeUserToPush,
+  testBackgroundPush
+} from '../utils/pushNotification';
 
 const NotificationContext = createContext();
 
@@ -402,6 +408,18 @@ export const NotificationProvider = ({ children }) => {
     };
   }, [fetchFromBackend]);
 
+  // Automatically register device for OS background Web Push when logged in and permission is granted
+  useEffect(() => {
+    if (currentUser && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      subscribeUserToPush(currentUser).catch(() => {});
+    }
+  }, [currentUser]);
+
+  const requestPushPermission = useCallback(async () => {
+    const res = await baseRequestPushPermission(currentUser);
+    return res;
+  }, [currentUser]);
+
   // Add a new in-app notification
   const addNotification = useCallback((data) => {
     const newNotif = {
@@ -660,6 +678,8 @@ export const NotificationProvider = ({ children }) => {
     toggleSound,
     requestPushPermission,
     getPushPermissionState,
+    subscribeUserToPush,
+    testBackgroundPush,
     isUnread
   };
 
