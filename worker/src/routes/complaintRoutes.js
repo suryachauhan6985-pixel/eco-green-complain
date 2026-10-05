@@ -871,10 +871,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
         product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
         issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-        notes: (secondaryTech 
-          ? `[Team Partner: ${secondaryTech.name}${secondaryTech.phone ? ' (' + secondaryTech.phone + ')' : ''}] ${complaint.issue_description || notes || ''}`
-          : (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site'))
-        ).slice(0, 1000),
+        notes: (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -899,7 +896,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
         product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
         issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-        notes: `[Team Lead: ${primaryTech.name}${primaryTech.phone ? ' (' + primaryTech.phone + ')' : ''}] ${complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')}`.slice(0, 1000),
+        notes: (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -1580,10 +1577,7 @@ async function handleResendTechnicianWorkOrder(c) {
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
         product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
         issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-        notes: (hasSecTech 
-          ? `[Team Partner: ${complaint.secondary_technician_name || 'Co-Specialist'}${complaint.secondary_technician_phone ? ' (' + complaint.secondary_technician_phone + ')' : ''}] ${complaint.issue_description || ''}`
-          : (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site'))
-        ).slice(0, 1000),
+        notes: (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -1607,7 +1601,7 @@ async function handleResendTechnicianWorkOrder(c) {
           customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
           product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
           issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-          notes: `[Team Lead: ${complaint.technician_name || 'Technician'}${complaint.technician_phone ? ' (' + complaint.technician_phone + ')' : ''}] ${complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')}`.slice(0, 1000),
+          notes: (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
           priority: complaint.priority || 'Medium',
           expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
           db_complaint_id: complaint.id

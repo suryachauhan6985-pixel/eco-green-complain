@@ -298,9 +298,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const prodType = cleanParam(variables.product_type, 'Solar System');
       const issueCat = cleanParam(variables.issue_category, 'Service Request');
       const baseNotes = cleanParam(variables.notes || variables.issue_description, 'Inspection required');
-      const notes = (templateName === 'technician_team_work_order' && partnerName)
-        ? `${baseNotes} (Team Partner: ${partnerName}${partnerPhone ? ' - ' + partnerPhone : ''})`
-        : baseNotes;
+      const notes = baseNotes;
       const priority = cleanParam(variables.priority, 'Normal');
       const visitDate = cleanParam(variables.expected_visit_date, 'Immediate / Today');
       const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(tktId)}`;
