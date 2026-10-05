@@ -1078,9 +1078,9 @@ export const TourLedgerSection = ({
     try {
       setSubmittingExpense(true);
 
-      // Check if this ticket already has an unapproved voucher for this technician
+      // Check if this ticket already has an unapproved voucher for this technician (only if total < 10,000)
       let vNo = null;
-      if (expenseForm.ticket_id) {
+      if (expenseForm.ticket_id && expenseTotalSum < 10000) {
         const normTkt = String(expenseForm.ticket_id).trim().toLowerCase();
         const unapprovedVch = (ledgerData.expenses || []).find(e => 
           String(e.technician_id) === String(effectiveTechId) &&
@@ -1090,7 +1090,12 @@ export const TourLedgerSection = ({
           e.voucher_no
         );
         if (unapprovedVch) {
-          vNo = unapprovedVch.voucher_no;
+          const currentVchTotal = (ledgerData.expenses || [])
+            .filter(e => e.voucher_no === unapprovedVch.voucher_no)
+            .reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+          if (currentVchTotal + expenseTotalSum < 10000) {
+            vNo = unapprovedVch.voucher_no;
+          }
         }
       }
 
@@ -1124,7 +1129,7 @@ export const TourLedgerSection = ({
 
       // If updating an existing unapproved voucher claim:
       if (editingVoucherNo) {
-        await api.updateTourVoucher(editingVoucherNo, {
+        const updateRes = await api.updateTourVoucher(editingVoucherNo, {
           technician_id: effectiveTechId,
           technician_name: chosenTech.name || 'Technician',
           expense_date: expenseForm.expense_date,
@@ -1135,7 +1140,14 @@ export const TourLedgerSection = ({
           items: itemsPayload
         });
 
-        showToast(`Voucher ${editingVoucherNo} updated successfully!`, 'success');
+        const updatedVchList = updateRes?.voucher_nos?.length > 1
+          ? updateRes.voucher_nos.join(' & ')
+          : editingVoucherNo;
+        const splitMsg = updateRes?.voucher_nos?.length > 1
+          ? ` (Auto-split into ${updateRes.voucher_nos.length} vouchers under ₹10,000 threshold)`
+          : '';
+
+        showToast(`Voucher ${updatedVchList}${splitMsg} updated successfully!`, 'success');
         setIsExpenseModalOpen(false);
         setEditingVoucherNo(null);
         await fetchLedger(true);
@@ -1160,8 +1172,15 @@ export const TourLedgerSection = ({
         description: itemsPayload[0].description
       });
 
-      const assignedVch = saveRes?.voucher_no || vNo || 'allotted voucher';
-      showToast(`Voucher ${assignedVch} for ${expenseForm.ticket_id || 'General Tour'} (${itemsPayload.length} items - ₹${expenseTotalSum}) saved successfully!`, 'success');
+      const assignedVch = (saveRes?.voucher_nos && saveRes.voucher_nos.length > 1)
+        ? saveRes.voucher_nos.join(' & ')
+        : (saveRes?.voucher_no || vNo || 'allotted voucher');
+
+      const splitNotice = (saveRes?.voucher_nos && saveRes.voucher_nos.length > 1)
+        ? ` (Auto-split into ${saveRes.voucher_nos.length} vouchers strictly under ₹10,000 each)`
+        : '';
+
+      showToast(`Voucher ${assignedVch} for ${expenseForm.ticket_id || 'General Tour'} (${itemsPayload.length} items - ₹${expenseTotalSum.toLocaleString('en-IN')})${splitNotice} saved successfully!`, 'success');
       setIsExpenseModalOpen(false);
       setEditingVoucherNo(null);
       await fetchLedger(true);
@@ -3899,6 +3918,21 @@ export const TourLedgerSection = ({
                 )}
               </div>
 
+              {/* Auto-Split Threshold Notice */}
+              {expenseTotalSum >= 10000 && (
+                <div className="bg-amber-500/10 border border-amber-400/40 rounded-xl p-3 flex items-start gap-2.5 text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-tight space-y-0.5">
+                    <p className="font-bold text-amber-800">
+                      Automatic Voucher Split ({Math.max(2, Math.ceil(expenseTotalSum / 9999))} Separate Vouchers)
+                    </p>
+                    <p className="text-amber-700">
+                      Voucher claims of ₹10,000 or greater are automatically divided into separate vouchers (strictly under ₹10,000 each) with sequential voucher numbers allotted.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Total Calculation & Submit Footer */}
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
@@ -3929,7 +3963,15 @@ export const TourLedgerSection = ({
                 >
                   {(submittingExpense || compressingReceipts) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>
-                    {compressingReceipts ? 'Processing Photos...' : submittingExpense ? 'Saving...' : editingVoucherNo ? `Update Voucher (${editingVoucherNo})` : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum})`}
+                    {compressingReceipts 
+                      ? 'Processing Photos...' 
+                      : submittingExpense 
+                        ? 'Saving...' 
+                        : editingVoucherNo 
+                          ? `Update Voucher (${editingVoucherNo})` 
+                          : expenseTotalSum >= 10000 
+                            ? `Save & Auto-Split (${Math.max(2, Math.ceil(expenseTotalSum / 9999))} Vouchers - ₹${expenseTotalSum.toLocaleString('en-IN')})` 
+                            : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum.toLocaleString('en-IN')})`}
                   </span>
                 </button>
               </div>

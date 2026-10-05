@@ -571,6 +571,16 @@ commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
         whatsapp_body: '☀️ *Eco Green Solar - Site Survey Coordination*\n\nHello {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Solar engineering team. I am assigned for your site survey (Ticket *{{ticket_id}}* - {{product_type}}).\n\nI will be arriving to evaluate your site and rooftop layout. Please let me know if the location is accessible or if there are specific directions.\n\nThank you!',
         email_subject: '[Eco Green Solar] Site Survey Coordination - Ticket #{{ticket_id}}',
         email_body: 'Hello {{customer_name}},\n\nThis is {{technician_name}} from Eco Green Solar regarding your site survey ticket #{{ticket_id}}.'
+      },
+      {
+        template_key: 'technician_team_work_order',
+        name: 'Technician Team Work Order (Dual Technicians Assigned)',
+        audience: 'technician',
+        trigger_event: 'technician_team_work_order',
+        meta_template_name: 'technician_work_order',
+        whatsapp_body: '🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello {{technician_name}}, you and *{{partner_technician_name}}* have been assigned as a 2-member service team for Ticket *{{complaint_id}}*.\n\n👥 *Assigned Team:* {{technician_name}} & {{partner_technician_name}}\n📞 *Partner Contact:* {{partner_technician_phone}}\n👤 *Customer:* {{customer_name}}\n📞 *Customer Phone:* {{customer_phone}}\n📍 *Address:* {{customer_address}}\n🔧 *Product:* {{product_type}}\n⚠️ *Issue:* {{issue_category}} - {{notes}}\n🚨 *Priority:* {{priority}}\n📅 *Expected Visit:* {{expected_visit_date}}\n\n🔗 *Technician Portal:* {{technician_portal_url}}\n\nPlease coordinate with {{partner_technician_name}} and call the customer before visiting the site.',
+        email_subject: '[Eco Green Solar] Team Work Order: Ticket #{{complaint_id}} - {{customer_name}}',
+        email_body: 'Dear {{technician_name}},\n\nYou and {{partner_technician_name}} have been assigned as a joint service team for complaint ticket #{{complaint_id}}.\n\nAssigned Team: {{technician_name}} & {{partner_technician_name}} (Phone: {{partner_technician_phone}})\nCustomer: {{customer_name}}\nPhone: {{customer_phone}}\nAddress: {{customer_address}}\nProduct: {{product_type}}\nIssue: {{issue_category}} - {{notes}}\nPriority: {{priority}}\nScheduled Visit: {{expected_visit_date}}\n\nPlease coordinate with your partner specialist and log into the Technician Portal to update progress.'
       }
     ].filter(d => !existingKeys.has(d.template_key));
 

@@ -183,6 +183,42 @@ export async function sendWhatsApp({
           ]
         }]
       };
+    } else if (templateName === 'technician_team_work_order') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const partnerName = cleanParam(variables.partner_technician_name, 'Co-Specialist');
+      const partnerPhone = cleanParam(variables.partner_technician_phone, '');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+      const custPhone = cleanParam(variables.customer_phone, 'Phone');
+      const custAddress = cleanParam(variables.customer_address, 'Address on file');
+      const prodType = cleanParam(variables.product_type, 'Solar Rooftop Systems');
+      const issueCat = cleanParam(variables.issue_category, 'Service Request');
+      const notes = cleanParam(variables.notes || variables.issue_description, 'Joint team site inspection');
+      const priority = cleanParam(variables.priority, 'Medium');
+      const visitDate = cleanParam(variables.expected_visit_date, 'Immediate');
+      const portalLink = `${appUrl}/technician?ticket=${encodeURIComponent(ticketId)}`;
+      renderedBody = `🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello ${techName}, you and *${partnerName}* have been assigned as a 2-member service team for Ticket *${ticketId}*.\n\n👥 *Assigned Team:* ${techName} & ${partnerName}\n${partnerPhone ? `📞 *Partner Contact:* ${partnerPhone}\n` : ''}👤 *Customer:* ${custName}\n📞 *Customer Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n📝 *Notes:* ${notes}\n🚨 *Priority:* ${priority}\n📅 *Expected Visit:* ${visitDate}\n\n🔗 *Technician Portal:* ${portalLink}\n\nPlease coordinate with ${partnerName} and call the customer before visiting the site.`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_work_order',
+        language: { code: 'en_US' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', parameter_name: 'technician_name', text: `${techName} & ${partnerName}` },
+            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+            { type: 'text', parameter_name: 'customer_name', text: custName },
+            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+            { type: 'text', parameter_name: 'customer_address', text: custAddress },
+            { type: 'text', parameter_name: 'product_type', text: prodType },
+            { type: 'text', parameter_name: 'issue_category', text: issueCat },
+            { type: 'text', parameter_name: 'notes', text: notes },
+            { type: 'text', parameter_name: 'priority', text: priority },
+            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+          ]
+        }]
+      };
     } else if (templateName === 'technician_reminder' || templateName === 'technician_pending_visit_reminder') {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');

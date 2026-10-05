@@ -834,12 +834,23 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     }
 
     // 3. Send WhatsApp Work Order to Primary Technician
-    const techTemplate = isSurvey ? 'site_survey_work_order' : (isReassignment ? 'technician_reassigned_work_order' : 'technician_work_order');
+    const isTeam = Boolean(secondaryTech);
+    const primaryTechTemplate = isSurvey 
+      ? 'site_survey_work_order' 
+      : (isTeam 
+          ? 'technician_team_work_order' 
+          : (isReassignment 
+              ? 'technician_reassigned_work_order' 
+              : 'technician_work_order'));
+
     const techPromise = primaryTech.phone ? sendWhatsApp({
       to: primaryTech.phone,
-      templateName: techTemplate,
+      templateName: primaryTechTemplate,
       variables: {
         technician_name: primaryTech.name,
+        partner_technician_name: secondaryTech?.name || '',
+        partner_technician_phone: secondaryTech?.phone || '',
+        all_technicians_names: secondaryTech ? `${primaryTech.name} & ${secondaryTech.name}` : primaryTech.name,
         ticket_id: complaint.ticket_id,
         complaint_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
@@ -847,7 +858,10 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
         product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
         issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-        notes: (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
+        notes: (secondaryTech 
+          ? `[Team Partner: ${secondaryTech.name}${secondaryTech.phone ? ' (' + secondaryTech.phone + ')' : ''}] ${complaint.issue_description || notes || ''}`
+          : (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site'))
+        ).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -856,11 +870,15 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     }) : Promise.resolve({ success: false, error: `Assigned technician "${primaryTech.name}" has no phone number on file.` });
 
     // 4. Send WhatsApp to Secondary Technician (if assigned)
+    const secTechTemplate = isSurvey ? 'site_survey_work_order' : 'technician_team_work_order';
     const secTechPromise = (secondaryTech && secondaryTech.phone) ? sendWhatsApp({
       to: secondaryTech.phone,
-      templateName: techTemplate,
+      templateName: secTechTemplate,
       variables: {
         technician_name: secondaryTech.name,
+        partner_technician_name: primaryTech.name,
+        partner_technician_phone: primaryTech.phone || '',
+        all_technicians_names: `${primaryTech.name} & ${secondaryTech.name}`,
         ticket_id: complaint.ticket_id,
         complaint_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
@@ -868,7 +886,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
         product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
         issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-        notes: (complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
+        notes: `[Team Lead: ${primaryTech.name}${primaryTech.phone ? ' (' + primaryTech.phone + ')' : ''}] ${complaint.issue_description || notes || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')}`.slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: expected_visit_date ? String(expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -1494,20 +1512,31 @@ async function handleResendTechnicianWorkOrder(c) {
     }
 
     const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
-    const techTemplate = isSurvey ? 'site_survey_work_order' : 'technician_work_order';
+    const hasSecTech = Boolean(complaint.secondary_technician_phone || complaint.secondary_technician_id);
+    const primaryTemplate = isSurvey 
+      ? 'site_survey_work_order' 
+      : (hasSecTech ? 'technician_team_work_order' : 'technician_work_order');
 
     const techRes = await sendWhatsApp({
       to: complaint.technician_phone,
-      templateName: techTemplate,
+      templateName: primaryTemplate,
       variables: {
         technician_name: complaint.technician_name || 'Technician',
+        partner_technician_name: complaint.secondary_technician_name || '',
+        partner_technician_phone: complaint.secondary_technician_phone || '',
+        all_technicians_names: complaint.secondary_technician_name 
+          ? `${complaint.technician_name} & ${complaint.secondary_technician_name}` 
+          : complaint.technician_name,
         ticket_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
         customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
         product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
         issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-        notes: (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
+        notes: (hasSecTech 
+          ? `[Team Partner: ${complaint.secondary_technician_name || 'Co-Specialist'}${complaint.secondary_technician_phone ? ' (' + complaint.secondary_technician_phone + ')' : ''}] ${complaint.issue_description || ''}`
+          : (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site'))
+        ).slice(0, 1000),
         priority: complaint.priority || 'Medium',
         expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
         db_complaint_id: complaint.id
@@ -1516,18 +1545,22 @@ async function handleResendTechnicianWorkOrder(c) {
     });
 
     if (complaint.secondary_technician_phone) {
+      const secTemplate = isSurvey ? 'site_survey_work_order' : 'technician_team_work_order';
       sendWhatsApp({
         to: complaint.secondary_technician_phone,
-        templateName: techTemplate,
+        templateName: secTemplate,
         variables: {
           technician_name: complaint.secondary_technician_name || 'Co-Specialist',
+          partner_technician_name: complaint.technician_name || 'Lead Specialist',
+          partner_technician_phone: complaint.technician_phone || '',
+          all_technicians_names: `${complaint.technician_name} & ${complaint.secondary_technician_name}`,
           ticket_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
           customer_phone: complaint.customer_phone,
           customer_address: [complaint.customer_address, complaint.city].filter(Boolean).join(', ') || 'On File',
           product_type: complaint.product_type || (isSurvey ? 'SITE SURVEY' : 'Solar Rooftop Systems'),
           issue_category: complaint.issue_category || (isSurvey ? 'Site Survey Feasibility' : 'Service Request'),
-          notes: (complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')).slice(0, 1000),
+          notes: `[Team Lead: ${complaint.technician_name || 'Technician'}${complaint.technician_phone ? ' (' + complaint.technician_phone + ')' : ''}] ${complaint.issue_description || (isSurvey ? 'Conduct rooftop / electrical site survey and feasibility assessment' : 'Inspect and diagnose site')}`.slice(0, 1000),
           priority: complaint.priority || 'Medium',
           expected_visit_date: complaint.expected_visit_date ? String(complaint.expected_visit_date).split('T')[0] : 'Immediate',
           db_complaint_id: complaint.id

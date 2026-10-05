@@ -850,6 +850,124 @@ technicianRoutes.get('/tour-vouchers/next-sequence', authenticateToken, async (c
   }
 });
 
+async function allocateNextVoucherNumbers(count = 1, env, ctx) {
+  const config = await getVoucherSequenceConfig(env, ctx);
+  const res = await query(
+    `SELECT voucher_no FROM technician_tour_expenses 
+     WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
+    [],
+    env,
+    ctx
+  );
+  let maxSeq = Math.max(0, config.starting_number - 1);
+  for (const row of res.rows) {
+    const v = String(row.voucher_no || '');
+    const match = v.match(/\d+/g);
+    if (match) {
+      const num = parseInt(match[match.length - 1], 10);
+      if (!isNaN(num) && num > maxSeq && num < 1000000) {
+        maxSeq = num;
+      }
+    }
+  }
+  const vouchers = [];
+  for (let i = 1; i <= count; i++) {
+    vouchers.push(`${config.prefix}${maxSeq + i}`);
+  }
+  return vouchers;
+}
+
+/**
+ * Split items into multiple vouchers such that every single voucher
+ * is strictly less than 10,000 (< 10,000, i.e. <= maxCap).
+ * If total >= 10,000, it guarantees at least 2 distinct vouchers.
+ */
+export function partitionItemsUnderCap(items, maxCap = 9999) {
+  const valid = items
+    .map(it => ({ ...it, amount: parseFloat(it.amount || 0) }))
+    .filter(it => it.amount > 0);
+
+  const total = valid.reduce((s, it) => s + it.amount, 0);
+  if (total < 10000) {
+    return [valid];
+  }
+
+  // Minimum vouchers needed: at least 2, or ceil(total / maxCap)
+  const minBuckets = Math.max(2, Math.ceil(total / maxCap));
+  const targetCap = Math.min(maxCap, Math.ceil(total / minBuckets));
+
+  // Step 1: Expand any single item that is >= 10000 (or >= targetCap if single item) into parts
+  const expandedItems = [];
+  for (const it of valid) {
+    if (it.amount >= 10000 || (valid.length === 1 && it.amount >= 10000)) {
+      const partsCount = Math.max(2, Math.ceil(it.amount / maxCap));
+      const basePart = Math.floor((it.amount / partsCount) * 100) / 100;
+      let running = 0;
+      for (let p = 1; p <= partsCount; p++) {
+        const partAmt = (p === partsCount) ? Math.round((it.amount - running) * 100) / 100 : basePart;
+        running += partAmt;
+        expandedItems.push({
+          ...it,
+          amount: partAmt,
+          description: it.description ? `${it.description} (Part ${p}/${partsCount})` : `(Part ${p}/${partsCount})`,
+          title: it.title ? `${it.title} (Part ${p}/${partsCount})` : (it.description || 'Expense')
+        });
+      }
+    } else {
+      expandedItems.push(it);
+    }
+  }
+
+  // Step 2: Bin-pack expanded items into buckets
+  const buckets = [];
+  let currentBucket = [];
+  let currentBucketTotal = 0;
+
+  for (const it of expandedItems) {
+    if (currentBucket.length > 0 && (currentBucketTotal + it.amount >= 10000 || (buckets.length + 1 < minBuckets && currentBucketTotal >= targetCap))) {
+      buckets.push(currentBucket);
+      currentBucket = [it];
+      currentBucketTotal = it.amount;
+    } else if (it.amount >= 10000) {
+      const half1 = Math.floor(it.amount / 2);
+      const half2 = it.amount - half1;
+      if (currentBucket.length > 0) {
+        buckets.push(currentBucket);
+        currentBucket = [];
+        currentBucketTotal = 0;
+      }
+      buckets.push([{ ...it, amount: half1, description: `${it.description || ''} (Part 1/2)`.trim() }]);
+      currentBucket = [{ ...it, amount: half2, description: `${it.description || ''} (Part 2/2)`.trim() }];
+      currentBucketTotal = half2;
+    } else {
+      currentBucket.push(it);
+      currentBucketTotal += it.amount;
+    }
+  }
+  if (currentBucket.length > 0) {
+    buckets.push(currentBucket);
+  }
+
+  // Guarantee at least 2 buckets if total was >= 10000
+  if (buckets.length === 1 && total >= 10000) {
+    const bItems = buckets[0];
+    if (bItems.length === 1) {
+      const single = bItems[0];
+      const half1 = Math.floor(single.amount / 2);
+      const half2 = single.amount - half1;
+      return [
+        [{ ...single, amount: half1, description: `${single.description || ''} (Part 1/2)`.trim() }],
+        [{ ...single, amount: half2, description: `${single.description || ''} (Part 2/2)`.trim() }]
+      ];
+    } else {
+      const mid = Math.ceil(bItems.length / 2);
+      return [bItems.slice(0, mid), bItems.slice(mid)];
+    }
+  }
+
+  return buckets;
+}
+
 // PUT /api/tour-vouchers/:voucherNo - Update an existing tour expense voucher and items
 technicianRoutes.put('/tour-vouchers/:voucherNo', authenticateToken, async (c) => {
   try {
@@ -877,7 +995,7 @@ technicianRoutes.put('/tour-vouchers/:voucherNo', authenticateToken, async (c) =
     // Delete existing records under this voucher_no
     await query('DELETE FROM technician_tour_expenses WHERE voucher_no = $1', [voucherNo], c.env, c.executionCtx);
 
-    const validItems = Array.isArray(items) && items.length > 0
+    const rawItems = Array.isArray(items) && items.length > 0
       ? items
       : [{
           category: body.category || 'Other Expense',
@@ -885,38 +1003,58 @@ technicianRoutes.put('/tour-vouchers/:voucherNo', authenticateToken, async (c) =
           description: body.description || body.title || ''
         }];
 
+    // Partition items so each resulting voucher is strictly < 10,000
+    const buckets = partitionItemsUnderCap(rawItems, 9999);
+    let extraVouchers = [];
+    if (buckets.length > 1) {
+      extraVouchers = await allocateNextVoucherNumbers(buckets.length - 1, c.env, c.executionCtx);
+    }
+    const allAssignedVouchers = [voucherNo, ...extraVouchers];
+
     const created = [];
-    for (const it of validItems) {
-      const itAmt = parseFloat(it.amount);
-      if (!itAmt || itAmt <= 0) continue;
+    for (let bIdx = 0; bIdx < buckets.length; bIdx++) {
+      const bucketItems = buckets[bIdx];
+      const assignedVoucherNo = allAssignedVouchers[bIdx];
 
-      const r = await query(`
-        INSERT INTO technician_tour_expenses (
-          technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
-          receipt_url, receipt_name, ticket_id, complaint_id, status, created_by, approved_by_name
-        ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        RETURNING *
-      `, [
-        String(targetTechId).trim(),
-        tourAdvanceId || null,
-        voucherNo,
-        it.expense_date || expense_date || first.expense_date || null,
-        it.category || 'Other Expense',
-        itAmt,
-        it.description || it.title || '',
-        it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
-        it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
-        it.ticket_id || ticket_id || first.ticket_id || null,
-        it.complaint_id || complaint_id || first.complaint_id || null,
-        prevStatus,
-        first.created_by || user.name || 'Technician',
-        first.approved_by_name || null
-      ], c.env, c.executionCtx);
+      for (const it of bucketItems) {
+        const itAmt = parseFloat(it.amount);
+        if (!itAmt || itAmt <= 0) continue;
 
-      if (r.rows[0]) created.push(r.rows[0]);
+        const r = await query(`
+          INSERT INTO technician_tour_expenses (
+            technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
+            receipt_url, receipt_name, ticket_id, complaint_id, status, created_by, approved_by_name
+          ) VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING *
+        `, [
+          String(targetTechId).trim(),
+          tourAdvanceId || null,
+          assignedVoucherNo,
+          it.expense_date || expense_date || first.expense_date || null,
+          it.category || 'Other Expense',
+          itAmt,
+          it.description || it.title || '',
+          it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
+          it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
+          it.ticket_id || ticket_id || first.ticket_id || null,
+          it.complaint_id || complaint_id || first.complaint_id || null,
+          prevStatus,
+          first.created_by || user.name || 'Technician',
+          first.approved_by_name || null
+        ], c.env, c.executionCtx);
+
+        if (r.rows[0]) created.push(r.rows[0]);
+      }
     }
 
-    return c.json({ success: true, updated: created.length, voucher_no: voucherNo, items: created });
+    return c.json({
+      success: true,
+      updated: created.length,
+      voucher_no: voucherNo,
+      voucher_nos: allAssignedVouchers,
+      is_split: allAssignedVouchers.length > 1,
+      items: created
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -1470,58 +1608,8 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
       return c.json({ error: 'Technician is required' }, 400);
     }
 
-    let finalVoucherNo = null;
-
-    // Smart Voucher Grouping Rule:
-    // If expense is logged for a ticket, check if an unapproved voucher already exists for that ticket & tech.
-    // If yes, append entries into that same voucher. If already approved, issue a new voucher sequence.
-    if (ticket_id && String(ticket_id).trim()) {
-      const trimmedTicket = String(ticket_id).trim();
-      const existingUnapproved = await query(
-        `SELECT voucher_no FROM technician_tour_expenses 
-         WHERE technician_id = $1 
-           AND (ticket_id = $2 OR ticket_id ILIKE $3)
-           AND LOWER(COALESCE(status, 'pending')) NOT IN ('approved', 'verified')
-           AND voucher_no IS NOT NULL AND voucher_no != ''
-         ORDER BY id DESC LIMIT 1`,
-        [String(targetTechId).trim(), trimmedTicket, `%${trimmedTicket}%`],
-        c.env,
-        c.executionCtx
-      );
-      if (existingUnapproved.rows.length > 0 && existingUnapproved.rows[0].voucher_no) {
-        finalVoucherNo = existingUnapproved.rows[0].voucher_no;
-      }
-    }
-
-    // If explicit voucher_no was passed (and wasn't auto-EXP), respect it if no unapproved ticket voucher was found
-    if (!finalVoucherNo && voucher_no && !voucher_no.startsWith('EXP-')) {
-      finalVoucherNo = voucher_no;
-    }
-
-    // Otherwise, generate the next sequential voucher number across all records
-    if (!finalVoucherNo) {
-      const config = await getVoucherSequenceConfig(c.env, c.executionCtx);
-      const res = await query(
-        `SELECT voucher_no FROM technician_tour_expenses 
-         WHERE voucher_no IS NOT NULL AND voucher_no != ''`,
-        [],
-        c.env,
-        c.executionCtx
-      );
-      let maxSeq = Math.max(0, config.starting_number - 1);
-      for (const row of res.rows) {
-        const v = String(row.voucher_no || '');
-        const match = v.match(/\d+/g);
-        if (match) {
-          const num = parseInt(match[match.length - 1], 10);
-          if (!isNaN(num) && num > maxSeq && num < 1000000) maxSeq = num;
-        }
-      }
-      finalVoucherNo = `${config.prefix}${maxSeq + 1}`;
-    }
-
     // Support multi-item submission in a single call
-    const lineItems = Array.isArray(items) && items.length > 0
+    const rawLineItems = Array.isArray(items) && items.length > 0
       ? items
       : [{
           category: category || 'Travel',
@@ -1529,36 +1617,111 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
           description: description || ''
         }];
 
-    const created = [];
-    for (const it of lineItems) {
-      const itAmt = parseFloat(it.amount || 0);
-      if (itAmt <= 0) continue;
+    const validItems = rawLineItems
+      .map(it => ({
+        ...it,
+        amount: parseFloat(it.amount || 0)
+      }))
+      .filter(it => it.amount > 0);
 
-      const r = await query(`
-        INSERT INTO technician_tour_expenses (
-          technician_id, tour_advance_id, expense_date, category, amount, description,
-          receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, status, created_by
-        ) VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, $11, 'Pending', $12)
-        RETURNING *
-      `, [
-        String(targetTechId).trim(),
-        tour_advance_id || null,
-        it.expense_date || expense_date || null,
-        it.category || category || 'Travel',
-        itAmt,
-        it.description || it.title || description || '',
-        receipt_url || null,
-        receipt_data || null,
-        receipt_name || null,
-        ticket_id || null,
-        finalVoucherNo,
-        user.name || 'Technician'
-      ], c.env, c.executionCtx);
-
-      if (r.rows[0]) created.push(r.rows[0]);
+    if (validItems.length === 0) {
+      return c.json({ error: 'Please provide at least one valid expense amount' }, 400);
     }
 
-    return c.json({ success: true, count: created.length, voucher_no: finalVoucherNo, items: created });
+    const totalSubmissionAmount = validItems.reduce((acc, it) => acc + it.amount, 0);
+
+    // Auto-split rule: Each single voucher must be strictly less than ₹10,000 (< 10,000).
+    // If total submission >= 10,000, automatically partition into 2 or more vouchers.
+    const buckets = partitionItemsUnderCap(validItems, 9999);
+    let allAssignedVouchers = [];
+
+    if (buckets.length === 1) {
+      // Total < 10,000: Check if an unapproved voucher for this ticket already exists
+      let chosenVoucherNo = null;
+      if (ticket_id && String(ticket_id).trim()) {
+        const trimmedTicket = String(ticket_id).trim();
+        const existingUnapproved = await query(
+          `SELECT voucher_no, COALESCE(SUM(amount), 0) as current_total 
+           FROM technician_tour_expenses 
+           WHERE technician_id = $1 
+             AND (ticket_id = $2 OR ticket_id ILIKE $3)
+             AND LOWER(COALESCE(status, 'pending')) NOT IN ('approved', 'verified')
+             AND voucher_no IS NOT NULL AND voucher_no != ''
+           GROUP BY voucher_no
+           ORDER BY MAX(id) DESC LIMIT 1`,
+          [String(targetTechId).trim(), trimmedTicket, `%${trimmedTicket}%`],
+          c.env,
+          c.executionCtx
+        );
+
+        if (existingUnapproved.rows.length > 0 && existingUnapproved.rows[0].voucher_no) {
+          const currentTotal = parseFloat(existingUnapproved.rows[0].current_total || 0);
+          // Only merge if existing total + new amount will remain strictly less than 10,000!
+          if (currentTotal + totalSubmissionAmount < 10000) {
+            chosenVoucherNo = existingUnapproved.rows[0].voucher_no;
+          }
+        }
+      }
+
+      if (!chosenVoucherNo && voucher_no && !voucher_no.startsWith('EXP-')) {
+        chosenVoucherNo = voucher_no;
+      }
+
+      if (!chosenVoucherNo) {
+        const nextList = await allocateNextVoucherNumbers(1, c.env, c.executionCtx);
+        chosenVoucherNo = nextList[0];
+      }
+      allAssignedVouchers = [chosenVoucherNo];
+    } else {
+      // Total >= 10,000: Auto-split into buckets.length vouchers with sequential numbers
+      allAssignedVouchers = await allocateNextVoucherNumbers(buckets.length, c.env, c.executionCtx);
+    }
+
+    const created = [];
+    for (let bIdx = 0; bIdx < buckets.length; bIdx++) {
+      const bucketItems = buckets[bIdx];
+      const assignedVoucherNo = allAssignedVouchers[bIdx];
+
+      for (const it of bucketItems) {
+        const itAmt = parseFloat(it.amount || 0);
+        if (itAmt <= 0) continue;
+
+        const r = await query(`
+          INSERT INTO technician_tour_expenses (
+            technician_id, tour_advance_id, expense_date, category, amount, description,
+            receipt_url, receipt_data, receipt_name, ticket_id, voucher_no, status, created_by
+          ) VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, $11, 'Pending', $12)
+          RETURNING *
+        `, [
+          String(targetTechId).trim(),
+          tour_advance_id || null,
+          it.expense_date || expense_date || null,
+          it.category || category || 'Travel',
+          itAmt,
+          it.description || it.title || description || '',
+          it.receipt_url !== undefined ? it.receipt_url : (receipt_url || null),
+          receipt_data || null,
+          it.receipt_name !== undefined ? it.receipt_name : (receipt_name || null),
+          it.ticket_id || ticket_id || null,
+          assignedVoucherNo,
+          user.name || 'Technician'
+        ], c.env, c.executionCtx);
+
+        if (r.rows[0]) created.push(r.rows[0]);
+      }
+    }
+
+    return c.json({
+      success: true,
+      count: created.length,
+      voucher_no: allAssignedVouchers[0],
+      voucher_nos: allAssignedVouchers,
+      is_split: allAssignedVouchers.length > 1,
+      items: created,
+      message: allAssignedVouchers.length > 1
+        ? `Voucher claim of ₹${totalSubmissionAmount} automatically split into ${allAssignedVouchers.length} vouchers (${allAssignedVouchers.join(', ')}) strictly under ₹10,000 each.`
+        : `Voucher ${allAssignedVouchers[0]} saved successfully.`
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

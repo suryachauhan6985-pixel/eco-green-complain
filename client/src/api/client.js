@@ -771,56 +771,125 @@ class LocalMockStore {
 
   addTourExpense(data = {}) {
     const expenses = JSON.parse(localStorage.getItem('egs_mock_tour_expenses') || '[]');
-    const nextVoucher = data.voucher_no || this.getGlobalNextVoucherNumber();
 
-    if (Array.isArray(data.items) && data.items.length > 0) {
-      const created = [];
-      data.items.forEach((it, idx) => {
-        if (!it.amount || Number(it.amount) <= 0) return;
-        const newExp = {
-          id: Date.now() + idx,
-          voucher_no: nextVoucher,
-          technician_id: data.technician_id,
-          technician_name: data.technician_name || 'Technician',
-          complaint_id: it.complaint_id || data.complaint_id || null,
-          ticket_id: it.ticket_id || data.ticket_id || null,
-          expense_date: it.expense_date || data.expense_date || new Date().toISOString().split('T')[0],
-          category: it.category || 'Other Expense',
-          amount: Number(it.amount || 0),
-          title: it.title || `${it.category || 'Tour'} Expense`,
-          description: it.description || '',
-          receipt_url: it.receipt_preview || it.receipt_url || null,
-          receipt_name: it.receipt_name || null,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        };
-        expenses.unshift(newExp);
-        created.push(newExp);
+    const rawItems = Array.isArray(data.items) && data.items.length > 0
+      ? data.items
+      : [{
+          category: data.category || 'Travel',
+          amount: Number(data.amount || 0),
+          title: data.title || data.category || 'Tour Expense',
+          description: data.description || '',
+          receipt_url: data.receipt_url || null,
+          receipt_name: data.receipt_name || null
+        }];
+
+    const validItems = rawItems
+      .map(it => ({ ...it, amount: Number(it.amount || 0) }))
+      .filter(it => it.amount > 0);
+
+    const totalAmt = validItems.reduce((acc, it) => acc + it.amount, 0);
+    const created = [];
+    const assignedVouchers = [];
+
+    if (totalAmt >= 10000) {
+      // Auto-split into parts strictly less than 10000
+      const partsCount = Math.max(2, Math.ceil(totalAmt / 9999));
+      const targetCap = Math.ceil(totalAmt / partsCount);
+      const buckets = [];
+      let curBucket = [];
+      let curTotal = 0;
+
+      for (const it of validItems) {
+        if (it.amount >= 10000) {
+          const itParts = Math.max(2, Math.ceil(it.amount / 9999));
+          const baseP = Math.floor((it.amount / itParts) * 100) / 100;
+          let runP = 0;
+          for (let p = 1; p <= itParts; p++) {
+            const pAmt = p === itParts ? Math.round((it.amount - runP) * 100) / 100 : baseP;
+            runP += pAmt;
+            if (curBucket.length > 0 && (curTotal + pAmt >= 10000 || curTotal >= targetCap)) {
+              buckets.push(curBucket);
+              curBucket = [];
+              curTotal = 0;
+            }
+            curBucket.push({ ...it, amount: pAmt, description: `${it.description || ''} (Part ${p}/${itParts})`.trim() });
+            curTotal += pAmt;
+          }
+        } else {
+          if (curBucket.length > 0 && (curTotal + it.amount >= 10000 || (buckets.length + 1 < partsCount && curTotal >= targetCap))) {
+            buckets.push(curBucket);
+            curBucket = [it];
+            curTotal = it.amount;
+          } else {
+            curBucket.push(it);
+            curTotal += it.amount;
+          }
+        }
+      }
+      if (curBucket.length > 0) buckets.push(curBucket);
+
+      buckets.forEach((bucket, bIdx) => {
+        const vNo = this.getGlobalNextVoucherNumber();
+        assignedVouchers.push(vNo);
+        bucket.forEach((it, idx) => {
+          const newExp = {
+            id: Date.now() + bIdx * 100 + idx,
+            voucher_no: vNo,
+            technician_id: data.technician_id,
+            technician_name: data.technician_name || 'Technician',
+            complaint_id: it.complaint_id || data.complaint_id || null,
+            ticket_id: it.ticket_id || data.ticket_id || null,
+            expense_date: it.expense_date || data.expense_date || new Date().toISOString().split('T')[0],
+            category: it.category || 'Other Expense',
+            amount: Number(it.amount || 0),
+            title: it.title || `${it.category || 'Tour'} Expense`,
+            description: it.description || '',
+            receipt_url: it.receipt_preview || it.receipt_url || null,
+            receipt_name: it.receipt_name || null,
+            status: 'pending',
+            created_at: new Date().toISOString()
+          };
+          expenses.unshift(newExp);
+          created.push(newExp);
+        });
       });
+
       localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
-      return { success: true, expenses: created, voucher_no: nextVoucher };
+      return {
+        success: true,
+        expenses: created,
+        voucher_no: assignedVouchers[0],
+        voucher_nos: assignedVouchers,
+        is_split: true,
+        message: `Claim auto-split into ${assignedVouchers.length} vouchers strictly under ₹10,000 each.`
+      };
     }
 
-    const newExp = {
-      id: Date.now(),
-      voucher_no: nextVoucher,
-      technician_id: data.technician_id,
-      technician_name: data.technician_name,
-      complaint_id: data.complaint_id || null,
-      ticket_id: data.ticket_id || null,
-      expense_date: data.expense_date || new Date().toISOString().split('T')[0],
-      category: data.category || 'Travel',
-      amount: Number(data.amount || 0),
-      title: data.title || data.category || 'Tour Expense',
-      description: data.description || '',
-      receipt_url: data.receipt_url || null,
-      receipt_name: data.receipt_name || null,
-      status: 'pending',
-      created_at: new Date().toISOString()
-    };
-    expenses.unshift(newExp);
+    const nextVoucher = data.voucher_no || this.getGlobalNextVoucherNumber();
+    validItems.forEach((it, idx) => {
+      const newExp = {
+        id: Date.now() + idx,
+        voucher_no: nextVoucher,
+        technician_id: data.technician_id,
+        technician_name: data.technician_name || 'Technician',
+        complaint_id: it.complaint_id || data.complaint_id || null,
+        ticket_id: it.ticket_id || data.ticket_id || null,
+        expense_date: it.expense_date || data.expense_date || new Date().toISOString().split('T')[0],
+        category: it.category || 'Other Expense',
+        amount: Number(it.amount || 0),
+        title: it.title || `${it.category || 'Tour'} Expense`,
+        description: it.description || '',
+        receipt_url: it.receipt_preview || it.receipt_url || null,
+        receipt_name: it.receipt_name || null,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      };
+      expenses.unshift(newExp);
+      created.push(newExp);
+    });
+
     localStorage.setItem('egs_mock_tour_expenses', JSON.stringify(expenses));
-    return { success: true, expense: newExp, voucher_no: nextVoucher };
+    return { success: true, expenses: created, voucher_no: nextVoucher, voucher_nos: [nextVoucher] };
   }
 
   updateTourVoucher(voucherNo, data = {}) {
