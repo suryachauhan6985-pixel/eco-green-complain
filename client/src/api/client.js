@@ -98,6 +98,19 @@ export function deleteComplaintPermanently(idOrTicketId) {
     const list = getPermanentComplaints();
     const updated = list.filter(c => String(c.id) !== String(idOrTicketId) && c.ticket_id !== String(idOrTicketId));
     localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(updated));
+
+    // Also purge any notifications for this deleted ticket
+    try {
+      const storedNotifs = JSON.parse(localStorage.getItem('egs_in_app_notifications') || '[]');
+      if (Array.isArray(storedNotifs) && storedNotifs.length > 0) {
+        const cleanedNotifs = storedNotifs.filter(n => 
+          String(n.complaintId) !== String(idOrTicketId) && 
+          n.ticketId !== String(idOrTicketId) && 
+          !n.message?.includes(String(idOrTicketId))
+        );
+        localStorage.setItem('egs_in_app_notifications', JSON.stringify(cleanedNotifs));
+      }
+    } catch (_) {}
   } catch (e) {
     console.warn('Failed to delete complaint from permanent storage:', e);
   }
@@ -1703,6 +1716,15 @@ export const api = {
   reverseTourSettlement: (id, reversal_reason = '') => request(`/tour-settlements/${id}/reverse`, {
     method: 'POST',
     body: JSON.stringify({ reversal_reason })
+  }),
+  deleteTourSettlement: (id) => request(`/tour-settlements/${id}`, {
+    method: 'DELETE'
+  }),
+  resetTechnicianTourLedger: (techId) => request(`/technicians/${techId}/reset-tour-ledger`, {
+    method: 'POST'
+  }),
+  clearAllTourLedger: () => request('/tour-ledger/clear-all', {
+    method: 'POST'
   }),
   updateTourVoucherStatus: (voucherNo, status, rejection_reason = '') => request(`/tour-vouchers/${encodeURIComponent(voucherNo)}/status`, {
     method: 'PUT',

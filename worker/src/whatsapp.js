@@ -199,14 +199,25 @@ export async function sendWhatsApp({
       const portalLink = `${appUrl}/technician?ticket=${encodeURIComponent(ticketId)}`;
       renderedBody = `🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello ${techName}, you and *${partnerName}* have been assigned as a 2-member service team for Ticket *${ticketId}*.\n\n👥 *Assigned Team:* ${techName} & ${partnerName}\n${partnerPhone ? `📞 *Partner Contact:* ${partnerPhone}\n` : ''}👤 *Customer:* ${custName}\n📞 *Customer Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n📝 *Notes:* ${notes}\n🚨 *Priority:* ${priority}\n📅 *Expected Visit:* ${visitDate}\n\n🔗 *Technician Portal:* ${portalLink}\n\nPlease coordinate with ${partnerName} and call the customer before visiting the site.`;
 
+      // Check DB for customized meta_template_name
+      let targetMetaName = 'technician_team_work_order';
+      try {
+        const dbRes = await query('SELECT meta_template_name FROM notification_templates WHERE template_key = $1 LIMIT 1', ['technician_team_work_order'], env);
+        if (dbRes.rows.length && dbRes.rows[0].meta_template_name) {
+          targetMetaName = dbRes.rows[0].meta_template_name;
+        }
+      } catch (_) {}
+
       payload.type = 'template';
       payload.template = {
-        name: 'technician_work_order',
+        name: targetMetaName,
         language: { code: 'en_US' },
         components: [{
           type: 'body',
           parameters: [
-            { type: 'text', parameter_name: 'technician_name', text: `${techName} & ${partnerName}` },
+            { type: 'text', parameter_name: 'technician_name', text: techName },
+            { type: 'text', parameter_name: 'partner_technician_name', text: partnerName },
+            { type: 'text', parameter_name: 'partner_technician_phone', text: partnerPhone || 'N/A' },
             { type: 'text', parameter_name: 'complaint_id', text: ticketId },
             { type: 'text', parameter_name: 'customer_name', text: custName },
             { type: 'text', parameter_name: 'customer_phone', text: custPhone },

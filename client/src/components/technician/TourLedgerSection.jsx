@@ -1834,8 +1834,8 @@ export const TourLedgerSection = ({
   const computedTotalAdvance = useMemo(() => advances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), [advances]);
   // Strictly count only vouchers approved by admin/staff (not submitted or pending)
   const computedApprovedExpenses = useMemo(() => expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
-  const computedTotalReturned = useMemo(() => settlements.filter(s => s.settlement_type === 'return_to_company').reduce((s, s1) => s + (parseFloat(s1.returned_amount || s1.amount) || 0), 0), [settlements]);
-  const computedTotalReimbursed = useMemo(() => settlements.filter(s => s.settlement_type === 'reimbursed_by_company').reduce((s, s1) => s + (parseFloat(s1.reimbursed_amount || s1.amount) || 0), 0), [settlements]);
+  const computedTotalReturned = useMemo(() => settlements.filter(s => s.settlement_type === 'return_to_company' && (s.status || '').toLowerCase() !== 'reversed' && (s.status || '').toLowerCase() !== 'cancelled').reduce((s, s1) => s + (parseFloat(s1.returned_amount || s1.amount) || 0), 0), [settlements]);
+  const computedTotalReimbursed = useMemo(() => settlements.filter(s => s.settlement_type === 'reimbursed_by_company' && (s.status || '').toLowerCase() !== 'reversed' && (s.status || '').toLowerCase() !== 'cancelled').reduce((s, s1) => s + (parseFloat(s1.reimbursed_amount || s1.amount) || 0), 0), [settlements]);
   const computedNetBalance = useMemo(() => (computedTotalAdvance + computedTotalReimbursed) - (computedApprovedExpenses + computedTotalReturned), [computedTotalAdvance, computedTotalReimbursed, computedApprovedExpenses, computedTotalReturned]);
 
   const summary = useMemo(() => {
@@ -1846,11 +1846,11 @@ export const TourLedgerSection = ({
     const rawBal = ledgerData.summary?.net_balance ?? ledgerData.summary?.currentBalance;
 
     return {
-      total_advance: (rawAdv !== undefined && rawAdv !== null && Number(rawAdv) > 0) ? Number(rawAdv) : computedTotalAdvance,
-      approved_expenses: (rawExp !== undefined && rawExp !== null && Number(rawExp) >= 0) ? Number(rawExp) : computedApprovedExpenses,
-      total_returned: (rawRet !== undefined && rawRet !== null && Number(rawRet) > 0) ? Number(rawRet) : computedTotalReturned,
-      total_reimbursed: (rawReimb !== undefined && rawReimb !== null && Number(rawReimb) > 0) ? Number(rawReimb) : computedTotalReimbursed,
-      net_balance: (rawBal !== undefined && rawBal !== null && (rawAdv || rawExp || rawRet)) ? Number(rawBal) : computedNetBalance
+      total_advance: (rawAdv !== undefined && rawAdv !== null) ? Number(rawAdv) : computedTotalAdvance,
+      approved_expenses: (rawExp !== undefined && rawExp !== null) ? Number(rawExp) : computedApprovedExpenses,
+      total_returned: (rawRet !== undefined && rawRet !== null) ? Number(rawRet) : computedTotalReturned,
+      total_reimbursed: (rawReimb !== undefined && rawReimb !== null) ? Number(rawReimb) : computedTotalReimbursed,
+      net_balance: (rawBal !== undefined && rawBal !== null) ? Number(rawBal) : computedNetBalance
     };
   }, [ledgerData.summary, computedTotalAdvance, computedApprovedExpenses, computedTotalReturned, computedTotalReimbursed, computedNetBalance]);
 
@@ -2000,6 +2000,47 @@ export const TourLedgerSection = ({
     setSelectedVoucherKeys(new Set([grp.key]));
     setPrintFilter('selected');
     setIsVoucherModalOpen(true);
+  };
+
+  const handleDeleteSettlement = async (stlId, refNo, amount) => {
+    const ok = await confirm({
+      title: 'Delete Tour Settlement Record?',
+      message: `Are you sure you want to permanently delete settlement record "${refNo}" (₹${amount})? This will remove the deposited/reimbursed amount and update the ledger balance.`,
+      confirmText: 'Delete Record',
+      confirmVariant: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteTourSettlement(stlId);
+      showToast(`Settlement ${refNo} deleted successfully`, 'success');
+      await fetchLedger();
+    } catch (err) {
+      showToast('Failed to delete settlement: ' + err.message, 'error');
+    }
+  };
+
+  const handleResetTourLedger = async () => {
+    const techName = currentTech?.name || 'this specialist';
+    const ok = await confirm({
+      title: 'Reset Tour Ledger to ₹0?',
+      message: `Are you sure you want to reset the tour ledger for ${techName}? All advances, vouchers, and deposited surplus balances for this technician will be cleared and reset to ₹0. This cannot be undone.`,
+      confirmText: 'Reset to ₹0',
+      confirmVariant: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      if (selectedTechId && selectedTechId !== 'all') {
+        await api.resetTechnicianTourLedger(selectedTechId);
+      } else {
+        await api.clearAllTourLedger();
+      }
+      showToast(`Tour ledger for ${techName} reset to ₹0 successfully`, 'success');
+      await fetchLedger();
+    } catch (err) {
+      showToast('Failed to reset ledger: ' + err.message, 'error');
+    }
   };
 
   return (
@@ -2210,6 +2251,18 @@ export const TourLedgerSection = ({
                           ? `Deposit / Return Balance (${formatCur(summary.net_balance)})`
                           : 'Deposit / Return Balance to Company')}
                   </span>
+                </button>
+              )}
+
+              {isAdminOrStaff && (
+                <button
+                  type="button"
+                  onClick={handleResetTourLedger}
+                  title="Reset advances, expenses, and deposited surplus balances for this technician to zero"
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ml-auto"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Reset Ledger to ₹0</span>
                 </button>
               )}
             </div>
@@ -3137,6 +3190,7 @@ export const TourLedgerSection = ({
                         {ledgerData.statement?.columns?.credit_header || (user?.role === 'technician' ? 'Credit (Advance Received)' : 'Credit (Expense / Return)')}
                       </th>
                       <th className="py-2.5 px-3 text-right font-black">Running Balance</th>
+                      {isAdminOrStaff && <th className="py-2.5 px-3 text-center font-black">Action</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -3156,11 +3210,12 @@ export const TourLedgerSection = ({
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
                         {formatCur(ledgerData.statement?.opening_balance || 0)}
                       </td>
+                      {isAdminOrStaff && <td className="py-2.5 px-3 text-center text-slate-300">-</td>}
                     </tr>
 
                     {(ledgerData.statement?.transactions || []).length === 0 ? (
                       <tr>
-                        <td colSpan="8" className="py-8 text-center text-slate-400">
+                        <td colSpan={isAdminOrStaff ? 9 : 8} className="py-8 text-center text-slate-400">
                           No transactions found within this statement period.
                         </td>
                       </tr>
@@ -3222,6 +3277,25 @@ export const TourLedgerSection = ({
                                     : 'Settled')}
                             </span>
                           </td>
+                          {isAdminOrStaff && (
+                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              {(tx.tx_type === 'return' || tx.tx_type === 'reimbursement') ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const stlId = tx.raw_id || (typeof tx.id === 'string' ? tx.id.replace(/^stl_[a-z]+_/, '') : tx.id);
+                                    handleDeleteSettlement(stlId, tx.reference_no, tx.amount || tx.debit || tx.credit);
+                                  }}
+                                  title="Delete this settlement record"
+                                  className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs">—</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))
                     )}

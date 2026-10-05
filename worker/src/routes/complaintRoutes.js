@@ -1940,7 +1940,11 @@ complaintRoutes.delete('/:id', authenticateToken, requireRole('admin'), async (c
     // 5. Delete attachments, timelines, in-app notifications, and the complaint itself
     await query('DELETE FROM complaint_attachments WHERE complaint_id = $1', [id], c.env, c.executionCtx);
     await query('DELETE FROM complaint_timelines WHERE complaint_id = $1', [id], c.env, c.executionCtx);
-    await query('DELETE FROM in_app_notifications WHERE complaint_id = $1', [String(id)], c.env, c.executionCtx).catch(() => {});
+    if (ticketId) {
+      await query('DELETE FROM in_app_notifications WHERE complaint_id = $1 OR ticket_id = $2 OR message LIKE $3', [String(id), String(ticketId), `%${ticketId}%`], c.env, c.executionCtx).catch(() => {});
+    } else {
+      await query('DELETE FROM in_app_notifications WHERE complaint_id = $1', [String(id)], c.env, c.executionCtx).catch(() => {});
+    }
     await query('DELETE FROM complaints WHERE id = $1', [id], c.env, c.executionCtx);
 
     return c.json({ success: true, message: 'Complaint and all associated attachments, tour records, and vouchers deleted permanently' });

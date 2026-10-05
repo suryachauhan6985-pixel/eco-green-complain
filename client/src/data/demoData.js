@@ -205,7 +205,7 @@ export const INITIAL_TEMPLATES = [
     name: 'Technician Team Work Order (Dual Technicians Assigned)',
     audience: 'technician',
     trigger_event: 'technician_team_work_order',
-    meta_template_name: 'technician_work_order',
+    meta_template_name: 'technician_team_work_order',
     meta_language: 'en_US',
     meta_category: 'UTILITY',
     meta_status: 'APPROVED',

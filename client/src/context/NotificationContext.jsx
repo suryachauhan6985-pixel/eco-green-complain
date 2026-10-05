@@ -308,9 +308,11 @@ export const NotificationProvider = ({ children }) => {
               return notifObj;
             });
 
-            // Keep any recent unsynced local creations that have not been cleared
+            // Keep ONLY very recent (< 15 seconds) unsynced local creations that have not been cleared
             prev.forEach(p => {
-              if (!p.id?.startsWith('notif_init_') && !isNotificationCleared(p) && !merged.some(m => m.id === p.id)) {
+              const ageMs = Date.now() - (new Date(p.createdAt || 0).getTime());
+              const isRecentLocalCreation = ageMs < 15000 && String(p.id || '').startsWith('notif_');
+              if (isRecentLocalCreation && !isNotificationCleared(p) && !merged.some(m => m.id === p.id)) {
                 merged.push(p);
               }
             });

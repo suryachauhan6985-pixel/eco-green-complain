@@ -671,7 +671,18 @@ commonRoutes.put('/notifications/templates/:id', authenticateToken, async (c) =>
   try {
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    const { whatsapp_body, email_subject, email_body, is_active, name } = body;
+    const { 
+      whatsapp_body, 
+      email_subject, 
+      email_body, 
+      is_active, 
+      name,
+      meta_template_name,
+      meta_status,
+      audience,
+      trigger_event,
+      channel
+    } = body;
 
     const res = await query(`
       UPDATE notification_templates SET
@@ -680,10 +691,27 @@ commonRoutes.put('/notifications/templates/:id', authenticateToken, async (c) =>
         email_body = COALESCE($3, email_body),
         is_active = COALESCE($4, is_active),
         name = COALESCE($5, name),
+        meta_template_name = COALESCE($6, meta_template_name),
+        meta_status = COALESCE($7, meta_status),
+        audience = COALESCE($8, audience),
+        trigger_event = COALESCE($9, trigger_event),
+        channel = COALESCE($10, channel),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id::text = $6 OR template_key = $6
+      WHERE id::text = $11 OR template_key = $11
       RETURNING *
-    `, [whatsapp_body, email_subject, email_body, is_active, name, String(id)], c.env, c.executionCtx);
+    `, [
+      whatsapp_body !== undefined ? whatsapp_body : null,
+      email_subject !== undefined ? email_subject : null,
+      email_body !== undefined ? email_body : null,
+      is_active !== undefined ? Number(is_active) : null,
+      name !== undefined ? name : null,
+      meta_template_name !== undefined ? (meta_template_name.trim() || null) : null,
+      meta_status !== undefined ? meta_status : null,
+      audience !== undefined ? audience : null,
+      trigger_event !== undefined ? trigger_event : null,
+      channel !== undefined ? channel : null,
+      String(id)
+    ], c.env, c.executionCtx);
 
     if (!res.rows.length) {
       return c.json({ error: 'Template not found' }, 404);

@@ -293,14 +293,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
   // Compute Technician Cash Breakdown
   const techCashBreakdown = technicians.map(tech => {
-    // Find all complaints assigned to this technician that collected payment
+    // Only primary technician is responsible for on-site cash collection & register accounting
     const techJobs = complaints.filter(c => 
       String(c.assigned_technician_id) === String(tech.id) || 
       String(c.technician_id) === String(tech.id) ||
-      String(c.secondary_technician_id) === String(tech.id) ||
-      String(c.resolved_by_technician_id) === String(tech.id) ||
-      (c.technician_name && tech.name && c.technician_name.trim().toLowerCase() === tech.name.trim().toLowerCase()) ||
-      (c.secondary_technician_name && tech.name && c.secondary_technician_name.trim().toLowerCase() === tech.name.trim().toLowerCase())
+      (c.technician_name && tech.name && c.technician_name.trim().toLowerCase() === tech.name.trim().toLowerCase())
     );
     const cashJobs = techJobs.filter(c => (parseFloat(c.payment_collected) || 0) > 0);
     const computedTotal = cashJobs.reduce((sum, c) => sum + (parseFloat(c.payment_collected) || 0), 0);

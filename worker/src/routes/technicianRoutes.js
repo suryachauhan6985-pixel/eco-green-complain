@@ -1928,6 +1928,36 @@ technicianRoutes.post('/tour-settlements/:id/reverse', authenticateToken, requir
   }
 });
 
+// DELETE /api/tour-settlements/:id - Permanently delete a settlement/deposit record
+technicianRoutes.delete('/tour-settlements/:id', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    const res = await query('DELETE FROM technician_tour_settlements WHERE id::text = $1 RETURNING *', [String(id)], c.env, c.executionCtx);
+    if (!res.rows.length) {
+      return c.json({ error: 'Settlement record not found' }, 404);
+    }
+    return c.json({ success: true, message: 'Settlement record deleted permanently. Deposit balance updated.' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/technicians/:id/reset-tour-ledger - Reset specific technician's tour ledger (advances, expenses, settlements) to zero
+technicianRoutes.post('/technicians/:id/reset-tour-ledger', authenticateToken, requireRole('admin'), async (c) => {
+  try {
+    const techId = c.req.param('id');
+    await query('DELETE FROM technician_tour_settlements WHERE technician_id::text = $1', [String(techId)], c.env, c.executionCtx);
+    await query('DELETE FROM technician_tour_expenses WHERE technician_id::text = $1', [String(techId)], c.env, c.executionCtx);
+    await query('DELETE FROM technician_tour_advances WHERE technician_id::text = $1', [String(techId)], c.env, c.executionCtx);
+    return c.json({
+      success: true,
+      message: 'Technician tour ledger, deposits, and balances reset to zero successfully.'
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // POST /api/technicians/:id/settle-all - Batch settle all collected cash for a technician
 technicianRoutes.post('/technicians/:id/settle-all', authenticateToken, requireRole('admin', 'staff'), async (c) => {
   try {
@@ -1938,11 +1968,11 @@ technicianRoutes.post('/technicians/:id/settle-all', authenticateToken, requireR
     if (!techRes.rows.length) return c.json({ error: 'Technician not found' }, 404);
     const tech = techRes.rows[0];
 
-    // Find unsettled complaints
+    // Find unsettled complaints for primary technician
     const compRes = await query(`
       SELECT id, ticket_id, payment_collected
       FROM complaints
-      WHERE (assigned_technician_id = $1 OR secondary_technician_id = $1::text OR resolved_by_technician_id = $1::text)
+      WHERE (assigned_technician_id = $1 OR (assigned_technician_id IS NULL AND resolved_by_technician_id = $1::text))
         AND COALESCE(payment_collected, 0) > 0
         AND COALESCE(company_settlement_status, '') != 'Settled with Company'
     `, [techId], c.env, c.executionCtx);
