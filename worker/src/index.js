@@ -68,7 +68,7 @@ app.route('/api', commonRoutes);
 // Version alias at root
 app.get('/version.json', (c) => {
   return c.json({
-    version: '2.6.0',
+    version: '2.6.2',
     build: 'b_cloudflare_edge_2026',
     platform: 'Cloudflare Workers (Hono)'
   });

@@ -11,7 +11,7 @@ const buildId = 'b_' + buildTime;
 const releaseDate = now.toISOString().split('T')[0];
 
 // Base version
-let currentVersion = '2.6.1';
+let currentVersion = '2.6.2';
 const versionJsPath = path.join(__dirname, 'src/version.js');
 if (fs.existsSync(versionJsPath)) {
   try {

@@ -29,7 +29,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const { currentUser } = useAuth();
   const { showToast, confirm } = useDialog();
   const [complaints, setComplaints] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
+  const [technicians, setTechnicians] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_cached_technicians') || '[]');
+      if (Array.isArray(cached) && cached.length > 0) return cached;
+    } catch (_) {}
+    return [];
+  });
   const [loading, setLoading] = useState(true);
 
   const getInitialSection = () => {
@@ -45,6 +51,16 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     const valid = ['Assigned', 'In Progress', 'On Hold', 'Reopened', 'Completed', 'all', 'Overdue'];
     const found = valid.find(v => v.toLowerCase() === st.toLowerCase());
     return found || 'Assigned';
+  };
+
+  const getInitialTechId = () => {
+    const urlId = getUrlParam('tech_id');
+    if (urlId && urlId !== 'all') return urlId;
+    try {
+      const cached = JSON.parse(localStorage.getItem('egs_cached_technicians') || '[]');
+      if (Array.isArray(cached) && cached.length > 0) return String(cached[0].id);
+    } catch (_) {}
+    return '';
   };
 
   const [section, setSection] = useState(() => getInitialSection());
@@ -66,7 +82,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     ];
   });
   const [techProfile, setTechProfile] = useState(null);
-  const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getUrlParam('tech_id') || 'all');
+  const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getInitialTechId());
 
   // Mobile & Desktop view mode: default 'card'
   const [viewMode, setViewMode] = useState(() => {
@@ -104,9 +120,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   };
 
   const handleAdminTechSelect = (id) => {
-    const finalId = id || 'all';
-    setSelectedAdminTechId(finalId);
-    updateUrlParams({ tech_id: finalId === 'all' ? null : finalId });
+    if (!id) return;
+    setSelectedAdminTechId(id);
+    updateUrlParams({ tech_id: id });
   };
 
   useEffect(() => {
@@ -116,7 +132,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const st = getInitialJobStatus();
       setJobStatusFilter(st);
       const tid = getUrlParam('tech_id');
-      setSelectedAdminTechId(tid || 'all');
+      setSelectedAdminTechId(tid || getInitialTechId());
     };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
@@ -156,10 +172,15 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const data = await api.getTechnicians();
       const techs = data.technicians || [];
       setTechnicians(techs);
+      try {
+        localStorage.setItem('egs_cached_technicians', JSON.stringify(techs));
+      } catch (_) {}
       if (techs.length > 0) {
         setSelectedAdminTechId(prev => {
-          if (!prev || prev === 'all') return 'all';
-          return techs.some(t => String(t.id) === String(prev)) ? prev : 'all';
+          if (prev && prev !== 'all' && techs.some(t => String(t.id) === String(prev))) {
+            return String(prev);
+          }
+          return String(techs[0].id);
         });
       }
       const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);
@@ -360,19 +381,22 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     if (currentUser?.role === 'technician') {
       return myTechData ? [myTechData] : [];
     }
-    if (selectedAdminTechId && selectedAdminTechId !== 'all') {
-      return techCashBreakdown.filter(t => String(t.id) === String(selectedAdminTechId));
+    const targetId = (selectedAdminTechId && selectedAdminTechId !== 'all') 
+      ? selectedAdminTechId 
+      : (technicians[0]?.id ? String(technicians[0].id) : null);
+    if (targetId) {
+      const match = techCashBreakdown.filter(t => String(t.id) === String(targetId));
+      if (match.length > 0) return match;
     }
-    return techCashBreakdown;
-  }, [currentUser?.role, myTechData, selectedAdminTechId, techCashBreakdown]);
+    return techCashBreakdown.length > 0 ? [techCashBreakdown[0]] : [];
+  }, [currentUser?.role, myTechData, selectedAdminTechId, techCashBreakdown, technicians]);
 
   // Grand totals across all technicians (for admin/staff)
   const overallCashCollected = techCashBreakdown.reduce((sum, t) => sum + t.totalCollected, 0);
   const overallCashSettled = techCashBreakdown.reduce((sum, t) => sum + t.totalSettled, 0);
   const overallCashDue = techCashBreakdown.reduce((sum, t) => sum + t.cashInHandDue, 0);
 
-  // Scoped complaints: If logged in as technician, show jobs assigned as primary or secondary technician!
-  // If admin/staff and a specific technician is selected in the filter, show jobs for that technician!
+  // Scoped complaints: strictly scoped to the active selected technician
   const scopedComplaints = useMemo(() => {
     if (currentUser?.role === 'technician' && myTechData) {
       return complaints.filter(c => 
@@ -384,14 +408,17 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         (c.secondary_technician_name && myTechData.name && c.secondary_technician_name.trim().toLowerCase() === myTechData.name.trim().toLowerCase())
       );
     }
-    if (selectedAdminTechId && selectedAdminTechId !== 'all') {
-      const selectedTechObj = technicians.find(t => String(t.id) === String(selectedAdminTechId));
+    const targetTechId = (selectedAdminTechId && selectedAdminTechId !== 'all') 
+      ? selectedAdminTechId 
+      : (technicians[0]?.id ? String(technicians[0].id) : null);
+    if (targetTechId) {
+      const selectedTechObj = technicians.find(t => String(t.id) === String(targetTechId));
       const sName = selectedTechObj?.name?.trim().toLowerCase();
       return complaints.filter(c => 
-        String(c.assigned_technician_id) === String(selectedAdminTechId) || 
-        String(c.technician_id) === String(selectedAdminTechId) ||
-        String(c.secondary_technician_id) === String(selectedAdminTechId) ||
-        String(c.resolved_by_technician_id) === String(selectedAdminTechId) ||
+        String(c.assigned_technician_id) === String(targetTechId) || 
+        String(c.technician_id) === String(targetTechId) ||
+        String(c.secondary_technician_id) === String(targetTechId) ||
+        String(c.resolved_by_technician_id) === String(targetTechId) ||
         (sName && c.technician_name && c.technician_name.trim().toLowerCase() === sName) ||
         (sName && c.secondary_technician_name && c.secondary_technician_name.trim().toLowerCase() === sName)
       );
@@ -675,15 +702,14 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
           <div className="flex items-center gap-2">
             <select
-              value={selectedAdminTechId || 'all'}
+              value={selectedAdminTechId || (technicians[0]?.id ? String(technicians[0].id) : '')}
               onChange={(e) => {
                 const val = e.target.value;
                 handleAdminTechSelect(val);
-                setExpandedTechId(val === 'all' ? null : val);
+                setExpandedTechId(val);
               }}
               className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
             >
-              <option value="all">👥 All Technicians ({technicians.length})</option>
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
                   👤 {t.name} ({t.area_zone || t.phone || 'Field'})
@@ -760,15 +786,14 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-bold text-slate-500">Tech Filter:</span>
                 <select
-                  value={selectedAdminTechId || 'all'}
+                  value={selectedAdminTechId || (technicians[0]?.id ? String(technicians[0].id) : '')}
                   onChange={(e) => {
                     const val = e.target.value;
                     handleAdminTechSelect(val);
-                    setExpandedTechId(val === 'all' ? null : val);
+                    setExpandedTechId(val);
                   }}
                   className="text-xs px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
                 >
-                  <option value="all">👥 All Technicians ({technicians.length})</option>
                   {technicians.map((t) => (
                     <option key={t.id} value={t.id}>
                       👤 {t.name}
@@ -787,7 +812,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               <span>Export Statement</span>
             </button>
             <span className="text-[11px] font-mono px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg font-semibold">
-              {currentUser?.role === 'technician' ? (techProfile?.name || 'Technician Desk') : `${visibleTechs.length} ${visibleTechs.length === 1 ? 'tech' : 'techs'} shown`}
+              {visibleTechs[0]?.name || 'Technician Desk'}
             </span>
           </div>
         </div>
@@ -832,42 +857,42 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                {Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? 'Technician Cash Collected' : 'Total Customer Cash Collected'}
+                Technician Cash Collected
               </span>
               <strong className="text-lg font-black text-slate-800 font-mono block mt-1">
-                ₹{Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? (visibleTechs[0]?.totalCollected || 0) : overallCashCollected}
+                ₹{visibleTechs[0]?.totalCollected || 0}
               </strong>
               <span className="text-[10px] text-slate-400">
-                {Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? `For ${visibleTechs[0]?.name || 'Selected Specialist'}` : 'Across all field service jobs'}
+                For {visibleTechs[0]?.name || 'Selected Specialist'}
               </span>
             </div>
 
             <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200/80">
               <span className="text-[10px] uppercase font-bold text-emerald-800 block">Deposited / Settled with Company</span>
               <strong className="text-lg font-black text-emerald-700 font-mono block mt-1">
-                ₹{Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? (visibleTechs[0]?.totalSettled || 0) : overallCashSettled}
+                ₹{visibleTechs[0]?.totalSettled || 0}
               </strong>
               <span className="text-[10px] text-emerald-600 font-medium">Safe in company bank/office accounts</span>
             </div>
 
             <div className={`p-3.5 rounded-xl border ${
-              ((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
+              (visibleTechs[0]?.cashInHandDue || 0) > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
             }`}>
               <div className="flex items-center justify-between">
-                <span className={`text-[10px] uppercase font-bold block ${((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
-                  Cash in Hand (Due from Techs)
+                <span className={`text-[10px] uppercase font-bold block ${(visibleTechs[0]?.cashInHandDue || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
+                  Cash in Hand (Due from Tech)
                 </span>
-                {((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 && (
+                {(visibleTechs[0]?.cashInHandDue || 0) > 0 && (
                   <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
                     Deposit Pending
                   </span>
                 )}
               </div>
-              <strong className={`text-lg font-black font-mono block mt-1 ${((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
-                ₹{(Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0}
+              <strong className={`text-lg font-black font-mono block mt-1 ${(visibleTechs[0]?.cashInHandDue || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
+                ₹{visibleTechs[0]?.cashInHandDue || 0}
               </strong>
               <span className="text-[10px] text-amber-800">
-                {((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'Cash currently with field technicians' : 'All collected cash has been deposited'}
+                {(visibleTechs[0]?.cashInHandDue || 0) > 0 ? 'Cash currently with field technician' : 'All collected cash has been deposited'}
               </span>
             </div>
           </div>

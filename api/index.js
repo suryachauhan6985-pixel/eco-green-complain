@@ -1089,7 +1089,7 @@ app.get(['/api/version', '/version.json'], (req, res) => {
   }
 
   return res.json({
-    version: '2.6.1',
+    version: '2.6.2',
     buildTime: Date.now(),
     mandatory: true,
     title: 'Eco Green Support Update',

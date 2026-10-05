@@ -29,7 +29,7 @@ const commonRoutes = new Hono();
 // GET /api/version & /version.json
 commonRoutes.get('/version', (c) => {
   return c.json({
-    version: '2.6.0',
+    version: '2.6.2',
     build: 'b_cloudflare_edge_2026',
     platform: 'Cloudflare Workers (Hono)',
     storage: 'Cloudflare R2 (eco-green-solar-cms-media)',
@@ -75,7 +75,7 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
 
     const resp = await fetch(`https://api.postalpincode.in/pincode/${pincode}`, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.0' }
+      headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.2' }
     });
     clearTimeout(timeoutId);
 
