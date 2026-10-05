@@ -1993,7 +1993,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
 });
 
 // DELETE /api/complaints/:id
-complaintRoutes.delete('/:id', authenticateToken, requireRole('admin'), async (c) => {
+complaintRoutes.delete('/:id', authenticateToken, requireRole('admin', 'staff'), async (c) => {
   try {
     const id = c.req.param('id');
     
