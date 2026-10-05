@@ -79,7 +79,14 @@ self.addEventListener('push', (event) => {
     ]
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  const notifyPromise = self.registration.showNotification(title, options).catch((err) => {
+    console.warn('[SW] showNotification with actions failed, retrying without actions:', err);
+    const safeOptions = { ...options };
+    delete safeOptions.actions;
+    return self.registration.showNotification(title, safeOptions);
+  });
+
+  event.waitUntil(notifyPromise);
 });
 
 // Auto-renew push subscription if refreshed by mobile OS/browser

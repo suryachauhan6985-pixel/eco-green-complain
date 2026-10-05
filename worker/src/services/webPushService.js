@@ -92,26 +92,34 @@ async function sendToSubscription(subRow, payload, env, ctx) {
  */
 export async function dispatchPushToRoles(roles, payload, env, ctx) {
   try {
-    const roleList = Array.isArray(roles) ? roles : [roles];
-    const isAll = roleList.includes('all');
+    const rawRoles = Array.isArray(roles) ? roles : [roles];
+    const isAll = rawRoles.includes('all');
 
     let rows = [];
     if (isAll) {
       const res = await query('SELECT * FROM push_subscriptions', [], env, ctx);
       rows = res.rows || [];
     } else {
+      const expanded = new Set(rawRoles);
+      if (expanded.has('admin') || expanded.has('staff')) {
+        expanded.add('admin');
+        expanded.add('staff');
+      }
+      const roleList = Array.from(expanded);
       const placeholders = roleList.map((_, i) => `$${i + 1}`).join(', ');
       const res = await query(`SELECT * FROM push_subscriptions WHERE role IN (${placeholders})`, roleList, env, ctx);
       rows = res.rows || [];
     }
 
     if (!rows.length) {
+      console.log('[WebPush] No push subscriptions registered for roles:', roles);
       return { sent: 0, total: 0 };
     }
 
     const promises = rows.map(sub => sendToSubscription(sub, payload, env, ctx));
     const results = await Promise.allSettled(promises);
     const sentCount = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+    console.log(`[WebPush] Dispatched push to ${sentCount}/${rows.length} subscribers.`);
 
     return { sent: sentCount, total: rows.length };
   } catch (err) {
@@ -138,11 +146,18 @@ export async function dispatchPushToTechnician(techId, techPhone, payload, env, 
       conditions.push(`phone LIKE $${params.length}`);
     }
 
-    if (!conditions.length) return { sent: 0 };
+    let rows = [];
+    if (conditions.length) {
+      const sql = `SELECT * FROM push_subscriptions WHERE role = 'technician' AND (${conditions.join(' OR ')})`;
+      const res = await query(sql, params, env, ctx);
+      rows = res.rows || [];
+    }
 
-    const sql = `SELECT * FROM push_subscriptions WHERE role = 'technician' AND (${conditions.join(' OR ')})`;
-    const res = await query(sql, params, env, ctx);
-    const rows = res.rows || [];
+    // Fallback: If specific tech not yet registered, broadcast to all technician devices
+    if (!rows.length) {
+      const res = await query(`SELECT * FROM push_subscriptions WHERE role = 'technician'`, [], env, ctx);
+      rows = res.rows || [];
+    }
 
     if (!rows.length) return { sent: 0, total: 0 };
 

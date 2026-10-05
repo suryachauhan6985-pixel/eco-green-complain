@@ -412,6 +412,10 @@ export const NotificationProvider = ({ children }) => {
   useEffect(() => {
     if (currentUser && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       subscribeUserToPush(currentUser).catch(() => {});
+      const t = setTimeout(() => {
+        subscribeUserToPush(currentUser).catch(() => {});
+      }, 1500);
+      return () => clearTimeout(t);
     }
   }, [currentUser]);
 

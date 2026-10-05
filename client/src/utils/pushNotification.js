@@ -45,9 +45,27 @@ export const subscribeUserToPush = async (currentUser) => {
     const reg = await navigator.serviceWorker.ready;
     let subscription = await reg.pushManager.getSubscription();
 
-    // If subscription doesn't exist, create one using VAPID key
+    const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+
+    // If subscription already exists, check if its applicationServerKey matches our active VAPID key
+    if (subscription) {
+      const rawExistingKey = subscription.options?.applicationServerKey;
+      let matches = false;
+      if (rawExistingKey) {
+        const existingKeyArray = new Uint8Array(rawExistingKey);
+        if (existingKeyArray.length === convertedVapidKey.length) {
+          matches = existingKeyArray.every((b, idx) => b === convertedVapidKey[idx]);
+        }
+      }
+      if (!matches) {
+        console.log('[WebPush] Re-subscribing with active VAPID key...');
+        await subscription.unsubscribe().catch(() => {});
+        subscription = null;
+      }
+    }
+
+    // Subscribe with VAPID key
     if (!subscription) {
-      const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
       subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: convertedVapidKey
@@ -64,7 +82,7 @@ export const subscribeUserToPush = async (currentUser) => {
     }
 
     const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
-    await fetch('/api/push/subscribe', {
+    const resp = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -79,7 +97,11 @@ export const subscribeUserToPush = async (currentUser) => {
       })
     });
 
-    return { success: true, subscription: subJson };
+    const resData = await resp.json().catch(() => ({}));
+    localStorage.setItem('egs_push_subscribed_endpoint', subJson.endpoint);
+    console.log('[WebPush] Device registered for background push:', resData);
+
+    return { success: true, subscription: subJson, data: resData };
   } catch (err) {
     console.warn('Failed to subscribe user to background push:', err);
     return { success: false, error: err.message };
@@ -156,22 +178,16 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
 /**
  * Trigger a background push test (with optional countdown delay so user can lock screen)
  */
-export const testBackgroundPush = async (delaySeconds = 3) => {
+export const testBackgroundPush = async (delaySeconds = 3, currentUser = null) => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     return { success: false, message: 'Push notifications are not supported on this browser.' };
   }
 
   try {
+    // 1. Ensure user is subscribed first
+    const subResult = await subscribeUserToPush(currentUser);
     const reg = await navigator.serviceWorker.ready;
-    let subscription = await reg.pushManager.getSubscription();
-
-    if (!subscription) {
-      const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-      subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey
-      });
-    }
+    const subscription = await reg.pushManager.getSubscription();
 
     const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
     const response = await fetch('/api/push/test', {
@@ -181,7 +197,7 @@ export const testBackgroundPush = async (delaySeconds = 3) => {
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
       body: JSON.stringify({
-        subscription: subscription ? subscription.toJSON() : null,
+        subscription: subscription ? subscription.toJSON() : subResult?.subscription || null,
         delaySeconds
       })
     });
