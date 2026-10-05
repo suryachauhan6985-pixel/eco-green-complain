@@ -52,6 +52,17 @@ app.get('/api/health', (c) => {
 });
 
 
+// URL normalization: collapse any accidental duplicate /api/api to /api
+app.use('*', async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.pathname.startsWith('/api/api/')) {
+    const fixedPath = url.pathname.replace(/^\/api\/api\//, '/api/');
+    const newReq = new Request(new URL(fixedPath + url.search, url.origin).toString(), c.req.raw);
+    return app.fetch(newReq, c.env, c.executionCtx);
+  }
+  await next();
+});
+
 // Meta Webhook Direct Endpoints (both /webhook and /api/whatsapp/webhook)
 app.route('/webhook', whatsappRoutes);
 app.route('/api/webhook', whatsappRoutes);
@@ -61,6 +72,7 @@ app.route('/api/auth', authRoutes);
 app.route('/api/complaints', complaintRoutes);
 app.route('/api/whatsapp', whatsappRoutes);
 app.route('/whatsapp', whatsappRoutes);
+app.route('/api/api/whatsapp', whatsappRoutes);
 app.route('/api', attachmentRoutes);
 app.route('/api', technicianRoutes);
 app.route('/api', commonRoutes);

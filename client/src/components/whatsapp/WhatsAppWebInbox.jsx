@@ -30,7 +30,11 @@ function getWhatsAppMediaUrl(msg) {
   }
   const base = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
   if (base) {
-    return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+    // If base ends with /api and url begins with /api/, strip the leading /api to avoid duplicate /api/api
+    const path = (base.endsWith('/api') && url.startsWith('/api/'))
+      ? url.substring(4)
+      : (url.startsWith('/') ? url : `/${url}`);
+    return `${base}${path}`;
   }
   return url;
 }
@@ -38,6 +42,7 @@ function getWhatsAppMediaUrl(msg) {
 function isImageMessage(msg) {
   if (!msg) return false;
   if (msg.media_type === 'image' || msg.media_type?.includes('image')) return true;
+  if (msg.media_url && /\.(jpe?g|png|webp|gif)($|\?)/i.test(msg.media_url)) return true;
   if (msg.media_id && (msg.message_body?.toLowerCase().includes('image') || msg.message_body?.toLowerCase().includes('photo') || msg.message_body?.includes('📷'))) return true;
   return false;
 }

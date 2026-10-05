@@ -1176,7 +1176,7 @@ app.get('/api/complaints/:id/whatsapp-messages', authenticateToken, (req, res) =
 });
 
 // WhatsApp Media Proxy (streams media securely from Meta Cloud API lookaside CDN to frontend)
-app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req, res) => {
+app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/whatsapp/media/:mediaId'], async (req, res) => {
   const { mediaId } = req.params;
   const token = process.env.META_ACCESS_TOKEN || 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
 

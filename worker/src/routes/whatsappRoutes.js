@@ -120,9 +120,25 @@ export async function handleWebhookPost(c) {
 
             if (msg.type === 'text') {
               textBody = msg.text?.body || '';
-            } else if (msg.type === 'image' || msg.type === 'document' || msg.type === 'video') {
-              textBody = msg[msg.type]?.caption || `[${msg.type.toUpperCase()} file]`;
-              mediaUrl = msg[msg.type]?.id ? `/api/whatsapp/media/${msg[msg.type].id}` : null;
+            } else if (msg.type === 'image') {
+              textBody = msg.image?.caption || '[IMAGE file]';
+              mediaUrl = msg.image?.id ? `/api/whatsapp/media/${msg.image.id}` : null;
+            } else if (msg.type === 'video') {
+              textBody = msg.video?.caption || '[VIDEO file]';
+              mediaUrl = msg.video?.id ? `/api/whatsapp/media/${msg.video.id}` : null;
+            } else if (msg.type === 'document') {
+              const docName = msg.document?.filename || 'document.pdf';
+              textBody = msg.document?.caption || docName || '[DOCUMENT file]';
+              mediaUrl = msg.document?.id ? `/api/whatsapp/media/${msg.document.id}?filename=${encodeURIComponent(docName)}` : null;
+            } else if (msg.type === 'audio' || msg.type === 'voice') {
+              mediaType = 'audio';
+              textBody = msg.audio?.caption || (msg.type === 'voice' ? '🎤 Voice Note' : '[AUDIO file]');
+              const audioId = msg.audio?.id || msg.voice?.id;
+              mediaUrl = audioId ? `/api/whatsapp/media/${audioId}` : null;
+            } else if (msg.type === 'sticker') {
+              mediaType = 'image';
+              textBody = '🎨 Sticker';
+              mediaUrl = msg.sticker?.id ? `/api/whatsapp/media/${msg.sticker.id}` : null;
             }
 
             // Raw Event Audit Log
@@ -462,7 +478,32 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
   if (!mediaId) {
     return c.text('Media ID is required', 400);
   }
+  const filename = c.req.query('filename') || '';
   const token = c.env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+  const r2Key = `whatsapp_media/${mediaId}`;
+
+  // 1. Check Cloudflare R2 cache first for instant delivery & permanent retention
+  if (c.env?.MEDIA_BUCKET) {
+    try {
+      const cached = await c.env.MEDIA_BUCKET.get(r2Key);
+      if (cached) {
+        const headers = new Headers();
+        headers.set('Content-Type', cached.httpMetadata?.contentType || 'application/octet-stream');
+        if (cached.size) headers.set('Content-Length', String(cached.size));
+        headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+        headers.set('Access-Control-Allow-Origin', '*');
+        headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        if (filename) {
+          headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+        } else {
+          headers.set('Content-Disposition', 'inline');
+        }
+        return new Response(cached.body, { status: 200, headers });
+      }
+    } catch (r2Err) {
+      console.warn('[WhatsApp Media R2 Cache Read Warn]', r2Err.message);
+    }
+  }
 
   try {
     const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
@@ -489,16 +530,31 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
     }
 
     const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
-    const contentLength = metaData.file_size || fileRes.headers.get('content-length');
+    const arrayBuffer = await fileRes.arrayBuffer();
+
+    // 2. Cache permanently in Cloudflare R2 so it never expires after 30 days
+    if (c.env?.MEDIA_BUCKET) {
+      const r2Put = c.env.MEDIA_BUCKET.put(r2Key, arrayBuffer, {
+        httpMetadata: { contentType }
+      }).catch(err => console.error('[WhatsApp Media R2 Cache Save Error]', err));
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(r2Put);
+      }
+    }
 
     const headers = new Headers();
     headers.set('Content-Type', contentType);
-    if (contentLength) headers.set('Content-Length', String(contentLength));
-    headers.set('Cache-Control', 'public, max-age=604800, immutable');
+    headers.set('Content-Length', String(arrayBuffer.byteLength));
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (filename) {
+      headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+    } else {
+      headers.set('Content-Disposition', 'inline');
+    }
 
-    return new Response(fileRes.body, {
+    return new Response(arrayBuffer, {
       status: 200,
       headers
     });

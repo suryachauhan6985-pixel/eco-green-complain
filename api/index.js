@@ -6527,7 +6527,7 @@ app.post(['/api/whatsapp/webhook', '/webhook'], async (req, res) => {
 });
 
 // WhatsApp Media Proxy (streams media securely from Meta Cloud API lookaside CDN to frontend)
-app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId'], async (req, res) => {
+app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/whatsapp/media/:mediaId'], async (req, res) => {
   const { mediaId } = req.params;
   const token = getMetaAccessToken();
   if (!token) {
