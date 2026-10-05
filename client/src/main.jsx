@@ -65,15 +65,30 @@ createRoot(document.getElementById('root')).render(
 // Register PWA Service Worker for Mobile App Installation & Offline Caching
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+
     navigator.serviceWorker.register('/sw.js').then((reg) => {
-      // Actively check for Service Worker updates on every launch
+      // Actively check for Service Worker updates on launch and tab visibility
       reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          reg.update().catch(() => {});
+        }
+      });
+
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         if (newWorker) {
           newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'activated') {
-              console.log('Eco Green CMS updated to latest version');
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('New version of Eco Green CMS installed. Activating now...');
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
             }
           });
         }

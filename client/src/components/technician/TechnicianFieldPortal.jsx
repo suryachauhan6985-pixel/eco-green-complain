@@ -66,7 +66,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     ];
   });
   const [techProfile, setTechProfile] = useState(null);
-  const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getUrlParam('tech_id') || '');
+  const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getUrlParam('tech_id') || 'all');
 
   // Mobile & Desktop view mode: default 'card'
   const [viewMode, setViewMode] = useState(() => {
@@ -104,8 +104,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   };
 
   const handleAdminTechSelect = (id) => {
-    setSelectedAdminTechId(id);
-    updateUrlParams({ tech_id: id || null });
+    const finalId = id || 'all';
+    setSelectedAdminTechId(finalId);
+    updateUrlParams({ tech_id: finalId === 'all' ? null : finalId });
   };
 
   useEffect(() => {
@@ -115,7 +116,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const st = getInitialJobStatus();
       setJobStatusFilter(st);
       const tid = getUrlParam('tech_id');
-      setSelectedAdminTechId(tid || '');
+      setSelectedAdminTechId(tid || 'all');
     };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
@@ -156,7 +157,10 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       const techs = data.technicians || [];
       setTechnicians(techs);
       if (techs.length > 0) {
-        setSelectedAdminTechId(prev => (prev && prev !== 'all' && techs.some(t => String(t.id) === String(prev))) ? prev : String(techs[0].id));
+        setSelectedAdminTechId(prev => {
+          if (!prev || prev === 'all') return 'all';
+          return techs.some(t => String(t.id) === String(prev)) ? prev : 'all';
+        });
       }
       const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);
       const match = techs.find(t => {
@@ -671,14 +675,15 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
           <div className="flex items-center gap-2">
             <select
-              value={selectedAdminTechId}
+              value={selectedAdminTechId || 'all'}
               onChange={(e) => {
                 const val = e.target.value;
                 handleAdminTechSelect(val);
-                setExpandedTechId(val);
+                setExpandedTechId(val === 'all' ? null : val);
               }}
-              className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+              className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
             >
+              <option value="all">👥 All Technicians ({technicians.length})</option>
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
                   👤 {t.name} ({t.area_zone || t.phone || 'Field'})
@@ -750,7 +755,28 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {currentUser?.role !== 'technician' && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500">Tech Filter:</span>
+                <select
+                  value={selectedAdminTechId || 'all'}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    handleAdminTechSelect(val);
+                    setExpandedTechId(val === 'all' ? null : val);
+                  }}
+                  className="text-xs px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
+                >
+                  <option value="all">👥 All Technicians ({technicians.length})</option>
+                  {technicians.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      👤 {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleExportCollectionStatement}
@@ -761,7 +787,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               <span>Export Statement</span>
             </button>
             <span className="text-[11px] font-mono px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg font-semibold">
-              {currentUser?.role === 'technician' ? (techProfile?.name || 'Technician Desk') : `${technicians.length} Registered Techs`}
+              {currentUser?.role === 'technician' ? (techProfile?.name || 'Technician Desk') : `${visibleTechs.length} ${visibleTechs.length === 1 ? 'tech' : 'techs'} shown`}
             </span>
           </div>
         </div>
@@ -806,42 +832,42 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                {selectedAdminTechId !== 'all' ? 'Technician Cash Collected' : 'Total Customer Cash Collected'}
+                {Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? 'Technician Cash Collected' : 'Total Customer Cash Collected'}
               </span>
               <strong className="text-lg font-black text-slate-800 font-mono block mt-1">
-                ₹{selectedAdminTechId !== 'all' ? (visibleTechs[0]?.totalCollected || 0) : overallCashCollected}
+                ₹{Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? (visibleTechs[0]?.totalCollected || 0) : overallCashCollected}
               </strong>
               <span className="text-[10px] text-slate-400">
-                {selectedAdminTechId !== 'all' ? `For ${visibleTechs[0]?.name || 'Selected Specialist'}` : 'Across all field service jobs'}
+                {Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? `For ${visibleTechs[0]?.name || 'Selected Specialist'}` : 'Across all field service jobs'}
               </span>
             </div>
 
             <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200/80">
               <span className="text-[10px] uppercase font-bold text-emerald-800 block">Deposited / Settled with Company</span>
               <strong className="text-lg font-black text-emerald-700 font-mono block mt-1">
-                ₹{selectedAdminTechId !== 'all' ? (visibleTechs[0]?.totalSettled || 0) : overallCashSettled}
+                ₹{Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? (visibleTechs[0]?.totalSettled || 0) : overallCashSettled}
               </strong>
               <span className="text-[10px] text-emerald-600 font-medium">Safe in company bank/office accounts</span>
             </div>
 
             <div className={`p-3.5 rounded-xl border ${
-              ((selectedAdminTechId !== 'all' ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
+              ((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
             }`}>
               <div className="flex items-center justify-between">
-                <span className={`text-[10px] uppercase font-bold block ${((selectedAdminTechId !== 'all' ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
+                <span className={`text-[10px] uppercase font-bold block ${((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'text-amber-900 font-black' : 'text-slate-500'}`}>
                   Cash in Hand (Due from Techs)
                 </span>
-                {((selectedAdminTechId !== 'all' ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 && (
+                {((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 && (
                   <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
                     Deposit Pending
                   </span>
                 )}
               </div>
-              <strong className={`text-lg font-black font-mono block mt-1 ${((selectedAdminTechId !== 'all' ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
-                ₹{(selectedAdminTechId !== 'all' ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0}
+              <strong className={`text-lg font-black font-mono block mt-1 ${((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
+                ₹{(Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0}
               </strong>
               <span className="text-[10px] text-amber-800">
-                {((selectedAdminTechId !== 'all' ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'Cash currently with field technicians' : 'All collected cash has been deposited'}
+                {((Boolean(selectedAdminTechId && selectedAdminTechId !== 'all') ? visibleTechs[0]?.cashInHandDue : overallCashDue) || 0) > 0 ? 'Cash currently with field technicians' : 'All collected cash has been deposited'}
               </span>
             </div>
           </div>
