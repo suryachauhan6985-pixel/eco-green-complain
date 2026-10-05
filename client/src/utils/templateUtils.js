@@ -1,5 +1,4 @@
 import { api } from '../api/client';
-import { INITIAL_TEMPLATES } from '../data/demoData';
 
 let cachedTemplates = null;
 let lastFetchTime = 0;
@@ -27,20 +26,7 @@ export async function getNotificationTemplates(forceRefresh = false) {
     console.warn('Could not fetch remote templates, falling back to local defaults:', err.message);
   }
 
-  // Fallback to local defaults if API fails or is offline
-  if (!cachedTemplates) {
-    try {
-      const stored = localStorage.getItem('egs_cached_templates');
-      if (stored) {
-        cachedTemplates = JSON.parse(stored);
-      }
-    } catch (_) {}
-  }
-  if (!cachedTemplates) {
-    cachedTemplates = INITIAL_TEMPLATES;
-  }
-  lastFetchTime = now;
-  return cachedTemplates;
+  return cachedTemplates || [];
 }
 
 /**
@@ -212,9 +198,6 @@ export function buildTechnicianTeamWorkOrderWhatsApp(ticket, technician, partner
   };
 }
 
-/**
- * Helper to get template synchronously from in-memory cache, localStorage, or INITIAL_TEMPLATES
- */
 export function getTemplateSync(templateKey) {
   let list = cachedTemplates;
   if (!list || !Array.isArray(list) || list.length === 0) {
@@ -226,19 +209,7 @@ export function getTemplateSync(templateKey) {
       }
     } catch (_) {}
   }
-  if (!list || !Array.isArray(list) || list.length === 0) {
-    try {
-      const stored = localStorage.getItem('egs_mock_templates');
-      if (stored) {
-        list = JSON.parse(stored);
-        cachedTemplates = list;
-      }
-    } catch (_) {}
-  }
-  if (!list || !Array.isArray(list) || list.length === 0) {
-    list = INITIAL_TEMPLATES;
-  }
-  return list.find(t => t.template_key === templateKey);
+  return list ? list.find(t => t.template_key === templateKey) : null;
 }
 
 /**

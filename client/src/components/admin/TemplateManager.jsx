@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
-import { INITIAL_TEMPLATES } from '../../data/demoData';
 import { 
   Settings, MessageSquare, Mail, Save, RefreshCw, 
   HelpCircle, Code2, Check, Key, Shield, Sparkles,
@@ -229,32 +228,17 @@ export const TemplateManager = () => {
         };
       });
 
-      // Guarantee that charges_added and charges_removed and other built-in defaults are always present
-      const existingKeys = new Set(list.map(t => t.template_key));
-      const missingDefaults = (INITIAL_TEMPLATES || [])
-        .filter(dt => !existingKeys.has(dt.template_key))
-        .map(dt => {
-          const isTech = isTechnicianTemplate(dt);
-          return {
-            ...dt,
-            audience: dt.audience || (isTech ? 'technician' : 'customer'),
-            meta_status: String(dt.meta_status || 'PENDING').toUpperCase(),
-            is_active: dt.is_active !== undefined ? dt.is_active : 1
-          };
-        });
+      setTemplates(list);
 
-      const finalList = [...list, ...missingDefaults];
-      setTemplates(finalList);
-
-      if (finalList.length > 0) {
+      if (list.length > 0) {
         const targetKey = getUrlParam('tmpl') || getUrlParam('template');
-        const matched = targetKey ? finalList.find(t => t.template_key === targetKey || String(t.id) === targetKey) : null;
+        const matched = targetKey ? list.find(t => t.template_key === targetKey || String(t.id) === targetKey) : null;
         if (matched) {
           selectTemplate(matched, false);
         } else if (!selectedTemplate) {
-          selectTemplate(finalList[0], false);
+          selectTemplate(list[0], false);
         } else {
-          const reSelected = finalList.find(t => t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key) || finalList[0];
+          const reSelected = list.find(t => t.id === selectedTemplate.id || t.template_key === selectedTemplate.template_key) || list[0];
           selectTemplate(reSelected, false);
         }
       }

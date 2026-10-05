@@ -211,48 +211,12 @@ class LocalMockStore {
     localStorage.setItem('egs_mock_users', JSON.stringify(INITIAL_USERS));
     localStorage.setItem('egs_mock_notifications', JSON.stringify(INITIAL_SIMULATED_NOTIFICATIONS));
     try {
-      const storedTmpls = JSON.parse(localStorage.getItem('egs_mock_templates') || '[]');
-      if (!Array.isArray(storedTmpls) || storedTmpls.length === 0) {
-        localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
-      } else {
-        // Merge missing template rules if any, while strictly preserving user's customized templates
-        const existingKeys = new Set(storedTmpls.map(t => t.template_key));
-        const missing = INITIAL_TEMPLATES.filter(t => !existingKeys.has(t.template_key));
-        if (missing.length > 0) {
-          localStorage.setItem('egs_mock_templates', JSON.stringify([...storedTmpls, ...missing]));
-        }
-      }
-    } catch (_) {
-      localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
-    }
+      localStorage.removeItem('egs_mock_templates');
+    } catch (_) {}
   }
 
   getTemplates() {
-    const stored = localStorage.getItem('egs_mock_templates');
-    if (!stored) {
-      localStorage.setItem('egs_mock_templates', JSON.stringify(INITIAL_TEMPLATES));
-      return INITIAL_TEMPLATES;
-    }
-    try {
-      const list = JSON.parse(stored);
-      if (Array.isArray(list)) {
-        let changed = false;
-        for (const defaultTmpl of INITIAL_TEMPLATES) {
-          const exists = list.some(t => t.template_key === defaultTmpl.template_key);
-          if (!exists) {
-            list.push(defaultTmpl);
-            changed = true;
-          }
-        }
-        if (changed) {
-          localStorage.setItem('egs_mock_templates', JSON.stringify(list));
-        }
-        return list;
-      }
-      return INITIAL_TEMPLATES;
-    } catch {
-      return INITIAL_TEMPLATES;
-    }
+    return [];
   }
 
   updateTemplate(id, data) {
@@ -1329,20 +1293,7 @@ function fallbackHandler(endpoint, options) {
   }
 
   if (endpoint.startsWith('/notifications/templates')) {
-    if (method === 'PUT') {
-      const id = endpoint.split('/').pop();
-      const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
-      return mockStore.updateTemplate(id, body);
-    }
-    if (method === 'POST' && endpoint.includes('/toggle-active')) {
-      const id = endpoint.split('/')[3];
-      return mockStore.toggleTemplateActive(id);
-    }
-    if (method === 'POST') {
-      const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
-      return mockStore.createTemplate(body);
-    }
-    return { templates: mockStore.getTemplates() };
+    throw new Error('Notification templates require live database connection');
   }
 
   // Tour Ledger & Voucher mock routing

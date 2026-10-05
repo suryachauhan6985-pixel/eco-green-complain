@@ -199,14 +199,46 @@ export async function sendWhatsApp({
       const portalLink = `${appUrl}/technician?ticket=${encodeURIComponent(ticketId)}`;
       renderedBody = `🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello ${techName}, you and *${partnerName}* have been assigned as a 2-member service team for Ticket *${ticketId}*.\n\n👥 *Assigned Team:* ${techName} & ${partnerName}\n${partnerPhone ? `📞 *Partner Contact:* ${partnerPhone}\n` : ''}👤 *Customer:* ${custName}\n📞 *Customer Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n📝 *Notes:* ${notes}\n🚨 *Priority:* ${priority}\n📅 *Expected Visit:* ${visitDate}\n\n🔗 *Technician Portal:* ${portalLink}\n\nPlease coordinate with ${partnerName} and call the customer before visiting the site.`;
 
-      // Check DB for customized meta_template_name
-      let targetMetaName = 'technician_team_work_order';
+      // Check DB for customized meta_template_name & parameter_format
+      let targetMetaName = 'technician_dual_team_work_order';
+      let isPositional = true;
       try {
-        const dbRes = await query('SELECT meta_template_name FROM notification_templates WHERE template_key = $1 LIMIT 1', ['technician_team_work_order'], env);
-        if (dbRes.rows.length && dbRes.rows[0].meta_template_name) {
-          targetMetaName = dbRes.rows[0].meta_template_name;
+        const dbRes = await query('SELECT meta_template_name, parameter_format FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1', ['technician_team_work_order'], env);
+        if (dbRes?.rows?.length) {
+          if (dbRes.rows[0].meta_template_name) targetMetaName = dbRes.rows[0].meta_template_name;
+          if (dbRes.rows[0].parameter_format === 'NAMED') isPositional = false;
         }
       } catch (_) {}
+
+      const positionalParams = [
+        { type: 'text', text: techName },
+        { type: 'text', text: partnerName },
+        { type: 'text', text: ticketId },
+        { type: 'text', text: partnerPhone || 'On file' },
+        { type: 'text', text: custName },
+        { type: 'text', text: custPhone },
+        { type: 'text', text: custAddress },
+        { type: 'text', text: prodType },
+        { type: 'text', text: issueCat },
+        { type: 'text', text: notes },
+        { type: 'text', text: priority },
+        { type: 'text', text: visitDate }
+      ];
+
+      const namedParams = [
+        { type: 'text', parameter_name: 'technician_name', text: techName },
+        { type: 'text', parameter_name: 'partner_technician_name', text: partnerName },
+        { type: 'text', parameter_name: 'partner_technician_phone', text: partnerPhone || 'N/A' },
+        { type: 'text', parameter_name: 'complaint_id', text: ticketId },
+        { type: 'text', parameter_name: 'customer_name', text: custName },
+        { type: 'text', parameter_name: 'customer_phone', text: custPhone },
+        { type: 'text', parameter_name: 'customer_address', text: custAddress },
+        { type: 'text', parameter_name: 'product_type', text: prodType },
+        { type: 'text', parameter_name: 'issue_category', text: issueCat },
+        { type: 'text', parameter_name: 'notes', text: notes },
+        { type: 'text', parameter_name: 'priority', text: priority },
+        { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
+      ];
 
       payload.type = 'template';
       payload.template = {
@@ -214,20 +246,7 @@ export async function sendWhatsApp({
         language: { code: 'en_US' },
         components: [{
           type: 'body',
-          parameters: [
-            { type: 'text', parameter_name: 'technician_name', text: techName },
-            { type: 'text', parameter_name: 'partner_technician_name', text: partnerName },
-            { type: 'text', parameter_name: 'partner_technician_phone', text: partnerPhone || 'N/A' },
-            { type: 'text', parameter_name: 'complaint_id', text: ticketId },
-            { type: 'text', parameter_name: 'customer_name', text: custName },
-            { type: 'text', parameter_name: 'customer_phone', text: custPhone },
-            { type: 'text', parameter_name: 'customer_address', text: custAddress },
-            { type: 'text', parameter_name: 'product_type', text: prodType },
-            { type: 'text', parameter_name: 'issue_category', text: issueCat },
-            { type: 'text', parameter_name: 'notes', text: notes },
-            { type: 'text', parameter_name: 'priority', text: priority },
-            { type: 'text', parameter_name: 'expected_visit_date', text: visitDate }
-          ]
+          parameters: isPositional ? positionalParams : namedParams
         }]
       };
     } else if (templateName === 'technician_reminder' || templateName === 'technician_pending_visit_reminder') {
@@ -607,14 +626,67 @@ export async function sendWhatsApp({
         language: { code: 'en_US' }
       };
     } else if (templateName) {
-      payload.type = 'template';
-      payload.template = {
-        name: templateName,
-        language: { code: variables.language_code || 'en_US' }
-      };
+      // ================= UNIVERSAL DYNAMIC TEMPLATE ENGINE =================
+      // Queries PostgreSQL notification_templates so ANY newly created template
+      // works out of the box without requiring manual code changes!
+      let dbTmpl = null;
+      try {
+        const dbRes = await query(
+          'SELECT * FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1',
+          [templateName],
+          env
+        );
+        if (dbRes?.rows?.length > 0) {
+          dbTmpl = dbRes.rows[0];
+        }
+      } catch (_) {}
+
+      const metaName = dbTmpl?.meta_template_name || templateName;
+      const langCode = dbTmpl?.meta_language || variables.language_code || 'en_US';
+      const bodyFormat = dbTmpl?.parameter_format || 'NAMED';
+
+      const rawBody = dbTmpl?.whatsapp_body || message || '';
+      const varMatches = [...rawBody.matchAll(/\{\{([a-zA-Z0-9_]+)\}\}/g)].map(m => m[1]);
+      const uniqueVars = Array.from(new Set(varMatches));
+
+      let params = [];
       if (variables.components) {
-        payload.template.components = variables.components;
+        payload.template = {
+          name: metaName,
+          language: { code: langCode },
+          components: variables.components
+        };
+      } else if (uniqueVars.length > 0) {
+        params = uniqueVars.map((vKey, idx) => {
+          const val = cleanParam(variables[vKey] || variables[String(idx + 1)] || '', 'N/A');
+          if (bodyFormat === 'POSITIONAL' || /^\d+$/.test(vKey)) {
+            return { type: 'text', text: val };
+          }
+          return { type: 'text', parameter_name: vKey, text: val };
+        });
+        payload.template = {
+          name: metaName,
+          language: { code: langCode },
+          components: [{
+            type: 'body',
+            parameters: params
+          }]
+        };
+      } else {
+        payload.template = {
+          name: metaName,
+          language: { code: langCode }
+        };
       }
+
+      // Pre-render body text for audit logging and seamless text fallback if Meta template is pending
+      renderedBody = rawBody;
+      for (const [k, v] of Object.entries(variables)) {
+        if (typeof v === 'string' || typeof v === 'number') {
+          renderedBody = renderedBody.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), String(v));
+        }
+      }
+      payload.type = 'template';
     } else if (message) {
       payload.type = 'text';
       payload.text = { body: message };
