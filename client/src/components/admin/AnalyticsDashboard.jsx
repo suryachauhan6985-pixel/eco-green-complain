@@ -173,6 +173,14 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         return '';
       };
 
+      const formatDate = (d) => {
+        if (!d || isNaN(d.getTime())) return null;
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
       let inWarrantyCount = 0;
       let outWarrantyCount = 0;
       const today = new Date();
@@ -184,25 +192,28 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         ])).trim();
         if (!customerName) continue;
 
-        const rawDateVal = getExcelDateVal(r);
-        const refDate = parseExcelDate(rawDateVal);
+        const rawMeterDate = getExcelVal(r, [
+          'Date of Installation of Solar Meter', 'Date of Installation', 'Installation Date', 'Install Date',
+          'Date of Commissioning', 'Commissioning Date', 'DOC', 'DOI', 'Installation Dt',
+          'Meter Installation Date', 'Meter Date', 'Date of Solar Meter Installation',
+          'Date of Commissioning of Solar PV System', 'Commissioning Dt', 'Solar Meter Inst Date',
+          'Connection Date', 'Work Completion Date'
+        ]);
+        const rawInvDate = getExcelVal(r, [
+          'Invoice Date', 'InvoiceDate', 'Inv Date', 'Bill Date', 'Date'
+        ]);
+
+        const installD = parseExcelDate(rawMeterDate);
+        const invD = parseExcelDate(rawInvDate);
+        const refD = installD || invD;
+
         let isInWarranty = 0;
-        let dateStr = null;
         let expiryDateStr = null;
 
-        if (refDate && !isNaN(refDate.getTime())) {
-          const y = refDate.getFullYear();
-          const m = String(refDate.getMonth() + 1).padStart(2, '0');
-          const d = String(refDate.getDate()).padStart(2, '0');
-          dateStr = `${y}-${m}-${d}`;
-
-          const expiryDate = new Date(refDate);
+        if (refD && !isNaN(refD.getTime())) {
+          const expiryDate = new Date(refD);
           expiryDate.setFullYear(expiryDate.getFullYear() + 5);
-
-          const expY = expiryDate.getFullYear();
-          const expM = String(expiryDate.getMonth() + 1).padStart(2, '0');
-          const expD = String(expiryDate.getDate()).padStart(2, '0');
-          expiryDateStr = `${expY}-${expM}-${expD}`;
+          expiryDateStr = formatDate(expiryDate);
 
           // Precise 5-Year Warranty Rule: If today is within 5 years from installation, plant is IN WARRANTY
           isInWarranty = today <= expiryDate ? 1 : 0;
@@ -213,22 +224,33 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         if (isInWarranty) inWarrantyCount++;
         else outWarrantyCount++;
 
+        const srVal = getExcelVal(r, ['Sr No.', 'Sr. No.', 'Sr No', 'Sr#', 'S.No', 'Serial No']);
+        const srNo = (srVal !== '' && !isNaN(srVal)) ? parseInt(srVal, 10) : null;
+
+        const pvVal = getExcelVal(r, ['PV Capacity', 'PV Capacity (kW)', 'Capacity', 'Capacity (kW)', 'Plant Capacity']);
+        const pvCapacity = (pvVal !== '' && !isNaN(pvVal)) ? parseFloat(pvVal) : null;
+
         mappedCustomers.push({
-          customer_name: customerName,
-          consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim(),
-          consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim(),
+          sr_no: srNo,
           order_no: String(getExcelVal(r, [
             'Order No', 'Order No.', 'Order Number', 'Order_No', 'order_no', 'Order', 'Order Id', 'Order ID',
             'SO No', 'SO Number', 'SO No.', 'SO#', 'Order#', 'Sales Order', 'Sales Order No', 'Sales Order Number',
             'Work Order', 'Work Order No', 'WO No', 'Application No', 'Application Number', 'App No', 'App No.',
             'Registration No', 'Reg No', 'Ref No', 'Reference No'
           ])).trim() || null,
-          city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim(),
-          dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim(),
-          invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim(),
-          invoice_date: dateStr,
-          installation_date: dateStr,
-          inverter_serial: String(getExcelVal(r, ['Inverter Sr. No.', 'Inverter Sr No', 'Inverter Serial', 'Inverter Serial No', 'Serial No'])).trim(),
+          scheme: String(getExcelVal(r, ['Scheme', 'Project Scheme', 'Scheme Name', 'Govt Scheme'])).trim() || null,
+          pv_capacity: pvCapacity,
+          consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim() || null,
+          consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim() || null,
+          customer_name: customerName,
+          city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim() || null,
+          installation_date: formatDate(installD) || formatDate(invD),
+          dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim() || null,
+          invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim() || null,
+          invoice_date: formatDate(invD) || formatDate(installD),
+          panel_make: String(getExcelVal(r, ['Panel Make', 'Panel Manufacturer', 'Module Make', 'Panel Brand'])).trim() || null,
+          inverter_make: String(getExcelVal(r, ['Inverter Make', 'Inverter Manufacturer', 'Inverter Brand'])).trim() || null,
+          inverter_serial: String(getExcelVal(r, ['Inverter Sr. No.', 'Inverter Sr No', 'Inverter Serial', 'Inverter Serial No', 'Serial No'])).trim() || null,
           is_in_warranty: isInWarranty,
           warranty_expiry_date: expiryDateStr
         });
@@ -239,8 +261,8 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         throw new Error('No valid customer rows found in uploaded sheet');
       }
 
-      // Stream ALL customer records to database in fast batches of 500
-      const BATCH_SIZE = 500;
+      // Stream customer records to database in optimized batches of 250 for zero drops and smooth progress
+      const BATCH_SIZE = 250;
       const totalBatches = Math.ceil(mappedCustomers.length / BATCH_SIZE);
       let latestServerResult = null;
 

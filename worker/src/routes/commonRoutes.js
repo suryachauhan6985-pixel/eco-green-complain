@@ -275,41 +275,105 @@ commonRoutes.post('/customers/sync', authenticateToken, requireRole('admin', 'st
       outWarrantyCount, 
       customers = body.rows,
       isFirstBatch,
-      batchIndex = 0
+      isLastBatch,
+      batchIndex = 0,
+      totalBatches = 1
     } = body;
 
     let inserted = 0;
 
+    // Clear previous customer records ONLY on the first batch
     if ((isFirstBatch === true || (batchIndex === 0 && !body.append)) && Array.isArray(customers) && customers.length > 0) {
       await query('DELETE FROM installed_customers', [], c.env, c.executionCtx).catch(() => {});
     }
 
     if (Array.isArray(customers) && customers.length > 0) {
-      for (const row of customers) {
-        if (!row.customer_name && !row.name) continue;
-        const name = (row.customer_name || row.name || '').trim();
-        const mobile = (row.consumer_mobile || row.phone || '').trim();
-        await query(`
-          INSERT INTO installed_customers (
-            customer_name, consumer_mobile, consumer_no, order_no, city_village, dealer_name,
-            invoice_no, invoice_date, installation_date, inverter_serial, is_in_warranty, warranty_expiry_date
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        `, [
-          name.slice(0, 250),
-          mobile ? mobile.slice(0, 50) : null,
-          row.consumer_no ? String(row.consumer_no).slice(0, 100) : null,
-          row.order_no ? String(row.order_no).slice(0, 100) : null,
-          row.city_village ? String(row.city_village).slice(0, 250) : null,
-          row.dealer_name ? String(row.dealer_name).slice(0, 250) : null,
-          row.invoice_no ? String(row.invoice_no).slice(0, 100) : null,
-          row.invoice_date || null,
-          row.installation_date || null,
-          row.inverter_serial ? String(row.inverter_serial).slice(0, 100) : null,
-          (row.is_in_warranty === 1 || row.is_in_warranty === true) ? 1 : 0,
-          row.warranty_expiry_date || null
-        ], c.env, c.executionCtx).catch(() => {});
-        inserted++;
+      // High-performance multi-row bulk insert in chunks of 50
+      // 50 rows * 17 columns = 850 params (well below Postgres 65535 limit)
+      // Executed in just 1-5 queries instead of hundreds of separate subrequests!
+      const chunkSize = 50;
+      for (let i = 0; i < customers.length; i += chunkSize) {
+        const chunk = customers.slice(i, i + chunkSize);
+        const valueClauses = [];
+        const values = [];
+        let pIdx = 1;
+
+        for (const row of chunk) {
+          if (!row.customer_name && !row.name) continue;
+          const name = String(row.customer_name || row.name || '').trim();
+          if (!name) continue;
+
+          const mobile = String(row.consumer_mobile || row.phone || '').trim();
+          const srNo = (row.sr_no !== '' && row.sr_no !== null && !isNaN(row.sr_no)) ? parseInt(row.sr_no, 10) : null;
+          const pvCap = (row.pv_capacity !== '' && row.pv_capacity !== null && !isNaN(row.pv_capacity)) ? parseFloat(row.pv_capacity) : null;
+
+          valueClauses.push(`($${pIdx}, $${pIdx+1}, $${pIdx+2}, $${pIdx+3}, $${pIdx+4}, $${pIdx+5}, $${pIdx+6}, $${pIdx+7}, $${pIdx+8}, $${pIdx+9}, $${pIdx+10}, $${pIdx+11}, $${pIdx+12}, $${pIdx+13}, $${pIdx+14}, $${pIdx+15}, $${pIdx+16})`);
+
+          values.push(
+            srNo,
+            row.order_no ? String(row.order_no).slice(0, 100) : null,
+            row.scheme ? String(row.scheme).slice(0, 100) : null,
+            pvCap,
+            row.consumer_no ? String(row.consumer_no).slice(0, 100) : null,
+            mobile ? mobile.slice(0, 50) : null,
+            name.slice(0, 250),
+            row.city_village ? String(row.city_village).slice(0, 250) : null,
+            row.installation_date || null,
+            row.dealer_name ? String(row.dealer_name).slice(0, 250) : null,
+            row.invoice_no ? String(row.invoice_no).slice(0, 100) : null,
+            row.invoice_date || null,
+            row.panel_make ? String(row.panel_make).slice(0, 100) : null,
+            row.inverter_make ? String(row.inverter_make).slice(0, 100) : null,
+            row.inverter_serial ? String(row.inverter_serial).slice(0, 100) : null,
+            (row.is_in_warranty === 1 || row.is_in_warranty === true) ? 1 : 0,
+            row.warranty_expiry_date || null
+          );
+          pIdx += 17;
+          inserted++;
+        }
+
+        if (valueClauses.length > 0) {
+          const sql = `
+            INSERT INTO installed_customers (
+              sr_no, order_no, scheme, pv_capacity, consumer_no, consumer_mobile,
+              customer_name, city_village, installation_date, dealer_name,
+              invoice_no, invoice_date, panel_make, inverter_make, inverter_serial,
+              is_in_warranty, warranty_expiry_date
+            ) VALUES ${valueClauses.join(', ')}
+          `;
+          await query(sql, values, c.env, c.executionCtx);
+        }
       }
+    }
+
+    // On final batch (or single sync): calculate true counts and update customer_directory_stats cache
+    if (isLastBatch === true || isLastBatch === 'true' || totalBatches === 1) {
+      try {
+        const statsRes = await query(`
+          SELECT 
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE is_in_warranty = 1) as in_w,
+            COUNT(*) FILTER (WHERE is_in_warranty = 0 OR is_in_warranty IS NULL) as out_w
+          FROM installed_customers
+        `, [], c.env, c.executionCtx);
+        
+        const tot = parseInt(statsRes.rows[0]?.total || 0, 10);
+        const inW = parseInt(statsRes.rows[0]?.in_w || 0, 10);
+        const outW = parseInt(statsRes.rows[0]?.out_w || 0, 10);
+
+        await query(`
+          INSERT INTO customer_directory_stats (total_customers, in_warranty_count, out_warranty_count, updated_at)
+          VALUES ($1, $2, $3, NOW())
+        `, [tot, inW, outW], c.env, c.executionCtx).catch(() => {});
+
+        return c.json({
+          success: true,
+          count: inserted,
+          totalCustomers: tot,
+          inWarrantyCount: inW,
+          outWarrantyCount: outW
+        });
+      } catch (_) {}
     }
 
     return c.json({ success: true, count: inserted });

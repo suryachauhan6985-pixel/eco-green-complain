@@ -87,11 +87,12 @@ async function syncCustomersFromExcel(sourcePathOrBuffer = null) {
   let targetSource = sourcePathOrBuffer;
   if (!targetSource) {
     const candidates = [
+      '\\\\As6302t-989d\\work\\2023-24\\Solar Rooftop\\NP - Site Visit, 3D\\Gautam\\Complain  - Rooftop\\All Customer - FINAL.xls',
+      DEFAULT_NETWORK_PATH,
       path.join(__dirname, '..', 'data', 'customers.xlsx'),
       path.join(__dirname, '..', 'data', 'customers.xls'),
       path.join(__dirname, '..', 'data', 'All Customer - FINAL.xls'),
-      path.join(__dirname, '..', 'data', 'All Customer - FINAL.xlsx'),
-      DEFAULT_NETWORK_PATH
+      path.join(__dirname, '..', 'data', 'All Customer - FINAL.xlsx')
     ];
     for (const c of candidates) {
       if (fs.existsSync(c)) {

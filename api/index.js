@@ -6997,34 +6997,44 @@ app.post('/api/customers/sync', authenticateToken, async (req, res) => {
 
         for (const c of chunk) {
           if (!c.customer_name) continue;
-          valueClauses.push(`($${paramIdx}, $${paramIdx+1}, $${paramIdx+2}, $${paramIdx+3}, $${paramIdx+4}, $${paramIdx+5}, $${paramIdx+6}, $${paramIdx+7}, $${paramIdx+8}, $${paramIdx+9}, $${paramIdx+10})`);
+          valueClauses.push(`($${paramIdx}, $${paramIdx+1}, $${paramIdx+2}, $${paramIdx+3}, $${paramIdx+4}, $${paramIdx+5}, $${paramIdx+6}, $${paramIdx+7}, $${paramIdx+8}, $${paramIdx+9}, $${paramIdx+10}, $${paramIdx+11}, $${paramIdx+12}, $${paramIdx+13}, $${paramIdx+14}, $${paramIdx+15}, $${paramIdx+16})`);
           
           // Strict date validation (must be valid YYYY-MM-DD or null)
           const validDate = (d) => (d && /^\d{4}-\d{2}-\d{2}$/.test(String(d).trim())) ? String(d).trim() : null;
 
+          const srNo = (c.sr_no !== '' && c.sr_no !== null && !isNaN(c.sr_no)) ? parseInt(c.sr_no, 10) : null;
+          const pvCap = (c.pv_capacity !== '' && c.pv_capacity !== null && !isNaN(c.pv_capacity)) ? parseFloat(c.pv_capacity) : null;
+
           values.push(
-            String(c.customer_name).trim().slice(0, 250),
-            c.consumer_mobile ? String(c.consumer_mobile).trim().slice(0, 50) : null,
+            srNo,
+            c.order_no ? String(c.order_no).slice(0, 100) : null,
+            c.scheme ? String(c.scheme).slice(0, 100) : null,
+            pvCap,
             c.consumer_no ? String(c.consumer_no).trim().slice(0, 100) : null,
+            c.consumer_mobile ? String(c.consumer_mobile).trim().slice(0, 50) : null,
+            String(c.customer_name).trim().slice(0, 250),
             c.city_village ? String(c.city_village).trim().slice(0, 250) : null,
+            validDate(c.installation_date),
             c.dealer_name ? String(c.dealer_name).trim().slice(0, 250) : null,
             c.invoice_no ? String(c.invoice_no).trim().slice(0, 100) : null,
             validDate(c.invoice_date),
-            validDate(c.installation_date),
+            c.panel_make ? String(c.panel_make).slice(0, 100) : null,
+            c.inverter_make ? String(c.inverter_make).slice(0, 100) : null,
             c.inverter_serial ? String(c.inverter_serial).trim().slice(0, 100) : null,
             (c.is_in_warranty === 1 || c.is_in_warranty === true) ? 1 : 0,
             validDate(c.warranty_expiry_date)
           );
-          paramIdx += 11;
+          paramIdx += 17;
           inserted++;
         }
 
         if (valueClauses.length > 0) {
           const sql = `
             INSERT INTO installed_customers (
-              customer_name, consumer_mobile, consumer_no, city_village, 
-              dealer_name, invoice_no, invoice_date, installation_date,
-              inverter_serial, is_in_warranty, warranty_expiry_date
+              sr_no, order_no, scheme, pv_capacity, consumer_no, consumer_mobile,
+              customer_name, city_village, installation_date, dealer_name,
+              invoice_no, invoice_date, panel_make, inverter_make, inverter_serial,
+              is_in_warranty, warranty_expiry_date
             ) VALUES ${valueClauses.join(', ')}
           `;
           await query(sql, values);
