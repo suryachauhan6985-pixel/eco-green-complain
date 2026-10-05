@@ -757,6 +757,9 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     const { technician_id, secondary_technician_id, expected_visit_date, notes } = body;
 
     if (!technician_id) return c.json({ error: 'Primary Technician is required' }, 400);
+    if (!expected_visit_date || !String(expected_visit_date).trim()) {
+      return c.json({ error: 'Expected visit date is mandatory for technician assignment.' }, 400);
+    }
 
     const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id], c.env, c.executionCtx);
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
@@ -772,11 +775,31 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       if (stRes.rows.length) secondaryTech = stRes.rows[0];
     }
 
-    const isReassignment = Boolean(complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(primaryTech.id));
-    let previousTech = null;
-    if (isReassignment) {
-      const prevRes = await query('SELECT id, name, phone FROM technicians WHERE id = $1', [complaint.assigned_technician_id], c.env, c.executionCtx);
-      if (prevRes.rows.length) previousTech = prevRes.rows[0];
+    const prevPrimaryTechId = complaint.assigned_technician_id;
+    const prevSecondaryTechId = complaint.secondary_technician_id;
+    const wasAssigned = Boolean(prevPrimaryTechId);
+    const wasTeam = Boolean(prevSecondaryTechId);
+    const isTeam = Boolean(secondaryTech);
+    const isReassignment = wasAssigned;
+
+    let prevPrimaryTech = null;
+    let prevSecondaryTech = null;
+    if (prevPrimaryTechId) {
+      const pRes = await query('SELECT id, name, phone FROM technicians WHERE id = $1', [prevPrimaryTechId], c.env, c.executionCtx);
+      if (pRes.rows.length) prevPrimaryTech = pRes.rows[0];
+    }
+    if (prevSecondaryTechId) {
+      const sRes = await query('SELECT id, name, phone FROM technicians WHERE id = $1', [prevSecondaryTechId], c.env, c.executionCtx);
+      if (sRes.rows.length) prevSecondaryTech = sRes.rows[0];
+    }
+
+    // Identify technicians removed from this ticket
+    const removedTechs = [];
+    if (prevPrimaryTech && String(prevPrimaryTech.id) !== String(primaryTech.id) && String(prevPrimaryTech.id) !== String(secondaryTech?.id)) {
+      removedTechs.push({ tech: prevPrimaryTech, wasRole: 'primary' });
+    }
+    if (prevSecondaryTech && String(prevSecondaryTech.id) !== String(primaryTech.id) && String(prevSecondaryTech.id) !== String(secondaryTech?.id)) {
+      removedTechs.push({ tech: prevSecondaryTech, wasRole: 'secondary' });
     }
 
     await query(
@@ -795,11 +818,17 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
 
     const user = c.get('user');
     const assigner = user?.name || user?.username || 'Staff';
-    let desc = secondaryTech
-      ? `Assigned to ${primaryTech.name} (Primary) & ${secondaryTech.name} (Co-Partner).`
-      : `Assigned to ${primaryTech.name}.`;
-    if (isReassignment && previousTech) {
-      desc = `Reassigned from ${previousTech.name} to ${primaryTech.name}${secondaryTech ? ` & ${secondaryTech.name}` : ''}.`;
+    let desc = '';
+    if (!wasAssigned) {
+      desc = isTeam
+        ? `Assigned to ${primaryTech.name} (Primary) & ${secondaryTech.name} (Co-Partner).`
+        : `Assigned to ${primaryTech.name}.`;
+    } else if (wasTeam && !isTeam) {
+      desc = `Team cancelled. Reassigned to single technician: ${primaryTech.name} (Removed co-partner: ${prevSecondaryTech?.name || 'Co-Specialist'}).`;
+    } else if (wasTeam && isTeam && prevPrimaryTech && String(prevPrimaryTech.id) === String(primaryTech.id) && String(prevSecondaryTechId) !== String(secondaryTech.id)) {
+      desc = `Partner changed for ${primaryTech.name}. New co-partner: ${secondaryTech.name} (Replaced: ${prevSecondaryTech?.name || 'Previous Partner'}).`;
+    } else {
+      desc = `Reassigned from ${prevPrimaryTech?.name || 'Previous Tech'}${wasTeam ? ' & ' + (prevSecondaryTech?.name || 'Partner') : ''} to ${primaryTech.name}${isTeam ? ' & ' + secondaryTech.name : ''}.`;
     }
 
     await query(
@@ -809,7 +838,7 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       c.executionCtx
     );
 
-    // 1. Send WhatsApp to Customer (customer_technician_reassigned if reassigned, site_survey_assigned or technician_assigned if new)
+    // 1. Send WhatsApp to Customer
     const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
     const custTemplate = isSurvey ? 'site_survey_assigned' : (isReassignment ? 'customer_technician_reassigned' : 'technician_assigned');
     const custPromise = complaint.customer_phone ? sendWhatsApp({
@@ -828,33 +857,48 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       env: c.env
     }) : Promise.resolve({ success: false, error: 'Customer has no phone number on file' });
 
-    // 2. If reassigned, notify previous technician about job transfer
-    let prevTechPromise = Promise.resolve(null);
-    if (isReassignment && previousTech && previousTech.phone) {
-      prevTechPromise = sendWhatsApp({
-        to: previousTech.phone,
-        templateName: 'technician_reassigned',
+    // 2. Notify all removed technicians about job transfer/cancellation
+    const removedTechPromises = removedTechs.map(({ tech }) => {
+      if (!tech.phone) return Promise.resolve(null);
+      const templateName = wasTeam ? 'technician_team_removed_notice' : 'technician_reassigned';
+      return sendWhatsApp({
+        to: tech.phone,
+        templateName,
         variables: {
-          technician_name: previousTech.name,
+          technician_name: tech.name,
           ticket_id: complaint.ticket_id,
           complaint_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
-          new_technician_name: primaryTech.name,
+          new_technician_name: isTeam ? `${primaryTech.name} & ${secondaryTech.name}` : primaryTech.name,
           db_complaint_id: complaint.id
         },
         env: c.env
       }).catch((err) => ({ success: false, error: err.message }));
-    }
+    });
 
     // 3. Send WhatsApp Work Order to Primary Technician
-    const isTeam = Boolean(secondaryTech);
-    const primaryTechTemplate = isSurvey 
-      ? 'site_survey_work_order' 
-      : (isTeam 
-          ? 'technician_team_work_order' 
-          : (isReassignment 
-              ? 'technician_reassigned_work_order' 
-              : 'technician_work_order'));
+    let primaryTechTemplate = 'technician_work_order';
+    if (isSurvey) {
+      primaryTechTemplate = 'site_survey_work_order';
+    } else if (isTeam) {
+      if (wasTeam) {
+        if (prevPrimaryTech && String(prevPrimaryTech.id) === String(primaryTech.id) && String(prevSecondaryTechId) !== String(secondaryTech.id)) {
+          primaryTechTemplate = 'technician_team_partner_updated';
+        } else {
+          primaryTechTemplate = 'technician_team_work_order_reassigned';
+        }
+      } else if (wasAssigned) {
+        primaryTechTemplate = 'technician_team_work_order_reassigned';
+      } else {
+        primaryTechTemplate = 'technician_team_work_order';
+      }
+    } else {
+      if (wasAssigned) {
+        primaryTechTemplate = 'technician_work_order_reassigned';
+      } else {
+        primaryTechTemplate = 'technician_work_order';
+      }
+    }
 
     const techPromise = primaryTech.phone ? sendWhatsApp({
       to: primaryTech.phone,
@@ -880,7 +924,21 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
     }) : Promise.resolve({ success: false, error: `Assigned technician "${primaryTech.name}" has no phone number on file.` });
 
     // 4. Send WhatsApp to Secondary Technician (if assigned)
-    const secTechTemplate = isSurvey ? 'site_survey_work_order' : 'technician_team_work_order';
+    let secTechTemplate = 'technician_team_work_order';
+    if (isSurvey) {
+      secTechTemplate = 'site_survey_work_order';
+    } else if (prevSecondaryTech && String(prevSecondaryTech.id) === String(secondaryTech?.id)) {
+      if (String(prevPrimaryTechId) !== String(primaryTech.id)) {
+        secTechTemplate = 'technician_team_partner_updated';
+      } else {
+        secTechTemplate = 'technician_team_work_order';
+      }
+    } else if (wasAssigned) {
+      secTechTemplate = 'technician_team_work_order_reassigned';
+    } else {
+      secTechTemplate = 'technician_team_work_order';
+    }
+
     const secTechPromise = (secondaryTech && secondaryTech.phone) ? sendWhatsApp({
       to: secondaryTech.phone,
       templateName: secTechTemplate,
@@ -904,7 +962,12 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       env: c.env
     }) : Promise.resolve(null);
 
-    const [custResult, prevTechResult, techResult, secTechResult] = await Promise.all([custPromise, prevTechPromise, techPromise, secTechPromise]);
+    const [custResult, techResult, secTechResult, ...remResults] = await Promise.all([
+      custPromise,
+      techPromise,
+      secTechPromise,
+      ...removedTechPromises
+    ]);
 
     let warningMsg = null;
     if (!techResult?.success) {

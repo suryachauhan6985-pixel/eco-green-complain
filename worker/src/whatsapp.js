@@ -183,7 +183,11 @@ export async function sendWhatsApp({
           ]
         }]
       };
-    } else if (templateName === 'technician_team_work_order') {
+    } else if (
+      templateName === 'technician_team_work_order' ||
+      templateName === 'technician_team_work_order_reassigned' ||
+      templateName === 'technician_team_partner_updated'
+    ) {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const partnerName = cleanParam(variables.partner_technician_name, 'Co-Specialist');
       const partnerPhone = cleanParam(variables.partner_technician_phone, '');
@@ -200,10 +204,14 @@ export async function sendWhatsApp({
       renderedBody = `🛠️ *Eco Green Solar - Team Work Order (2 Technicians)*\n\nHello ${techName}, you and *${partnerName}* have been assigned as a 2-member service team for Ticket *${ticketId}*.\n\n👥 *Assigned Team:* ${techName} & ${partnerName}\n${partnerPhone ? `📞 *Partner Contact:* ${partnerPhone}\n` : ''}👤 *Customer:* ${custName}\n📞 *Customer Phone:* ${custPhone}\n📍 *Address:* ${custAddress}\n🔧 *Product:* ${prodType}\n⚠️ *Issue:* ${issueCat}\n📝 *Notes:* ${notes}\n🚨 *Priority:* ${priority}\n📅 *Expected Visit:* ${visitDate}\n\n🔗 *Technician Portal:* ${portalLink}\n\nPlease coordinate with ${partnerName} and call the customer before visiting the site.`;
 
       // Check DB for customized meta_template_name & parameter_format
-      let targetMetaName = 'technician_dual_team_work_order';
+      let targetMetaName = templateName === 'technician_team_partner_updated'
+        ? 'technician_team_partner_updated'
+        : (templateName === 'technician_team_work_order_reassigned'
+          ? 'technician_team_work_order_reassigned'
+          : 'technician_dual_team_work_order');
       let isPositional = true;
       try {
-        const dbRes = await query('SELECT meta_template_name, parameter_format FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1', ['technician_team_work_order'], env);
+        const dbRes = await query('SELECT meta_template_name, parameter_format FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1', [templateName], env);
         if (dbRes?.rows?.length) {
           if (dbRes.rows[0].meta_template_name) targetMetaName = dbRes.rows[0].meta_template_name;
           if (dbRes.rows[0].parameter_format === 'NAMED') isPositional = false;
@@ -335,7 +343,33 @@ export async function sendWhatsApp({
           }
         ]
       };
-    } else if (templateName === 'technician_reassigned' || templateName === 'technician_job_transferred') {
+    } else if (templateName === 'technician_team_removed_notice') {
+      const techName = cleanParam(variables.technician_name, 'Technician');
+      const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
+      const custName = cleanParam(variables.customer_name, 'Customer');
+
+      renderedBody = `*Eco Green Solar - Team Assignment Notice*\n\nHello ${techName}, please note that your 2-member service team assignment for ticket *${ticketId}* (Customer: ${custName}) has been updated/transferred.\n\nYou are no longer required to visit this site for this ticket. Please check your technician portal for updated schedules.\n- Eco Green Solar`;
+
+      payload.type = 'template';
+      payload.template = {
+        name: 'technician_team_removed_notice',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: techName },
+              { type: 'text', text: ticketId },
+              { type: 'text', text: custName }
+            ]
+          }
+        ]
+      };
+    } else if (
+      templateName === 'technician_reassigned' ||
+      templateName === 'technician_job_transferred' ||
+      templateName === 'technician_job_transferred_notice'
+    ) {
       const techName = cleanParam(variables.technician_name, 'Technician');
       const ticketId = cleanParam(variables.ticket_id || variables.complaint_id, 'Ticket');
       const custName = cleanParam(variables.customer_name, 'Customer');

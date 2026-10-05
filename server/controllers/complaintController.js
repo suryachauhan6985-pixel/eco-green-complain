@@ -918,12 +918,14 @@ async function assignTechnician(req, res) {
       return res.status(400).json({ error: 'Technician selection is required' });
     }
 
-    if (expected_visit_date) {
-      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-      const visitDateStr = String(expected_visit_date).split('T')[0];
-      if (visitDateStr < todayStr) {
-        return res.status(400).json({ error: 'Expected visit date cannot be in the past. Please select today or a future date.' });
-      }
+    if (!expected_visit_date || !String(expected_visit_date).trim()) {
+      return res.status(400).json({ error: 'Expected visit date is mandatory for technician assignment.' });
+    }
+
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const visitDateStr = String(expected_visit_date).split('T')[0];
+    if (visitDateStr < todayStr) {
+      return res.status(400).json({ error: 'Expected visit date cannot be in the past. Please select today or a future date.' });
     }
 
     const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
@@ -966,9 +968,30 @@ async function assignTechnician(req, res) {
       VALUES (?, 'Assigned', ?, ?, ?, 1)
     `).run(id, timelineNote, performer, role);
 
-    // Check if technician is already the same technician (e.g. re-dispatching, retrying or re-saving)
-    const isSameTechnician = complaint.assigned_technician_id && String(complaint.assigned_technician_id) === String(technician_id);
-    const explicitNotifyCustomer = req.body.notify_customer !== undefined ? Boolean(req.body.notify_customer) : null;
+
+    const prevPrimaryTechId = complaint.assigned_technician_id ? String(complaint.assigned_technician_id) : null;
+    const prevSecondaryTechId = complaint.secondary_technician_id ? String(complaint.secondary_technician_id) : null;
+    const wasAssigned = Boolean(prevPrimaryTechId);
+    const wasTeam = Boolean(prevSecondaryTechId);
+    const isTeam = Boolean(secTech);
+    const isReassignment = wasAssigned;
+
+    let prevPrimaryTech = null;
+    let prevSecondaryTech = null;
+    if (prevPrimaryTechId) {
+      prevPrimaryTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(prevPrimaryTechId);
+    }
+    if (prevSecondaryTechId) {
+      prevSecondaryTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(prevSecondaryTechId);
+    }
+
+    const removedTechs = [];
+    if (prevPrimaryTech && String(prevPrimaryTech.id) !== String(technician.id) && String(prevPrimaryTech.id) !== String(secTech?.id)) {
+      removedTechs.push({ tech: prevPrimaryTech, wasRole: 'primary' });
+    }
+    if (prevSecondaryTech && String(prevSecondaryTech.id) !== String(technician.id) && String(prevSecondaryTech.id) !== String(secTech?.id)) {
+      removedTechs.push({ tech: prevSecondaryTech, wasRole: 'secondary' });
+    }
 
     // Check if customer was already notified for technician assignment
     const alreadyNotifiedCustomer = db.prepare(`
@@ -977,14 +1000,13 @@ async function assignTechnician(req, res) {
       LIMIT 1
     `).get(id);
 
-    // Only notify customer if:
-    // 1. Explicitly requested: notify_customer === true
-    // OR 2. Not the same technician OR customer was never notified before
+    const isSameTechnician = wasAssigned && prevPrimaryTechId === String(technician.id) && prevSecondaryTechId === (secTech ? String(secTech.id) : null);
+    const explicitNotifyCustomer = req.body.notify_customer !== undefined ? Boolean(req.body.notify_customer) : null;
+
     const shouldNotifyCustomer = explicitNotifyCustomer !== null
       ? explicitNotifyCustomer
       : (!isSameTechnician || !alreadyNotifiedCustomer);
 
-    const isReassignment = complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(technician_id);
     const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
 
     if (shouldNotifyCustomer) {
@@ -1008,7 +1030,29 @@ async function assignTechnician(req, res) {
 
     // 2. Notify Primary Technician via WhatsApp
     if (technician.phone) {
-      const techTemplateKey = secTech ? 'technician_team_work_order' : (isReassignment ? 'technician_reassigned_work_order' : (isSurvey ? 'site_survey_work_order' : 'technician_work_order'));
+      let techTemplateKey = 'technician_work_order';
+      if (isSurvey) {
+        techTemplateKey = 'site_survey_work_order';
+      } else if (isTeam) {
+        if (wasTeam) {
+          if (prevPrimaryTechId === String(technician.id) && prevSecondaryTechId !== String(secTech.id)) {
+            techTemplateKey = 'technician_team_partner_updated';
+          } else {
+            techTemplateKey = 'technician_team_work_order_reassigned';
+          }
+        } else if (wasAssigned) {
+          techTemplateKey = 'technician_team_work_order_reassigned';
+        } else {
+          techTemplateKey = 'technician_team_work_order';
+        }
+      } else {
+        if (wasAssigned) {
+          techTemplateKey = 'technician_work_order_reassigned';
+        } else {
+          techTemplateKey = 'technician_work_order';
+        }
+      }
+
       notificationService.dispatchAsync({
         complaintId: id,
         templateKey: techTemplateKey,
@@ -1035,9 +1079,20 @@ async function assignTechnician(req, res) {
 
     // 2b. Notify Secondary Technician via WhatsApp if 2-technician team
     if (secTech && secTech.phone) {
+      let secTechTemplateKey = 'technician_team_work_order';
+      if (isSurvey) {
+        secTechTemplateKey = 'site_survey_work_order';
+      } else if (prevSecondaryTechId === String(secTech.id) && prevPrimaryTechId !== String(technician.id)) {
+        secTechTemplateKey = 'technician_team_partner_updated';
+      } else if (wasAssigned) {
+        secTechTemplateKey = 'technician_team_work_order_reassigned';
+      } else {
+        secTechTemplateKey = 'technician_team_work_order';
+      }
+
       notificationService.dispatchAsync({
         complaintId: id,
-        templateKey: 'technician_team_work_order',
+        templateKey: secTechTemplateKey,
         channels: ['whatsapp'],
         forceWhatsAppTo: secTech.phone,
         data: {
@@ -1059,51 +1114,49 @@ async function assignTechnician(req, res) {
       });
     }
 
-    // If reassigned from an existing technician, notify previous technician (Tech A) WITHOUT disclosing new technician details
-    if (complaint.assigned_technician_id && String(complaint.assigned_technician_id) !== String(technician_id)) {
+    // 3. Notify all removed technicians (Tech A / removed partner)
+    for (const { tech } of removedTechs) {
       try {
-        const prevTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
-        if (prevTech) {
-          if (prevTech.phone) {
-            notificationService.dispatchAsync({
-              complaintId: id,
-              templateKey: 'technician_reassigned',
-              channels: ['whatsapp'],
-              forceWhatsAppTo: prevTech.phone,
-              data: {
-                technician_name: prevTech.name,
-                ticket_id: complaint.ticket_id,
-                customer_name: complaint.customer_name,
-                notes: `Complaint #${complaint.ticket_id} has been assigned to another technician.`
-              }
-            });
-          }
-
-          // Persist in-app notification for Previous Technician (Tech A)
-          const reassignNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-          db.prepare(`
-            INSERT INTO in_app_notifications (
-              id, type, ticket_id, complaint_id, title, message, customer_name,
-              target_role, target_technician_id, target_technician_name,
-              performed_by_name, performed_by_role, read_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', CURRENT_TIMESTAMP)
-          `).run(
-            reassignNotifId,
-            'reassigned',
-            complaint.ticket_id,
-            complaint.id,
-            `Ticket ${complaint.ticket_id} Reassigned`,
-            `Complaint #${complaint.ticket_id} (${complaint.customer_name}) has been assigned to another technician. It has been removed from your active schedule.`,
-            complaint.customer_name,
-            'technician',
-            prevTech.id,
-            prevTech.name,
-            performer,
-            role
-          );
+        if (tech.phone) {
+          notificationService.dispatchAsync({
+            complaintId: id,
+            templateKey: wasTeam ? 'technician_team_removed_notice' : 'technician_reassigned',
+            channels: ['whatsapp'],
+            forceWhatsAppTo: tech.phone,
+            data: {
+              technician_name: tech.name,
+              ticket_id: complaint.ticket_id,
+              customer_name: complaint.customer_name,
+              new_technician_name: secTech ? `${technician.name} & ${secTech.name}` : technician.name,
+              notes: `Complaint #${complaint.ticket_id} has been assigned to another technician.`
+            }
+          });
         }
-      } catch (reassignErr) {
-        console.warn('Technician reassign notify note:', reassignErr.message);
+
+        // Persist in-app notification for Removed Technician
+        const reassignNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        db.prepare(`
+          INSERT INTO in_app_notifications (
+            id, type, ticket_id, complaint_id, title, message, customer_name,
+            target_role, target_technician_id, target_technician_name,
+            performed_by_name, performed_by_role, read_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', CURRENT_TIMESTAMP)
+        `).run(
+          reassignNotifId,
+          'reassigned',
+          complaint.ticket_id,
+          complaint.id,
+          `Ticket ${complaint.ticket_id} Reassigned`,
+          `Complaint #${complaint.ticket_id} (${complaint.customer_name}) has been reassigned. It has been removed from your active schedule.`,
+          complaint.customer_name,
+          'technician',
+          tech.id,
+          tech.name,
+          performer,
+          role
+        );
+      } catch (remErr) {
+        console.warn('Removed technician notify warning:', remErr.message);
       }
     }
 

@@ -526,8 +526,12 @@ export const ComplaintDetailDrawer = ({
     }
     if (!selectedTechId) return showToast('Please select a technician to assign', 'error');
 
+    if (!expectedDate || !String(expectedDate).trim()) {
+      return showToast('Please select the expected visit date.', 'error');
+    }
+
     const todayStr = getTodayDateStr();
-    if (expectedDate && expectedDate < todayStr) {
+    if (expectedDate < todayStr) {
       return showToast('Expected visit date cannot be in the past. Please select today or a future date.', 'error');
     }
 
@@ -1413,33 +1417,6 @@ export const ComplaintDetailDrawer = ({
               >
                 <History className="w-3.5 h-3.5" />
                 Audit Timeline ({timeline.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('notifications')}
-                className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'notifications'
-                    ? 'border-emerald-600 text-emerald-800'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                Dispatched Alerts ({notifications.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('whatsapp')}
-                className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'whatsapp'
-                    ? 'border-emerald-600 text-emerald-800 font-bold'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                <span>WhatsApp Live Chat</span>
-                {waChatMessages.length > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
-                    {waChatMessages.length}
-                  </span>
-                )}
               </button>
             </div>
 
@@ -2435,7 +2412,7 @@ export const ComplaintDetailDrawer = ({
                                 )}
                                 <button
                                   type="submit"
-                                  disabled={assigning || !selectedTechId || (expectedDate && expectedDate < getTodayDateStr())}
+                                  disabled={assigning || !selectedTechId || !expectedDate || expectedDate < getTodayDateStr()}
                                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
                                 >
                                   <Wrench className="w-3.5 h-3.5" />
