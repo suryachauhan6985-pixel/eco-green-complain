@@ -82,7 +82,9 @@ export const Navbar = ({
     <header 
       className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs"
       style={{
-        paddingTop: 'env(safe-area-inset-top, 0px)'
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        backgroundColor: '#ffffff',
+        isolation: 'isolate'
       }}
     >
       <div className="max-w-[1780px] w-full mx-auto px-3 sm:px-6 lg:px-8">

@@ -28,6 +28,7 @@ const WhatsAppWebInbox = React.lazy(() => import('./components/whatsapp/WhatsApp
 
 import { AppPageSkeleton, ComplaintGridSkeleton } from './components/common/SkeletonLoader';
 import { GlobalLoadingOverlay } from './components/common/GlobalLoadingOverlay';
+import { SplashScreen } from './components/common/SplashScreen';
 
 const LoadingFallback = () => (
   <GlobalLoadingOverlay isVisible={true} />
@@ -122,6 +123,7 @@ function getTechSectionFromUrl() {
 
 function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
+  const [splashComplete, setSplashComplete] = useState(false);
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
 
   const getTabFromLocation = () => {
@@ -375,30 +377,44 @@ function AppContent() {
   // Standalone tracking portal route: accessed via /track/:ticketId (Zero staff chrome)
   if (trackingInfo.isTracking) {
     return (
-      <React.Suspense fallback={<LoadingFallback />}>
-        <CustomerPublicPortal
-          initialTicketId={trackingInfo.ticketId}
-          isStandalone={true}
-          onExitStandalone={() => {
-            window.history.pushState(null, '', '/');
-            setTrackingInfo({ isTracking: false, ticketId: '' });
-          }}
-          onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
-        />
-      </React.Suspense>
+      <>
+        {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+        <React.Suspense fallback={<LoadingFallback />}>
+          <CustomerPublicPortal
+            initialTicketId={trackingInfo.ticketId}
+            isStandalone={true}
+            onExitStandalone={() => {
+              window.history.pushState(null, '', '/');
+              setTrackingInfo({ isTracking: false, ticketId: '' });
+            }}
+            onOpenNewComplaint={() => setIsNewComplaintOpen(true)}
+          />
+        </React.Suspense>
+      </>
     );
   }
 
   if (loading) {
-    return <AppPageSkeleton />;
+    return (
+      <>
+        {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+        <AppPageSkeleton />
+      </>
+    );
   }
 
   if (!currentUser) {
-    return <LoginPage onSwitchToCustomer={() => switchRole('customer')} />;
+    return (
+      <>
+        {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+        <LoginPage onSwitchToCustomer={() => switchRole('customer')} />
+      </>
+    );
   }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-slate-50 font-sans">
+      {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
       {/* Top Main Navigation (Sticky Header) */}
       <div className="shrink-0 z-30">
         <Navbar

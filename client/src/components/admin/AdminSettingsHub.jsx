@@ -3,7 +3,8 @@ import {
   Settings, User, Shield, MessageSquare, Layers, FileText, 
   Check, Save, RefreshCw, Key, Phone, Mail, Sparkles, Copy, 
   Lock, Eye, EyeOff, AlertCircle, CheckCircle2, Package, 
-  HelpCircle, Tag, Plus, Trash2, ExternalLink, Printer, Compass
+  HelpCircle, Tag, Plus, Trash2, ExternalLink, Printer, Compass,
+  Users, Wrench, Search, Edit3, X, UserPlus, IndianRupee
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -256,6 +257,339 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
   };
 
   // ==========================================
+  // Multi-Account Switcher & Management State (Admin, Staff, Technicians)
+  // ==========================================
+  const [accountRole, setAccountRole] = useState('admin'); // 'admin' | 'staff' | 'technician'
+  const [staffList, setStaffList] = useState([]);
+  const [techList, setTechList] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountSearchQuery, setAccountSearchQuery] = useState('');
+
+  // Selected accounts for management
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [selectedTech, setSelectedTech] = useState(null);
+
+  // Forms
+  const [staffEditForm, setStaffEditForm] = useState({ name: '', phone: '', email: '' });
+  const [techEditForm, setTechEditForm] = useState({ name: '', phone: '', email: '', daily_voucher_rate: 400, specialization: '' });
+  const [memberNewPassword, setMemberNewPassword] = useState('');
+  const [showMemberPassword, setShowMemberPassword] = useState(true);
+  const [memberPasswordLoading, setMemberPasswordLoading] = useState(false);
+  const [memberSavingLoading, setMemberSavingLoading] = useState(false);
+
+  // Add Account Modal State
+  const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
+  const [addAccountRole, setAddAccountRole] = useState('staff');
+  const [addAccountForm, setAddAccountForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    password: '',
+    daily_voucher_rate: 400,
+    specialization: ''
+  });
+  const [addAccountLoading, setAddAccountLoading] = useState(false);
+
+  const loadAccounts = async () => {
+    try {
+      setAccountsLoading(true);
+      const [usersRes, techRes] = await Promise.all([
+        api.getUsers().catch(() => ({ users: [] })),
+        api.getTechnicians().catch(() => ({ technicians: [] }))
+      ]);
+      const allUsers = Array.isArray(usersRes?.users) ? usersRes.users : (Array.isArray(usersRes) ? usersRes : []);
+      const staff = allUsers.filter(u => u && u.role === 'staff');
+      const techs = Array.isArray(techRes?.technicians) ? techRes.technicians : (Array.isArray(techRes) ? techRes : []);
+      setStaffList(staff);
+      setTechList(techs);
+
+      // Keep selected staff synced
+      setSelectedStaff(prev => {
+        if (!prev) return staff[0] || null;
+        return staff.find(s => String(s.id) === String(prev.id)) || staff[0] || null;
+      });
+
+      // Keep selected tech synced
+      setSelectedTech(prev => {
+        if (!prev) return techs[0] || null;
+        return techs.find(t => String(t.id) === String(prev.id)) || techs[0] || null;
+      });
+    } catch (err) {
+      console.error('Failed to load accounts in settings:', err);
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'account') {
+      loadAccounts();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (selectedStaff) {
+      setStaffEditForm({
+        name: selectedStaff.name || '',
+        phone: selectedStaff.phone || '',
+        email: (selectedStaff.email && selectedStaff.email.endsWith('.internal')) ? '' : (selectedStaff.email || '')
+      });
+      setMemberNewPassword('');
+    }
+  }, [selectedStaff]);
+
+  useEffect(() => {
+    if (selectedTech) {
+      setTechEditForm({
+        name: selectedTech.name || '',
+        phone: selectedTech.phone || '',
+        email: (selectedTech.email && selectedTech.email.endsWith('.internal')) ? '' : (selectedTech.email || ''),
+        daily_voucher_rate: selectedTech.daily_voucher_rate || 400,
+        specialization: selectedTech.specialization || ''
+      });
+      setMemberNewPassword('');
+    }
+  }, [selectedTech]);
+
+  const generateMemberPassword = () => {
+    const prefixes = ['EcoStaff', 'SolarTech', 'CleanEnergy', 'TeamSolar'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const num = Math.floor(1000 + Math.random() * 9000);
+    const pass = `${prefix}@${num}`;
+    setMemberNewPassword(pass);
+    setShowMemberPassword(true);
+    showToast('Secure password generated! Click Reset Password to apply.', 'info');
+  };
+
+  const generateAddAccountPassword = () => {
+    const prefixes = ['EcoStaff', 'SolarTech', 'CleanEnergy', 'TeamSolar'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const num = Math.floor(1000 + Math.random() * 9000);
+    const pass = `${prefix}@${num}`;
+    setAddAccountForm(f => ({ ...f, password: pass }));
+  };
+
+  const handleSaveStaffProfile = async (e) => {
+    e.preventDefault();
+    if (!selectedStaff) return;
+    if (!staffEditForm.name.trim()) return showToast('Full Name is required', 'error');
+    const cleanPhone = (staffEditForm.phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) return showToast('Mobile number must be exactly 10 digits', 'error');
+
+    try {
+      setMemberSavingLoading(true);
+      await api.updateUser(selectedStaff.id, {
+        name: staffEditForm.name.trim(),
+        phone: cleanPhone,
+        email: staffEditForm.email.trim() || undefined,
+        role: 'staff'
+      });
+      showToast(`Staff member "${staffEditForm.name.trim()}" updated successfully!`, 'success');
+      loadAccounts();
+    } catch (err) {
+      showToast(err.message || 'Failed to update staff member', 'error');
+    } finally {
+      setMemberSavingLoading(false);
+    }
+  };
+
+  const handleResetStaffPassword = async (e) => {
+    e.preventDefault();
+    if (!selectedStaff) return;
+    if (!memberNewPassword || memberNewPassword.trim().length < 4) {
+      return showToast('Password must be at least 4 characters long', 'error');
+    }
+
+    try {
+      setMemberPasswordLoading(true);
+      await api.adminResetPassword({
+        userId: selectedStaff.id,
+        newPassword: memberNewPassword.trim()
+      });
+      showToast(`Password securely reset for "${selectedStaff.name}"!`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to reset password', 'error');
+    } finally {
+      setMemberPasswordLoading(false);
+    }
+  };
+
+  const handleDeleteStaff = async (staffMember) => {
+    const ok = await confirm({
+      title: 'Remove Staff Member',
+      message: `Are you sure you want to remove staff account "${staffMember.name}" (${staffMember.phone})?`,
+      type: 'danger',
+      confirmText: 'Remove Staff Account'
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteUser(staffMember.id);
+      showToast(`Staff account "${staffMember.name}" removed successfully`, 'success');
+      if (selectedStaff && String(selectedStaff.id) === String(staffMember.id)) {
+        setSelectedStaff(null);
+      }
+      loadAccounts();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete staff account', 'error');
+    }
+  };
+
+  const handleCopyStaffCredentials = (staffMember) => {
+    const phone = staffMember.phone || 'N/A';
+    const pass = memberNewPassword || '••••••••';
+    const text = `🌿 *Eco Green Support Staff Credentials*\n👤 *Name:* ${staffMember.name}\n📱 *Mobile Number / Login:* ${phone}\n🔒 *Password:* ${pass}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
+    navigator.clipboard.writeText(text);
+    showToast(`Credentials for ${staffMember.name} copied to clipboard!`, 'success');
+  };
+
+  const handleSaveTechProfile = async (e) => {
+    e.preventDefault();
+    if (!selectedTech) return;
+    if (!techEditForm.name.trim()) return showToast('Full Name is required', 'error');
+    const cleanPhone = (techEditForm.phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) return showToast('Mobile number must be exactly 10 digits', 'error');
+
+    try {
+      setMemberSavingLoading(true);
+      await api.updateTechnician(selectedTech.id, {
+        name: techEditForm.name.trim(),
+        phone: cleanPhone,
+        email: techEditForm.email.trim() || undefined,
+        daily_voucher_rate: Number(techEditForm.daily_voucher_rate) || 400,
+        specialization: techEditForm.specialization.trim() || undefined
+      });
+      showToast(`Technician "${techEditForm.name.trim()}" updated successfully!`, 'success');
+      loadAccounts();
+    } catch (err) {
+      showToast(err.message || 'Failed to update technician', 'error');
+    } finally {
+      setMemberSavingLoading(false);
+    }
+  };
+
+  const handleResetTechPassword = async (e) => {
+    e.preventDefault();
+    if (!selectedTech) return;
+    if (!memberNewPassword || memberNewPassword.trim().length < 4) {
+      return showToast('Password must be at least 4 characters long', 'error');
+    }
+
+    try {
+      setMemberPasswordLoading(true);
+      await api.adminResetPassword({
+        technicianId: selectedTech.id,
+        userId: selectedTech.user_id,
+        newPassword: memberNewPassword.trim()
+      });
+      showToast(`Password securely reset for "${selectedTech.name}"!`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to reset technician password', 'error');
+    } finally {
+      setMemberPasswordLoading(false);
+    }
+  };
+
+  const handleDeleteTechnicianAccount = async (techMember) => {
+    const ok = await confirm({
+      title: 'Remove Field Technician',
+      message: `Are you sure you want to remove technician account "${techMember.name}" (${techMember.phone})?`,
+      type: 'danger',
+      confirmText: 'Remove Technician'
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteTechnician(techMember.id);
+      showToast(`Technician "${techMember.name}" removed successfully`, 'success');
+      if (selectedTech && String(selectedTech.id) === String(techMember.id)) {
+        setSelectedTech(null);
+      }
+      loadAccounts();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete technician', 'error');
+    }
+  };
+
+  const handleCopyTechCredentials = (techMember) => {
+    const phone = techMember.phone || 'N/A';
+    const pass = memberNewPassword || '••••••••';
+    const text = `🌿 *Eco Green Field Technician Credentials*\n👤 *Technician:* ${techMember.name}\n📱 *Mobile Number / Login:* ${phone}\n🔒 *Password:* ${pass}\n🌐 *Portal:* https://complain.ecogreensolar.co.in/login`;
+    navigator.clipboard.writeText(text);
+    showToast(`Credentials for ${techMember.name} copied to clipboard!`, 'success');
+  };
+
+  const handleOpenAddAccount = (role) => {
+    setAddAccountRole(role);
+    setAddAccountForm({
+      name: '',
+      phone: '',
+      email: '',
+      password: '',
+      daily_voucher_rate: 400,
+      specialization: ''
+    });
+    const prefixes = ['EcoStaff', 'SolarTech', 'CleanEnergy'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const num = Math.floor(1000 + Math.random() * 9000);
+    setAddAccountForm(f => ({ ...f, password: `${prefix}@${num}` }));
+    setIsAddAccountModalOpen(true);
+  };
+
+  const handleCreateAccountSubmit = async (e) => {
+    e.preventDefault();
+    const cleanPhone = (addAccountForm.phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      return showToast('Mobile number must be exactly 10 digits', 'error');
+    }
+    if (!addAccountForm.name.trim()) {
+      return showToast('Full Name is required', 'error');
+    }
+    if (!addAccountForm.password?.trim()) {
+      return showToast('Login Password is required', 'error');
+    }
+
+    try {
+      setAddAccountLoading(true);
+      const safeEmail = addAccountForm.email?.trim() 
+        ? addAccountForm.email.trim() 
+        : `${cleanPhone}_${addAccountRole}@ecogreensolar.internal`;
+
+      await api.createUser({
+        name: addAccountForm.name.trim(),
+        phone: cleanPhone,
+        username: cleanPhone,
+        email: safeEmail,
+        password: addAccountForm.password.trim(),
+        role: addAccountRole,
+        daily_voucher_rate: Number(addAccountForm.daily_voucher_rate) || 400,
+        specialization: addAccountForm.specialization?.trim() || undefined
+      });
+
+      showToast(`New ${addAccountRole === 'staff' ? 'Staff Member' : 'Technician'} created successfully!`, 'success');
+      setIsAddAccountModalOpen(false);
+      loadAccounts();
+    } catch (err) {
+      showToast(err.message || 'Failed to create account', 'error');
+    } finally {
+      setAddAccountLoading(false);
+    }
+  };
+
+  // Filtered lists
+  const filteredStaffList = staffList.filter(s => {
+    if (!accountSearchQuery.trim()) return true;
+    const q = accountSearchQuery.toLowerCase();
+    return (s.name || '').toLowerCase().includes(q) || (s.phone || '').includes(q) || (s.email || '').toLowerCase().includes(q);
+  });
+
+  const filteredTechList = techList.filter(t => {
+    if (!accountSearchQuery.trim()) return true;
+    const q = accountSearchQuery.toLowerCase();
+    return (t.name || '').toLowerCase().includes(q) || (t.phone || '').includes(q) || (t.email || '').toLowerCase().includes(q);
+  });
+
+  // ==========================================
   // TAB 3: Items & Category State
   // ==========================================
   const [expenseCategories, setExpenseCategories] = useState(() => {
@@ -449,7 +783,65 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
       {/* SUB-TAB 1: ACCOUNT SETTINGS */}
       {/* ========================================================================= */}
       {activeTab === 'account' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Account Role Category Switcher & Action Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-3xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setAccountRole('admin')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  accountRole === 'admin'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Administrator Account</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAccountRole('staff')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  accountRole === 'staff'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Staff Accounts ({staffList.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAccountRole('technician')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  accountRole === 'technician'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>Technician Accounts ({techList.length})</span>
+              </button>
+            </div>
+
+            {accountRole !== 'admin' && (
+              <button
+                type="button"
+                onClick={() => handleOpenAddAccount(accountRole)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add New {accountRole === 'staff' ? 'Staff Member' : 'Technician'}</span>
+              </button>
+            )}
+          </div>
+
+          {/* VIEW A: ADMINISTRATOR ACCOUNT */}
+          {accountRole === 'admin' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-200">
           {/* Left Column: Organization Details & System Info */}
           <div className="lg:col-span-5 space-y-6">
             {/* Organization Profile Card */}
@@ -683,6 +1075,755 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
               </form>
             </div>
           </div>
+        </div>
+      )}
+
+          {/* ------------------------------------------------------------- */}
+          {/* VIEW B: STAFF ACCOUNTS (FRONT DESK & SUPPORT OPERATORS)       */}
+          {/* ------------------------------------------------------------- */}
+          {accountRole === 'staff' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-200">
+              {/* Left Column: Staff Directory List */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-600" />
+                      <span>Support Staff Members</span>
+                    </h3>
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      {filteredStaffList.length} Active
+                    </span>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative mb-3">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      value={accountSearchQuery}
+                      onChange={(e) => setAccountSearchQuery(e.target.value)}
+                      placeholder="Search staff by name or phone..."
+                      className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Staff List */}
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                    {accountsLoading ? (
+                      <div className="py-8 text-center text-xs text-slate-400">Loading staff accounts...</div>
+                    ) : filteredStaffList.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400">
+                        {accountSearchQuery ? 'No matching staff members found.' : 'No staff accounts configured yet.'}
+                      </div>
+                    ) : (
+                      filteredStaffList.map((staff) => {
+                        const isSelected = selectedStaff && String(selectedStaff.id) === String(staff.id);
+                        return (
+                          <div
+                            key={staff.id}
+                            onClick={() => setSelectedStaff(staff)}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                              isSelected
+                                ? 'bg-emerald-50/80 border-emerald-500 shadow-xs'
+                                : 'bg-slate-50/60 hover:bg-slate-100/80 border-slate-200/80'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {staff.name?.charAt(0)?.toUpperCase() || 'S'}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-900 truncate">{staff.name}</p>
+                                <p className="text-[11px] font-mono text-slate-500 truncate">+91 {staff.phone}</p>
+                              </div>
+                            </div>
+
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 shrink-0">
+                              Staff
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Selected Staff Details & Password Reset */}
+              <div className="lg:col-span-7 space-y-6">
+                {selectedStaff ? (
+                  <>
+                    {/* Staff Profile Details Card */}
+                    <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs">
+                      <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+                        <div className="flex items-center gap-2">
+                          <User className="w-5 h-5 text-emerald-600" />
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Staff Profile Details</h3>
+                            <p className="text-xs text-slate-500">Editing credentials for {selectedStaff.name}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                          Active Account
+                        </span>
+                      </div>
+
+                      <form onSubmit={handleSaveStaffProfile} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Full Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={staffEditForm.name}
+                            onChange={(e) => setStaffEditForm(f => ({ ...f, name: e.target.value }))}
+                            required
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                            placeholder="e.g. Rahul Sharma"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Mobile Number (Login ID) <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">+91</span>
+                              <input
+                                type="tel"
+                                maxLength="10"
+                                value={staffEditForm.phone}
+                                onChange={(e) => setStaffEditForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') }))}
+                                required
+                                className="w-full pl-11 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                placeholder="10 digit mobile"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Email Address (Optional)
+                            </label>
+                            <input
+                              type="email"
+                              value={staffEditForm.email}
+                              onChange={(e) => setStaffEditForm(f => ({ ...f, email: e.target.value }))}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                              placeholder="staff@ecogreensolar.co.in"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={memberSavingLoading}
+                            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                          >
+                            {memberSavingLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            <span>Save Staff Profile</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Reset Staff Password Card */}
+                    <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs">
+                      <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+                        <div className="flex items-center gap-2">
+                          <Key className="w-5 h-5 text-emerald-600" />
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Reset Staff Password</h3>
+                            <p className="text-xs text-slate-500">Set a new login password for {selectedStaff.name}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={generateMemberPassword}
+                          className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-all cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Generate Password</span>
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleResetStaffPassword} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            New Password <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showMemberPassword ? 'text' : 'password'}
+                              value={memberNewPassword}
+                              onChange={(e) => setMemberNewPassword(e.target.value)}
+                              required
+                              className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                              placeholder="Enter or generate new password"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowMemberPassword(!showMemberPassword)}
+                              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                            >
+                              {showMemberPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyStaffCredentials(selectedStaff)}
+                            className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Credentials</span>
+                          </button>
+
+                          <button
+                            type="submit"
+                            disabled={memberPasswordLoading}
+                            className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                          >
+                            {memberPasswordLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                            <span>Reset Staff Password</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Quick Share Credentials Card */}
+                    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-md">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" /> Dispatch Login Credentials
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyStaffCredentials(selectedStaff)}
+                          className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy WhatsApp Text</span>
+                        </button>
+                      </div>
+                      <div className="font-mono text-xs bg-slate-950/60 p-3.5 rounded-xl border border-white/10 space-y-1 text-slate-300">
+                        <p><span className="text-slate-400">Name:</span> {selectedStaff.name}</p>
+                        <p><span className="text-slate-400">Username / Phone:</span> {selectedStaff.phone}</p>
+                        <p><span className="text-slate-400">Role:</span> Support Staff</p>
+                        <p><span className="text-slate-400">Portal:</span> https://complain.ecogreensolar.co.in/login</p>
+                      </div>
+                    </div>
+
+                    {/* Danger Zone: Delete Staff */}
+                    <div className="bg-rose-50/60 rounded-3xl p-5 border border-rose-200 flex items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-rose-900">Remove Staff Account</h4>
+                        <p className="text-[11px] text-rose-700/80">Revokes portal access immediately for this staff member.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStaff(selectedStaff)}
+                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Staff</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs">
+                    <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <h3 className="text-sm font-bold text-slate-700">No Staff Member Selected</h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Select a staff member from the left directory to view profile details, reset password, or copy login credentials.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ------------------------------------------------------------- */}
+          {/* VIEW C: FIELD TECHNICIAN ACCOUNTS                             */}
+          {/* ------------------------------------------------------------- */}
+          {accountRole === 'technician' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-200">
+              {/* Left Column: Technician Directory List */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Wrench className="w-4 h-4 text-emerald-600" />
+                      <span>Field Service Technicians</span>
+                    </h3>
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      {filteredTechList.length} Registered
+                    </span>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative mb-3">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      value={accountSearchQuery}
+                      onChange={(e) => setAccountSearchQuery(e.target.value)}
+                      placeholder="Search technician name or phone..."
+                      className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Technician List */}
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                    {accountsLoading ? (
+                      <div className="py-8 text-center text-xs text-slate-400">Loading technician accounts...</div>
+                    ) : filteredTechList.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400">
+                        {accountSearchQuery ? 'No matching technicians found.' : 'No technician accounts configured yet.'}
+                      </div>
+                    ) : (
+                      filteredTechList.map((tech) => {
+                        const isSelected = selectedTech && String(selectedTech.id) === String(tech.id);
+                        return (
+                          <div
+                            key={tech.id}
+                            onClick={() => setSelectedTech(tech)}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                              isSelected
+                                ? 'bg-emerald-50/80 border-emerald-500 shadow-xs'
+                                : 'bg-slate-50/60 hover:bg-slate-100/80 border-slate-200/80'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {tech.name?.charAt(0)?.toUpperCase() || 'T'}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-900 truncate">{tech.name}</p>
+                                <p className="text-[11px] font-mono text-slate-500 truncate">+91 {tech.phone}</p>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 block">
+                                ₹{tech.daily_voucher_rate || 400}/day
+                              </span>
+                              <span className={`text-[10px] font-semibold mt-0.5 block ${
+                                tech.is_available !== false ? 'text-emerald-600' : 'text-slate-400'
+                              }`}>
+                                {tech.is_available !== false ? 'Available' : 'Busy'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Selected Technician Details & Password Reset */}
+              <div className="lg:col-span-7 space-y-6">
+                {selectedTech ? (
+                  <>
+                    {/* Technician Profile Details Card */}
+                    <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs">
+                      <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+                        <div className="flex items-center gap-2">
+                          <Wrench className="w-5 h-5 text-emerald-600" />
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Technician Profile &amp; Rates</h3>
+                            <p className="text-xs text-slate-500">Managing parameters for {selectedTech.name}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                          Field Technician
+                        </span>
+                      </div>
+
+                      <form onSubmit={handleSaveTechProfile} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Full Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={techEditForm.name}
+                            onChange={(e) => setTechEditForm(f => ({ ...f, name: e.target.value }))}
+                            required
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                            placeholder="e.g. Ramesh Patel"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Mobile Number (Login ID) <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">+91</span>
+                              <input
+                                type="tel"
+                                maxLength="10"
+                                value={techEditForm.phone}
+                                onChange={(e) => setTechEditForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') }))}
+                                required
+                                className="w-full pl-11 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                placeholder="10 digit mobile"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Email Address (Optional)
+                            </label>
+                            <input
+                              type="email"
+                              value={techEditForm.email}
+                              onChange={(e) => setTechEditForm(f => ({ ...f, email: e.target.value }))}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                              placeholder="tech@ecogreensolar.co.in"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Daily Tour Voucher Rate (₹)
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="50"
+                                value={techEditForm.daily_voucher_rate}
+                                onChange={(e) => setTechEditForm(f => ({ ...f, daily_voucher_rate: e.target.value }))}
+                                className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                placeholder="400"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Specialization / Service Area
+                            </label>
+                            <input
+                              type="text"
+                              value={techEditForm.specialization}
+                              onChange={(e) => setTechEditForm(f => ({ ...f, specialization: e.target.value }))}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                              placeholder="e.g. Inverter Specialist, Rajkot"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={memberSavingLoading}
+                            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                          >
+                            {memberSavingLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            <span>Save Technician Details</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Reset Technician Password Card */}
+                    <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs">
+                      <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+                        <div className="flex items-center gap-2">
+                          <Key className="w-5 h-5 text-emerald-600" />
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Reset Technician Password</h3>
+                            <p className="text-xs text-slate-500">Set a new mobile portal password for {selectedTech.name}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={generateMemberPassword}
+                          className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-all cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Generate Password</span>
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleResetTechPassword} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            New Password <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showMemberPassword ? 'text' : 'password'}
+                              value={memberNewPassword}
+                              onChange={(e) => setMemberNewPassword(e.target.value)}
+                              required
+                              className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                              placeholder="Enter or generate new password"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowMemberPassword(!showMemberPassword)}
+                              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                            >
+                              {showMemberPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyTechCredentials(selectedTech)}
+                            className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Credentials</span>
+                          </button>
+
+                          <button
+                            type="submit"
+                            disabled={memberPasswordLoading}
+                            className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                          >
+                            {memberPasswordLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                            <span>Reset Technician Password</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Quick Share Credentials Card */}
+                    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-md">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" /> Dispatch Login Credentials
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyTechCredentials(selectedTech)}
+                          className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy WhatsApp Text</span>
+                        </button>
+                      </div>
+                      <div className="font-mono text-xs bg-slate-950/60 p-3.5 rounded-xl border border-white/10 space-y-1 text-slate-300">
+                        <p><span className="text-slate-400">Technician:</span> {selectedTech.name}</p>
+                        <p><span className="text-slate-400">Mobile / Login ID:</span> {selectedTech.phone}</p>
+                        <p><span className="text-slate-400">Daily Voucher Rate:</span> ₹{selectedTech.daily_voucher_rate || 400}/day</p>
+                        <p><span className="text-slate-400">Mobile Portal:</span> https://complain.ecogreensolar.co.in/login</p>
+                      </div>
+                    </div>
+
+                    {/* Danger Zone: Delete Technician */}
+                    <div className="bg-rose-50/60 rounded-3xl p-5 border border-rose-200 flex items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-rose-900">Remove Technician Account</h4>
+                        <p className="text-[11px] text-rose-700/80">Revokes mobile technician field app access immediately.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTechnicianAccount(selectedTech)}
+                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Technician</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs">
+                    <Wrench className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <h3 className="text-sm font-bold text-slate-700">No Technician Selected</h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Select a field technician from the left directory to view profile details, update voucher rates, or reset login passwords.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Add Account Modal */}
+          {isAddAccountModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                      {addAccountRole === 'staff' ? <Users className="w-5 h-5" /> : <Wrench className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">
+                        Create New {addAccountRole === 'staff' ? 'Staff Member' : 'Technician'}
+                      </h3>
+                      <p className="text-xs text-slate-500">Configure login credentials and permissions</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddAccountModalOpen(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateAccountSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Full Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={addAccountForm.name}
+                      onChange={(e) => setAddAccountForm(f => ({ ...f, name: e.target.value }))}
+                      required
+                      placeholder="e.g. Ramesh Patel"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Mobile Number <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">+91</span>
+                        <input
+                          type="tel"
+                          maxLength="10"
+                          value={addAccountForm.phone}
+                          onChange={(e) => setAddAccountForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') }))}
+                          required
+                          placeholder="10 digits"
+                          className="w-full pl-10 pr-2 py-2.5 rounded-xl border border-slate-300 text-xs font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Account Role
+                      </label>
+                      <select
+                        value={addAccountRole}
+                        onChange={(e) => setAddAccountRole(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                      >
+                        <option value="staff">Support Staff</option>
+                        <option value="technician">Field Technician</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Email Address (Optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={addAccountForm.email}
+                      onChange={(e) => setAddAccountForm(f => ({ ...f, email: e.target.value }))}
+                      placeholder="user@ecogreensolar.co.in"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {addAccountRole === 'technician' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          Daily Voucher Rate (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="50"
+                          value={addAccountForm.daily_voucher_rate}
+                          onChange={(e) => setAddAccountForm(f => ({ ...f, daily_voucher_rate: e.target.value }))}
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          Specialization
+                        </label>
+                        <input
+                          type="text"
+                          value={addAccountForm.specialization}
+                          onChange={(e) => setAddAccountForm(f => ({ ...f, specialization: e.target.value }))}
+                          placeholder="e.g. Rooftop Inverters"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-slate-700">
+                        Initial Login Password <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={generateAddAccountPassword}
+                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                      >
+                        Regenerate
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={addAccountForm.password}
+                      onChange={(e) => setAddAccountForm(f => ({ ...f, password: e.target.value }))}
+                      required
+                      placeholder="Initial password"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddAccountModalOpen(false)}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={addAccountLoading}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {addAccountLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>Create Account</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
