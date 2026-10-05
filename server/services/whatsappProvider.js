@@ -52,6 +52,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       'customer_technician_reassigned',
       'complaint_resolved',
       'technician_work_order',
+      'technician_team_work_order',
       'technician_reminder',
       'technician_pending_visit_reminder',
       'technician_reassigned',
@@ -283,20 +284,29 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
           }
         ]
       };
-    } else if (templateName === 'technician_work_order') {
-      const techName = cleanParam(variables.technician_name, 'Technician');
+    } else if (templateName === 'technician_work_order' || templateName === 'technician_team_work_order') {
+      const partnerName = cleanParam(variables.partner_technician_name, '');
+      const partnerPhone = cleanParam(variables.partner_technician_phone, '');
+      const baseTechName = cleanParam(variables.technician_name, 'Technician');
+      const techName = (templateName === 'technician_team_work_order' && partnerName)
+        ? `${baseTechName} & ${partnerName}`
+        : baseTechName;
       const tktId = cleanParam(variables.complaint_id || variables.ticket_id || ticket_id, 'Ticket');
       const custName = cleanParam(variables.customer_name, 'Valued Customer');
       const custPhone = cleanParam(variables.customer_phone, '-');
       const custAddr = cleanParam(variables.customer_address, '-');
       const prodType = cleanParam(variables.product_type, 'Solar System');
       const issueCat = cleanParam(variables.issue_category, 'Service Request');
-      const notes = cleanParam(variables.notes || variables.issue_description, 'Inspection required');
+      const baseNotes = cleanParam(variables.notes || variables.issue_description, 'Inspection required');
+      const notes = (templateName === 'technician_team_work_order' && partnerName)
+        ? `${baseNotes} (Team Partner: ${partnerName}${partnerPhone ? ' - ' + partnerPhone : ''})`
+        : baseNotes;
       const priority = cleanParam(variables.priority, 'Normal');
       const visitDate = cleanParam(variables.expected_visit_date, 'Immediate / Today');
       const portalLink = `${APP_URL}/technician?ticket=${encodeURIComponent(tktId)}`;
 
-      deliveredText = `🛠️ *Eco Green Solar - New Job Assignment*\n\nHello ${techName}, you have been assigned ticket *${tktId}*.\n\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddr}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\n*Direct Ticket Link:* ${portalLink}\n\nPlease check your Eco Green technician portal for details and coordinate with the customer.`;
+      const partnerLine = partnerName ? `\n👥 *Assigned Team Partner:* ${partnerName} (${partnerPhone || 'No Phone'})` : '';
+      deliveredText = `🛠️ *Eco Green Solar - ${templateName === 'technician_team_work_order' ? 'Team Work Order Assignment' : 'New Job Assignment'}*\n\nHello ${baseTechName}, you and your team partner have been assigned ticket *${tktId}*.${partnerLine}\n\n*Customer:* ${custName}\n*Customer Phone:* ${custPhone}\n*Address:* ${custAddr}\n*Product:* ${prodType}\n*Category:* ${issueCat}\n*Issue:* ${notes}\n*Priority:* ${priority}\n*Expected Visit:* ${visitDate}\n\n*Direct Ticket Link:* ${portalLink}\n\nPlease coordinate with your partner technician and contact the customer before site visit.`;
 
       payload.type = 'template';
       payload.template = {

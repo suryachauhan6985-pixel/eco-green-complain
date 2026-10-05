@@ -511,24 +511,135 @@ app.post('/api/tour-advances', authenticateToken, requireRole('admin', 'staff'),
   }
 });
 
-function getNextGlobalVoucherNo() {
+function getNextGlobalVoucherNos(count = 1) {
   try {
     const rows = db.prepare(`
       SELECT voucher_no FROM technician_tour_expenses 
-      WHERE voucher_no LIKE 'TT-%' 
-      ORDER BY id DESC LIMIT 100
+      WHERE voucher_no IS NOT NULL AND voucher_no != ''
+      ORDER BY id DESC LIMIT 500
     `).all();
     let maxSeq = 340;
+    let prefix = 'TT-';
     for (const r of rows) {
-      if (r.voucher_no) {
-        const num = parseInt(r.voucher_no.replace('TT-', ''), 10);
-        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      const v = String(r.voucher_no || '');
+      const match = v.match(/\d+/g);
+      if (match) {
+        const num = parseInt(match[match.length - 1], 10);
+        if (!isNaN(num) && num > maxSeq && num < 10000000) maxSeq = num;
+      }
+      if (v.startsWith('TT-') || v.startsWith('VCH-') || v.startsWith('EXP-')) {
+        const pMatch = v.match(/^([A-Za-z]+-)/);
+        if (pMatch) prefix = pMatch[1];
       }
     }
-    return `TT-${maxSeq + 1}`;
+    const result = [];
+    for (let i = 1; i <= count; i++) {
+      result.push(`${prefix}${maxSeq + i}`);
+    }
+    return result;
   } catch (_) {
-    return 'TT-341';
+    const result = [];
+    for (let i = 1; i <= count; i++) {
+      result.push(`TT-${340 + i}`);
+    }
+    return result;
   }
+}
+
+function getNextGlobalVoucherNo() {
+  const nos = getNextGlobalVoucherNos(1);
+  return nos[0] || 'TT-341';
+}
+
+/**
+ * Split items into multiple vouchers such that every single voucher
+ * is strictly less than 10,000 (< 10,000, i.e. <= maxCap).
+ * If total >= 10,000, it guarantees at least 2 distinct vouchers.
+ */
+function partitionItemsUnderCap(items, maxCap = 9999) {
+  const valid = items
+    .map(it => ({ ...it, amount: parseFloat(it.amount || 0) }))
+    .filter(it => it.amount > 0);
+
+  const total = valid.reduce((s, it) => s + it.amount, 0);
+  if (total < 10000) {
+    return [valid];
+  }
+
+  // Minimum vouchers needed: at least 2, or ceil(total / maxCap)
+  const minBuckets = Math.max(2, Math.ceil(total / maxCap));
+  const targetCap = Math.min(maxCap, Math.ceil(total / minBuckets));
+
+  // Step 1: Expand any single item that is >= 10000 (or if single item >= 10000) into parts
+  const expandedItems = [];
+  for (const it of valid) {
+    if (it.amount >= 10000 || (valid.length === 1 && it.amount >= 10000)) {
+      const partsCount = Math.max(2, Math.ceil(it.amount / maxCap));
+      const basePart = Math.floor((it.amount / partsCount) * 100) / 100;
+      let running = 0;
+      for (let p = 1; p <= partsCount; p++) {
+        const partAmt = (p === partsCount) ? Math.round((it.amount - running) * 100) / 100 : basePart;
+        running += partAmt;
+        expandedItems.push({
+          ...it,
+          amount: partAmt,
+          description: it.description ? `${it.description} (Part ${p}/${partsCount})` : `(Part ${p}/${partsCount})`,
+          title: it.title ? `${it.title} (Part ${p}/${partsCount})` : (it.description || 'Expense')
+        });
+      }
+    } else {
+      expandedItems.push(it);
+    }
+  }
+
+  // Step 2: Bin-pack expanded items into buckets
+  const buckets = [];
+  let currentBucket = [];
+  let currentBucketTotal = 0;
+
+  for (const it of expandedItems) {
+    if (currentBucket.length > 0 && (currentBucketTotal + it.amount >= 10000 || (buckets.length + 1 < minBuckets && currentBucketTotal >= targetCap))) {
+      buckets.push(currentBucket);
+      currentBucket = [it];
+      currentBucketTotal = it.amount;
+    } else if (it.amount >= 10000) {
+      const half1 = Math.floor(it.amount / 2);
+      const half2 = it.amount - half1;
+      if (currentBucket.length > 0) {
+        buckets.push(currentBucket);
+        currentBucket = [];
+        currentBucketTotal = 0;
+      }
+      buckets.push([{ ...it, amount: half1, description: `${it.description || ''} (Part 1/2)`.trim() }]);
+      currentBucket = [{ ...it, amount: half2, description: `${it.description || ''} (Part 2/2)`.trim() }];
+      currentBucketTotal = half2;
+    } else {
+      currentBucket.push(it);
+      currentBucketTotal += it.amount;
+    }
+  }
+  if (currentBucket.length > 0) {
+    buckets.push(currentBucket);
+  }
+
+  // Guarantee at least 2 buckets if total was >= 10000
+  if (buckets.length === 1 && total >= 10000) {
+    const bItems = buckets[0];
+    if (bItems.length === 1) {
+      const single = bItems[0];
+      const half1 = Math.floor(single.amount / 2);
+      const half2 = single.amount - half1;
+      return [
+        [{ ...single, amount: half1, description: `${single.description || ''} (Part 1/2)`.trim() }],
+        [{ ...single, amount: half2, description: `${single.description || ''} (Part 2/2)`.trim() }]
+      ];
+    } else {
+      const mid = Math.ceil(bItems.length / 2);
+      return [bItems.slice(0, mid), bItems.slice(mid)];
+    }
+  }
+
+  return buckets;
 }
 
 app.get('/api/tour-vouchers/next-sequence', authenticateToken, (req, res) => {
@@ -542,61 +653,114 @@ app.post('/api/tour-expenses', authenticateToken, (req, res) => {
     if (!targetTechId) {
       return res.status(400).json({ error: 'Technician is required' });
     }
-    const finalVoucherNo = voucher_no || getNextGlobalVoucherNo();
 
-    if (Array.isArray(items) && items.length > 0) {
-      const created = [];
-      const stmt = db.prepare(`
-        INSERT INTO technician_tour_expenses (
-          technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
-          receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
-        ) VALUES (?, ?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
-      `);
-      for (const it of items) {
-        if (!it.amount || parseFloat(it.amount) <= 0) continue;
-        const info = stmt.run(
-          String(targetTechId).trim(),
-          tour_advance_id || null,
-          finalVoucherNo,
-          it.expense_date || expense_date || null,
-          it.category || 'Other Expense',
-          parseFloat(it.amount),
-          it.description || it.title || '',
-          it.receipt_url || null,
-          it.receipt_data || null,
-          it.receipt_name || null,
-          it.ticket_id || ticket_id || null,
-          req.user ? req.user.name : 'Technician'
-        );
-        created.push(db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid));
+    const rawLineItems = Array.isArray(items) && items.length > 0
+      ? items
+      : [{
+          category: category || 'Other Expense',
+          amount: parseFloat(amount || 0),
+          description: description || ''
+        }];
+
+    const validItems = rawLineItems
+      .map(it => ({
+        ...it,
+        amount: parseFloat(it.amount || 0)
+      }))
+      .filter(it => it.amount > 0);
+
+    if (validItems.length === 0) {
+      return res.status(400).json({ error: 'Please provide at least one valid expense amount' });
+    }
+
+    const totalSubmissionAmount = validItems.reduce((acc, it) => acc + it.amount, 0);
+
+    // Auto-split rule: Each single voucher must be strictly less than ₹10,000 (< 10,000).
+    // If total submission >= 10,000, automatically partition into 2 or more vouchers.
+    const buckets = partitionItemsUnderCap(validItems, 9999);
+    let allAssignedVouchers = [];
+
+    if (buckets.length === 1) {
+      let chosenVoucherNo = null;
+      if (ticket_id && String(ticket_id).trim()) {
+        const trimmedTicket = String(ticket_id).trim();
+        const existingUnapproved = db.prepare(`
+          SELECT voucher_no, COALESCE(SUM(amount), 0) as current_total 
+          FROM technician_tour_expenses 
+          WHERE technician_id = ? 
+            AND (ticket_id = ? OR ticket_id LIKE ?)
+            AND LOWER(COALESCE(status, 'pending')) NOT IN ('approved', 'verified')
+            AND voucher_no IS NOT NULL AND voucher_no != ''
+          GROUP BY voucher_no
+          ORDER BY MAX(id) DESC LIMIT 1
+        `).get(String(targetTechId).trim(), trimmedTicket, `%${trimmedTicket}%`);
+
+        if (existingUnapproved && existingUnapproved.voucher_no) {
+          const currentTotal = parseFloat(existingUnapproved.current_total || 0);
+          if (currentTotal + totalSubmissionAmount < 10000) {
+            chosenVoucherNo = existingUnapproved.voucher_no;
+          }
+        }
       }
-      return res.json({ success: true, expenses: created, voucher_no: finalVoucherNo });
+
+      if (!chosenVoucherNo && voucher_no && !voucher_no.startsWith('EXP-')) {
+        chosenVoucherNo = voucher_no;
+      }
+
+      if (!chosenVoucherNo) {
+        chosenVoucherNo = getNextGlobalVoucherNos(1)[0];
+      }
+      allAssignedVouchers = [chosenVoucherNo];
+    } else {
+      allAssignedVouchers = getNextGlobalVoucherNos(buckets.length);
     }
 
-    if (!category || !amount || parseFloat(amount) <= 0) {
-      return res.status(400).json({ error: 'Category, amount and technician are required' });
-    }
-    const info = db.prepare(`
+    const created = [];
+    const stmt = db.prepare(`
       INSERT INTO technician_tour_expenses (
         technician_id, tour_advance_id, voucher_no, expense_date, category, amount, description,
         receipt_url, receipt_data, receipt_name, ticket_id, status, created_by
       ) VALUES (?, ?, ?, COALESCE(?, CURRENT_DATE), ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)
-    `).run(
-      String(targetTechId).trim(),
-      tour_advance_id || null,
-      finalVoucherNo,
-      expense_date || null,
-      category,
-      parseFloat(amount),
-      description || '',
-      receipt_url || null,
-      receipt_data || null,
-      receipt_name || null,
-      ticket_id || null,
-      req.user ? req.user.name : 'Technician'
-    );
-    const expense = db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid);
-    res.json({ success: true, expense, voucher_no: finalVoucherNo });
+    `);
+
+    for (let bIdx = 0; bIdx < buckets.length; bIdx++) {
+      const bucketItems = buckets[bIdx];
+      const assignedVoucherNo = allAssignedVouchers[bIdx];
+
+      for (const it of bucketItems) {
+        const itAmt = parseFloat(it.amount || 0);
+        if (itAmt <= 0) continue;
+
+        const info = stmt.run(
+          String(targetTechId).trim(),
+          tour_advance_id || null,
+          assignedVoucherNo,
+          it.expense_date || expense_date || null,
+          it.category || category || 'Other Expense',
+          itAmt,
+          it.description || it.title || description || '',
+          it.receipt_url !== undefined ? it.receipt_url : (receipt_url || null),
+          it.receipt_data !== undefined ? it.receipt_data : (receipt_data || null),
+          it.receipt_name !== undefined ? it.receipt_name : (receipt_name || null),
+          it.ticket_id || ticket_id || null,
+          req.user ? (req.user.name || 'Technician') : 'Technician'
+        );
+        created.push(db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid));
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: created.length,
+      voucher_no: allAssignedVouchers[0],
+      voucher_nos: allAssignedVouchers,
+      is_split: allAssignedVouchers.length > 1,
+      expenses: created,
+      items: created,
+      message: allAssignedVouchers.length > 1
+        ? `Voucher claim of ₹${totalSubmissionAmount} automatically split into ${allAssignedVouchers.length} vouchers (${allAssignedVouchers.join(', ')}) strictly under ₹10,000 each.`
+        : `Voucher ${allAssignedVouchers[0]} saved successfully.`
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -625,13 +789,21 @@ app.put('/api/tour-vouchers/:voucherNo', authenticateToken, (req, res) => {
     // Remove existing rows for this voucher
     db.prepare('DELETE FROM technician_tour_expenses WHERE voucher_no = ?').run(voucherNo);
 
-    const validItems = Array.isArray(items) && items.length > 0 
+    const rawItems = Array.isArray(items) && items.length > 0 
       ? items 
       : [{
           category: req.body.category || 'Other Expense',
           amount: req.body.amount,
           description: req.body.description || req.body.title
         }];
+
+    // Partition items so each resulting voucher is strictly < 10,000
+    const buckets = partitionItemsUnderCap(rawItems, 9999);
+    let extraVouchers = [];
+    if (buckets.length > 1) {
+      extraVouchers = getNextGlobalVoucherNos(buckets.length - 1);
+    }
+    const allAssignedVouchers = [voucherNo, ...extraVouchers];
 
     const stmt = db.prepare(`
       INSERT INTO technician_tour_expenses (
@@ -641,27 +813,39 @@ app.put('/api/tour-vouchers/:voucherNo', authenticateToken, (req, res) => {
     `);
 
     const created = [];
-    for (const it of validItems) {
-      const itAmt = parseFloat(it.amount);
-      if (!itAmt || itAmt <= 0) continue;
-      const info = stmt.run(
-        String(targetTechId).trim(),
-        tourAdvanceId || null,
-        voucherNo,
-        it.expense_date || expense_date || first.expense_date || null,
-        it.category || 'Other Expense',
-        itAmt,
-        it.description || it.title || '',
-        it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
-        it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
-        it.ticket_id || ticket_id || first.ticket_id || null,
-        it.complaint_id || complaintId || null,
-        req.user ? req.user.name : 'Technician'
-      );
-      created.push(db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid));
+    for (let bIdx = 0; bIdx < buckets.length; bIdx++) {
+      const bucketItems = buckets[bIdx];
+      const assignedVoucherNo = allAssignedVouchers[bIdx];
+
+      for (const it of bucketItems) {
+        const itAmt = parseFloat(it.amount);
+        if (!itAmt || itAmt <= 0) continue;
+        const info = stmt.run(
+          String(targetTechId).trim(),
+          tourAdvanceId || null,
+          assignedVoucherNo,
+          it.expense_date || expense_date || first.expense_date || null,
+          it.category || 'Other Expense',
+          itAmt,
+          it.description || it.title || '',
+          it.receipt_url !== undefined ? it.receipt_url : (receipt_url || first.receipt_url || null),
+          it.receipt_name !== undefined ? it.receipt_name : (receipt_name || first.receipt_name || null),
+          it.ticket_id || ticket_id || first.ticket_id || null,
+          it.complaint_id || complaintId || null,
+          req.user ? (req.user.name || 'Technician') : 'Technician'
+        );
+        created.push(db.prepare('SELECT * FROM technician_tour_expenses WHERE id = ?').get(info.lastInsertRowid));
+      }
     }
 
-    res.json({ success: true, voucher_no: voucherNo, expenses: created });
+    res.json({
+      success: true,
+      voucher_no: voucherNo,
+      voucher_nos: allAssignedVouchers,
+      is_split: allAssignedVouchers.length > 1,
+      expenses: created,
+      items: created
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

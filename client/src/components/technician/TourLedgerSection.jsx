@@ -3967,11 +3967,13 @@ export const TourLedgerSection = ({
                       ? 'Processing Photos...' 
                       : submittingExpense 
                         ? 'Saving...' 
-                        : editingVoucherNo 
-                          ? `Update Voucher (${editingVoucherNo})` 
-                          : expenseTotalSum >= 10000 
-                            ? `Save & Auto-Split (${Math.max(2, Math.ceil(expenseTotalSum / 9999))} Vouchers - ₹${expenseTotalSum.toLocaleString('en-IN')})` 
-                            : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum.toLocaleString('en-IN')})`}
+                        : editingVoucherNo && expenseTotalSum >= 10000
+                          ? `Update & Auto-Split (${editingVoucherNo} into ${Math.max(2, Math.ceil(expenseTotalSum / 9999))} Vouchers)`
+                          : editingVoucherNo 
+                            ? `Update Voucher (${editingVoucherNo})` 
+                            : expenseTotalSum >= 10000 
+                              ? `Save & Auto-Split (${Math.max(2, Math.ceil(expenseTotalSum / 9999))} Vouchers - ₹${expenseTotalSum.toLocaleString('en-IN')})` 
+                              : `Save Voucher Claim (${expenseForm.items.length} items - ₹${expenseTotalSum.toLocaleString('en-IN')})`}
                   </span>
                 </button>
               </div>

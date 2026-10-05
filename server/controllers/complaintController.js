@@ -1876,13 +1876,22 @@ function resendTechnicianWorkOrder(req, res) {
       return res.status(400).json({ error: 'Technician phone number not found' });
     }
 
+    const secTech = complaint.secondary_technician_id
+      ? db.prepare('SELECT * FROM technicians WHERE id = ?').get(complaint.secondary_technician_id)
+      : null;
+
+    const templateKey = secTech ? 'technician_team_work_order' : 'technician_work_order';
+
     notificationService.dispatchAsync({
       complaintId: id,
-      templateKey: 'technician_work_order',
+      templateKey,
       channels: ['whatsapp'],
       forceWhatsAppTo: technician.phone,
       data: {
         technician_name: technician.name,
+        partner_technician_name: secTech?.name || '',
+        partner_technician_phone: secTech?.phone || '',
+        all_technicians_names: secTech ? `${technician.name} & ${secTech.name}` : technician.name,
         ticket_id: complaint.ticket_id,
         customer_name: complaint.customer_name,
         customer_phone: complaint.customer_phone,
@@ -1896,9 +1905,36 @@ function resendTechnicianWorkOrder(req, res) {
       }
     });
 
+    if (secTech && secTech.phone) {
+      notificationService.dispatchAsync({
+        complaintId: id,
+        templateKey: 'technician_team_work_order',
+        channels: ['whatsapp'],
+        forceWhatsAppTo: secTech.phone,
+        data: {
+          technician_name: secTech.name,
+          partner_technician_name: technician.name,
+          partner_technician_phone: technician.phone || '',
+          all_technicians_names: `${technician.name} & ${secTech.name}`,
+          ticket_id: complaint.ticket_id,
+          customer_name: complaint.customer_name,
+          customer_phone: complaint.customer_phone,
+          customer_address: complaint.customer_address + (complaint.city ? ` (${complaint.city})` : ''),
+          product_type: complaint.product_type,
+          issue_category: complaint.issue_category,
+          issue_description: complaint.issue_description,
+          priority: complaint.priority,
+          expected_visit_date: complaint.expected_visit_date || 'Immediate / Today',
+          notes: complaint.issue_description
+        }
+      });
+    }
+
     res.json({ 
       success: true, 
-      message: `Work order sent to technician ${technician.name} (${technician.phone}) via WhatsApp Cloud API` 
+      message: secTech 
+        ? `Team work order sent to ${technician.name} & ${secTech.name} via WhatsApp Cloud API`
+        : `Work order sent to technician ${technician.name} (${technician.phone}) via WhatsApp Cloud API` 
     });
   } catch (err) {
     console.error('Error resending technician work order:', err);
