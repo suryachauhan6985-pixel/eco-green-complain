@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-support-v263';
+const CACHE_NAME = 'ecogreen-support-v264';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
@@ -42,7 +42,6 @@ self.addEventListener('message', (event) => {
       body: body || 'New service update received.',
       icon: icon || '/support-icon-192.png',
       badge: badge || '/support-icon-192.png',
-      vibrate: [250, 100, 250, 100, 350],
       tag: tag || (data?.ticketId ? `ticket-${data.ticketId}` : `egs-alert-${Date.now()}`),
       renotify: true,
       data: data || { url: '/complaints' }
@@ -62,31 +61,25 @@ self.addEventListener('push', (event) => {
   }
 
   const title = data.title || 'Eco Green Support Alert';
+  const targetUrl = data.url || (data.ticketId ? `/complaints?ticket=${data.ticketId}` : '/complaints');
+
   const options = {
     body: data.body || 'New complaint or service update received.',
     icon: data.icon || '/support-icon-192.png',
     badge: data.badge || '/support-icon-192.png',
-    vibrate: [250, 100, 250, 100, 350],
     tag: data.tag || (data.ticketId ? `ticket-${data.ticketId}` : `egs-push-${Date.now()}`),
     renotify: true,
     data: {
-      url: data.url || (data.ticketId ? `/complaints?ticket=${data.ticketId}` : '/complaints'),
+      url: targetUrl,
       ticketId: data.ticketId || null
-    },
-    actions: [
-      { action: 'open', title: 'Open Ticket' },
-      { action: 'close', title: 'Dismiss' }
-    ]
+    }
   };
 
-  const notifyPromise = self.registration.showNotification(title, options).catch((err) => {
-    console.warn('[SW] showNotification with actions failed, retrying without actions:', err);
-    const safeOptions = { ...options };
-    delete safeOptions.actions;
-    return self.registration.showNotification(title, safeOptions);
-  });
-
-  event.waitUntil(notifyPromise);
+  event.waitUntil(
+    self.registration.showNotification(title, options).catch((err) => {
+      console.warn('[SW] showNotification failed:', err);
+    })
+  );
 });
 
 // Auto-renew push subscription if refreshed by mobile OS/browser

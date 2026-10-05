@@ -42,9 +42,20 @@ export const subscribeUserToPush = async (currentUser) => {
   }
 
   try {
-    const reg = await navigator.serviceWorker.ready;
-    let subscription = await reg.pushManager.getSubscription();
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) {
+      reg = await navigator.serviceWorker.register('/sw.js').catch(() => null);
+    }
 
+    const readyPromise = navigator.serviceWorker.ready;
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('SW ready timeout')), 6000));
+    reg = await Promise.race([readyPromise, timeoutPromise]).catch(() => reg);
+
+    if (!reg || !reg.pushManager) {
+      return { success: false, reason: 'push_manager_unavailable' };
+    }
+
+    let subscription = await reg.pushManager.getSubscription();
     const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
 
     // If subscription already exists, check if its applicationServerKey matches our active VAPID key
@@ -52,10 +63,12 @@ export const subscribeUserToPush = async (currentUser) => {
       const rawExistingKey = subscription.options?.applicationServerKey;
       let matches = false;
       if (rawExistingKey) {
-        const existingKeyArray = new Uint8Array(rawExistingKey);
-        if (existingKeyArray.length === convertedVapidKey.length) {
-          matches = existingKeyArray.every((b, idx) => b === convertedVapidKey[idx]);
-        }
+        try {
+          const existingKeyArray = new Uint8Array(rawExistingKey);
+          if (existingKeyArray.length === convertedVapidKey.length) {
+            matches = existingKeyArray.every((b, idx) => b === convertedVapidKey[idx]);
+          }
+        } catch (_) {}
       }
       if (!matches) {
         console.log('[WebPush] Re-subscribing with active VAPID key...');
@@ -81,6 +94,15 @@ export const subscribeUserToPush = async (currentUser) => {
       return { success: false, reason: 'incomplete_keys' };
     }
 
+    // Determine user profile (from argument or cached user)
+    let user = currentUser;
+    if (!user) {
+      try {
+        const cached = sessionStorage.getItem('egs_cached_user') || localStorage.getItem('egs_cached_user');
+        if (cached) user = JSON.parse(cached);
+      } catch (_) {}
+    }
+
     const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
     const resp = await fetch('/api/push/subscribe', {
       method: 'POST',
@@ -91,14 +113,15 @@ export const subscribeUserToPush = async (currentUser) => {
       body: JSON.stringify({
         endpoint: subJson.endpoint,
         keys: subJson.keys,
-        role: currentUser?.role || 'staff',
-        userId: currentUser?.id || null,
-        phone: currentUser?.phone || null
+        role: user?.role || 'staff',
+        userId: user?.id || null,
+        phone: user?.phone || null
       })
     });
 
     const resData = await resp.json().catch(() => ({}));
     localStorage.setItem('egs_push_subscribed_endpoint', subJson.endpoint);
+    localStorage.setItem('egs_push_subscribed_at', new Date().toISOString());
     console.log('[WebPush] Device registered for background push:', resData);
 
     return { success: true, subscription: subJson, data: resData };

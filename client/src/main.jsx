@@ -64,7 +64,7 @@ createRoot(document.getElementById('root')).render(
 
 // Register PWA Service Worker for Mobile App Installation & Offline Caching
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
+  const initServiceWorker = () => {
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
@@ -96,7 +96,13 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     }).catch((err) => {
       console.log('SW registration note:', err);
     });
-  });
+  };
+
+  if (document.readyState === 'complete') {
+    initServiceWorker();
+  } else {
+    window.addEventListener('load', initServiceWorker);
+  }
 }
 
 // iOS Standalone PWA Link Persistence (Prevents opening external Safari tabs)

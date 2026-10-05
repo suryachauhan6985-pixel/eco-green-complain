@@ -1,17 +1,9 @@
-import webpush from 'web-push';
+import { buildPushPayload } from '@block65/webcrypto-web-push';
 import { query } from '../db.js';
 
 export const VAPID_PUBLIC_KEY = 'BG7RGa45M_-DXtXhZsTXDBUrBfFGtXp9INDkked5RDSRTt2zSF-1Hs3wvcDVFVuVJ__DVMgDnT1MSvFONbXED4g';
 export const VAPID_PRIVATE_KEY = 'GIcMcXDimGXyGgZxkrclowVeZHarWWhPFJkKzChdC1A';
 export const VAPID_SUBJECT = 'mailto:info@ecogreensolar.co.in';
-
-let isConfigured = false;
-function ensureVapidConfig() {
-  if (!isConfigured) {
-    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-    isConfigured = true;
-  }
-}
 
 /**
  * Register or update a browser push subscription
@@ -55,11 +47,9 @@ export async function removePushSubscription(endpoint, env, ctx) {
 }
 
 /**
- * Send a web push notification to a single subscription
+ * Send a web push notification to a single subscription using Web Crypto API
  */
 async function sendToSubscription(subRow, payload, env, ctx) {
-  ensureVapidConfig();
-
   const pushSubscription = {
     endpoint: subRow.endpoint,
     keys: {
@@ -68,21 +58,44 @@ async function sendToSubscription(subRow, payload, env, ctx) {
     }
   };
 
-  const stringifiedPayload = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  const vapid = {
+    subject: VAPID_SUBJECT,
+    publicKey: VAPID_PUBLIC_KEY,
+    privateKey: VAPID_PRIVATE_KEY
+  };
 
   try {
-    await webpush.sendNotification(pushSubscription, stringifiedPayload, {
-      TTL: 86400, // 24 hours retention on push servers if device offline
-      urgency: 'high'
+    const pushPayload = await buildPushPayload(
+      {
+        data: typeof payload === 'string' ? payload : JSON.stringify(payload),
+        options: { ttl: 86400, urgency: 'high' }
+      },
+      pushSubscription,
+      vapid
+    );
+
+    const resp = await fetch(subRow.endpoint, {
+      method: 'POST',
+      headers: pushPayload.headers,
+      body: pushPayload.body
     });
-    return { success: true, endpoint: subRow.endpoint };
-  } catch (err) {
-    console.warn(`[WebPush] Failed sending to ${subRow.endpoint?.slice(0, 35)}...:`, err.statusCode || err.message);
+
+    if (resp.status === 201 || resp.status === 200 || resp.status === 202) {
+      return { success: true, endpoint: subRow.endpoint };
+    }
+
+    const respText = await resp.text().catch(() => '');
+    console.warn(`[WebPush] Server rejected push (${resp.status}): ${respText}`);
+
     // 404 or 410 indicates the subscription is expired or revoked by user
-    if (err.statusCode === 404 || err.statusCode === 410) {
+    if (resp.status === 404 || resp.status === 410) {
       console.log(`[WebPush] Pruning expired subscription: ${subRow.endpoint?.slice(0, 35)}...`);
       await removePushSubscription(subRow.endpoint, env, ctx).catch(() => {});
     }
+
+    return { success: false, endpoint: subRow.endpoint, status: resp.status, error: respText };
+  } catch (err) {
+    console.warn(`[WebPush] Error preparing/sending push to ${subRow.endpoint?.slice(0, 35)}...:`, err.message);
     return { success: false, endpoint: subRow.endpoint, error: err.message };
   }
 }
@@ -198,7 +211,6 @@ export async function dispatchPushToUser(userId, payload, env, ctx) {
  * Send an immediate test push to a specific endpoint
  */
 export async function sendTestPush(subscription, env, ctx) {
-  ensureVapidConfig();
   return sendToSubscription(subscription, {
     title: '☀️ Eco Green Support — Test Alert',
     body: 'OS-level background push notification is active and working properly!',

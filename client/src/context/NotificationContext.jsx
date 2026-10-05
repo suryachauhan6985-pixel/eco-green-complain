@@ -408,9 +408,9 @@ export const NotificationProvider = ({ children }) => {
     };
   }, [fetchFromBackend]);
 
-  // Automatically register device for OS background Web Push when logged in and permission is granted
+  // Automatically register device for OS background Web Push when permission is granted
   useEffect(() => {
-    if (currentUser && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       subscribeUserToPush(currentUser).catch(() => {});
       const t = setTimeout(() => {
         subscribeUserToPush(currentUser).catch(() => {});
