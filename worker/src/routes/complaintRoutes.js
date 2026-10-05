@@ -45,6 +45,7 @@ async function ensureRetentionSchema(env, ctx) {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS documents_purged INT DEFAULT 0;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS documents_purged_at TIMESTAMP;
       ALTER TABLE complaint_attachments ADD COLUMN IF NOT EXISTS is_purged INT DEFAULT 0;
+      ALTER TABLE complaint_attachments ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(50) DEFAULT 'registration';
     `, [], env, ctx);
     retentionSchemaEnsured = true;
   } catch (_) {}
@@ -370,7 +371,7 @@ complaintRoutes.get('/track/:query', async (c) => {
       c.executionCtx
     );
     const attRes = await query(
-      'SELECT id, file_name, file_url, file_type, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', 
+      'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(attachment_type, \'registration\') as attachment_type, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', 
       [complaint.id],
       c.env,
       c.executionCtx
@@ -467,7 +468,7 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
     await purgeComplaintDocumentsIfExpired(complaint, c.env, c.executionCtx);
 
     const atts = await query(
-      'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(is_purged, 0) as is_purged, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY created_at ASC',
+      'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(attachment_type, \'registration\') as attachment_type, COALESCE(is_purged, 0) as is_purged, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY created_at ASC',
       [complaint.id],
       c.env,
       c.executionCtx
@@ -657,8 +658,8 @@ async function handleCreateComplaint(c, isPublic = false) {
 
       await query(`
         INSERT INTO complaint_attachments (
-          complaint_id, file_name, file_url, file_type, file_data, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+          complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'registration')
       `, [
         newComp.id,
         att.file_name || 'Document',
@@ -1110,18 +1111,18 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
     if (Array.isArray(uploadedAttachments) && uploadedAttachments.length > 0) {
       for (const att of uploadedAttachments) {
         await query(
-          `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [complaint.id, att.file_name || 'Resolution_Proof.jpg', att.file_url || att.storage_key, att.file_type || 'image/jpeg', att.file_url || att.storage_key, solver],
+          `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+           VALUES ($1, $2, $3, $4, $5, $6, 'resolution')`,
+          [complaint.id, att.file_name || 'Resolution_Proof.jpg', att.file_url || att.storage_key, att.file_type || 'image/jpeg', att.file_url || att.storage_key, `${solver} (Technician Resolution Proof)`],
           c.env,
           c.executionCtx
         ).catch(() => {});
       }
     } else if (closing_photo_url) {
       await query(
-        `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-         VALUES ($1, 'Resolution_Proof.jpg', $2, 'image/jpeg', $2, $3)`,
-        [complaint.id, closing_photo_url, solver],
+        `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+         VALUES ($1, 'Resolution_Proof.jpg', $2, 'image/jpeg', $2, $3, 'resolution')`,
+        [complaint.id, closing_photo_url, `${solver} (Technician Resolution Proof)`],
         c.env,
         c.executionCtx
       ).catch(() => {});
@@ -1844,15 +1845,16 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         }
 
         await query(
-          `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
+          `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [
             current.id,
             att.file_name || 'Document',
             fileUrl,
             att.file_type || 'application/octet-stream',
             fileUrl,
-            uploaderName
+            uploaderName,
+            att.attachment_type || 'registration'
           ],
           c.env,
           c.executionCtx

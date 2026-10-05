@@ -148,6 +148,12 @@ export const ComplaintDetailDrawer = ({
   // Separate Initial Complaint/Issue Attachments vs Technician Resolution Proof Attachments
   const isResolutionProofAttachment = (att) => {
     if (!att) return false;
+
+    // 1. Explicit database tag (100% deterministic)
+    if (att.attachment_type === 'resolution') return true;
+    if (att.attachment_type === 'registration') return false;
+
+    // 2. Direct match with ticket closing_photo_url
     if (ticket?.closing_photo_url && (
       att.file_url === ticket.closing_photo_url || 
       att.file_data === ticket.closing_photo_url || 
@@ -156,23 +162,27 @@ export const ComplaintDetailDrawer = ({
     )) {
       return true;
     }
-    const uploadedBy = (att.uploaded_by || '').toLowerCase();
-    if (uploadedBy.includes('resolution proof') || uploadedBy.includes('technician resolution') || (uploadedBy.includes('tech') && ticket?.resolved_at)) {
-      return true;
-    }
+
+    // 3. File name indicators
     const fileName = (att.file_name || '').toLowerCase();
     if (fileName.includes('closing_proof') || fileName.includes('resolution_proof')) {
       return true;
     }
-    // If ticket was resolved and attachment was created around/after resolved_at
-    if (ticket?.resolved_at && att.created_at) {
-      const attTime = new Date(att.created_at).getTime();
-      const resolvedTime = new Date(ticket.resolved_at).getTime();
-      const createdTime = new Date(ticket.created_at).getTime();
-      if (Math.abs(attTime - resolvedTime) < 15 * 60 * 1000 && attTime > createdTime + 5 * 60 * 1000) {
-        return true;
-      }
+
+    // 4. Uploaded by indicators
+    const uploadedBy = (att.uploaded_by || '').toLowerCase();
+    if (uploadedBy.includes('resolution proof') || uploadedBy.includes('technician resolution')) {
+      return true;
     }
+
+    // 5. Fallback for legacy data:
+    // If uploaded by resolving technician AND not customer/creator
+    const resolverName = (ticket?.resolved_by_technician_name || ticket?.technician_name || '').toLowerCase().trim();
+    const customerName = (ticket?.customer_name || '').toLowerCase().trim();
+    if (resolverName && uploadedBy === resolverName && uploadedBy !== customerName) {
+      return true;
+    }
+
     return false;
   };
 
@@ -229,7 +239,7 @@ export const ComplaintDetailDrawer = ({
       for (const f of files) {
         try {
           const up = await uploadFileToSupabase(f, ticket.ticket_id || ticket.id);
-          if (up) uploadedAttachments.push(up);
+          if (up) uploadedAttachments.push({ ...up, attachment_type: 'registration' });
         } catch (upErr) {
           console.warn('Direct upload fallback:', upErr.message);
           if (f.size <= 4 * 1024 * 1024) fallbackFiles.push(f);
@@ -238,6 +248,7 @@ export const ComplaintDetailDrawer = ({
 
       const fd = new FormData();
       fallbackFiles.forEach(f => fd.append('attachments', f));
+      fd.append('attachment_type', 'registration');
       if (uploadedAttachments.length > 0) {
         fd.append('attachment_urls', JSON.stringify(uploadedAttachments));
       }
@@ -857,11 +868,17 @@ export const ComplaintDetailDrawer = ({
           }
         });
         const uploadResults = await Promise.all(uploadPromises);
-        const uploadedAttachments = uploadResults.filter(r => r.success && r.uploaded?.file_url).map(r => r.uploaded);
+        const uploadedAttachments = uploadResults
+          .filter(r => r.success && r.uploaded?.file_url)
+          .map(r => ({
+            ...r.uploaded,
+            attachment_type: 'resolution'
+          }));
         fallbackFiles = uploadResults.filter(r => !r.success && r.file && r.file.size <= 4 * 1024 * 1024).map(r => r.file);
 
         if (uploadedAttachments.length > 0) {
           data.append('attachment_urls', JSON.stringify(uploadedAttachments));
+          data.append('attachment_type', 'resolution');
           data.append('closing_photo_url', uploadedAttachments[0].file_url);
           data.append('closing_photo_name', uploadedAttachments[0].file_name);
           data.append('closing_photo_type', uploadedAttachments[0].file_type);
@@ -869,6 +886,7 @@ export const ComplaintDetailDrawer = ({
 
         if (fallbackFiles.length > 0) {
           data.append('closing_photo', fallbackFiles[0]);
+          data.append('attachment_type', 'resolution');
         }
       }
 
@@ -879,6 +897,7 @@ export const ComplaintDetailDrawer = ({
         try {
           const extraFd = new FormData();
           fallbackFiles.slice(1).forEach(f => extraFd.append('attachments', f));
+          extraFd.append('attachment_type', 'resolution');
           await api.uploadComplaintAttachments(ticket.id, extraFd);
         } catch (e) {
           console.warn('Extra fallback upload note:', e);

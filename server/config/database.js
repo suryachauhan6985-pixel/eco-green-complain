@@ -110,6 +110,7 @@ function initializeSchema() {
       file_type TEXT,
       file_data TEXT,
       uploaded_by TEXT,
+      attachment_type TEXT DEFAULT 'registration',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE
     );
@@ -287,6 +288,10 @@ function initializeSchema() {
     CREATE INDEX IF NOT EXISTS idx_customers_dealer ON installed_customers(dealer_name);
     CREATE INDEX IF NOT EXISTS idx_customers_inverter ON installed_customers(inverter_serial);
   `);
+
+  try {
+    db.prepare("ALTER TABLE complaint_attachments ADD COLUMN attachment_type TEXT DEFAULT 'registration'").run();
+  } catch (_) {}
 
   // Seed default product catalog
   const defaultProducts = [

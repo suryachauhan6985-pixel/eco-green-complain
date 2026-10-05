@@ -802,7 +802,7 @@ export const NewComplaintModal = ({
           });
           try {
             const uploaded = await uploadFileToSupabase(item.file);
-            if (uploaded) uploadedAttachments.push(uploaded);
+            if (uploaded) uploadedAttachments.push({ ...uploaded, attachment_type: 'registration' });
           } catch (storageErr) {
             console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
             if (item.file.size <= 4 * 1024 * 1024) {
@@ -821,6 +821,7 @@ export const NewComplaintModal = ({
         if (uploadedAttachments.length > 0) {
           data.append('attachment_urls', JSON.stringify(uploadedAttachments));
         }
+        data.append('attachment_type', 'registration');
       }
 
       if (isEditMode) {

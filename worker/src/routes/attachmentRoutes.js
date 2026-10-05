@@ -171,18 +171,20 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
         }
       }
 
+      const targetType = att.attachment_type || body.attachment_type || 'registration';
       const insRes = await query(
         `INSERT INTO complaint_attachments (
-          complaint_id, file_name, file_url, file_type, file_data, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, file_name, file_url, file_type, file_data, uploaded_by, created_at`,
+          complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type, created_at`,
         [
           complaintId,
           att.file_name || 'Document',
           fileUrl,
           att.file_type || 'application/octet-stream',
           fileUrl,
-          uploaderName
+          uploaderName,
+          targetType
         ],
         c.env,
         c.executionCtx

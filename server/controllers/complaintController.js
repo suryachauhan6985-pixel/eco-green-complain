@@ -433,8 +433,8 @@ async function createComplaint(req, res) {
 
     if (Array.isArray(directAttachments) && directAttachments.length > 0) {
       const attachStmt = db.prepare(`
-        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+        VALUES (?, ?, ?, ?, ?, ?, 'registration')
       `);
       for (const att of directAttachments) {
         attachStmt.run(complaintId, att.file_name || 'Document', att.file_url, att.file_type || 'application/octet-stream', att.file_url, actorName);
@@ -443,8 +443,8 @@ async function createComplaint(req, res) {
 
     if (req.files && req.files.length > 0) {
       const attachStmt = db.prepare(`
-        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+        VALUES (?, ?, ?, ?, ?, ?, 'registration')
       `);
       for (const f of req.files) {
         let base64Data = null;
@@ -1366,8 +1366,8 @@ async function resolveComplaint(req, res) {
       if (!photoUrl) photoUrl = attachmentUrls[0].file_url;
       for (const att of attachmentUrls) {
         db.prepare(`
-          INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+          VALUES (?, ?, ?, ?, ?, ?, 'resolution')
         `).run(id, att.file_name || 'Resolution Proof', att.file_url, att.file_type || 'image/jpeg', att.file_url, `${performer} (Technician Resolution Proof)`);
       }
     }
@@ -1383,8 +1383,8 @@ async function resolveComplaint(req, res) {
         console.warn('Could not encode closing photo to base64:', err.message);
       }
       const attachRes = db.prepare(`
-        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+        VALUES (?, ?, ?, ?, ?, ?, 'resolution')
       `).run(id, req.file.originalname || 'Closing_Photo.jpg', `/uploads/${req.file.filename}`, req.file.mimetype, base64Data, `${performer} (Technician Resolution Proof)`);
       const attId = attachRes.lastInsertRowid;
       if (!photoUrl) photoUrl = base64Data || `/api/attachments/${attId}`;
@@ -1817,9 +1817,10 @@ async function addAttachments(req, res) {
     }
 
     const actorName = req.user ? req.user.name : 'Staff';
+    const targetType = req.body.attachment_type || 'registration';
     const attachStmt = db.prepare(`
-      INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const added = [];
@@ -1833,7 +1834,7 @@ async function addAttachments(req, res) {
       } catch (err) {
         console.warn('Could not encode file buffer:', err.message);
       }
-      const insertRes = attachStmt.run(id, f.originalname, `/uploads/${f.filename}`, f.mimetype, base64Data, actorName);
+      const insertRes = attachStmt.run(id, f.originalname, `/uploads/${f.filename}`, f.mimetype, base64Data, actorName, targetType);
       const attId = insertRes.lastInsertRowid;
       const permUrl = `/api/attachments/${attId}`;
       db.prepare('UPDATE complaint_attachments SET file_url = ? WHERE id = ?').run(permUrl, attId);
