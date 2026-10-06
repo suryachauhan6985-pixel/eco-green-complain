@@ -6,6 +6,8 @@ import {
   validateFileBinary,
   getMimeTypeFromKey,
   generateStorageKey,
+  generateComplaintStorageKey,
+  generateWhatsAppStorageKey,
   putR2Object,
   getR2Object,
   deleteR2Object,
@@ -27,6 +29,8 @@ attachmentRoutes.post('/upload', optionalAuth, async (c) => {
     let filename = 'file';
     let mimeType = 'application/octet-stream';
     let complaintId = c.req.query('complaint_id') || 'temp';
+    let uploadType = c.req.query('type') || '';
+    let contactPhone = c.req.query('phone') || '';
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await c.req.parseBody();
@@ -38,6 +42,8 @@ attachmentRoutes.post('/upload', optionalAuth, async (c) => {
       mimeType = file.type || 'application/octet-stream';
       fileBuffer = await file.arrayBuffer();
       if (formData.complaint_id) complaintId = formData.complaint_id;
+      if (formData.type) uploadType = formData.type;
+      if (formData.phone) contactPhone = formData.phone;
     } else {
       filename = c.req.header('x-filename') || `file_${Date.now()}`;
       mimeType = contentType.split(';')[0].trim() || 'application/octet-stream';
@@ -51,7 +57,27 @@ attachmentRoutes.post('/upload', optionalAuth, async (c) => {
     validateFileMetadata(filename, mimeType, fileBuffer.byteLength);
     validateFileBinary(fileBuffer, mimeType, filename);
 
-    const storageKey = generateStorageKey(complaintId, filename);
+    let storageKey;
+    if (uploadType === 'whatsapp' || contactPhone) {
+      const cleanPhone = String(contactPhone || 'general').replace(/\D/g, '') || 'general';
+      const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      storageKey = generateWhatsAppStorageKey(cleanPhone, uniqueId, filename);
+    } else {
+      // Resolve numeric complaint ID to official ticket_id if possible
+      if (complaintId && complaintId !== 'temp' && complaintId !== 'general') {
+        const compLookup = await query(
+          'SELECT ticket_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+          [complaintId],
+          c.env,
+          c.executionCtx
+        ).catch(() => ({ rows: [] }));
+        if (compLookup.rows?.[0]?.ticket_id) {
+          complaintId = compLookup.rows[0].ticket_id;
+        }
+      }
+      storageKey = generateComplaintStorageKey(complaintId, filename);
+    }
+
     await putR2Object(bucket, storageKey, fileBuffer, mimeType);
 
     const publicServeUrl = `/api/attachments/r2/${storageKey}`;

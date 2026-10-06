@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { META_WABA_ID, DEFAULT_META_ACCESS_TOKEN } from '../whatsapp.js';
+import { deleteR2Prefix } from '../r2.js';
 import {
   VAPID_PUBLIC_KEY,
   savePushSubscription,
@@ -1412,6 +1413,33 @@ commonRoutes.post('/push/test', optionalAuth, async (c) => {
       }, c.env, c.executionCtx)
     );
     return c.json({ success: true, message: 'Test push dispatched to your role' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/storage/r2/cleanup-orphans - Clean up obsolete R2 folders (Admin only)
+commonRoutes.post('/storage/r2/cleanup-orphans', authenticateToken, requireRole('admin'), async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) return c.json({ error: 'R2 bucket unavailable' }, 500);
+
+    const prefixes = ['complaints/60/', 'complaints/999/', 'complaints/temp/'];
+    let totalPurged = 0;
+    const details = {};
+
+    for (const prefix of prefixes) {
+      const count = await deleteR2Prefix(bucket, prefix);
+      totalPurged += count;
+      details[prefix] = count;
+    }
+
+    return c.json({
+      success: true,
+      total_purged: totalPurged,
+      details,
+      message: 'Orphaned R2 folders (60/, 999/, temp/) cleaned up successfully.'
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

@@ -1,9 +1,35 @@
 import { Hono } from 'hono';
+import bcrypt from 'bcryptjs';
 import { query } from '../db.js';
 import { authenticateToken, requireRole } from '../auth.js';
 import { deleteR2Object } from '../r2.js';
 
 const technicianRoutes = new Hono();
+
+async function verifyAdminPassword(c) {
+  const user = c.get('user');
+  if (!user || user.role !== 'admin') {
+    return { valid: false, status: 403, error: 'Unauthorized: Admin role required' };
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const password = body?.password;
+  if (!password || typeof password !== 'string' || !password.trim()) {
+    return { valid: false, status: 400, error: 'Administrator password is required to authorize ledger reset' };
+  }
+
+  const userRes = await query('SELECT password_hash FROM users WHERE id = $1', [user.id], c.env, c.executionCtx);
+  if (!userRes.rows.length || !userRes.rows[0].password_hash) {
+    return { valid: false, status: 404, error: 'Administrator user record not found' };
+  }
+
+  const isMatch = await bcrypt.compare(password.trim(), userRes.rows[0].password_hash);
+  if (!isMatch) {
+    return { valid: false, status: 401, error: 'Incorrect administrator password. Ledger reset denied.' };
+  }
+
+  return { valid: true };
+}
 
 function getISTDateString(val) {
   if (!val) return '';
@@ -722,6 +748,11 @@ technicianRoutes.delete('/technicians/:id', authenticateToken, requireRole('admi
 // POST /api/tour-ledger/clear-all - Reset all tour advances, vouchers, and settlements (Admin Only)
 technicianRoutes.post('/tour-ledger/clear-all', authenticateToken, requireRole('admin'), async (c) => {
   try {
+    const authCheck = await verifyAdminPassword(c);
+    if (!authCheck.valid) {
+      return c.json({ error: authCheck.error }, authCheck.status);
+    }
+
     // Delete all tour records cleanly
     await query('DELETE FROM technician_tour_settlements', [], c.env, c.executionCtx);
     await query('DELETE FROM technician_tour_expenses', [], c.env, c.executionCtx);
@@ -1945,6 +1976,11 @@ technicianRoutes.delete('/tour-settlements/:id', authenticateToken, requireRole(
 // POST /api/technicians/:id/reset-tour-ledger - Reset specific technician's tour ledger (advances, expenses, settlements) to zero
 technicianRoutes.post('/technicians/:id/reset-tour-ledger', authenticateToken, requireRole('admin'), async (c) => {
   try {
+    const authCheck = await verifyAdminPassword(c);
+    if (!authCheck.valid) {
+      return c.json({ error: authCheck.error }, authCheck.status);
+    }
+
     const techId = c.req.param('id');
     await query('DELETE FROM technician_tour_settlements WHERE technician_id::text = $1', [String(techId)], c.env, c.executionCtx);
     await query('DELETE FROM technician_tour_expenses WHERE technician_id::text = $1', [String(techId)], c.env, c.executionCtx);

@@ -101,15 +101,17 @@ app.onError((err, c) => {
 });
 
 import { runBatchExpiredDocumentsPurge } from './routes/complaintRoutes.js';
+import { runBatchExpiredWhatsAppPurge } from './routes/whatsappRoutes.js';
 
 export default {
   fetch: app.fetch,
   async scheduled(event, env, ctx) {
-    console.log('[Cron Event] Running batch purge of expired complaint documents (>30 days closed)...');
+    console.log('[Cron Event] Running batch purge of expired complaint documents and 30-day WhatsApp messages...');
     ctx.waitUntil(
-      runBatchExpiredDocumentsPurge(env, ctx)
-        .then(res => console.log('[Cron Purge Finished]', res))
-        .catch(err => console.error('[Cron Purge Failed]', err))
+      Promise.allSettled([
+        runBatchExpiredDocumentsPurge(env, ctx).then(res => console.log('[Cron Complaint Docs Purge Finished]', res)),
+        runBatchExpiredWhatsAppPurge(env, ctx).then(res => console.log('[Cron WhatsApp Purge Finished]', res))
+      ]).catch(err => console.error('[Cron Purge Batch Failed]', err))
     );
   }
 };

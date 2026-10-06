@@ -95,15 +95,26 @@ export function getMimeTypeFromKey(key = '') {
   return map[ext] || 'application/octet-stream';
 }
 
-export function generateStorageKey(complaintId, filename = 'attachment') {
+export function generateStorageKey(complaintIdentifier, filename = 'attachment') {
+  return generateComplaintStorageKey(complaintIdentifier, filename);
+}
+
+export function generateComplaintStorageKey(ticketId, filename = 'attachment') {
   const ext = (filename.split('.').pop() || 'bin').toLowerCase();
   const cleanBase = filename
     .replace(/\.[^.]+$/, '')
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .slice(0, 30);
   const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  const folder = complaintId ? `complaints/${complaintId}` : 'complaints/general';
+  const folder = ticketId ? `complaints/${String(ticketId).trim()}` : 'complaints/general';
   return `${folder}/${uniqueId}_${cleanBase}.${ext}`;
+}
+
+export function generateWhatsAppStorageKey(contactPhone, mediaId, filename = '') {
+  const cleanPhone = String(contactPhone || 'unknown').replace(/\D/g, '');
+  const ext = filename ? (filename.split('.').pop() || '').toLowerCase() : '';
+  const suffix = ext ? `.${ext}` : '';
+  return `whatsapp_media/${cleanPhone}/${mediaId}${suffix}`;
 }
 
 export async function putR2Object(bucket, key, data, contentType) {
@@ -126,6 +137,40 @@ export async function deleteR2Object(bucket, key) {
   return await bucket.delete(key);
 }
 
+/**
+ * Recursively list and delete all objects in Cloudflare R2 matching a prefix (e.g. complaints/TKT-01/ or whatsapp_media/9198765/)
+ */
+export async function deleteR2Prefix(bucket, prefix) {
+  if (!bucket || !prefix) return 0;
+  let deletedCount = 0;
+  let cursor = undefined;
+
+  do {
+    const listRes = await bucket.list({ prefix, cursor, limit: 1000 }).catch(err => {
+      console.warn(`[deleteR2Prefix Warn] List failed for prefix ${prefix}:`, err.message);
+      return null;
+    });
+
+    if (!listRes || !listRes.objects || listRes.objects.length === 0) {
+      break;
+    }
+
+    const keys = listRes.objects.map(o => o.key);
+    await Promise.all(keys.map(k => bucket.delete(k).catch(() => {})));
+    deletedCount += keys.length;
+
+    cursor = listRes.truncated ? listRes.cursor : undefined;
+  } while (cursor);
+
+  return deletedCount;
+}
+
+export async function listR2Keys(bucket, prefix, limit = 100) {
+  if (!bucket) return [];
+  const listRes = await bucket.list({ prefix, limit }).catch(() => null);
+  return (listRes?.objects || []).map(o => o.key);
+}
+
 export async function moveR2Object(bucket, oldKey, newKey) {
   if (!bucket) throw new Error('Cloudflare R2 MEDIA_BUCKET binding is missing.');
   if (oldKey === newKey) return true;
@@ -138,4 +183,5 @@ export async function moveR2Object(bucket, oldKey, newKey) {
   await bucket.delete(oldKey).catch(() => {});
   return true;
 }
+
 

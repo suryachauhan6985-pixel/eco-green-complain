@@ -80,7 +80,7 @@ export async function compressImageFile(file, maxWidth = 1920, maxHeight = 1920,
   });
 }
 
-export async function uploadFileToSupabase(file, complaintId = 'temp') {
+export async function uploadFileToSupabase(file, identifier = 'temp', uploadType = 'complaint') {
   if (!file) return null;
   
   if (file.size > 50 * 1024 * 1024) {
@@ -94,7 +94,12 @@ export async function uploadFileToSupabase(file, complaintId = 'temp') {
   try {
     const formData = new FormData();
     formData.append('file', optimizedFile);
-    formData.append('complaint_id', complaintId);
+    if (uploadType === 'whatsapp') {
+      formData.append('type', 'whatsapp');
+      formData.append('phone', identifier);
+    } else {
+      formData.append('complaint_id', identifier);
+    }
 
     const token = typeof window !== 'undefined'
       ? (sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token'))

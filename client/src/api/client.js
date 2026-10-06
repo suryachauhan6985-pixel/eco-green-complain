@@ -1671,11 +1671,13 @@ export const api = {
   deleteTourSettlement: (id) => request(`/tour-settlements/${id}`, {
     method: 'DELETE'
   }),
-  resetTechnicianTourLedger: (techId) => request(`/technicians/${techId}/reset-tour-ledger`, {
-    method: 'POST'
+  resetTechnicianTourLedger: (techId, data = {}) => request(`/technicians/${techId}/reset-tour-ledger`, {
+    method: 'POST',
+    body: JSON.stringify(data)
   }),
-  clearAllTourLedger: () => request('/tour-ledger/clear-all', {
-    method: 'POST'
+  clearAllTourLedger: (data = {}) => request('/tour-ledger/clear-all', {
+    method: 'POST',
+    body: JSON.stringify(data)
   }),
   updateTourVoucherStatus: (voucherNo, status, rejection_reason = '') => request(`/tour-vouchers/${encodeURIComponent(voucherNo)}/status`, {
     method: 'PUT',
@@ -2120,6 +2122,12 @@ export const api = {
     body: JSON.stringify(data)
   }),
   clearWhatsAppChat: (phone) => request(`/whatsapp/clear-chat/${encodeURIComponent(phone)}`, {
+    method: 'POST'
+  }),
+  deleteWhatsAppConversation: (phone) => request(`/whatsapp/conversations/${encodeURIComponent(phone)}`, {
+    method: 'DELETE'
+  }),
+  cleanupR2Orphans: () => request('/storage/r2/cleanup-orphans', {
     method: 'POST'
   }),
   updateWhatsAppContactName: (phone, name) => request('/whatsapp/update-contact-name', {

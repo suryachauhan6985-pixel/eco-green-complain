@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken } from '../auth.js';
 import { sendWhatsApp, WEBHOOK_VERIFY_TOKEN, DEFAULT_META_ACCESS_TOKEN, META_PHONE_NUMBER_ID } from '../whatsapp.js';
+import { deleteR2Object, deleteR2Prefix } from '../r2.js';
 
 const whatsappRoutes = new Hono();
 
@@ -117,28 +118,33 @@ export async function handleWebhookPost(c) {
             let textBody = '';
             let mediaUrl = null;
             let mediaType = msg.type || 'text';
+            let mediaId = null;
 
             if (msg.type === 'text') {
               textBody = msg.text?.body || '';
             } else if (msg.type === 'image') {
               textBody = msg.image?.caption || '[IMAGE file]';
-              mediaUrl = msg.image?.id ? `/api/whatsapp/media/${msg.image.id}` : null;
+              mediaId = msg.image?.id || null;
+              mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'video') {
               textBody = msg.video?.caption || '[VIDEO file]';
-              mediaUrl = msg.video?.id ? `/api/whatsapp/media/${msg.video.id}` : null;
+              mediaId = msg.video?.id || null;
+              mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'document') {
               const docName = msg.document?.filename || 'document.pdf';
               textBody = msg.document?.caption || docName || '[DOCUMENT file]';
-              mediaUrl = msg.document?.id ? `/api/whatsapp/media/${msg.document.id}?filename=${encodeURIComponent(docName)}` : null;
+              mediaId = msg.document?.id || null;
+              mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}&filename=${encodeURIComponent(docName)}` : null;
             } else if (msg.type === 'audio' || msg.type === 'voice') {
               mediaType = 'audio';
               textBody = msg.audio?.caption || (msg.type === 'voice' ? '🎤 Voice Note' : '[AUDIO file]');
-              const audioId = msg.audio?.id || msg.voice?.id;
-              mediaUrl = audioId ? `/api/whatsapp/media/${audioId}` : null;
+              mediaId = msg.audio?.id || msg.voice?.id || null;
+              mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'sticker') {
               mediaType = 'image';
               textBody = '🎨 Sticker';
-              mediaUrl = msg.sticker?.id ? `/api/whatsapp/media/${msg.sticker.id}` : null;
+              mediaId = msg.sticker?.id || null;
+              mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             }
 
             // Raw Event Audit Log
@@ -234,9 +240,9 @@ export async function handleWebhookPost(c) {
             // Insert into whatsapp_messages
             await query(
               `INSERT INTO whatsapp_messages (
-                complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, wam_id, status, created_at, updated_at
-              ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-              [complaintId, senderPhone, senderName, textBody, mediaUrl, mediaType, wamid],
+                complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, wam_id, status, created_at, updated_at
+              ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, wamid],
               c.env,
               c.executionCtx
             ).catch(() => {});
@@ -479,29 +485,56 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
     return c.text('Media ID is required', 400);
   }
   const filename = c.req.query('filename') || '';
+  let queryPhone = (c.req.query('phone') || '').replace(/\D/g, '');
   const token = c.env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
-  const r2Key = `whatsapp_media/${mediaId}`;
 
-  // 1. Check Cloudflare R2 cache first for instant delivery & permanent retention
-  if (c.env?.MEDIA_BUCKET) {
+  // Resolve phone if not provided in query param
+  if (!queryPhone) {
     try {
-      const cached = await c.env.MEDIA_BUCKET.get(r2Key);
-      if (cached) {
-        const headers = new Headers();
-        headers.set('Content-Type', cached.httpMetadata?.contentType || 'application/octet-stream');
-        if (cached.size) headers.set('Content-Length', String(cached.size));
-        headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-        headers.set('Access-Control-Allow-Origin', '*');
-        headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
-        if (filename) {
-          headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
-        } else {
-          headers.set('Content-Disposition', 'inline');
-        }
-        return new Response(cached.body, { status: 200, headers });
+      const pRes = await query(
+        'SELECT phone FROM whatsapp_messages WHERE media_id = $1 OR media_url LIKE $2 LIMIT 1',
+        [mediaId, `%${mediaId}%`],
+        c.env,
+        c.executionCtx
+      );
+      if (pRes.rows && pRes.rows[0]?.phone) {
+        queryPhone = (pRes.rows[0].phone || '').replace(/\D/g, '');
       }
-    } catch (r2Err) {
-      console.warn('[WhatsApp Media R2 Cache Read Warn]', r2Err.message);
+    } catch (_) {}
+  }
+
+  const last10 = queryPhone.slice(-10);
+  const possibleR2Keys = [];
+  if (queryPhone) {
+    possibleR2Keys.push(`whatsapp_media/${queryPhone}/${mediaId}`);
+    if (last10 && `91${last10}` !== queryPhone) {
+      possibleR2Keys.push(`whatsapp_media/91${last10}/${mediaId}`);
+    }
+  }
+  possibleR2Keys.push(`whatsapp_media/${mediaId}`); // legacy fallback
+
+  // 1. Check Cloudflare R2 cache first for instant delivery
+  if (c.env?.MEDIA_BUCKET) {
+    for (const key of possibleR2Keys) {
+      try {
+        const cached = await c.env.MEDIA_BUCKET.get(key);
+        if (cached) {
+          const headers = new Headers();
+          headers.set('Content-Type', cached.httpMetadata?.contentType || 'application/octet-stream');
+          if (cached.size) headers.set('Content-Length', String(cached.size));
+          headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+          headers.set('Access-Control-Allow-Origin', '*');
+          headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+          if (filename) {
+            headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+          } else {
+            headers.set('Content-Disposition', 'inline');
+          }
+          return new Response(cached.body, { status: 200, headers });
+        }
+      } catch (r2Err) {
+        console.warn('[WhatsApp Media R2 Cache Read Warn]', r2Err.message);
+      }
     }
   }
 
@@ -532,9 +565,10 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
     const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
     const arrayBuffer = await fileRes.arrayBuffer();
 
-    // 2. Cache permanently in Cloudflare R2 so it never expires after 30 days
+    // 2. Cache in Cloudflare R2 inside whatsapp_media/{contact_phone}/{mediaId}
     if (c.env?.MEDIA_BUCKET) {
-      const r2Put = c.env.MEDIA_BUCKET.put(r2Key, arrayBuffer, {
+      const primaryR2Key = queryPhone ? `whatsapp_media/${queryPhone}/${mediaId}` : `whatsapp_media/${mediaId}`;
+      const r2Put = c.env.MEDIA_BUCKET.put(primaryR2Key, arrayBuffer, {
         httpMetadata: { contentType }
       }).catch(err => console.error('[WhatsApp Media R2 Cache Save Error]', err));
       if (c.executionCtx?.waitUntil) {
@@ -788,15 +822,161 @@ whatsappRoutes.post('/retry-message/:id', authenticateToken, async (c) => {
   }
 });
 
-// DELETE /api/whatsapp/messages/:id - Delete Message
+// DELETE /api/whatsapp/messages/:id - Delete Message & Associated R2 Media
 whatsappRoutes.delete('/messages/:id', authenticateToken, async (c) => {
   try {
     const id = c.req.param('id');
+
+    // 1. Fetch message details to delete any media in R2
+    const msgRes = await query(
+      'SELECT id, phone, media_id, media_url FROM whatsapp_messages WHERE id::text = $1 OR wam_id = $1',
+      [String(id)],
+      c.env,
+      c.executionCtx
+    ).catch(() => ({ rows: [] }));
+
+    const msg = msgRes.rows?.[0];
+    if (msg && c.env?.MEDIA_BUCKET) {
+      const cleanPhone = (msg.phone || '').replace(/\D/g, '');
+      const last10 = cleanPhone.slice(-10);
+
+      // Delete media file from R2
+      if (msg.media_id) {
+        if (cleanPhone) await deleteR2Object(c.env.MEDIA_BUCKET, `whatsapp_media/${cleanPhone}/${msg.media_id}`).catch(() => {});
+        if (last10) await deleteR2Object(c.env.MEDIA_BUCKET, `whatsapp_media/91${last10}/${msg.media_id}`).catch(() => {});
+        await deleteR2Object(c.env.MEDIA_BUCKET, `whatsapp_media/${msg.media_id}`).catch(() => {});
+      }
+      if (msg.media_url) {
+        const match = msg.media_url.match(/\/api\/whatsapp\/media\/([^\s?#]+)/);
+        if (match && match[1]) {
+          if (cleanPhone) await deleteR2Object(c.env.MEDIA_BUCKET, `whatsapp_media/${cleanPhone}/${match[1]}`).catch(() => {});
+          await deleteR2Object(c.env.MEDIA_BUCKET, `whatsapp_media/${match[1]}`).catch(() => {});
+        }
+        const r2Match = msg.media_url.match(/\/api\/attachments\/r2\/([^\s?#]+)/);
+        if (r2Match && r2Match[1]) {
+          await deleteR2Object(c.env.MEDIA_BUCKET, decodeURIComponent(r2Match[1])).catch(() => {});
+        }
+      }
+    }
+
+    // 2. Delete message from database
     await query('DELETE FROM whatsapp_messages WHERE id::text = $1 OR wam_id = $1', [String(id)], c.env, c.executionCtx);
-    return c.json({ success: true, message: 'Message deleted' });
+    return c.json({ success: true, message: 'Message and media deleted successfully' });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
 });
+
+// DELETE /api/whatsapp/conversations/:phone - Remove Contact & Entire Chat History + R2 Media
+whatsappRoutes.delete('/conversations/:phone', authenticateToken, async (c) => {
+  try {
+    const rawPhone = c.req.param('phone');
+    const cleanDigits = (rawPhone || '').replace(/\D/g, '');
+    const last10 = cleanDigits.slice(-10);
+    if (!last10) {
+      return c.json({ error: 'Valid phone number is required' }, 400);
+    }
+
+    // 1. Fetch messages with media to delete individual legacy files if needed
+    const msgs = await query(
+      `SELECT media_id, media_url FROM whatsapp_messages 
+       WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1`,
+      [last10],
+      c.env,
+      c.executionCtx
+    ).catch(() => ({ rows: [] }));
+
+    if (c.env?.MEDIA_BUCKET) {
+      // Recursively delete all media in R2 under this contact's subfolder
+      await deleteR2Prefix(c.env.MEDIA_BUCKET, `whatsapp_media/${cleanDigits}/`);
+      if (cleanDigits !== `91${last10}`) {
+        await deleteR2Prefix(c.env.MEDIA_BUCKET, `whatsapp_media/91${last10}/`);
+      }
+      await deleteR2Prefix(c.env.MEDIA_BUCKET, `whatsapp_media/${last10}/`);
+
+      // Delete any legacy un-nested media files for this contact
+      for (const m of (msgs.rows || [])) {
+        if (m.media_id) {
+          await deleteR2Object(c.env.MEDIA_BUCKET, `whatsapp_media/${m.media_id}`).catch(() => {});
+        }
+      }
+    }
+
+    // 2. Delete all messages for this contact from database
+    await query(
+      `DELETE FROM whatsapp_messages 
+       WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1`,
+      [last10],
+      c.env,
+      c.executionCtx
+    );
+
+    // 3. Delete raw event logs for this contact
+    await query(
+      `DELETE FROM whatsapp_raw_events 
+       WHERE RIGHT(REGEXP_REPLACE(sender_phone, '[^0-9]', '', 'g'), 10) = $1 
+          OR RIGHT(REGEXP_REPLACE(recipient_phone, '[^0-9]', '', 'g'), 10) = $1`,
+      [last10],
+      c.env,
+      c.executionCtx
+    ).catch(() => {});
+
+    return c.json({ success: true, message: 'Contact, conversation, and all R2 media removed completely' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+/**
+ * 30-Day Disappearing Messages Purge Engine
+ * Removes WhatsApp messages, documents, and R2 media older than 30 days
+ */
+export async function runBatchExpiredWhatsAppPurge(env, ctx) {
+  try {
+    console.log('[Cron WhatsApp Purge] Starting 30-day disappearing messages purge...');
+    // 1. Fetch expired messages with media
+    const expiredRes = await query(
+      `SELECT id, phone, media_id, media_url FROM whatsapp_messages 
+       WHERE created_at < NOW() - INTERVAL '30 days'`,
+      [],
+      env,
+      ctx
+    ).catch(() => ({ rows: [] }));
+
+    const expiredMsgs = expiredRes.rows || [];
+    if (expiredMsgs.length > 0 && env?.MEDIA_BUCKET) {
+      for (const m of expiredMsgs) {
+        const cleanPhone = (m.phone || '').replace(/\D/g, '');
+        const last10 = cleanPhone.slice(-10);
+        if (m.media_id) {
+          if (cleanPhone) await deleteR2Object(env.MEDIA_BUCKET, `whatsapp_media/${cleanPhone}/${m.media_id}`).catch(() => {});
+          if (last10) await deleteR2Object(env.MEDIA_BUCKET, `whatsapp_media/91${last10}/${m.media_id}`).catch(() => {});
+          await deleteR2Object(env.MEDIA_BUCKET, `whatsapp_media/${m.media_id}`).catch(() => {});
+        }
+      }
+    }
+
+    // 2. Delete expired rows from database
+    const delRes = await query(
+      `DELETE FROM whatsapp_messages WHERE created_at < NOW() - INTERVAL '30 days'`,
+      [],
+      env,
+      ctx
+    ).catch(() => ({ rowCount: 0 }));
+
+    await query(
+      `DELETE FROM whatsapp_raw_events WHERE created_at < NOW() - INTERVAL '30 days'`,
+      [],
+      env,
+      ctx
+    ).catch(() => {});
+
+    console.log(`[Cron WhatsApp Purge] Purged ${delRes?.rowCount || expiredMsgs.length} messages older than 30 days.`);
+    return { success: true, purgedCount: delRes?.rowCount || expiredMsgs.length };
+  } catch (err) {
+    console.error('[WhatsApp 30-Day Purge Error]', err);
+    return { success: false, error: err.message };
+  }
+}
 
 export default whatsappRoutes;

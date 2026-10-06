@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { query } from '../db.js';
 import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { sendWhatsApp } from '../whatsapp.js';
-import { deleteR2Object, moveR2Object } from '../r2.js';
+import { deleteR2Object, moveR2Object, deleteR2Prefix } from '../r2.js';
 import { dispatchPushToRoles, dispatchPushToTechnician } from '../services/webPushService.js';
 
 const complaintRoutes = new Hono();
@@ -100,28 +100,14 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
       if (match) keysToDelete.add(decodeURIComponent(match[0]));
     }
 
-    // List R2 objects under complaints/${ticketId}/ prefix to ensure 100% complete purge of all media
-    if (bucket && typeof bucket.list === 'function' && ticketId) {
-      try {
-        const listed = await bucket.list({ prefix: `complaints/${ticketId}/` });
-        if (listed && listed.objects) {
-          for (const obj of listed.objects) {
-            keysToDelete.add(obj.key);
-          }
-        }
-      } catch (err) {
-        console.warn(`[R2 List Purge Error for ${ticketId}]`, err.message);
-      }
-    }
-
-    // Delete all collected objects from Cloudflare R2
-    if (bucket && keysToDelete.size > 0) {
+    // Recursively delete all objects in Cloudflare R2 under complaints/${ticketId}/ and legacy complaints/${compId}/
+    if (bucket) {
+      if (ticketId) await deleteR2Prefix(bucket, `complaints/${ticketId}/`);
+      if (compId) await deleteR2Prefix(bucket, `complaints/${compId}/`);
       for (const key of keysToDelete) {
         try {
           await deleteR2Object(bucket, key);
-        } catch (delErr) {
-          console.warn(`[Purge R2 Object Error] Key: ${key}:`, delErr.message);
-        }
+        } catch (_) {}
       }
     }
 
@@ -2005,16 +1991,9 @@ complaintRoutes.delete('/:id', authenticateToken, requireRole('admin', 'staff'),
     const ticketId = comp ? comp.ticket_id : null;
 
     // 2. Cascade delete and remove files from Cloudflare R2 for attachments
-    const attRes = await query('SELECT file_url FROM complaint_attachments WHERE complaint_id = $1', [id], c.env, c.executionCtx);
-    if (attRes.rows && attRes.rows.length > 0 && c.env.MEDIA_BUCKET) {
-      for (const att of attRes.rows) {
-        if (att.file_url) {
-          const match = att.file_url.match(/\/api\/attachments\/r2\/(.+)$/);
-          if (match && match[1]) {
-            await deleteR2Object(c.env.MEDIA_BUCKET, decodeURIComponent(match[1])).catch(() => {});
-          }
-        }
-      }
+    if (c.env?.MEDIA_BUCKET) {
+      if (ticketId) await deleteR2Prefix(c.env.MEDIA_BUCKET, `complaints/${ticketId}/`).catch(() => {});
+      await deleteR2Prefix(c.env.MEDIA_BUCKET, `complaints/${id}/`).catch(() => {});
     }
 
     // 3. Cascade delete and remove receipts from Cloudflare R2 for tour expenses

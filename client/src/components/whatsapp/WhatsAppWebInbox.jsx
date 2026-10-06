@@ -564,7 +564,7 @@ export const WhatsAppWebInbox = ({
       if (currentFile) {
         try {
           showToast(`Uploading ${currentFile.name} (up to 50MB)...`, 'info');
-          mediaData = await uploadFileToSupabase(currentFile);
+          mediaData = await uploadFileToSupabase(currentFile, selectedPhone, 'whatsapp');
         } catch (storageErr) {
           console.warn('Direct upload warning, falling back:', storageErr.message);
         }
@@ -613,6 +613,41 @@ export const WhatsAppWebInbox = ({
       loadConversations(true);
     } catch (err) {
       showToast('Failed to clear chat: ' + err.message, 'error');
+    }
+  };
+
+  const handleDeleteConversation = async (phoneToDelete = selectedPhone) => {
+    setShowHeaderMenu(false);
+    if (!phoneToDelete) return;
+    const clean = phoneToDelete.replace(/^91/, '');
+    const ok = await confirm({
+      title: 'Delete Contact & Entire Chat?',
+      message: `Are you sure you want to remove contact +91 ${clean} from the list? All messages and attachments will be permanently deleted from the database and Cloudflare R2 storage.`,
+      type: 'danger',
+      confirmText: 'Delete Permanently',
+      cancelText: 'Cancel'
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteWhatsAppConversation(phoneToDelete);
+      showToast(`Contact +91 ${clean} and all messages removed permanently`, 'success');
+      
+      setConversations(prev => {
+        const next = prev.filter(c => c.phone !== phoneToDelete && c.phone?.slice(-10) !== phoneToDelete.slice(-10));
+        try {
+          localStorage.setItem('egs_cached_wa_conversations', JSON.stringify(next));
+        } catch (_) {}
+        return next;
+      });
+
+      if (selectedPhone === phoneToDelete || selectedPhone?.slice(-10) === phoneToDelete.slice(-10)) {
+        setSelectedPhone(null);
+        setMessages([]);
+        setContactInfo(null);
+      }
+    } catch (err) {
+      showToast('Failed to delete contact: ' + err.message, 'error');
     }
   };
 
@@ -1537,7 +1572,7 @@ export const WhatsAppWebInbox = ({
                 <div
                   key={conv.phone}
                   onClick={() => setSelectedPhone(conv.phone)}
-                  className={`px-3 py-2.5 cursor-pointer transition-colors flex items-center gap-3 relative ${
+                  className={`px-3 py-2.5 cursor-pointer transition-colors flex items-center gap-3 relative group ${
                     isSelected ? 'bg-[#f0f2f5]' : 'hover:bg-[#f5f6f6] bg-white'
                   }`}
                 >
@@ -1558,11 +1593,24 @@ export const WhatsAppWebInbox = ({
                       <h4 className="font-semibold text-[13.5px] text-[#111b21] truncate">
                         {conv.sender_name || `+${conv.phone}`}
                       </h4>
-                      <span className={`text-[11px] shrink-0 ml-1 font-mono ${
-                        conv.unread_count ? 'text-[#00a884] font-bold' : 'text-[#8696a0]'
-                      }`}>
-                        {formattedTime}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                        <span className={`text-[11px] font-mono ${
+                          conv.unread_count ? 'text-[#00a884] font-bold' : 'text-[#8696a0]'
+                        }`}>
+                          {formattedTime}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteConversation(conv.phone);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
+                          title="Delete contact & chat history"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between gap-1">
@@ -1797,6 +1845,14 @@ export const WhatsAppWebInbox = ({
                     >
                       <X className="w-4 h-4 text-rose-600" />
                       <span>Clear Chat History</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteConversation(selectedPhone)}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-600" />
+                      <span>Delete Contact & All History</span>
                     </button>
                     <button
                       type="button"
