@@ -50,6 +50,110 @@ commonRoutes.get('/version', (c) => {
 const pincodeMemoryCache = new Map();
 const postOfficeMemoryCache = new Map();
 
+// Government of India Open Data API Key
+const DATA_GOV_IN_API_KEY = '579b464db66ec23bdd0000012c27c3f7e3374a84564790b8ff6603c3';
+
+// Curated Local Directory for Gujarat & Saurashtra Villages, Towns & Talukas
+const LOCAL_VILLAGE_DIRECTORY = [
+  { name: 'Ankolwadi', postOffice: 'Akolvadi (Ankolwadi)', pincode: '362140', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Talala', aliases: ['ankolwadi', 'akolvadi', 'akolwadi', 'ankolvadi'] },
+  { name: 'Akolvadi', postOffice: 'Akolvadi', pincode: '362140', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Talala', aliases: ['akolvadi', 'ankolwadi'] },
+  { name: 'Talala', postOffice: 'Talala', pincode: '362150', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Talala', aliases: ['talala'] },
+  { name: 'Bhayavadar', postOffice: 'Bhayavadar (M)', pincode: '360450', district: 'Rajkot', state: 'Gujarat', taluka: 'Upleta', aliases: ['bhayavadar', 'bhayavadar m'] },
+  { name: 'Metoda', postOffice: 'Metoda GIDC', pincode: '360021', district: 'Rajkot', state: 'Gujarat', taluka: 'Lodhika', aliases: ['metoda', 'metoda gidc'] },
+  { name: 'Khirsara', postOffice: 'Khirsara', pincode: '360025', district: 'Rajkot', state: 'Gujarat', taluka: 'Lodhika', aliases: ['khirsara'] },
+  { name: 'Chhapra', postOffice: 'Chhapra', pincode: '360024', district: 'Rajkot', state: 'Gujarat', taluka: 'Lodhika', aliases: ['chhapra'] },
+  { name: 'Shapar', postOffice: 'Shapar (Veraval)', pincode: '360024', district: 'Rajkot', state: 'Gujarat', taluka: 'Kotda Sangani', aliases: ['shapar', 'shapar veraval'] },
+  { name: 'Veraval', postOffice: 'Veraval', pincode: '362265', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Veraval', aliases: ['veraval'] },
+  { name: 'Somnath', postOffice: 'Prabhas Patan (Somnath)', pincode: '362268', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Veraval', aliases: ['somnath', 'prabhas patan'] },
+  { name: 'Kodinar', postOffice: 'Kodinar', pincode: '362720', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Kodinar', aliases: ['kodinar'] },
+  { name: 'Una', postOffice: 'Una', pincode: '362560', district: 'Gir Somnath', state: 'Gujarat', taluka: 'Una', aliases: ['una'] },
+  { name: 'Keshod', postOffice: 'Keshod', pincode: '362220', district: 'Junagadh', state: 'Gujarat', taluka: 'Keshod', aliases: ['keshod'] },
+  { name: 'Mendarda', postOffice: 'Mendarda', pincode: '362260', district: 'Junagadh', state: 'Gujarat', taluka: 'Mendarda', aliases: ['mendarda'] },
+  { name: 'Visavadar', postOffice: 'Visavadar', pincode: '362130', district: 'Junagadh', state: 'Gujarat', taluka: 'Visavadar', aliases: ['visavadar'] },
+  { name: 'Manavadar', postOffice: 'Manavadar', pincode: '362630', district: 'Junagadh', state: 'Gujarat', taluka: 'Manavadar', aliases: ['manavadar'] },
+  { name: 'Junagadh', postOffice: 'Junagadh Head Post Office', pincode: '362001', district: 'Junagadh', state: 'Gujarat', taluka: 'Junagadh', aliases: ['junagadh'] },
+  { name: 'Rajkot', postOffice: 'Rajkot Head Post Office', pincode: '360001', district: 'Rajkot', state: 'Gujarat', taluka: 'Rajkot', aliases: ['rajkot'] },
+  { name: 'Gondal', postOffice: 'Gondal', pincode: '360311', district: 'Rajkot', state: 'Gujarat', taluka: 'Gondal', aliases: ['gondal'] },
+  { name: 'Jetpur', postOffice: 'Jetpur', pincode: '360370', district: 'Rajkot', state: 'Gujarat', taluka: 'Jetpur', aliases: ['jetpur'] },
+  { name: 'Upleta', postOffice: 'Upleta', pincode: '360490', district: 'Rajkot', state: 'Gujarat', taluka: 'Upleta', aliases: ['upleta'] },
+  { name: 'Dhoraji', postOffice: 'Dhoraji', pincode: '360410', district: 'Rajkot', state: 'Gujarat', taluka: 'Dhoraji', aliases: ['dhoraji'] },
+  { name: 'Jasdan', postOffice: 'Jasdan', pincode: '360050', district: 'Rajkot', state: 'Gujarat', taluka: 'Jasdan', aliases: ['jasdan'] },
+  { name: 'Jamnagar', postOffice: 'Jamnagar Head Post Office', pincode: '361001', district: 'Jamnagar', state: 'Gujarat', taluka: 'Jamnagar', aliases: ['jamnagar'] },
+  { name: 'Porbandar', postOffice: 'Porbandar Head Post Office', pincode: '360575', district: 'Porbandar', state: 'Gujarat', taluka: 'Porbandar', aliases: ['porbandar'] },
+  { name: 'Amreli', postOffice: 'Amreli Head Post Office', pincode: '365601', district: 'Amreli', state: 'Gujarat', taluka: 'Amreli', aliases: ['amreli'] },
+  { name: 'Savarkundla', postOffice: 'Savarkundla', pincode: '364515', district: 'Amreli', state: 'Gujarat', taluka: 'Savarkundla', aliases: ['savarkundla'] },
+  { name: 'Bagasara', postOffice: 'Bagasara', pincode: '365440', district: 'Amreli', state: 'Gujarat', taluka: 'Bagasara', aliases: ['bagasara'] },
+  { name: 'Dhari', postOffice: 'Dhari', pincode: '365640', district: 'Amreli', state: 'Gujarat', taluka: 'Dhari', aliases: ['dhari'] },
+  { name: 'Bhavnagar', postOffice: 'Bhavnagar Head Post Office', pincode: '364001', district: 'Bhavnagar', state: 'Gujarat', taluka: 'Bhavnagar', aliases: ['bhavnagar'] },
+  { name: 'Morbi', postOffice: 'Morbi', pincode: '363641', district: 'Morbi', state: 'Gujarat', taluka: 'Morbi', aliases: ['morbi'] },
+  { name: 'Wankaner', postOffice: 'Wankaner', pincode: '363621', district: 'Morbi', state: 'Gujarat', taluka: 'Wankaner', aliases: ['wankaner'] },
+  { name: 'Surendranagar', postOffice: 'Surendranagar', pincode: '363001', district: 'Surendranagar', state: 'Gujarat', taluka: 'Wadhwan', aliases: ['surendranagar', 'wadhwan'] },
+  { name: 'Halvad', postOffice: 'Halvad', pincode: '363330', district: 'Morbi', state: 'Gujarat', taluka: 'Halvad', aliases: ['halvad'] },
+  { name: 'Dhrangadhra', postOffice: 'Dhrangadhra', pincode: '363310', district: 'Surendranagar', state: 'Gujarat', taluka: 'Dhrangadhra', aliases: ['dhrangadhra'] },
+  { name: 'Ahmedabad', postOffice: 'Ahmedabad General Post Office', pincode: '380001', district: 'Ahmedabad', state: 'Gujarat', taluka: 'Ahmedabad', aliases: ['ahmedabad'] },
+  { name: 'Gandhinagar', postOffice: 'Gandhinagar Sector 16', pincode: '382010', district: 'Gandhinagar', state: 'Gujarat', taluka: 'Gandhinagar', aliases: ['gandhinagar'] },
+  { name: 'Vadodara', postOffice: 'Vadodara Head Post Office', pincode: '390001', district: 'Vadodara', state: 'Gujarat', taluka: 'Vadodara', aliases: ['vadodara', 'baroda'] },
+  { name: 'Surat', postOffice: 'Surat Head Post Office', pincode: '395001', district: 'Surat', state: 'Gujarat', taluka: 'Surat', aliases: ['surat'] },
+  { name: 'Anand', postOffice: 'Anand Head Post Office', pincode: '388001', district: 'Anand', state: 'Gujarat', taluka: 'Anand', aliases: ['anand'] },
+  { name: 'Nadiad', postOffice: 'Nadiad', pincode: '387001', district: 'Kheda', state: 'Gujarat', taluka: 'Nadiad', aliases: ['nadiad'] },
+  { name: 'Mehsana', postOffice: 'Mehsana', pincode: '384001', district: 'Mehsana', state: 'Gujarat', taluka: 'Mehsana', aliases: ['mehsana'] },
+  { name: 'Bhuj', postOffice: 'Bhuj Head Post Office', pincode: '370001', district: 'Kutch', state: 'Gujarat', taluka: 'Bhuj', aliases: ['bhuj'] }
+];
+
+// Helper: Query data.gov.in Pincode API with timeout
+async function fetchFromDataGovIn(filterParam) {
+  try {
+    const url = `https://api.data.gov.in/resource/6176ee09-3d56-4a3b-8115-21841576b2f6?api-key=${DATA_GOV_IN_API_KEY}&format=json&limit=25&${filterParam}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    if (Array.isArray(data?.records)) {
+      return data.records.map(r => ({
+        postOffice: r.officename || r.office_name,
+        pincode: String(r.pincode || '').trim(),
+        district: r.districtname || r.district || '',
+        state: r.statename || r.state || '',
+        taluka: r.taluk || r.taluka || '',
+        deliveryStatus: r.deliverystatus || 'Delivery'
+      })).filter(x => x.pincode && x.postOffice);
+    }
+  } catch (_) {}
+  return [];
+}
+
+// Helper: Generate smart phonetic/spelling search variants (e.g. ankolwadi -> akolvadi)
+function generateSpellingVariants(query) {
+  const q = query.toLowerCase().trim();
+  const variants = new Set([q]);
+
+  // wadi <-> vadi
+  if (q.includes('wadi')) variants.add(q.replace(/wadi/g, 'vadi'));
+  if (q.includes('vadi')) variants.add(q.replace(/vadi/g, 'wadi'));
+
+  // ankol <-> akol
+  if (q.startsWith('ankol')) {
+    variants.add(q.replace(/^ankol/, 'akol'));
+    variants.add(q.replace(/^ankol/, 'akol').replace(/wadi/g, 'vadi'));
+  }
+  if (q.startsWith('akol')) {
+    variants.add(q.replace(/^akol/, 'ankol'));
+    variants.add(q.replace(/^akol/, 'ankol').replace(/vadi/g, 'wadi'));
+  }
+
+  // w <-> v
+  if (q.includes('w')) variants.add(q.replace(/w/g, 'v'));
+  if (q.includes('v')) variants.add(q.replace(/v/g, 'w'));
+
+  // pur <-> pura
+  if (q.endsWith('pur')) variants.add(q + 'a');
+  if (q.endsWith('pura')) variants.add(q.slice(0, -1));
+
+  return Array.from(variants);
+}
+
 // GET /api/location/pincode/:pincode
 commonRoutes.get('/location/pincode/:pincode', async (c) => {
   const pincode = (c.req.param('pincode') || '').replace(/\D/g, '');
@@ -80,35 +184,56 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
   } catch (_) {}
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    // 3. Try standard Postal API
+    let postalData = null;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const resp = await fetch(`https://api.postalpincode.in/pincode/${pincode}`, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.5' }
+      });
+      clearTimeout(timeoutId);
+      if (resp.ok) postalData = await resp.json();
+    } catch (_) {}
 
-    const resp = await fetch(`https://api.postalpincode.in/pincode/${pincode}`, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.2' }
-    });
-    clearTimeout(timeoutId);
+    // Check if local directory has entries for this pincode
+    const localMatches = LOCAL_VILLAGE_DIRECTORY.filter(v => v.pincode === pincode);
 
-    const data = await resp.json();
-
-    if (Array.isArray(data) && data[0]?.Status === 'Success' && data[0]?.PostOffice?.length > 0) {
-      const offices = data[0].PostOffice;
+    if (Array.isArray(postalData) && postalData[0]?.Status === 'Success' && postalData[0]?.PostOffice?.length > 0) {
+      const offices = postalData[0].PostOffice;
       const primary = offices[0];
+
+      // Merge local village names if not already present
+      const officeNames = new Set(offices.map(o => (o.Name || '').toLowerCase()));
+      const mergedOffices = offices.map(o => ({
+        name: o.Name,
+        district: o.District,
+        state: o.State,
+        deliveryStatus: o.DeliveryStatus
+      }));
+
+      for (const loc of localMatches) {
+        if (!officeNames.has(loc.name.toLowerCase())) {
+          mergedOffices.unshift({
+            name: `${loc.name} (${loc.postOffice})`,
+            district: loc.district,
+            state: loc.state,
+            deliveryStatus: 'Delivery'
+          });
+        }
+      }
+
       const result = {
         success: true,
         pincode,
-        city: primary.Name || primary.Division || '',
-        district: primary.District || '',
-        state: primary.State || '',
-        postOffices: offices.map(o => ({
-          name: o.Name,
-          district: o.District,
-          state: o.State,
-          deliveryStatus: o.DeliveryStatus
-        }))
+        city: localMatches[0]?.name || primary.Name || primary.Division || '',
+        district: primary.District || localMatches[0]?.district || '',
+        state: primary.State || localMatches[0]?.state || '',
+        postOffices: mergedOffices,
+        villages: mergedOffices.map(o => o.name)
       };
 
-      // Store in memory cache (cap to 500 entries)
       if (pincodeMemoryCache.size > 500) {
         const oldestKey = pincodeMemoryCache.keys().next().value;
         pincodeMemoryCache.delete(oldestKey);
@@ -119,12 +244,54 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
       jsonResp.headers.set('Cache-Control', 'public, max-age=86400, s-maxage=604800');
       jsonResp.headers.set('X-Cache', 'MISS');
 
-      // Put into Cloudflare Edge Cache asynchronously
       if (cache) {
         c.executionCtx?.waitUntil(cache.put(cacheKey, jsonResp.clone()));
       }
 
       return jsonResp;
+    }
+
+    // 4. Fallback to Local Directory if Postal API failed or had no records
+    if (localMatches.length > 0) {
+      const first = localMatches[0];
+      const result = {
+        success: true,
+        pincode,
+        city: first.name,
+        district: first.district,
+        state: first.state,
+        postOffices: localMatches.map(m => ({
+          name: m.postOffice,
+          district: m.district,
+          state: m.state,
+          deliveryStatus: 'Delivery'
+        })),
+        villages: localMatches.map(m => m.name)
+      };
+      pincodeMemoryCache.set(pincode, result);
+      return c.json(result);
+    }
+
+    // 5. Fallback: Query data.gov.in API with filters[pincode]
+    const govRecords = await fetchFromDataGovIn(`filters%5Bpincode%5D=${pincode}`);
+    if (govRecords.length > 0) {
+      const primary = govRecords[0];
+      const result = {
+        success: true,
+        pincode,
+        city: primary.postOffice,
+        district: primary.district,
+        state: primary.state,
+        postOffices: govRecords.map(r => ({
+          name: r.postOffice,
+          district: r.district,
+          state: r.state,
+          deliveryStatus: r.deliveryStatus
+        })),
+        villages: govRecords.map(r => r.postOffice)
+      };
+      pincodeMemoryCache.set(pincode, result);
+      return c.json(result);
     }
 
     return c.json({ success: false, error: 'Pincode not found in national registry' }, 404);
@@ -151,70 +318,137 @@ const handleLocationSearch = async (c) => {
     return c.json(postOfficeMemoryCache.get(cacheKey));
   }
 
+  const seen = new Set();
+  const results = [];
+  const pincodeMap = new Map();
+
+  const addResult = (item) => {
+    if (!item.pincode || !item.postOffice) return;
+    const key = `${item.pincode}_${item.postOffice}`.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push({
+        postOffice: item.postOffice,
+        pincode: item.pincode,
+        district: item.district,
+        state: item.state,
+        branchType: item.branchType || 'Branch Post Office',
+        deliveryStatus: item.deliveryStatus || 'Delivery'
+      });
+    }
+
+    if (!pincodeMap.has(item.pincode)) {
+      pincodeMap.set(item.pincode, {
+        pincode: item.pincode,
+        district: item.district,
+        state: item.state,
+        postOffices: [item.postOffice]
+      });
+    } else {
+      const entry = pincodeMap.get(item.pincode);
+      if (!entry.postOffices.includes(item.postOffice) && entry.postOffices.length < 6) {
+        entry.postOffices.push(item.postOffice);
+      }
+    }
+  };
+
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6500);
-
-    const resp = await fetch(`https://api.postalpincode.in/postoffice/${encodeURIComponent(rawQuery)}`, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.2' }
-    });
-    clearTimeout(timeoutId);
-
-    if (!resp.ok) {
-      return c.json({
-        success: false,
-        message: 'Postal service error',
-        results: [],
-        recommendedPincodes: []
-      }, 502);
-    }
-
-    const data = await resp.json();
-
-    if (
-      !Array.isArray(data) ||
-      data.length === 0 ||
-      data[0].Status !== 'Success' ||
-      !Array.isArray(data[0].PostOffice)
-    ) {
-      const emptyRes = {
-        success: true,
-        query: rawQuery,
-        results: [],
-        recommendedPincodes: []
-      };
-      return c.json(emptyRes);
-    }
-
-    const rawOffices = data[0].PostOffice;
     const qLower = rawQuery.toLowerCase();
+    const variants = generateSpellingVariants(rawQuery);
 
-    // Sort to prioritize direct matches on district or name
-    const sortedOffices = [...rawOffices].sort((a, b) => {
-      const aDistMatch = (a.District || '').toLowerCase() === qLower;
-      const bDistMatch = (b.District || '').toLowerCase() === qLower;
-      if (aDistMatch && !bDistMatch) return -1;
-      if (!aDistMatch && bDistMatch) return 1;
+    // Tier 1: Check Local Pre-seeded Directory (Immediate match for villages like Ankolwadi)
+    for (const loc of LOCAL_VILLAGE_DIRECTORY) {
+      const matches = loc.aliases.some(a => variants.some(v => a.includes(v) || v.includes(a))) ||
+                      loc.name.toLowerCase().includes(qLower) ||
+                      loc.taluka.toLowerCase().includes(qLower);
+      if (matches) {
+        addResult({
+          postOffice: loc.name,
+          pincode: loc.pincode,
+          district: loc.district,
+          state: loc.state,
+          branchType: 'Village / Branch Post Office',
+          deliveryStatus: 'Delivery'
+        });
+        if (loc.postOffice !== loc.name) {
+          addResult({
+            postOffice: loc.postOffice,
+            pincode: loc.pincode,
+            district: loc.district,
+            state: loc.state,
+            branchType: 'Sub Post Office',
+            deliveryStatus: 'Delivery'
+          });
+        }
+      }
+    }
 
-      const aNameStarts = (a.Name || '').toLowerCase().startsWith(qLower);
-      const bNameStarts = (b.Name || '').toLowerCase().startsWith(qLower);
-      if (aNameStarts && !bNameStarts) return -1;
-      if (!aNameStarts && bNameStarts) return 1;
+    // Tier 2: Check Postgres Database complaints table for known customer records
+    try {
+      const dbRes = await query(
+        `SELECT DISTINCT city, district, state, pincode FROM complaints 
+         WHERE (city ILIKE $1 OR customer_address ILIKE $1) AND pincode IS NOT NULL AND length(pincode) = 6 
+         LIMIT 8`,
+        [`%${rawQuery}%`],
+        c.env,
+        c.executionCtx
+      );
+      if (dbRes?.rows) {
+        for (const row of dbRes.rows) {
+          addResult({
+            postOffice: row.city,
+            pincode: row.pincode,
+            district: row.district || 'Gujarat Region',
+            state: row.state || 'Gujarat',
+            branchType: 'Customer Location',
+            deliveryStatus: 'Active Service Zone'
+          });
+        }
+      }
+    } catch (_) {}
 
-      return 0;
+    // Tier 3: Query India Post API for rawQuery and best variant concurrently
+    const postalQueries = [rawQuery];
+    if (variants.length > 1 && variants[1] !== rawQuery.toLowerCase()) {
+      postalQueries.push(variants[1]);
+    }
+
+    const postalPromises = postalQueries.map(async (searchWord) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const resp = await fetch(`https://api.postalpincode.in/postoffice/${encodeURIComponent(searchWord)}`, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.5' }
+        });
+        clearTimeout(timeoutId);
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        if (Array.isArray(data) && data[0]?.Status === 'Success' && Array.isArray(data[0]?.PostOffice)) {
+          return data[0].PostOffice;
+        }
+      } catch (_) {}
+      return [];
     });
 
-    const seen = new Set();
-    const results = [];
-    const pincodeMap = new Map();
+    // Tier 4: Concurrently check data.gov.in API with user's key
+    const govPromise = fetchFromDataGovIn(`filters%5Bofficename%5D=${encodeURIComponent(rawQuery)}`);
 
-    for (const po of sortedOffices) {
-      if (!po.Pincode) continue;
-      const key = `${po.Pincode}_${po.Name}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        results.push({
+    const [postalOfficesLists, govRecords] = await Promise.all([
+      Promise.all(postalPromises),
+      govPromise
+    ]);
+
+    // Add Government OGD results
+    for (const gr of govRecords) {
+      addResult(gr);
+    }
+
+    // Add India Post results
+    for (const poList of postalOfficesLists) {
+      for (const po of poList) {
+        if (!po.Pincode || !po.Name) continue;
+        addResult({
           postOffice: po.Name,
           pincode: po.Pincode,
           district: po.District,
@@ -222,23 +456,8 @@ const handleLocationSearch = async (c) => {
           branchType: po.BranchType,
           deliveryStatus: po.DeliveryStatus
         });
+        if (results.length >= 35) break;
       }
-
-      if (!pincodeMap.has(po.Pincode)) {
-        pincodeMap.set(po.Pincode, {
-          pincode: po.Pincode,
-          district: po.District,
-          state: po.State,
-          postOffices: [po.Name]
-        });
-      } else {
-        const entry = pincodeMap.get(po.Pincode);
-        if (!entry.postOffices.includes(po.Name) && entry.postOffices.length < 5) {
-          entry.postOffices.push(po.Name);
-        }
-      }
-
-      if (results.length >= 35) break;
     }
 
     const recommendedPincodes = Array.from(pincodeMap.values());
@@ -246,8 +465,8 @@ const handleLocationSearch = async (c) => {
     const responseData = {
       success: true,
       query: rawQuery,
-      results,
-      recommendedPincodes
+      results: results.slice(0, 35),
+      recommendedPincodes: recommendedPincodes.slice(0, 15)
     };
 
     if (postOfficeMemoryCache.size > 500) {
@@ -258,20 +477,12 @@ const handleLocationSearch = async (c) => {
 
     return c.json(responseData);
   } catch (err) {
-    if (err.name === 'AbortError') {
-      return c.json({
-        success: false,
-        message: 'Postal service timed out',
-        results: [],
-        recommendedPincodes: []
-      }, 504);
-    }
     return c.json({
       success: false,
       message: 'Failed to search location',
       error: err.message,
-      results: [],
-      recommendedPincodes: []
+      results: results.slice(0, 35),
+      recommendedPincodes: Array.from(pincodeMap.values()).slice(0, 15)
     }, 500);
   }
 };

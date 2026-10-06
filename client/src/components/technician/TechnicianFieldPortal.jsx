@@ -629,28 +629,28 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   };
 
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full max-w-full min-w-0 space-y-4">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-4 sm:p-6 rounded-2xl shadow-md">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-white/10 rounded-xl">
-              <Wrench className="w-6 h-6 text-amber-300" />
+      <div className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-3.5 sm:p-6 rounded-2xl shadow-md w-full max-w-full min-w-0">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+            <div className="p-2.5 sm:p-3 bg-white/10 rounded-xl shrink-0">
+              <Wrench className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" />
             </div>
-            <div>
-              <span className="text-[11px] uppercase font-mono tracking-wider text-emerald-200">
+            <div className="min-w-0">
+              <span className="text-[10px] sm:text-[11px] uppercase font-mono tracking-wider text-emerald-200 block truncate">
                 {currentUser?.role === 'technician' ? 'Technician Field Workspace' : 'Field Operations & Cash Management'}
               </span>
-              <h2 className="text-lg sm:text-xl font-black">
+              <h2 className="text-base sm:text-xl font-black truncate">
                 {currentUser?.role === 'technician' ? (techProfile?.name || currentUser?.name) : (currentUser?.name || 'Admin Supervisor')}
               </h2>
-              <p className="text-xs text-emerald-100">
+              <p className="text-[11px] sm:text-xs text-emerald-100 truncate">
                 Service Zone: <strong>{techProfile?.area_zone || 'All Gujarat & Bengaluru Territories'}</strong>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
             {/* Live Duty Toggle Button (for technicians) */}
             {techProfile && (
               <button
@@ -680,13 +680,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
       {/* Technician / Specialist Filter Bar for Admin / Staff (ECO-19) */}
       {currentUser?.role !== 'technician' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+        <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3 w-full max-w-full min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="p-2 bg-emerald-100 text-emerald-800 rounded-xl shrink-0">
               <Users className="w-4 h-4" />
             </span>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-slate-800">Technician Specialist Filter:</span>
                 {selectedAdminTechId && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -694,13 +694,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 truncate">
                 Filter Field Tasks, Collection Register, and Tour Ledgers for a specific technician
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <select
               value={selectedAdminTechId || (technicians[0]?.id ? String(technicians[0].id) : '')}
               onChange={(e) => {
@@ -708,7 +708,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                 handleAdminTechSelect(val);
                 setExpandedTechId(val);
               }}
-              className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
+              className="w-full sm:w-auto text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
             >
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -721,29 +721,29 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       )}
 
       {/* Section View Switcher: Field Tasks vs Cash Collection */}
-      <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 shadow-2xs">
+      <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none w-full max-w-full">
         <button
           type="button"
           onClick={() => handleSectionSwitch('field_ops')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             section === 'field_ops'
               ? 'bg-emerald-800 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
         >
-          <Wrench className="w-4 h-4" />
+          <Wrench className="w-4 h-4 shrink-0" />
           <span>Field Tasks ({scopedComplaints.length})</span>
         </button>
         <button
           type="button"
           onClick={() => handleSectionSwitch('collection')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             section === 'collection'
               ? 'bg-emerald-800 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
         >
-          <IndianRupee className="w-4 h-4" />
+          <IndianRupee className="w-4 h-4 shrink-0" />
           <span>Collection Register</span>
           {(myTechData?.cashInHandDue || 0) > 0 && (
             <span className="bg-amber-400 text-amber-950 text-[10px] font-black px-1.5 py-0.5 rounded-full ml-1">
@@ -754,13 +754,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         <button
           type="button"
           onClick={() => handleSectionSwitch('tour_ledger')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             section === 'tour_ledger'
               ? 'bg-emerald-800 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
         >
-          <FileText className="w-4 h-4" />
+          <FileText className="w-4 h-4 shrink-0" />
           <span>Tour Ledger & Vouchers</span>
         </button>
       </div>
@@ -1070,8 +1070,8 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                           {collectionSearchTerm ? 'No cash records match your search query.' : 'No cash payments collected by this technician yet.'}
                         </div>
                       ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200 overflow-hidden">
+                        <div className="w-full max-w-full min-w-0 overflow-x-auto">
+                          <table className="w-full min-w-[650px] text-left text-xs bg-white rounded-xl border border-slate-200 overflow-hidden">
                             <thead>
                               <tr className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
                                 <th className="py-2.5 px-3">Ticket ID</th>

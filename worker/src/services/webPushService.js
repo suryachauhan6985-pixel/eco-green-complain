@@ -74,9 +74,16 @@ async function sendToSubscription(subRow, payload, env, ctx) {
       vapid
     );
 
+    const headers = new Headers(pushPayload.headers);
+    headers.set('Urgency', 'high');
+    headers.set('TTL', '86400');
+    if (payload?.tag) {
+      headers.set('Topic', String(payload.tag).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32));
+    }
+
     const resp = await fetch(subRow.endpoint, {
       method: 'POST',
-      headers: pushPayload.headers,
+      headers,
       body: pushPayload.body
     });
 

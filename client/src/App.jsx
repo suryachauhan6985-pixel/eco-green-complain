@@ -440,10 +440,10 @@ function AppContent() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-slate-50 font-sans">
+    <div className="h-[100dvh] w-full max-w-full min-w-0 flex flex-col overflow-x-hidden overflow-y-hidden bg-slate-50 font-sans">
       {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
       {/* Top Main Navigation (Sticky Header) */}
-      <div className="shrink-0 z-30">
+      <div className="shrink-0 z-30 w-full max-w-full">
         <Navbar
           currentTab={currentTab}
           setCurrentTab={handleTabChange}
@@ -457,10 +457,10 @@ function AppContent() {
       </div>
 
       {/* Main Page Content — Spreads horizontally on wide screens, responsive on mobile */}
-      <main className={`flex-1 min-h-0 w-full mx-auto ${
+      <main className={`flex-1 min-h-0 w-full max-w-full min-w-0 mx-auto ${
         currentTab === 'whatsapp-inbox' 
           ? 'overflow-hidden p-0 max-w-full flex flex-col' 
-          : 'overflow-y-auto max-w-[1780px] p-3 sm:p-5 lg:p-6'
+          : 'overflow-y-auto overflow-x-hidden max-w-[1780px] p-2.5 sm:p-5 lg:p-6'
       }`}>
         <React.Suspense fallback={<LoadingFallback />}>
           {currentTab === 'complaints' && (

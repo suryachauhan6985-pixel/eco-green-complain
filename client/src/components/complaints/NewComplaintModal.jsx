@@ -425,12 +425,13 @@ export const NewComplaintModal = ({
         setPincodeVerifiedData(res);
         setPincodePostOffices(res.villages || res.postOffices || []);
 
+        const fallbackCity = res.city || (res.postOffices && res.postOffices[0]?.name) || (res.villages && res.villages[0]) || '';
         setFormData(prev => ({
           ...prev,
           pincode: clean,
           district: res.district || prev.district,
           state: res.state || prev.state,
-          city: prev.city || ''
+          city: prev.city || fallbackCity
         }));
       } else {
         setPincodeStatus('invalid');
@@ -1787,20 +1788,20 @@ export const NewComplaintModal = ({
                         if (!val) {
                           setShowCitySuggestions(false);
                           setCitySuggestions([]);
-                        } else if (!formData.pincode) {
+                        } else {
                           setShowCitySuggestions(true);
                         }
                       }}
                       onFocus={() => {
-                        if (!formData.city && citySuggestions.length > 0) {
+                        if (citySuggestions.length > 0) {
                           setShowCitySuggestions(true);
                         }
                       }}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     />
 
-                    {/* Autosuggest Dropdown for City/Village Search (ONLY when City is blank/typing) */}
-                    {showCitySuggestions && !formData.city && citySuggestions.length > 0 && (
+                    {/* Autosuggest Dropdown for City/Village Search */}
+                    {showCitySuggestions && citySuggestions.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                         <div className="p-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
                           <span>Matching Locations ({citySuggestions.length})</span>

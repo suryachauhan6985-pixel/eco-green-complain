@@ -66,9 +66,12 @@ export const ComplaintList = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExportingCsv, setIsExportingCsv] = useState(false);
 
-  // View Mode: 'list' (default) or 'card' - persisted in localStorage
+  // View Mode: 'list' (default on desktop) or 'card' (default on mobile) - persisted in localStorage
   const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('egs_complaints_view_mode') || 'list';
+    const saved = localStorage.getItem('egs_complaints_view_mode');
+    if (saved) return saved;
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return 'card';
+    return 'list';
   });
 
   const handleViewModeChange = (mode) => {
@@ -459,12 +462,12 @@ export const ComplaintList = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-full min-w-0 space-y-4">
       {/* Top Controls Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3 w-full max-w-full min-w-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 w-full max-w-full">
           {/* Search Form */}
-          <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-xl lg:max-w-2xl">
+          <form onSubmit={handleSearchSubmit} className="relative flex-1 w-full max-w-full sm:max-w-xl lg:max-w-2xl">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -491,7 +494,7 @@ export const ComplaintList = ({
           </form>
 
           {/* Action & View Mode Toggle Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto justify-start sm:justify-end">
             {/* View Mode Toggle (List vs Card) */}
             <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
               <button
@@ -662,7 +665,7 @@ export const ComplaintList = ({
       </div>
 
       {/* Complaints Container */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden w-full max-w-full min-w-0">
         {(() => {
           const displayedComplaints = nonStatusFilteredComplaints.filter(c => {
             // Status Filter
@@ -703,9 +706,9 @@ export const ComplaintList = ({
           }
 
           return viewMode === 'list' ? (
-            /* COMPACT LIST / TABLE VIEW — Expands across widescreen desktop */
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            /* COMPACT LIST / TABLE VIEW — Expands across widescreen desktop, scrolls safely inside card on mobile */
+            <div className="w-full max-w-full min-w-0 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                     <th className="py-3 px-4">Ticket & Product</th>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-support-v264';
+const CACHE_NAME = 'ecogreen-support-v265';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
@@ -44,6 +44,9 @@ self.addEventListener('message', (event) => {
       badge: badge || '/support-icon-192.png',
       tag: tag || (data?.ticketId ? `ticket-${data.ticketId}` : `egs-alert-${Date.now()}`),
       renotify: true,
+      requireInteraction: true,
+      silent: false,
+      vibrate: [300, 100, 300, 100, 300],
       data: data || { url: '/complaints' }
     });
   }
@@ -69,6 +72,9 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/support-icon-192.png',
     tag: data.tag || (data.ticketId ? `ticket-${data.ticketId}` : `egs-push-${Date.now()}`),
     renotify: true,
+    requireInteraction: true,
+    silent: false,
+    vibrate: [300, 100, 300, 100, 300],
     data: {
       url: targetUrl,
       ticketId: data.ticketId || null
