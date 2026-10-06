@@ -46,6 +46,10 @@ async function ensureRetentionSchema(env, ctx) {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS documents_purged_at TIMESTAMP;
       ALTER TABLE complaint_attachments ADD COLUMN IF NOT EXISTS is_purged INT DEFAULT 0;
       ALTER TABLE complaint_attachments ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(50) DEFAULT 'registration';
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS pincode TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS district TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS state TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS post_office TEXT;
     `, [], env, ctx);
     retentionSchemaEnsured = true;
   } catch (_) {}
@@ -558,21 +562,30 @@ async function handleCreateComplaint(c, isPublic = false) {
   const ticket_id = await generateNextTicketId(c.env, c.executionCtx);
   const user = c.get('user');
 
+  await ensureRetentionSchema(c.env, c.executionCtx);
+
+  const cleanPin = (body.pincode || (body.customer_address ? (body.customer_address.match(/\b\d{6}\b/) || [])[0] : '') || '').trim();
+  const cleanDist = (body.district || '').trim();
+  const cleanState = (body.state || '').trim();
+  const cleanPostOffice = (body.post_office || '').trim();
+
   const insertSql = `
     INSERT INTO complaints (
       ticket_id, customer_name, customer_phone, customer_email, customer_address,
-      city, consumer_no, order_no, invoice_no, invoice_date, location_url,
+      city, district, state, pincode, post_office,
+      consumer_no, order_no, invoice_no, invoice_date, location_url,
       is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
       product_type, product_serial, installation_id, issue_category, issue_description,
       priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
       dealer_name, created_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5,
-      $6, $7, $8, $9, $10, $11,
-      $12, $13, $14, $15, $16,
-      $17, $18, $19, $20, $21,
-      $22, $23, $24, $25, $26,
-      $27, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      $6, $7, $8, $9, $10,
+      $11, $12, $13, $14, $15,
+      $16, $17, $18, $19, $20,
+      $21, $22, $23, $24, $25,
+      $26, $27, $28, $29, $30,
+      $31, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     ) RETURNING *
   `;
 
@@ -583,6 +596,10 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.customer_email || '',
     body.customer_address || '',
     body.city || '',
+    cleanDist,
+    cleanState,
+    cleanPin,
+    cleanPostOffice,
     body.consumer_no || '',
     body.order_no || '',
     body.invoice_no || '',
@@ -1808,6 +1825,13 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       newPaymentStatus = 'Not Applicable';
     }
 
+    await ensureRetentionSchema(c.env, c.executionCtx);
+
+    const cleanDistrict = b.district !== undefined ? (b.district ? b.district.trim() : null) : null;
+    const cleanState = b.state !== undefined ? (b.state ? b.state.trim() : null) : null;
+    const cleanPincode = b.pincode !== undefined ? (b.pincode ? b.pincode.trim() : null) : null;
+    const cleanPostOffice = b.post_office !== undefined ? (b.post_office ? b.post_office.trim() : null) : null;
+
     await query(`
       UPDATE complaints SET
         customer_name = COALESCE($1, customer_name),
@@ -1815,32 +1839,40 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         customer_email = COALESCE($3, customer_email),
         customer_address = COALESCE($4, customer_address),
         city = COALESCE($5, city),
-        consumer_no = COALESCE($6, consumer_no),
-        order_no = COALESCE($7, order_no),
-        product_type = COALESCE($8, product_type),
-        product_serial = COALESCE($9, product_serial),
-        issue_category = COALESCE($10, issue_category),
-        issue_description = COALESCE($11, issue_description),
-        priority = COALESCE($12, priority),
-        status = COALESCE($13, status),
-        is_in_warranty = $14,
-        estimated_charges = $15,
-        notify_charges = $16,
-        payment_status = $17,
-        invoice_no = COALESCE($18, invoice_no),
-        invoice_date = COALESCE($19, invoice_date),
-        location_url = COALESCE($20, location_url),
-        installation_id = COALESCE($21, installation_id),
-        dealer_name = COALESCE($22, dealer_name),
+        district = COALESCE($6, district),
+        state = COALESCE($7, state),
+        pincode = COALESCE($8, pincode),
+        post_office = COALESCE($9, post_office),
+        consumer_no = COALESCE($10, consumer_no),
+        order_no = COALESCE($11, order_no),
+        product_type = COALESCE($12, product_type),
+        product_serial = COALESCE($13, product_serial),
+        issue_category = COALESCE($14, issue_category),
+        issue_description = COALESCE($15, issue_description),
+        priority = COALESCE($16, priority),
+        status = COALESCE($17, status),
+        is_in_warranty = $18,
+        estimated_charges = $19,
+        notify_charges = $20,
+        payment_status = $21,
+        invoice_no = COALESCE($22, invoice_no),
+        invoice_date = COALESCE($23, invoice_date),
+        location_url = COALESCE($24, location_url),
+        installation_id = COALESCE($25, installation_id),
+        dealer_name = COALESCE($26, dealer_name),
         updated_at = CURRENT_TIMESTAMP,
         status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $23
+      WHERE id = $27
     `, [
       b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
       b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
       b.customer_email !== undefined ? (b.customer_email ? b.customer_email.trim() : null) : null,
       b.customer_address !== undefined ? (b.customer_address ? b.customer_address.trim() : null) : null,
       b.city !== undefined ? (b.city ? b.city.trim() : null) : null,
+      cleanDistrict,
+      cleanState,
+      cleanPincode,
+      cleanPostOffice,
       b.consumer_no !== undefined ? (b.consumer_no ? b.consumer_no.trim() : null) : null,
       b.order_no !== undefined ? (b.order_no ? b.order_no.trim() : null) : null,
       b.product_type !== undefined ? (b.product_type ? b.product_type.trim() : null) : null,

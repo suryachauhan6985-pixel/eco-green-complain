@@ -156,16 +156,32 @@ export const NewComplaintModal = ({
 
       if (isEditMode) {
         const rawCharges = Number(initialData.estimated_charges);
+        let editPincode = (initialData.pincode || '').trim();
+        let editDistrict = (initialData.district || '').trim();
+        let editState = (initialData.state || '').trim();
+        let editCity = (initialData.city || '').trim();
+        let editPostOffice = (initialData.post_office || '').trim();
+
+        // Fallback extraction from customer_address for legacy tickets where location wasn't in separate columns
+        if (!editPincode && initialData.customer_address) {
+          const pinMatch = initialData.customer_address.match(/\b\d{6}\b/);
+          if (pinMatch) editPincode = pinMatch[0];
+        }
+        if (!editState && initialData.customer_address) {
+          const stateMatch = initialData.customer_address.match(/(Gujarat|Rajasthan|Maharashtra|Madhya Pradesh|Uttar Pradesh|Delhi|Haryana|Punjab)/i);
+          if (stateMatch) editState = stateMatch[0];
+        }
+
         setFormData({
           customer_name: initialData.customer_name || '',
           customer_phone: initialData.customer_phone || '',
           customer_email: initialData.customer_email || '',
           customer_address: initialData.customer_address || '',
-          city: initialData.city || '',
-          pincode: initialData.pincode || '',
-          district: initialData.district || '',
-          state: initialData.state || '',
-          post_office: initialData.post_office || '',
+          city: editCity,
+          pincode: editPincode,
+          district: editDistrict,
+          state: editState,
+          post_office: editPostOffice,
           consumer_no: initialData.consumer_no || '',
           order_no: initialData.order_no || '',
           dealer_name: initialData.dealer_name || '',
@@ -185,7 +201,7 @@ export const NewComplaintModal = ({
           priority: initialData.priority || 'Medium',
           status: initialData.status || 'Unassigned'
         });
-        if (initialData.pincode) {
+        if (editPincode) {
           setPincodeStatus('valid');
         }
         setStep('form');

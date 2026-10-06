@@ -769,9 +769,9 @@ export const ComplaintList = ({
                           <span className="text-[11px] text-slate-500 font-mono block">
                             📞 {c.customer_phone}
                           </span>
-                          {(c.city || c.customer_address) && (
-                            <span className="text-[10px] text-slate-400 truncate block max-w-[200px]">
-                              📍 {c.city || c.customer_address}
+                          {(c.city || c.district || c.customer_address) && (
+                            <span className="text-[10px] text-slate-400 truncate block max-w-[200px]" title={[c.city, c.district, c.state, c.pincode].filter(Boolean).join(', ') || c.customer_address}>
+                              📍 {[c.city, c.district].filter(Boolean).join(', ') || c.customer_address}{c.pincode ? ` (${c.pincode})` : ''}
                             </span>
                           )}
                         </div>
@@ -1029,7 +1029,7 @@ export const ComplaintList = ({
                     </div>
 
                     <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 font-medium truncate mt-0.5">
-                      <span className="truncate">{c.city ? `${c.city} • ` : ''}{c.product_type}</span>
+                      <span className="truncate">{c.city ? `${c.city}${c.district ? `, ${c.district}` : ''} • ` : ''}{c.product_type}</span>
                       {c.estimated_charges > 0 && (
                         <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200 shrink-0">
                           ₹{c.estimated_charges}

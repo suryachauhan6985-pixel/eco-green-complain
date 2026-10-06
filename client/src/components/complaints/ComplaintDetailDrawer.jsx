@@ -1484,46 +1484,67 @@ export const ComplaintDetailDrawer = ({
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-700">
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Name:</span>
-                          <strong className="text-slate-900">{ticket.customer_name}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Phone (WhatsApp):</span>
-                          <a href={`tel:${ticket.customer_phone}`} className="font-mono text-emerald-700 font-semibold hover:underline">
-                            {ticket.customer_phone}
-                          </a>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Email:</span>
-                          <span className="text-slate-800">{ticket.customer_email || 'Not provided'}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">City / Village:</span>
-                          <span className="text-slate-800 font-medium">{ticket.city || 'Not specified'}</span>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <span className="text-slate-400 block text-[11px]">Installation Address:</span>
-                          <span className="text-slate-800">{ticket.customer_address}</span>
-                        </div>
+                      {(() => {
+                        const displayCity = ticket.city || '';
+                        const displayDistrict = ticket.district || '';
+                        const displayState = ticket.state || (ticket.customer_address ? (ticket.customer_address.match(/(Gujarat|Rajasthan|Maharashtra|Madhya Pradesh|Uttar Pradesh|Delhi|Haryana|Punjab)/i) || [])[0] : '') || '';
+                        const displayPincode = ticket.pincode || (ticket.customer_address ? (ticket.customer_address.match(/\b\d{6}\b/) || [])[0] : '') || '';
 
-                        {/* Customer Location URL Map Button */}
-                        {ticket.location_url && (
-                          <div className="sm:col-span-2 pt-1">
-                            <a
-                              href={ticket.location_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors shadow-2xs"
-                            >
-                              <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                              Open Customer Site Location on Google Maps
-                              <ExternalLink className="w-3 h-3 text-blue-500" />
-                            </a>
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs text-slate-700">
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">Name:</span>
+                              <strong className="text-slate-900">{ticket.customer_name}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">Phone (WhatsApp):</span>
+                              <a href={`tel:${ticket.customer_phone}`} className="font-mono text-emerald-700 font-semibold hover:underline">
+                                {ticket.customer_phone}
+                              </a>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">Email:</span>
+                              <span className="text-slate-800">{ticket.customer_email || 'Not provided'}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">City / Village:</span>
+                              <span className="text-slate-800 font-medium">{displayCity || 'Not specified'}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">District:</span>
+                              <span className="text-slate-800 font-medium">{displayDistrict || 'Not specified'}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">State:</span>
+                              <span className="text-slate-800 font-medium">{displayState || 'Not specified'}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[11px]">Pincode:</span>
+                              <span className="font-mono font-semibold text-slate-800">{displayPincode || 'Not specified'}</span>
+                            </div>
+                            <div className="sm:col-span-2 md:col-span-2">
+                              <span className="text-slate-400 block text-[11px]">Installation Address:</span>
+                              <span className="text-slate-800">{ticket.customer_address}</span>
+                            </div>
+
+                            {/* Customer Location URL Map Button */}
+                            {ticket.location_url && (
+                              <div className="sm:col-span-2 md:col-span-3 pt-1">
+                                <a
+                                  href={ticket.location_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors shadow-2xs"
+                                >
+                                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                                  Open Customer Site Location on Google Maps
+                                  <ExternalLink className="w-3 h-3 text-blue-500" />
+                                </a>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </div>
 
                     {/* System & Warranty Status Card */}
@@ -1742,10 +1763,21 @@ export const ComplaintDetailDrawer = ({
 
                     {/* Issue Description */}
                     <div className="bg-white rounded-xl p-4 border border-slate-200">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-                        Issue Description & Diagnostics
-                      </h4>
-                      <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Issue Description & Diagnostics
+                        </h4>
+                        {ticket.issue_category && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Category:</span>
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-2xs">
+                              <Tag className="w-3 h-3 text-amber-600" />
+                              <span>{ticket.issue_category}</span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100 font-medium">
                         {ticket.issue_description}
                       </p>
 
