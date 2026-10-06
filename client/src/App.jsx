@@ -17,6 +17,7 @@ import { getNotificationTemplates } from './utils/templateUtils';
 
 // Code-split heavy secondary tabs and dialogs for lightning-fast initial load
 const CustomerHistoryModal = React.lazy(() => import('./components/complaints/CustomerHistoryModal').then(m => ({ default: m.CustomerHistoryModal })));
+const CustomerSearchModal = React.lazy(() => import('./components/customer/CustomerSearchModal').then(m => ({ default: m.CustomerSearchModal })));
 const TechnicianFieldPortal = React.lazy(() => import('./components/technician/TechnicianFieldPortal').then(m => ({ default: m.TechnicianFieldPortal })));
 const CustomerPublicPortal = React.lazy(() => import('./components/customer/CustomerPublicPortal').then(m => ({ default: m.CustomerPublicPortal })));
 const AnalyticsDashboard = React.lazy(() => import('./components/admin/AnalyticsDashboard').then(m => ({ default: m.AnalyticsDashboard })));
@@ -239,6 +240,31 @@ function AppContent() {
     updateUrlParams({ modal: null });
   };
 
+  const [isCustomerSearchOpen, setIsCustomerSearchOpen] = useState(() => {
+    const m = getUrlParam('modal');
+    return m === 'customer_search' || m === 'customer-directory' || getUrlParam('customer_search') === '1';
+  });
+
+  const handleOpenCustomerSearch = () => {
+    setIsCustomerSearchOpen(true);
+    updateUrlParams({ modal: 'customer_search' });
+  };
+
+  const handleCloseCustomerSearch = () => {
+    setIsCustomerSearchOpen(false);
+    updateUrlParams({ modal: null });
+  };
+
+  const handleRegisterFromCustomerSearch = (customer) => {
+    setIsCustomerSearchOpen(false);
+    handleOpenNewComplaint({
+      fromCustomerDirectory: true,
+      startOnProductStep: true,
+      customerData: customer,
+      ...customer
+    });
+  };
+
   const [historyPhone, setHistoryPhone] = useState(() => {
     return getUrlParam('history_phone') || getUrlParam('history') || null;
   });
@@ -264,6 +290,7 @@ function AppContent() {
       setTechSection(getTechSectionFromUrl());
       const m = getUrlParam('modal');
       setIsNewComplaintOpen(m === 'new_complaint' || m === 'new-ticket' || m === 'new' || getUrlParam('new') === '1');
+      setIsCustomerSearchOpen(m === 'customer_search' || m === 'customer-directory' || getUrlParam('customer_search') === '1');
       setHistoryPhone(getUrlParam('history_phone') || getUrlParam('history') || null);
     };
     window.addEventListener('popstate', handleLocationChange);
@@ -423,6 +450,7 @@ function AppContent() {
           techSection={techSection}
           onSelectTechSection={handleTechSectionChange}
           onOpenNewComplaint={() => handleOpenNewComplaint()}
+          onOpenCustomerSearch={handleOpenCustomerSearch}
           onToggleNotificationDrawer={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
           onOpenTour={currentUser?.role === 'admin' ? () => setIsTourOpen(true) : undefined}
         />
@@ -442,6 +470,7 @@ function AppContent() {
               initialFilters={complaintFilters}
               onSelectComplaint={handleSelectComplaint}
               onOpenNewComplaint={() => handleOpenNewComplaint()}
+              onOpenCustomerSearch={handleOpenCustomerSearch}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
             />
           )}
@@ -545,6 +574,15 @@ function AppContent() {
       />
 
       <React.Suspense fallback={null}>
+        {isCustomerSearchOpen && (
+          <CustomerSearchModal
+            isOpen={isCustomerSearchOpen}
+            onClose={handleCloseCustomerSearch}
+            onRegisterComplaint={handleRegisterFromCustomerSearch}
+            onSelectTicket={handleSelectComplaint}
+          />
+        )}
+
         {Boolean(historyPhone) && (
           <CustomerHistoryModal
             phone={historyPhone}

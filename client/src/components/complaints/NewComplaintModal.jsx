@@ -144,10 +144,10 @@ export const NewComplaintModal = ({
 
   const initializedModalTicketId = useRef(null);
 
-  // Populate from initialData (supports both Edit Mode and New Ticket Lead Conversion)
+  // Populate from initialData (supports Edit Mode, Lead Conversion, and Customer Directory Search)
   useEffect(() => {
     if (initialData && isOpen) {
-      const currentTicketKey = initialData.id || initialData.ticket_id || 'new_modal';
+      const currentTicketKey = initialData.id || initialData.ticket_id || (initialData.customerData ? `cust_${initialData.customerData.id || initialData.customerData.consumer_no || initialData.customerData.consumer_mobile || Date.now()}` : (initialData.customer_name ? `lead_${initialData.customer_name}_${initialData.customer_phone}` : 'new_modal'));
       // Only initialize once per open modal session for this ticket so background polling never overwrites user edits!
       if (initializedModalTicketId.current === currentTicketKey) {
         return;
@@ -189,6 +189,79 @@ export const NewComplaintModal = ({
           setPincodeStatus('valid');
         }
         setStep('form');
+      } else if (initialData.fromCustomerDirectory || initialData.startOnProductStep || initialData.customerData) {
+        // Customer directory pre-fill flow: load customer and start on Product Selection Window
+        const c = initialData.customerData || initialData;
+        const rawDate = c.invoice_date || c.installation_date || '';
+        let cleanDate = '';
+        if (rawDate) {
+          if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+            cleanDate = rawDate.substring(0, 10);
+          } else {
+            const d = new Date(rawDate);
+            if (!isNaN(d.getTime())) {
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              const day = String(d.getDate()).padStart(2, '0');
+              cleanDate = `${y}-${m}-${day}`;
+            }
+          }
+        }
+
+        let computedWarranty = c.is_in_warranty !== undefined && c.is_in_warranty !== null ? Number(c.is_in_warranty) : 1;
+        let isDateMissing = false;
+        if (cleanDate) {
+          const [year, month, day] = cleanDate.split('-').map(Number);
+          const installDate = new Date(year, month - 1, day);
+          const expiryDate = new Date(installDate);
+          expiryDate.setFullYear(expiryDate.getFullYear() + 5);
+          computedWarranty = new Date() <= expiryDate ? 1 : 0;
+        } else {
+          isDateMissing = true;
+        }
+
+        const rawMobile = (c.consumer_mobile || c.customer_phone || c.phone || '').toString().trim();
+        const digitsOnly = rawMobile.replace(/\D/g, '');
+        const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : rawMobile;
+        const cleanOrderNo = (c.order_no || c.orderNo || c['Order No'] || '').toString().trim();
+        const cleanDealerName = (c.dealer_name || c.dealerName || '').toString().trim();
+
+        setSelectedCustomer({
+          ...c,
+          invoice_date: cleanDate || c.invoice_date,
+          is_in_warranty: computedWarranty,
+          isDateMissing
+        });
+
+        setFormData(prev => ({
+          ...prev,
+          customer_name: c.customer_name || prev.customer_name,
+          customer_phone: cleanMobile || prev.customer_phone,
+          customer_email: c.customer_email || prev.customer_email,
+          customer_address: c.site_address || c.customer_address || c.address || c.city_village || prev.customer_address,
+          city: c.city_village || c.city || prev.city,
+          pincode: c.pincode || prev.pincode || '',
+          district: c.district || prev.district || '',
+          state: c.state || prev.state || '',
+          post_office: c.post_office || prev.post_office || '',
+          consumer_no: c.consumer_no || prev.consumer_no || '',
+          order_no: cleanOrderNo || prev.order_no || '',
+          dealer_name: cleanDealerName || prev.dealer_name || '',
+          invoice_no: c.invoice_no || prev.invoice_no || '',
+          invoice_date: cleanDate || prev.invoice_date || '',
+          is_in_warranty: computedWarranty,
+          product_type: prev.product_type || 'Solar Rooftop Systems',
+          installation_id: c.consumer_no || c.order_no || prev.installation_id || '',
+          product_serial: c.inverter_serial || c.product_serial || prev.product_serial || '',
+          issue_description: initialData.issue_description || prev.issue_description || ''
+        }));
+
+        if (c.pincode) {
+          setPincodeStatus('valid');
+        }
+
+        // Specifically start on product selection window
+        setStep('product');
       } else {
         setFormData(prev => ({
           ...prev,
@@ -1223,6 +1296,27 @@ export const NewComplaintModal = ({
                   Select a product category below to open the complaint registration form.
                 </p>
               </div>
+
+              {selectedCustomer && (
+                <div className="max-w-md mx-auto p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center justify-between gap-3 text-left shadow-2xs animate-in fade-in">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Check className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
+                        Prefilled Customer Record
+                      </span>
+                      <strong className="text-xs text-slate-900 truncate block">
+                        {selectedCustomer.customer_name} • {selectedCustomer.consumer_mobile || selectedCustomer.customer_phone || selectedCustomer.phone}
+                      </strong>
+                    </div>
+                  </div>
+                  <span className="text-[10px] bg-emerald-200/80 text-emerald-950 font-bold px-2.5 py-1 rounded-full shrink-0">
+                    Details Ready
+                  </span>
+                </div>
+              )}
 
               {loadingProducts ? (
                 <div className="py-12 text-center text-xs text-slate-400 flex items-center justify-center gap-2">

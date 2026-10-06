@@ -17,6 +17,7 @@ export const ComplaintList = ({
   onSelectComplaint, 
   onOpenNewComplaint, 
   onOpenWhatsAppChat,
+  onOpenCustomerSearch,
   refreshKey, 
   initialFilters 
 }) => {
@@ -561,11 +562,24 @@ export const ComplaintList = ({
               </button>
             )}
 
+            {['admin', 'staff'].includes(currentUser?.role) && onOpenCustomerSearch && (
+              <button
+                type="button"
+                onClick={onOpenCustomerSearch}
+                className="px-3.5 py-2 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/70 rounded-xl text-xs font-bold text-slate-700 hover:text-emerald-800 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                title="Search customer directory, warranty, and plant records"
+              >
+                <Search className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Search Customer</span>
+                <span className="sm:hidden">Search</span>
+              </button>
+            )}
+
             <button
               onClick={onOpenNewComplaint}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 stroke-[2.5]" />
               New Ticket
             </button>
           </div>

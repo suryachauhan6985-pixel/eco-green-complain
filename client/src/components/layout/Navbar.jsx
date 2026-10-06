@@ -15,6 +15,7 @@ export const Navbar = ({
   techSection = 'field_ops',
   onSelectTechSection,
   onOpenNewComplaint, 
+  onOpenCustomerSearch,
   onToggleNotificationDrawer,
   onOpenTour,
   onReloadDemoData
@@ -288,6 +289,20 @@ export const Navbar = ({
               </button>
             )}
 
+            {/* Direct Customer Directory & Plant Search Button (Admin & Staff) */}
+            {['admin', 'staff'].includes(currentUser?.role) && onOpenCustomerSearch && (
+              <button
+                type="button"
+                onClick={onOpenCustomerSearch}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-xl text-xs font-bold shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer"
+                title="Search Customer Directory, Warranty & Technical Specifications"
+              >
+                <Search className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden md:inline">Search Customer</span>
+                <span className="md:hidden">Search</span>
+              </button>
+            )}
+
             {/* Quick Register Complaint Button (For Admin & Staff - Desktop Only, mobile has it in bottom nav) */}
             {['admin', 'staff'].includes(currentUser?.role) && (
               <button
@@ -520,9 +535,22 @@ export const Navbar = ({
           </button>
         </div>
 
-        {/* Quick Action: Register Ticket */}
+        {/* Quick Action: Register Ticket & Search Customer */}
         {['admin', 'staff'].includes(currentUser?.role) && (
-          <div className="p-3 pb-1 shrink-0">
+          <div className="p-3 pb-1 shrink-0 space-y-2">
+            {onOpenCustomerSearch && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenCustomerSearch();
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 border border-slate-200 text-xs font-bold py-2.5 px-3 rounded-xl shadow-2xs transition-all cursor-pointer"
+              >
+                <Search className="w-4 h-4 text-emerald-600" />
+                <span>Search Customer Directory</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
