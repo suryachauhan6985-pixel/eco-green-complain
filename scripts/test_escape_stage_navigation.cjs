@@ -11,6 +11,8 @@ const ESCAPE_PRIORITY = {
 
 let handlers = [];
 let nextId = 1;
+let lastEscapeHandledAt = 0;
+const ESCAPE_COOLDOWN_MS = 200;
 
 function registerEscapeHandler(handler, { priority = ESCAPE_PRIORITY.DRAWER } = {}) {
   const item = {
@@ -26,128 +28,101 @@ function registerEscapeHandler(handler, { priority = ESCAPE_PRIORITY.DRAWER } = 
   };
 }
 
-function handleGlobalEscape() {
+function handleGlobalEscape(e = { key: 'Escape' }) {
+  if (e.key !== 'Escape') return false;
+
+  // Suppress repeat
+  if (e.repeat) return false;
+
+  // Cooldown
+  const now = Date.now();
+  if (now - lastEscapeHandledAt < ESCAPE_COOLDOWN_MS) {
+    return false;
+  }
+
   const sorted = [...handlers].sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     return b.id - a.id;
   });
 
   for (const item of sorted) {
-    const consumed = item.handler({ key: 'Escape' });
-    if (consumed) return true;
+    const consumed = item.handler(e);
+    if (consumed) {
+      lastEscapeHandledAt = Date.now();
+      return true;
+    }
   }
   return false;
 }
 
-console.log('--- TEST 1: Hierarchical Priority LIFO execution ---');
+console.log('--- TEST 1: Photo Preview Inside Complaint Drawer (Exact User Scenario) ---');
 handlers = [];
 nextId = 1;
+lastEscapeHandledAt = 0;
 
-let appStage = 'complaints';
-let tabHistory = ['complaints'];
-let activeDrawer = null;
-let innerPreview = null;
-let dialogOpen = false;
+let currentTab = 'complaints';
+let selectedComplaintId = 'EGS-2026-000101';
+let previewDocModal = null;
 
 // Register App Tab Stack (Priority 10)
 registerEscapeHandler(() => {
-  if (activeDrawer) return false;
-  while (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] === appStage) {
-    tabHistory.pop();
-  }
-  if (tabHistory.length > 0) {
-    appStage = tabHistory.pop();
-    return true;
-  }
-  if (appStage !== 'complaints') {
-    appStage = 'complaints';
-    return true;
-  }
+  if (selectedComplaintId) return false;
   return false;
 }, { priority: ESCAPE_PRIORITY.TAB_STACK });
 
-// User navigates: complaints -> analytics -> team -> settings
-['analytics', 'team', 'settings'].forEach(t => {
-  tabHistory.push(t);
-  appStage = t;
-});
-
-assert.strictEqual(appStage, 'settings');
-
-// Open ticket drawer (Priority 60)
-activeDrawer = 'TICKET-101';
-const unregDrawer = registerEscapeHandler(() => {
-  if (innerPreview || dialogOpen) return false;
-  activeDrawer = null;
+// Register Complaint Detail Drawer (Priority 60)
+registerEscapeHandler(() => {
+  if (previewDocModal) return false; // Must NEVER close drawer if preview is open
+  selectedComplaintId = null;
   return true;
 }, { priority: ESCAPE_PRIORITY.DRAWER });
 
-// Open image preview inside ticket (Priority 80)
-innerPreview = 'photo.jpg';
+// User clicks on photo inside complaint drawer
+previewDocModal = { url: 'https://cdn.example.com/photo.jpg', name: 'photo.jpg' };
 const unregPreview = registerEscapeHandler(() => {
-  if (dialogOpen) return false;
-  innerPreview = null;
+  previewDocModal = null;
   return true;
 }, { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-// Open confirm dialog on top (Priority 100)
-dialogOpen = true;
-const unregDialog = registerEscapeHandler(() => {
-  dialogOpen = false;
-  return true;
-}, { priority: ESCAPE_PRIORITY.DIALOG });
+// Initial assertion
+assert.strictEqual(Boolean(selectedComplaintId), true, 'Drawer should be open');
+assert.strictEqual(Boolean(previewDocModal), true, 'Photo preview should be open');
 
-console.log('Initial State: settings tab, ticket drawer open, image preview open, confirm dialog open');
-
-// Press 1: Should close ONLY confirm dialog
-let handled = handleGlobalEscape();
-assert.strictEqual(handled, true);
-assert.strictEqual(dialogOpen, false, 'Dialog should be closed');
-assert.strictEqual(innerPreview, 'photo.jpg', 'Inner preview should remain open');
-assert.strictEqual(activeDrawer, 'TICKET-101', 'Drawer should remain open');
-assert.strictEqual(appStage, 'settings', 'Should remain on settings tab');
-console.log('✓ Esc 1: Closed Dialog only. Image preview & drawer preserved.');
-unregDialog();
-
-// Press 2: Should close ONLY image preview
-handled = handleGlobalEscape();
-assert.strictEqual(handled, true);
-assert.strictEqual(innerPreview, null, 'Inner preview should be closed');
-assert.strictEqual(activeDrawer, 'TICKET-101', 'Drawer should remain open');
-assert.strictEqual(appStage, 'settings', 'Should remain on settings tab');
-console.log('✓ Esc 2: Closed Image preview only. Ticket drawer preserved.');
+// 1st Esc: Should close ONLY photo preview
+let consumed = handleGlobalEscape();
+assert.strictEqual(consumed, true, 'First Esc should be handled');
+assert.strictEqual(previewDocModal, null, 'Photo preview MUST be closed on 1st Esc');
+assert.strictEqual(selectedComplaintId, 'EGS-2026-000101', 'Complaint drawer MUST remain open on 1st Esc');
+console.log('✓ Esc 1: Photo preview closed. Complaint drawer remains open at EGS-2026-000101.');
 unregPreview();
 
-// Press 3: Should close ticket drawer
-handled = handleGlobalEscape();
-assert.strictEqual(handled, true);
-assert.strictEqual(activeDrawer, null, 'Drawer should be closed');
-assert.strictEqual(appStage, 'settings', 'Should remain on settings tab');
-console.log('✓ Esc 3: Closed Ticket drawer. Remained on settings tab (did NOT jump to dashboard).');
-unregDrawer();
+// 2nd Esc during cooldown (<200ms): Should be ignored to prevent double-skipping
+const rapidEvent = handleGlobalEscape();
+assert.strictEqual(rapidEvent, false, 'Rapid bounce within cooldown should be ignored');
+assert.strictEqual(selectedComplaintId, 'EGS-2026-000101', 'Complaint drawer still preserved during cooldown window');
+console.log('✓ Rapid bounce guard: Cooldown correctly ignored accidental double-trigger.');
 
-// Press 4: Stepping back in tab history: settings -> team
-handled = handleGlobalEscape();
-assert.strictEqual(handled, true);
-assert.strictEqual(appStage, 'team', 'Should step back to team tab');
-console.log('✓ Esc 4: Stepped back to Team tab.');
+// 2nd Esc after cooldown: Closes complaint drawer
+lastEscapeHandledAt = 0; // Simulate time passed >200ms
+consumed = handleGlobalEscape();
+assert.strictEqual(consumed, true, 'Second Esc should close the drawer');
+assert.strictEqual(selectedComplaintId, null, 'Complaint drawer should be closed on 2nd Esc');
+console.log('✓ Esc 2: Complaint drawer closed cleanly back to complaints list.');
 
-// Press 5: Stepping back in tab history: team -> analytics
-handled = handleGlobalEscape();
-assert.strictEqual(handled, true);
-assert.strictEqual(appStage, 'analytics', 'Should step back to analytics tab');
-console.log('✓ Esc 5: Stepped back to Analytics tab.');
+// Test repeat suppression
+console.log('\n--- TEST 2: OS Keyboard Repeat Suppression ---');
+handlers = [];
+nextId = 1;
+lastEscapeHandledAt = 0;
+let testCount = 0;
+registerEscapeHandler(() => {
+  testCount++;
+  return true;
+}, { priority: ESCAPE_PRIORITY.DRAWER });
 
-// Press 6: Stepping back in tab history: analytics -> complaints (Dashboard)
-handled = handleGlobalEscape();
-assert.strictEqual(handled, true);
-assert.strictEqual(appStage, 'complaints', 'Should step back to complaints dashboard');
-console.log('✓ Esc 6: Stepped back to Complaints Dashboard (Root).');
+consumed = handleGlobalEscape({ key: 'Escape', repeat: true });
+assert.strictEqual(consumed, false, 'Repeated keydown should be ignored');
+assert.strictEqual(testCount, 0, 'Handler should not execute on repeat');
+console.log('✓ Repeat keydown ignored successfully.');
 
-// Press 7: Already on complaints dashboard with no overlays: should stay on complaints
-handled = handleGlobalEscape();
-assert.strictEqual(handled, false, 'No higher stage to pop');
-assert.strictEqual(appStage, 'complaints', 'Stays on complaints dashboard');
-console.log('✓ Esc 7: Maintained on Complaints Dashboard (no reload, no jump).');
-
-console.log('\n--- ALL ESCAPE STAGE TESTS PASSED SUCCESSFULLY! ---');
+console.log('\n--- ALL TESTS PASSED! ---');

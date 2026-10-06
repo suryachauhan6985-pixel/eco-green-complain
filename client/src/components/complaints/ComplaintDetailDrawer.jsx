@@ -126,6 +126,25 @@ export const ComplaintDetailDrawer = ({
     return true;
   }, Boolean(isOpen && previewDocModal), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
+  // Dedicated window capture keydown listener for previewDocModal
+  useEffect(() => {
+    if (!isOpen || !previewDocModal) return;
+
+    const handlePreviewEscapeCapture = (e) => {
+      if (e.key === 'Escape') {
+        if (e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        setPreviewDocModal(null);
+      }
+    };
+
+    window.addEventListener('keydown', handlePreviewEscapeCapture, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handlePreviewEscapeCapture, { capture: true });
+    };
+  }, [isOpen, previewDocModal]);
+
   // Stage: Edit Complaint Modal (Inner Modal Stage)
   useEscapeHandler(() => {
     setIsEditing(false);
@@ -3996,8 +4015,17 @@ export const ComplaintDetailDrawer = ({
       {/* Lightbox / High-Res Document & Photo Preview Modal */}
       {previewDocModal && (
         <div 
-          className="fixed inset-0 z-80 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150" 
+          role="dialog"
+          aria-modal="true"
+          tabIndex={-1}
+          className="fixed inset-0 z-80 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 outline-none" 
           onClick={() => setPreviewDocModal(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setPreviewDocModal(null);
+            }
+          }}
         >
           <div 
             className="relative max-w-3xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150" 

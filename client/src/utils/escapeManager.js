@@ -61,12 +61,32 @@ export function useEscapeHandler(handler, isActive = true, { priority = ESCAPE_P
   }, [isActive, priority]);
 }
 
+let lastEscapeHandledAt = 0;
+const ESCAPE_COOLDOWN_MS = 200;
+
 /**
  * Handle Escape key globally.
  * Sorts handlers by priority (descending), then by order of registration (LIFO - newest first).
  */
 export function handleGlobalEscape(e) {
   if (e.key !== 'Escape') return false;
+
+  // Suppress OS keyboard auto-repeat (e.g. key held down for >200ms)
+  if (e.repeat) {
+    if (e.preventDefault) e.preventDefault();
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    return false;
+  }
+
+  // Prevent multiple stages from popping within cooldown window (accidental double-firing or bounce)
+  const now = Date.now();
+  if (now - lastEscapeHandledAt < ESCAPE_COOLDOWN_MS) {
+    if (e.preventDefault) e.preventDefault();
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    return false;
+  }
 
   // Clone handlers list and sort by priority desc, then timestamp/index desc (LIFO)
   const sorted = [...handlers].sort((a, b) => {
@@ -80,6 +100,7 @@ export function handleGlobalEscape(e) {
     try {
       const consumed = item.handler(e);
       if (consumed) {
+        lastEscapeHandledAt = Date.now();
         if (e.preventDefault) e.preventDefault();
         if (e.stopPropagation) e.stopPropagation();
         if (e.stopImmediatePropagation) e.stopImmediatePropagation();

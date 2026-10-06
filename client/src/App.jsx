@@ -368,29 +368,9 @@ function AppContent() {
   }, [currentUser?.role]);
 
   // --- HIERARCHICAL STAGE ESCAPE HANDLERS (TOP-LEVEL APP ORCHESTRATION) ---
-  // Stage: Active Complaint Detail Drawer
-  useEscapeHandler(() => {
-    handleSelectComplaint(null);
-    return true;
-  }, Boolean(selectedComplaintId), { priority: ESCAPE_PRIORITY.DRAWER });
-
-  // Stage: New Complaint Modal
-  useEscapeHandler(() => {
-    handleCloseNewComplaint();
-    return true;
-  }, Boolean(isNewComplaintOpen), { priority: ESCAPE_PRIORITY.DRAWER });
-
-  // Stage: Customer Search Modal
-  useEscapeHandler(() => {
-    handleCloseCustomerSearch();
-    return true;
-  }, Boolean(isCustomerSearchOpen), { priority: ESCAPE_PRIORITY.DRAWER });
-
-  // Stage: Customer History Modal
-  useEscapeHandler(() => {
-    handleCloseHistory();
-    return true;
-  }, Boolean(historyPhone), { priority: ESCAPE_PRIORITY.DRAWER });
+  // Note: Detail Drawer, New Complaint Modal, Customer Search, and Customer History
+  // manage their own internal multi-stage escape handlers (including sub-modals, photo lightboxes,
+  // and step-back wizards). Top-level handlers here only manage global shell overlays.
 
   // Stage: Notification Drawer
   useEscapeHandler(() => {

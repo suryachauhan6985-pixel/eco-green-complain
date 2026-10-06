@@ -1,10 +1,10 @@
 {
-  "version": "2.6.2",
-  "buildTime": 1791293181652,
-  "buildId": "b_1791293181652",
+  "version": "2.6.3",
+  "buildTime": 1791294510570,
+  "buildId": "b_1791294510570",
   "releaseDate": "2026-10-06",
   "mandatory": true,
-  "title": "Eco Green Support v2.6.2",
+  "title": "Eco Green Support v2.6.3",
   "summary": "New official release with continuous deploy sync and optimizations.",
   "features": [
     "📑 Voucher & Tour Ledger: Official Green Energy branding, ticket segregation, and formal approval stamp.",
