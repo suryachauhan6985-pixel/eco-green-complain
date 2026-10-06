@@ -38,7 +38,7 @@ const versionJsonData = {
   buildTime: buildTime,
   buildId: buildId,
   releaseDate: releaseDate,
-  mandatory: true,
+  mandatory: false,
   title: `Eco Green Support v${currentVersion}`,
   summary: 'New official release with continuous deploy sync and optimizations.',
   features: [

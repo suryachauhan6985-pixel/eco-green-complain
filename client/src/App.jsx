@@ -650,7 +650,7 @@ function AppContent() {
           />
         )}
 
-        {/* Native App-Style Mandatory Update Modal */}
+        {/* Headless Silent Background Updater (Direct Updates, No Screen/Modal) */}
         <AppUpdateModal />
 
         {/* Global Device Permissions Prompt (Notifications, Location, Camera) */}
