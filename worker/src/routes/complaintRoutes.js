@@ -1011,6 +1011,8 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
       })()
     );
 
+    const prevTechResult = remResults.length > 0 ? remResults[0] : null;
+
     return c.json({
       success: true,
       message: isReassignment ? 'Job reassigned and transferred successfully' : 'Technician assigned successfully',

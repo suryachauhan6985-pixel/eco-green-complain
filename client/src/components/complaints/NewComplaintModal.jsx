@@ -312,6 +312,7 @@ export const NewComplaintModal = ({
   const [pincodeVerifiedData, setPincodeVerifiedData] = useState(null);
 
   const [citySuggestions, setCitySuggestions] = useState([]);
+  const [recommendedPincodes, setRecommendedPincodes] = useState([]);
   const [searchingCity, setSearchingCity] = useState(false);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
 
@@ -372,7 +373,7 @@ export const NewComplaintModal = ({
     }
   }, [formData.pincode]);
 
-  // Debounced City/District Search for Autosuggesting Pincodes
+  // Debounced City/District Search for Autosuggesting Pincodes (Bidirectional)
   useEffect(() => {
     const val = (formData.city || '').trim();
     if (pincodeStatus === 'valid' && (val === pincodeVerifiedData?.district || val === pincodeVerifiedData?.postOffice)) {
@@ -381,6 +382,7 @@ export const NewComplaintModal = ({
 
     if (!val || val.length < 3) {
       setCitySuggestions([]);
+      setRecommendedPincodes([]);
       setSearchingCity(false);
       setShowCitySuggestions(false);
       return;
@@ -392,13 +394,37 @@ export const NewComplaintModal = ({
         const res = await api.searchLocation(val);
         if (res && res.success && res.results && res.results.length > 0) {
           setCitySuggestions(res.results);
+          if (res.recommendedPincodes && res.recommendedPincodes.length > 0) {
+            setRecommendedPincodes(res.recommendedPincodes);
+          } else {
+            const pMap = new Map();
+            for (const r of res.results) {
+              if (!r.pincode) continue;
+              if (!pMap.has(r.pincode)) {
+                pMap.set(r.pincode, {
+                  pincode: r.pincode,
+                  district: r.district,
+                  state: r.state,
+                  postOffices: [r.postOffice]
+                });
+              } else {
+                const item = pMap.get(r.pincode);
+                if (!item.postOffices.includes(r.postOffice)) {
+                  item.postOffices.push(r.postOffice);
+                }
+              }
+            }
+            setRecommendedPincodes(Array.from(pMap.values()));
+          }
           setShowCitySuggestions(true);
         } else {
           setCitySuggestions([]);
+          setRecommendedPincodes([]);
           setShowCitySuggestions(false);
         }
       } catch (e) {
         setCitySuggestions([]);
+        setRecommendedPincodes([]);
         setShowCitySuggestions(false);
       } finally {
         setSearchingCity(false);
@@ -420,6 +446,30 @@ export const NewComplaintModal = ({
     setPincodeVerifiedData(suggestion);
     setPincodeMessage('');
     setShowCitySuggestions(false);
+    if (suggestion.pincode) {
+      verifyPincode(suggestion.pincode);
+    }
+  };
+
+  const handleSelectRecommendedPincode = (item) => {
+    setFormData(prev => ({
+      ...prev,
+      pincode: item.pincode,
+      district: item.district || prev.district,
+      state: item.state || prev.state
+    }));
+    setPincodeStatus('valid');
+    setPincodeMessage('');
+    setPincodeVerifiedData({
+      pincode: item.pincode,
+      district: item.district,
+      state: item.state,
+      villages: item.postOffices || []
+    });
+    setPincodePostOffices(item.postOffices || []);
+    if (item.pincode) {
+      verifyPincode(item.pincode);
+    }
   };
 
 
@@ -625,6 +675,9 @@ export const NewComplaintModal = ({
     setPincodeMessage('');
     setPincodePostOffices([]);
     setPincodeVerifiedData(null);
+    setRecommendedPincodes([]);
+    setCitySuggestions([]);
+    setShowCitySuggestions(false);
     setPhoneVerification(null);
     setActiveComplaintWarning(null);
   };
@@ -1545,6 +1598,48 @@ export const NewComplaintModal = ({
                         <AlertCircle className="w-3 h-3 shrink-0" />
                         {pincodeMessage || 'Invalid Pincode. Please enter a valid 6-digit pincode.'}
                       </p>
+                    )}
+
+                    {/* Recommended PIN Codes for Entered City (Bidirectional) */}
+                    {recommendedPincodes.length > 0 && (
+                      <div className="mt-2 p-2.5 bg-emerald-50/80 border border-emerald-200/90 rounded-xl animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10.5px] font-bold text-emerald-950 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Recommended PIN Codes for <strong className="text-emerald-800 font-semibold">{formData.city || 'City'}</strong>:</span>
+                          </span>
+                          <span className="text-[9.5px] text-emerald-700 font-medium">
+                            Select to autofill
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto pr-1">
+                          {recommendedPincodes.map((item) => {
+                            const isSelected = String(formData.pincode).trim() === String(item.pincode).trim();
+                            const locality = item.postOffices?.[0] || item.district || '';
+                            return (
+                              <button
+                                key={item.pincode}
+                                type="button"
+                                onClick={() => handleSelectRecommendedPincode(item)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border border-emerald-700 ring-2 ring-emerald-300'
+                                    : 'bg-white text-slate-800 border border-emerald-300 hover:border-emerald-500 hover:bg-emerald-100/70'
+                                }`}
+                                title={`${item.postOffices?.join(', ') || item.district} (${item.state})`}
+                              >
+                                <span>📌 {item.pincode}</span>
+                                {locality && (
+                                  <span className={`text-[9px] font-sans font-normal truncate max-w-[100px] ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                                    ({locality})
+                                  </span>
+                                )}
+                                {isSelected && <Check className="w-2.5 h-2.5" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

@@ -179,11 +179,13 @@ async function searchByCityOrPostOffice(req, res) {
       });
     }
 
-    // Filter, deduplicate and cap at 25 results
+    // Filter, deduplicate and extract recommended pincodes
     const seen = new Set();
     const results = [];
+    const pincodeMap = new Map();
 
     for (const po of data[0].PostOffice) {
+      if (!po.Pincode) continue;
       const key = `${po.Pincode}_${po.Name}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -194,13 +196,31 @@ async function searchByCityOrPostOffice(req, res) {
           state: po.State
         });
       }
-      if (results.length >= 25) break;
+
+      if (!pincodeMap.has(po.Pincode)) {
+        pincodeMap.set(po.Pincode, {
+          pincode: po.Pincode,
+          district: po.District,
+          state: po.State,
+          postOffices: [po.Name]
+        });
+      } else {
+        const entry = pincodeMap.get(po.Pincode);
+        if (!entry.postOffices.includes(po.Name) && entry.postOffices.length < 5) {
+          entry.postOffices.push(po.Name);
+        }
+      }
+
+      if (results.length >= 35) break;
     }
+
+    const recommendedPincodes = Array.from(pincodeMap.values());
 
     const responseData = {
       success: true,
       query: rawQuery,
-      results
+      results,
+      recommendedPincodes
     };
 
     if (postOfficeCache.size > 1000) postOfficeCache.clear();

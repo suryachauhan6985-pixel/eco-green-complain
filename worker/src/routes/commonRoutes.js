@@ -45,8 +45,9 @@ commonRoutes.get('/version', (c) => {
   });
 });
 
-// In-memory LRU cache for pincodes in Worker isolate
+// In-memory LRU cache for pincodes & post offices in Worker isolate
 const pincodeMemoryCache = new Map();
+const postOfficeMemoryCache = new Map();
 
 // GET /api/location/pincode/:pincode
 commonRoutes.get('/location/pincode/:pincode', async (c) => {
@@ -130,6 +131,152 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
     return c.json({ error: err.message }, 500);
   }
 });
+
+// GET /api/location/search?query=... & GET /api/location/postoffice/:query
+const handleLocationSearch = async (c) => {
+  const rawQuery = (c.req.query('query') || c.req.query('q') || c.req.param('query') || '').trim();
+  if (!rawQuery || rawQuery.length < 3) {
+    return c.json({
+      success: false,
+      message: 'Search query must be at least 3 characters',
+      results: [],
+      recommendedPincodes: []
+    }, 400);
+  }
+
+  const cacheKey = rawQuery.toLowerCase();
+  if (postOfficeMemoryCache.has(cacheKey)) {
+    c.header('X-Cache', 'HIT-MEMORY');
+    return c.json(postOfficeMemoryCache.get(cacheKey));
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6500);
+
+    const resp = await fetch(`https://api.postalpincode.in/postoffice/${encodeURIComponent(rawQuery)}`, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'EcoGreenSolarCMS/2.6.2' }
+    });
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      return c.json({
+        success: false,
+        message: 'Postal service error',
+        results: [],
+        recommendedPincodes: []
+      }, 502);
+    }
+
+    const data = await resp.json();
+
+    if (
+      !Array.isArray(data) ||
+      data.length === 0 ||
+      data[0].Status !== 'Success' ||
+      !Array.isArray(data[0].PostOffice)
+    ) {
+      const emptyRes = {
+        success: true,
+        query: rawQuery,
+        results: [],
+        recommendedPincodes: []
+      };
+      return c.json(emptyRes);
+    }
+
+    const rawOffices = data[0].PostOffice;
+    const qLower = rawQuery.toLowerCase();
+
+    // Sort to prioritize direct matches on district or name
+    const sortedOffices = [...rawOffices].sort((a, b) => {
+      const aDistMatch = (a.District || '').toLowerCase() === qLower;
+      const bDistMatch = (b.District || '').toLowerCase() === qLower;
+      if (aDistMatch && !bDistMatch) return -1;
+      if (!aDistMatch && bDistMatch) return 1;
+
+      const aNameStarts = (a.Name || '').toLowerCase().startsWith(qLower);
+      const bNameStarts = (b.Name || '').toLowerCase().startsWith(qLower);
+      if (aNameStarts && !bNameStarts) return -1;
+      if (!aNameStarts && bNameStarts) return 1;
+
+      return 0;
+    });
+
+    const seen = new Set();
+    const results = [];
+    const pincodeMap = new Map();
+
+    for (const po of sortedOffices) {
+      if (!po.Pincode) continue;
+      const key = `${po.Pincode}_${po.Name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push({
+          postOffice: po.Name,
+          pincode: po.Pincode,
+          district: po.District,
+          state: po.State,
+          branchType: po.BranchType,
+          deliveryStatus: po.DeliveryStatus
+        });
+      }
+
+      if (!pincodeMap.has(po.Pincode)) {
+        pincodeMap.set(po.Pincode, {
+          pincode: po.Pincode,
+          district: po.District,
+          state: po.State,
+          postOffices: [po.Name]
+        });
+      } else {
+        const entry = pincodeMap.get(po.Pincode);
+        if (!entry.postOffices.includes(po.Name) && entry.postOffices.length < 5) {
+          entry.postOffices.push(po.Name);
+        }
+      }
+
+      if (results.length >= 35) break;
+    }
+
+    const recommendedPincodes = Array.from(pincodeMap.values());
+
+    const responseData = {
+      success: true,
+      query: rawQuery,
+      results,
+      recommendedPincodes
+    };
+
+    if (postOfficeMemoryCache.size > 500) {
+      const oldestKey = postOfficeMemoryCache.keys().next().value;
+      postOfficeMemoryCache.delete(oldestKey);
+    }
+    postOfficeMemoryCache.set(cacheKey, responseData);
+
+    return c.json(responseData);
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      return c.json({
+        success: false,
+        message: 'Postal service timed out',
+        results: [],
+        recommendedPincodes: []
+      }, 504);
+    }
+    return c.json({
+      success: false,
+      message: 'Failed to search location',
+      error: err.message,
+      results: [],
+      recommendedPincodes: []
+    }, 500);
+  }
+};
+
+commonRoutes.get('/location/search', handleLocationSearch);
+commonRoutes.get('/location/postoffice/:query', handleLocationSearch);
 
 // GET /api/customers/search
 commonRoutes.get('/customers/search', optionalAuth, async (c) => {
