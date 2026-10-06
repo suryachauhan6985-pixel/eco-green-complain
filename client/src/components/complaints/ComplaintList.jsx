@@ -494,96 +494,101 @@ export const ComplaintList = ({
           </form>
 
           {/* Action & View Mode Toggle Buttons */}
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto justify-start sm:justify-end">
-            {/* View Mode Toggle (List vs Card) */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2 w-full sm:w-auto">
+            {/* Utility actions row on mobile / inline on desktop */}
+            <div className="flex items-center gap-1.5 sm:gap-2 justify-between sm:justify-end flex-wrap sm:flex-nowrap">
+              {/* View Mode Toggle (List vs Card) */}
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleViewModeChange('list')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    viewMode === 'list'
+                      ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="List View (Default)"
+                >
+                  <LayoutList className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">List</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleViewModeChange('card')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    viewMode === 'card'
+                      ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Card View"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Cards</span>
+                </button>
+              </div>
+
               <button
-                type="button"
-                onClick={() => handleViewModeChange('list')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  viewMode === 'list'
-                    ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
-                    : 'text-slate-500 hover:text-slate-800'
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                title={isRefreshing ? 'Refreshing list...' : 'Refresh list'}
+                aria-label="Refresh complaints list"
+                className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                  isRefreshing
+                    ? 'bg-emerald-50 text-emerald-600 border-emerald-300 cursor-not-allowed shadow-inner'
+                    : 'hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200 active:scale-95'
                 }`}
-                title="List View (Default)"
               >
-                <LayoutList className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">List</span>
+                <RefreshCw
+                  className={`w-4 h-4 transition-transform duration-700 ${
+                    isRefreshing ? 'animate-spin text-emerald-600' : ''
+                  }`}
+                />
               </button>
-              <button
-                type="button"
-                onClick={() => handleViewModeChange('card')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  viewMode === 'card'
-                    ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-                title="Card View"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Cards</span>
-              </button>
+
+              {['admin', 'staff'].includes(currentUser?.role) && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      setIsExportingCsv(true);
+                      await api.exportComplaintsCsv(complaints);
+                    } catch (err) {
+                      console.error('Export CSV error:', err);
+                      alert('Export CSV failed: ' + (err.message || 'Please try again'));
+                    } finally {
+                      setIsExportingCsv(false);
+                    }
+                  }}
+                  disabled={isExportingCsv}
+                  className="px-3 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Download className={`w-3.5 h-3.5 ${isExportingCsv ? 'animate-bounce text-emerald-600' : 'text-slate-500'}`} />
+                  <span className="hidden xs:inline">{isExportingCsv ? 'Exporting...' : 'Export CSV'}</span>
+                  <span className="xs:hidden">CSV</span>
+                </button>
+              )}
+
+              {['admin', 'staff'].includes(currentUser?.role) && onOpenCustomerSearch && (
+                <button
+                  type="button"
+                  onClick={onOpenCustomerSearch}
+                  className="px-3 py-2 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/70 rounded-xl text-xs font-bold text-slate-700 hover:text-emerald-800 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                  title="Search customer directory, warranty, and plant records"
+                >
+                  <Search className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="hidden sm:inline">Search Customer</span>
+                  <span className="sm:hidden">Search</span>
+                </button>
+              )}
             </div>
 
-            <button
-              onClick={handleManualRefresh}
-              disabled={isRefreshing}
-              title={isRefreshing ? 'Refreshing list...' : 'Refresh list'}
-              aria-label="Refresh complaints list"
-              className={`p-2 rounded-xl border transition-all ${
-                isRefreshing
-                  ? 'bg-emerald-50 text-emerald-600 border-emerald-300 cursor-not-allowed shadow-inner'
-                  : 'hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200 active:scale-95'
-              }`}
-            >
-              <RefreshCw
-                className={`w-4 h-4 transition-transform duration-700 ${
-                  isRefreshing ? 'animate-spin text-emerald-600' : ''
-                }`}
-              />
-            </button>
-
-            {['admin', 'staff'].includes(currentUser?.role) && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    setIsExportingCsv(true);
-                    await api.exportComplaintsCsv(complaints);
-                  } catch (err) {
-                    console.error('Export CSV error:', err);
-                    alert('Export CSV failed: ' + (err.message || 'Please try again'));
-                  } finally {
-                    setIsExportingCsv(false);
-                  }
-                }}
-                disabled={isExportingCsv}
-                className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <Download className={`w-3.5 h-3.5 ${isExportingCsv ? 'animate-bounce text-emerald-600' : 'text-slate-500'}`} />
-                {isExportingCsv ? 'Exporting...' : 'Export CSV'}
-              </button>
-            )}
-
-            {['admin', 'staff'].includes(currentUser?.role) && onOpenCustomerSearch && (
-              <button
-                type="button"
-                onClick={onOpenCustomerSearch}
-                className="px-3.5 py-2 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/70 rounded-xl text-xs font-bold text-slate-700 hover:text-emerald-800 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                title="Search customer directory, warranty, and plant records"
-              >
-                <Search className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden sm:inline">Search Customer</span>
-                <span className="sm:hidden">Search</span>
-              </button>
-            )}
-
+            {/* Primary Action Button: Full-width modern CTA on mobile, compact on desktop */}
             <button
               onClick={onOpenNewComplaint}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
-              New Ticket
+              <span>New Ticket</span>
             </button>
           </div>
         </div>

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/support-icon-192.png" />
     <link rel="shortcut icon" href="/support-icon-192.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="description" content="Eco Green Support Portal - Enterprise complaint lifecycle management, solar field technician coordination, and real-time customer tracking." />
     <link rel="canonical" href="https://complain.ecogreensolar.co.in/" />
     <meta property="og:title" content="Eco Green Support" />
@@ -56,6 +56,16 @@
         console.warn('Vite preload error detected, refreshing for latest release...');
         window.location.reload();
       });
+
+      // Maintain fixed normal zoom (1.0) and prevent accidental multi-touch pinch or gesture zoom
+      document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gestureend', function (e) { e.preventDefault(); }, { passive: false });
+      window.addEventListener('touchmove', function (e) {
+        if (e.touches && e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false });
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
