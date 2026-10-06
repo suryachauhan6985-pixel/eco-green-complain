@@ -567,19 +567,6 @@ export const ComplaintList = ({
                   <span className="xs:hidden">CSV</span>
                 </button>
               )}
-
-              {['admin', 'staff'].includes(currentUser?.role) && onOpenCustomerSearch && (
-                <button
-                  type="button"
-                  onClick={onOpenCustomerSearch}
-                  className="px-3 py-2 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/70 rounded-xl text-xs font-bold text-slate-700 hover:text-emerald-800 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                  title="Search customer directory, warranty, and plant records"
-                >
-                  <Search className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden sm:inline">Search Customer</span>
-                  <span className="sm:hidden">Search</span>
-                </button>
-              )}
             </div>
 
             {/* Primary Action Button: Full-width modern CTA on mobile, compact on desktop */}
