@@ -17,6 +17,7 @@ import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUpload';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { NewComplaintModal } from './NewComplaintModal';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -117,6 +118,47 @@ export const ComplaintDetailDrawer = ({
   const [deletingAttId, setDeletingAttId] = useState(null);
   const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
   const [isResolutionDragging, setIsResolutionDragging] = useState(false);
+
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS ---
+  // Stage: Document/Media Preview Modal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setPreviewDocModal(null);
+    return true;
+  }, Boolean(isOpen && previewDocModal), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage: Edit Complaint Modal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setIsEditing(false);
+    return true;
+  }, Boolean(isOpen && !previewDocModal && isEditing), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage: Payment Collection Modal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setIsRecordingPayment(false);
+    return true;
+  }, Boolean(isOpen && !previewDocModal && !isEditing && isRecordingPayment), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage: Assign Success Modal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setAssignSuccessModal(null);
+    return true;
+  }, Boolean(isOpen && !previewDocModal && assignSuccessModal), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage: Reassign Dropdown/Modal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setIsReassignOpen(false);
+    return true;
+  }, Boolean(isOpen && !previewDocModal && isReassignOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage: The Ticket Drawer itself (Drawer Stage)
+  useEscapeHandler(() => {
+    // Only close drawer if no inner modal is active
+    if (previewDocModal || isEditing || isRecordingPayment || assignSuccessModal || isReassignOpen) {
+      return false;
+    }
+    onClose();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
   const isResolvedOrClosed = ['Resolved', 'Closed'].includes(ticket?.status);
   const isResolved = ticket?.status === 'Resolved';

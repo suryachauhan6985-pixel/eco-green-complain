@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   const { currentUser, setCurrentUser } = useAuth();
@@ -152,16 +153,10 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   };
 
   // Close modal on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeHandler(() => {
+    onClose();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   if (!isOpen) return null;
 

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { GlobalLoadingOverlay } from '../components/common/GlobalLoadingOverlay';
 import { subscribeToLoading } from '../api/client';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../utils/escapeManager';
 
 const DialogContext = createContext(null);
 
@@ -138,6 +139,12 @@ export function DialogProvider({ children }) {
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Close active confirm/prompt/alert dialog on Escape key with highest priority (Dialog Stage)
+  useEscapeHandler(() => {
+    handleCloseDialog(false);
+    return true;
+  }, Boolean(dialog && dialog.isOpen), { priority: ESCAPE_PRIORITY.DIALOG });
 
   return (
     <DialogContext.Provider value={{ confirm, prompt, alert, showToast, showLoading, hideLoading }}>

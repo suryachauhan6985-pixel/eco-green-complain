@@ -8,6 +8,7 @@ import {
   Menu, IndianRupee
 } from 'lucide-react';
 import { AccountSettingsModal } from '../admin/AccountSettingsModal';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const Navbar = ({ 
   currentTab, 
@@ -26,16 +27,24 @@ export const Navbar = ({
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [accountModalOpen, setAccountModalOpen] = React.useState(false);
 
-  // Close mobile drawer on Escape key press
-  React.useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && mobileMenuOpen) {
-        setMobileMenuOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mobileMenuOpen]);
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS ---
+  // Stage 1: Account Settings modal inside Navbar
+  useEscapeHandler(() => {
+    setAccountModalOpen(false);
+    return true;
+  }, accountModalOpen, { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 2: Role switcher dropdown
+  useEscapeHandler(() => {
+    setRoleMenuOpen(false);
+    return true;
+  }, roleMenuOpen, { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 3: Mobile drawer menu
+  useEscapeHandler(() => {
+    setMobileMenuOpen(false);
+    return true;
+  }, mobileMenuOpen, { priority: ESCAPE_PRIORITY.DRAWER });
 
   // Lock background scroll when mobile sidebar is open
   React.useEffect(() => {

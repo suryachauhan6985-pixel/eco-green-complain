@@ -13,6 +13,7 @@ import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { TemplateManager } from './TemplateManager';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 // Default Tour Expense Categories
 const DEFAULT_EXPENSE_CATEGORIES = [
@@ -129,6 +130,12 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
     setActiveTab(tabId);
     updateUrlParams({ tab: tabId });
   };
+
+  // Stage: If on a settings subtab (templates, voucher, items_category, etc.), step back to default 'account'
+  useEscapeHandler(() => {
+    handleTabChange('account');
+    return true;
+  }, Boolean(activeTab !== 'account'), { priority: ESCAPE_PRIORITY.SUBVIEW });
 
   // Sync with browser back/forward buttons
   useEffect(() => {

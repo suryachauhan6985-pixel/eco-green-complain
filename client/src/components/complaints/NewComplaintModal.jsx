@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { useAuth } from '../../context/AuthContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { broadcastComplaintsUpdate } from '../../utils/liveSync';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
@@ -1107,17 +1107,30 @@ export const NewComplaintModal = ({
     onClose();
   };
 
-  // Close modal on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        resetAndClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS ---
+  // Stage 1: Preview file/media inside New Complaint Modal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setPreviewItem(null);
+    return true;
+  }, Boolean(isOpen && previewItem), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 2: Active duplicate complaint warning (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setActiveComplaintWarning(null);
+    return true;
+  }, Boolean(isOpen && !previewItem && activeComplaintWarning), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 3: Step backward from 'form' to 'product' in registration wizard, then close modal
+  useEscapeHandler(() => {
+    if (previewItem || activeComplaintWarning) return false;
+    if (step === 'form' && !isEditMode) {
+      setStep('product');
+      return true;
+    }
+    // If on product step or in edit mode, close the modal
+    resetAndClose();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
   if (!isOpen) return null;
 

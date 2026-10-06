@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { X, Phone, History, Calendar, Wrench, ChevronRight } from 'lucide-react';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket }) => {
   const [history, setHistory] = useState([]);
@@ -24,16 +25,10 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
   }, [isOpen, phone]);
 
   // Close modal on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeHandler(() => {
+    onClose();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
   if (!isOpen) return null;
 

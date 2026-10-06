@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { playNotificationChime as playLoudChime } from '../../utils/sound';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { 
   Search, Send, FileText, Paperclip, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -251,6 +252,52 @@ export const WhatsAppWebInbox = ({
   const [startingChat, setStartingChat] = useState(false);
   const [recentComplaintsList, setRecentComplaintsList] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
+
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS FOR WHATSAPP ---
+  // Stage 1: Media Preview Modal
+  useEscapeHandler(() => {
+    setPreviewMedia(null);
+    return true;
+  }, Boolean(previewMedia), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 2: File upload preview modal
+  useEscapeHandler(() => {
+    setSelectedFile(null);
+    setFilePreview(null);
+    return true;
+  }, Boolean(filePreview), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 3: Emoji picker / action menu
+  useEscapeHandler(() => {
+    setShowEmojiPicker(false);
+    setActionMessageMenuId(null);
+    setShowHeaderMenu(false);
+    setShowSidebarMenu(false);
+    return true;
+  }, Boolean(showEmojiPicker || actionMessageMenuId || showHeaderMenu || showSidebarMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info)
+  useEscapeHandler(() => {
+    if (isSettingsModalOpen) { setIsSettingsModalOpen(false); return true; }
+    if (isNewChatModalOpen) { setIsNewChatModalOpen(false); return true; }
+    if (isEditNameModalOpen) { setIsEditNameModalOpen(false); return true; }
+    if (isContactInfoOpen) { setIsContactInfoOpen(false); return true; }
+    return false;
+  }, Boolean(isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 5: Active Chat Thread -> Return to Conversation List
+  useEscapeHandler(() => {
+    if (previewMedia || filePreview || showEmojiPicker || isSettingsModalOpen || isNewChatModalOpen) return false;
+    setSelectedPhone(null);
+    return true;
+  }, Boolean(selectedPhone), { priority: ESCAPE_PRIORITY.SUBVIEW });
+
+  // Stage 6: Search Query in Conversation List -> Clear Search
+  useEscapeHandler(() => {
+    if (selectedPhone) return false;
+    setSearchQuery('');
+    return true;
+  }, Boolean(!selectedPhone && searchQuery), { priority: ESCAPE_PRIORITY.SUBVIEW });
 
   const fileInputRef = useRef(null);
   const docInputRef = useRef(null);

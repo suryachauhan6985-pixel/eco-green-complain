@@ -6,6 +6,7 @@ import {
   FileText, CheckCircle2, ExternalLink, MessageCircle, Copy, 
   Check, Zap, AlertCircle, ArrowRight, ChevronRight, Layers
 } from 'lucide-react';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const CustomerSearchModal = ({ 
   isOpen, 
@@ -41,17 +42,27 @@ export const CustomerSearchModal = ({
     }
   }, [isOpen]);
 
-  // Handle Escape key to close
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS ---
+  // Stage 1: Selected customer details inside CustomerSearchModal (Inner Modal Stage)
+  useEscapeHandler(() => {
+    setSelectedCustomer(null);
+    return true;
+  }, Boolean(isOpen && selectedCustomer), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Stage 2: Clear search text (Subview Stage)
+  useEscapeHandler(() => {
+    if (selectedCustomer) return false;
+    setQuery('');
+    setResults([]);
+    return true;
+  }, Boolean(isOpen && !selectedCustomer && query), { priority: ESCAPE_PRIORITY.SUBVIEW });
+
+  // Stage 3: Close CustomerSearchModal (Drawer Stage)
+  useEscapeHandler(() => {
+    if (selectedCustomer || query) return false;
+    onClose();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
   // Load sample/recent records on initial open so it's not empty
   const loadInitialSampleCustomers = async () => {

@@ -13,8 +13,8 @@ import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../commo
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { TourLedgerSection } from './TourLedgerSection';
 import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
-
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 const checkHasLocation = (job) => {
   if (!job) return false;
@@ -118,6 +118,21 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     setJobStatusFilter(st);
     updateUrlParams({ status: st === 'Assigned' ? null : st });
   };
+
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS FOR TECHNICIAN ---
+  // Stage 1: Clear search queries
+  useEscapeHandler(() => {
+    if (searchTerm) { setSearchTerm(''); return true; }
+    if (collectionSearchTerm) { setCollectionSearchTerm(''); return true; }
+    return false;
+  }, Boolean(searchTerm || collectionSearchTerm), { priority: ESCAPE_PRIORITY.SUBVIEW });
+
+  // Stage 2: Step back from sub-section (ledger, inventory, etc.) to 'field_ops'
+  useEscapeHandler(() => {
+    if (searchTerm || collectionSearchTerm) return false;
+    handleSectionSwitch('field_ops');
+    return true;
+  }, Boolean(section !== 'field_ops'), { priority: ESCAPE_PRIORITY.SUBVIEW });
 
   const handleAdminTechSelect = (id) => {
     if (!id) return;

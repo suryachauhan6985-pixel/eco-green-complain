@@ -5,6 +5,7 @@ import {
   MessageSquare, Mail, BarChart3, Star, RotateCcw, 
   MapPin, Phone, Download, HelpCircle, Compass, Clock, Smartphone 
 } from 'lucide-react';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 const TOUR_STEPS = [
   {
@@ -198,17 +199,15 @@ export const OnboardingTour = ({ isOpen, onClose }) => {
     setCurrentStepIndex(index);
   };
 
-  // Close tour on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        handleFinish();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  // Step back one slide on Escape, or close tour if on first slide
+  useEscapeHandler(() => {
+    if (currentStepIndex > 0) {
+      handlePrev();
+      return true;
+    }
+    handleFinish();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
   // Mobile swipe left & right support
   const handleTouchStart = (e) => {

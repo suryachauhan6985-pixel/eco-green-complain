@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DialogProvider, useDialog } from './context/DialogContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -13,6 +13,10 @@ import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDr
 import { LoginPage } from './components/auth/LoginPage';
 import { api } from './api/client';
 import { getNotificationTemplates } from './utils/templateUtils';
+import { initGlobalEscapeListener, useEscapeHandler, ESCAPE_PRIORITY } from './utils/escapeManager';
+
+// Initialize global escape key interception
+initGlobalEscapeListener();
 
 
 // Code-split heavy secondary tabs and dialogs for lightning-fast initial load
@@ -151,6 +155,18 @@ function AppContent() {
     if (fromUrl) return fromUrl;
     return 'complaints';
   });
+
+  // Multi-stage navigation history stack (tracks order of tabs visited)
+  const tabHistoryRef = useRef(['complaints']);
+
+  useEffect(() => {
+    if (!currentTab) return;
+    const stack = tabHistoryRef.current;
+    if (stack[stack.length - 1] !== currentTab) {
+      stack.push(currentTab);
+      if (stack.length > 30) stack.shift();
+    }
+  }, [currentTab]);
 
   const [techSection, setTechSection] = useState(() => getTechSectionFromUrl());
 
@@ -348,35 +364,86 @@ function AppContent() {
     }
   }, [currentUser?.role]);
 
-  // Global Escape key listener to close topmost open drawer or modal
-  useEffect(() => {
-    const handleGlobalKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        if (selectedComplaintId) {
-          setSelectedComplaintId(null);
-          return;
-        }
-        if (isNewComplaintOpen) {
-          setIsNewComplaintOpen(false);
-          return;
-        }
-        if (isNotificationDrawerOpen) {
-          setIsNotificationDrawerOpen(false);
-          return;
-        }
-        if (historyPhone) {
-          setHistoryPhone(null);
-          return;
-        }
-        if (isTourOpen) {
-          setIsTourOpen(false);
-          return;
-        }
+  // --- HIERARCHICAL STAGE ESCAPE HANDLERS (TOP-LEVEL APP ORCHESTRATION) ---
+  // Stage: Active Complaint Detail Drawer
+  useEscapeHandler(() => {
+    handleSelectComplaint(null);
+    return true;
+  }, Boolean(selectedComplaintId), { priority: ESCAPE_PRIORITY.DRAWER });
+
+  // Stage: New Complaint Modal
+  useEscapeHandler(() => {
+    handleCloseNewComplaint();
+    return true;
+  }, Boolean(isNewComplaintOpen), { priority: ESCAPE_PRIORITY.DRAWER });
+
+  // Stage: Customer Search Modal
+  useEscapeHandler(() => {
+    handleCloseCustomerSearch();
+    return true;
+  }, Boolean(isCustomerSearchOpen), { priority: ESCAPE_PRIORITY.DRAWER });
+
+  // Stage: Customer History Modal
+  useEscapeHandler(() => {
+    handleCloseHistory();
+    return true;
+  }, Boolean(historyPhone), { priority: ESCAPE_PRIORITY.DRAWER });
+
+  // Stage: Notification Drawer
+  useEscapeHandler(() => {
+    setIsNotificationDrawerOpen(false);
+    return true;
+  }, Boolean(isNotificationDrawerOpen), { priority: ESCAPE_PRIORITY.DRAWER });
+
+  // Stage: Onboarding Tour
+  useEscapeHandler(() => {
+    setIsTourOpen(false);
+    return true;
+  }, Boolean(isTourOpen), { priority: ESCAPE_PRIORITY.DRAWER });
+
+  // Stage: Sub-section in Technician Portal (field_ops vs other sections)
+  useEscapeHandler(() => {
+    if (selectedComplaintId || isNewComplaintOpen || isCustomerSearchOpen || historyPhone || isNotificationDrawerOpen || isTourOpen) {
+      return false;
+    }
+    if (currentTab === 'technician' && techSection && techSection !== 'field_ops') {
+      handleTechSectionChange('field_ops');
+      return true;
+    }
+    return false;
+  }, Boolean(currentTab === 'technician' && techSection && techSection !== 'field_ops'), { priority: ESCAPE_PRIORITY.SUBVIEW });
+
+  // Stage: Navigation Tab History Stack (Steps back one tab at a time, landing on root dashboard)
+  useEscapeHandler(() => {
+    // If any drawer or modal is open, let its own handler take precedence
+    if (selectedComplaintId || isNewComplaintOpen || isCustomerSearchOpen || historyPhone || isNotificationDrawerOpen || isTourOpen) {
+      return false;
+    }
+
+    const stack = tabHistoryRef.current;
+
+    // Pop current tab if at top of stack
+    while (stack.length > 0 && stack[stack.length - 1] === currentTab) {
+      stack.pop();
+    }
+
+    if (stack.length > 0) {
+      const prevTab = stack.pop();
+      if (prevTab && prevTab !== currentTab) {
+        handleTabChange(prevTab);
+        return true;
       }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [selectedComplaintId, isNewComplaintOpen, isNotificationDrawerOpen, historyPhone, isTourOpen]);
+    }
+
+    // If no previous tab in stack and not already on root dashboard, return to dashboard
+    if (currentTab !== 'complaints') {
+      handleTabChange('complaints');
+      return true;
+    }
+
+    // Already on root dashboard ('complaints') with no drawers or sub-views. Stage stack is fully clear!
+    return false;
+  }, true, { priority: ESCAPE_PRIORITY.TAB_STACK });
 
   const handleReloadDemoData = async () => {
     const ok = await confirm({

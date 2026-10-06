@@ -5,6 +5,7 @@ import {
   MessageSquare, CheckCircle2, AlertCircle, RefreshCw, Smartphone, 
   Send, LogOut, ShieldCheck, Zap, X, Info
 } from 'lucide-react';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const WhatsAppGatewayModal = ({ isOpen, onClose, onStatusChange }) => {
   const { confirm, showToast } = useDialog();
@@ -84,16 +85,10 @@ export const WhatsAppGatewayModal = ({ isOpen, onClose, onStatusChange }) => {
   };
 
   // Close modal on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeHandler(() => {
+    onClose();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   if (!isOpen) return null;
 

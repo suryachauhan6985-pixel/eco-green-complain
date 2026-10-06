@@ -12,6 +12,7 @@ import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDat
 import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -116,6 +117,13 @@ export const ComplaintList = ({
     setTechnicianFilter(tid);
     updateUrlParams({ tech_id: tid || null });
   };
+
+  // Stage: If search text is present on Complaint List, clear search on Escape
+  useEscapeHandler(() => {
+    setSearch('');
+    updateUrlParams({ q: null, search: null });
+    return true;
+  }, Boolean(search && search.trim()), { priority: ESCAPE_PRIORITY.SUBVIEW });
 
   useEffect(() => {
     const handlePop = () => {
