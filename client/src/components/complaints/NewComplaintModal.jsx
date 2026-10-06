@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthContext';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { broadcastComplaintsUpdate } from '../../utils/liveSync';

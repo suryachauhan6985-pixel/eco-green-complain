@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DialogProvider, useDialog } from './context/DialogContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -129,6 +129,9 @@ function getTechSectionFromUrl() {
 function AppContent() {
   const { currentUser, loading, switchRole } = useAuth();
   const [splashComplete, setSplashComplete] = useState(false);
+  const handleSplashComplete = useCallback(() => {
+    setSplashComplete(true);
+  }, []);
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
 
   const getTabFromLocation = () => {
@@ -472,7 +475,7 @@ function AppContent() {
   if (trackingInfo.isTracking) {
     return (
       <>
-        {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+        {!splashComplete && <SplashScreen minDuration={500} onComplete={handleSplashComplete} />}
         <React.Suspense fallback={<LoadingFallback />}>
           <CustomerPublicPortal
             initialTicketId={trackingInfo.ticketId}
@@ -491,7 +494,7 @@ function AppContent() {
   if (loading) {
     return (
       <>
-        {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+        {!splashComplete && <SplashScreen minDuration={500} onComplete={handleSplashComplete} />}
         <AppPageSkeleton />
       </>
     );
@@ -500,7 +503,7 @@ function AppContent() {
   if (!currentUser) {
     return (
       <>
-        {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+        {!splashComplete && <SplashScreen minDuration={500} onComplete={handleSplashComplete} />}
         <LoginPage onSwitchToCustomer={() => switchRole('customer')} />
       </>
     );
@@ -508,7 +511,7 @@ function AppContent() {
 
   return (
     <div className="h-[100dvh] w-full max-w-full min-w-0 flex flex-col overflow-x-hidden overflow-y-hidden bg-slate-50 font-sans">
-      {!splashComplete && <SplashScreen minDuration={1500} onComplete={() => setSplashComplete(true)} />}
+      {!splashComplete && <SplashScreen minDuration={500} onComplete={handleSplashComplete} />}
       {/* Top Main Navigation (Sticky Header) */}
       <div className="shrink-0 z-30 w-full max-w-full">
         <Navbar

@@ -1,35 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 /**
  * SplashScreen
  * High-fidelity, smooth splash screen for Eco Green Solar CMS.
- * Ensures minimum display duration (1500ms) with a graceful fade-out transition,
- * delivering a consistent native-app feel across iOS PWA, Android, and Desktop Web.
+ * Ensures fast display duration (500ms) with a graceful fade-out transition.
+ * Guaranteed never to get stuck with stable ref callbacks, tap-to-dismiss,
+ * and a hard safety fallback timeout.
  */
-export const SplashScreen = ({ minDuration = 1500, onComplete }) => {
+export const SplashScreen = ({ minDuration = 500, onComplete }) => {
   const [fading, setFading] = useState(false);
   const [visible, setVisible] = useState(true);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  const dismiss = () => {
+    setFading(true);
+    setTimeout(() => {
+      setVisible(false);
+      if (onCompleteRef.current) onCompleteRef.current();
+    }, 250);
+  };
 
   useEffect(() => {
-    // Hold splash screen for minimum duration
+    // Fast minimum duration timer
     const timer = setTimeout(() => {
-      setFading(true);
-      // Wait for fade-out CSS animation (350ms) to complete before unmounting
-      const fadeTimer = setTimeout(() => {
-        setVisible(false);
-        if (onComplete) onComplete();
-      }, 350);
-      return () => clearTimeout(fadeTimer);
+      dismiss();
     }, minDuration);
 
-    return () => clearTimeout(timer);
-  }, [minDuration, onComplete]);
+    // Hard safety fallback: guaranteed dismissal under any network or rendering conditions
+    const safetyTimer = setTimeout(() => {
+      setVisible(false);
+      if (onCompleteRef.current) onCompleteRef.current();
+    }, 1500);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(safetyTimer);
+    };
+  }, [minDuration]);
 
   if (!visible) return null;
 
   return (
     <div
-      className={`fixed inset-0 z-[9999999] flex flex-col items-center justify-between select-none transition-opacity duration-300 ease-out ${
+      onClick={dismiss}
+      className={`fixed inset-0 z-[9999999] flex flex-col items-center justify-between select-none cursor-pointer transition-opacity duration-250 ease-out ${
         fading ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
       style={{
