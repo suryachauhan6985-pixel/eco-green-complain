@@ -340,8 +340,8 @@ export const NewComplaintModal = ({
           ...prev,
           pincode: clean,
           district: res.district || prev.district,
-          city: (prev.city && prev.city !== prev.district) ? prev.city : (res.cityOrVillage || res.district || prev.city),
-          state: res.state || prev.state
+          state: res.state || prev.state,
+          city: prev.city || ''
         }));
       } else {
         setPincodeStatus('invalid');
@@ -376,14 +376,19 @@ export const NewComplaintModal = ({
   // Debounced City/District Search for Autosuggesting Pincodes (Bidirectional)
   useEffect(() => {
     const val = (formData.city || '').trim();
-    if (pincodeStatus === 'valid' && (val === pincodeVerifiedData?.district || val === pincodeVerifiedData?.postOffice)) {
-      return;
-    }
 
     if (!val || val.length < 3) {
       setCitySuggestions([]);
       setRecommendedPincodes([]);
       setSearchingCity(false);
+      setShowCitySuggestions(false);
+      return;
+    }
+
+    // If pincode is already filled (6 digits), do not search or show recommended pincodes
+    if (formData.pincode && formData.pincode.trim().length === 6) {
+      setCitySuggestions([]);
+      setRecommendedPincodes([]);
       setShowCitySuggestions(false);
       return;
     }
@@ -416,23 +421,20 @@ export const NewComplaintModal = ({
             }
             setRecommendedPincodes(Array.from(pMap.values()));
           }
-          setShowCitySuggestions(true);
         } else {
           setCitySuggestions([]);
           setRecommendedPincodes([]);
-          setShowCitySuggestions(false);
         }
       } catch (e) {
         setCitySuggestions([]);
         setRecommendedPincodes([]);
-        setShowCitySuggestions(false);
       } finally {
         setSearchingCity(false);
       }
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [formData.city]);
+  }, [formData.city, formData.pincode]);
 
   const handleSelectCitySuggestion = (suggestion) => {
     setFormData(prev => ({
@@ -446,9 +448,8 @@ export const NewComplaintModal = ({
     setPincodeVerifiedData(suggestion);
     setPincodeMessage('');
     setShowCitySuggestions(false);
-    if (suggestion.pincode) {
-      verifyPincode(suggestion.pincode);
-    }
+    setCitySuggestions([]);
+    setRecommendedPincodes([]);
   };
 
   const handleSelectRecommendedPincode = (item) => {
@@ -467,9 +468,20 @@ export const NewComplaintModal = ({
       villages: item.postOffices || []
     });
     setPincodePostOffices(item.postOffices || []);
-    if (item.pincode) {
-      verifyPincode(item.pincode);
-    }
+    // Immediate disappearance of recommendation list
+    setRecommendedPincodes([]);
+    setShowCitySuggestions(false);
+    setCitySuggestions([]);
+  };
+
+  const handleSelectCityName = (name) => {
+    setFormData(prev => ({
+      ...prev,
+      city: name
+    }));
+    // Immediate disappearance of recommendation list
+    setShowCitySuggestions(false);
+    setCitySuggestions([]);
   };
 
 
@@ -622,6 +634,8 @@ export const NewComplaintModal = ({
     });
     setCustomerSearchResults([]);
     setCustomerSearchQuery('');
+    setShowCitySuggestions(false);
+    setCitySuggestions([]);
     const rawMobile = (c.consumer_mobile || c.customer_phone || c.phone || '').toString().trim();
     const digitsOnly = rawMobile.replace(/\D/g, '');
     const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : rawMobile;
@@ -1600,13 +1614,13 @@ export const NewComplaintModal = ({
                       </p>
                     )}
 
-                    {/* Recommended PIN Codes for Entered City (Bidirectional) */}
-                    {recommendedPincodes.length > 0 && (
+                    {/* Recommended PIN Codes for Entered City (ONLY when City is filled AND Pincode is blank) */}
+                    {!formData.pincode && Boolean(formData.city && formData.city.trim()) && recommendedPincodes.length > 0 && (
                       <div className="mt-2 p-2.5 bg-emerald-50/80 border border-emerald-200/90 rounded-xl animate-in fade-in slide-in-from-top-1 duration-150">
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-[10.5px] font-bold text-emerald-950 flex items-center gap-1">
                             <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-                            <span>Recommended PIN Codes for <strong className="text-emerald-800 font-semibold">{formData.city || 'City'}</strong>:</span>
+                            <span>Recommended PIN Codes for <strong className="text-emerald-800 font-semibold">{formData.city}</strong>:</span>
                           </span>
                           <span className="text-[9.5px] text-emerald-700 font-medium">
                             Select to autofill
@@ -1614,27 +1628,21 @@ export const NewComplaintModal = ({
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto pr-1">
                           {recommendedPincodes.map((item) => {
-                            const isSelected = String(formData.pincode).trim() === String(item.pincode).trim();
                             const locality = item.postOffices?.[0] || item.district || '';
                             return (
                               <button
                                 key={item.pincode}
                                 type="button"
                                 onClick={() => handleSelectRecommendedPincode(item)}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                                  isSelected
-                                    ? 'bg-emerald-600 text-white border border-emerald-700 ring-2 ring-emerald-300'
-                                    : 'bg-white text-slate-800 border border-emerald-300 hover:border-emerald-500 hover:bg-emerald-100/70'
-                                }`}
+                                className="px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs bg-white text-slate-800 border border-emerald-300 hover:border-emerald-500 hover:bg-emerald-100/70"
                                 title={`${item.postOffices?.join(', ') || item.district} (${item.state})`}
                               >
                                 <span>📌 {item.pincode}</span>
                                 {locality && (
-                                  <span className={`text-[9px] font-sans font-normal truncate max-w-[100px] ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                                  <span className="text-[9px] font-sans font-normal truncate max-w-[100px] text-slate-500">
                                     ({locality})
                                   </span>
                                 )}
-                                {isSelected && <Check className="w-2.5 h-2.5" />}
                               </button>
                             );
                           })}
@@ -1663,13 +1671,26 @@ export const NewComplaintModal = ({
                       type="text"
                       placeholder="e.g., Metoda, Chhapra, Khirsara..."
                       value={formData.city || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                      onFocus={() => { if (citySuggestions.length > 0) setShowCitySuggestions(true); }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData(prev => ({ ...prev, city: val }));
+                        if (!val) {
+                          setShowCitySuggestions(false);
+                          setCitySuggestions([]);
+                        } else if (!formData.pincode) {
+                          setShowCitySuggestions(true);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (!formData.city && citySuggestions.length > 0) {
+                          setShowCitySuggestions(true);
+                        }
+                      }}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     />
 
-                    {/* Autosuggest Dropdown for City/Village Search */}
-                    {showCitySuggestions && citySuggestions.length > 0 && (
+                    {/* Autosuggest Dropdown for City/Village Search (ONLY when City is blank/typing) */}
+                    {showCitySuggestions && !formData.city && citySuggestions.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                         <div className="p-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
                           <span>Matching Locations ({citySuggestions.length})</span>
@@ -1706,24 +1727,35 @@ export const NewComplaintModal = ({
                       </div>
                     )}
 
-                    {/* Quick Village/Locality Selection Chips under PIN */}
-                    {pincodeVerifiedData?.villages && pincodeVerifiedData.villages.length > 1 && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1 animate-in fade-in">
-                        <span className="text-[9.5px] text-slate-500 font-semibold block w-full">Villages under {formData.pincode}:</span>
-                        {pincodeVerifiedData.villages.slice(0, 6).map((v) => (
-                          <button
-                            key={v}
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, city: v }))}
-                            className={`text-[9.5px] px-1.5 py-0.5 rounded-md border transition-all cursor-pointer ${
-                              formData.city === v
-                                ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-2xs'
-                                : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50'
-                            }`}
-                          >
-                            {v}
-                          </button>
-                        ))}
+                    {/* Recommended Locations when PIN code is Entered AND City is Blank */}
+                    {!formData.city && formData.pincode && formData.pincode.length === 6 && pincodePostOffices.length > 0 && (
+                      <div className="mt-2 p-2 bg-emerald-50/80 border border-emerald-200/90 rounded-xl animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-emerald-950 flex items-center gap-1">
+                            <Building2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Recommended Locations under PIN <strong className="text-emerald-800 font-mono">{formData.pincode}</strong>:</span>
+                          </span>
+                          <span className="text-[9.5px] text-emerald-700 font-medium">
+                            Select to fill City
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1 max-h-32 overflow-y-auto pr-1">
+                          {pincodePostOffices.map((loc) => {
+                            const name = typeof loc === 'string' ? loc : (loc.name || loc.postOffice || '');
+                            if (!name) return null;
+                            return (
+                              <button
+                                key={name}
+                                type="button"
+                                onClick={() => handleSelectCityName(name)}
+                                className="text-[9.5px] px-2 py-1 rounded-md border border-emerald-300 bg-white text-slate-800 hover:bg-emerald-100 hover:border-emerald-500 transition-all cursor-pointer font-medium shadow-2xs flex items-center gap-1"
+                              >
+                                <span>📍</span>
+                                <span>{name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
