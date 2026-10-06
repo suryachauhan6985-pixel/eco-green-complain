@@ -1418,6 +1418,40 @@ commonRoutes.post('/push/test', optionalAuth, async (c) => {
   }
 });
 
+// GET /api/storage/r2/list-all - Inspect all objects in R2 (Admin only)
+commonRoutes.get('/storage/r2/list-all', authenticateToken, requireRole('admin'), async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) return c.json({ error: 'R2 bucket unavailable' }, 500);
+
+    let allObjects = [];
+    let cursor = undefined;
+    do {
+      const listRes = await bucket.list({ cursor, limit: 1000 }).catch(() => null);
+      if (!listRes || !listRes.objects) break;
+      for (const obj of listRes.objects) {
+        allObjects.push({
+          key: obj.key,
+          size: obj.size,
+          size_kb: Math.round((obj.size || 0) / 1024),
+          uploaded: obj.uploaded
+        });
+      }
+      cursor = listRes.truncated ? listRes.cursor : undefined;
+    } while (cursor);
+
+    return c.json({
+      success: true,
+      total_objects: allObjects.length,
+      total_size_bytes: allObjects.reduce((sum, o) => sum + (o.size || 0), 0),
+      total_size_mb: (allObjects.reduce((sum, o) => sum + (o.size || 0), 0) / (1024 * 1024)).toFixed(2),
+      objects: allObjects
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // POST /api/storage/r2/cleanup-orphans - Clean up obsolete R2 folders (Admin only)
 commonRoutes.post('/storage/r2/cleanup-orphans', authenticateToken, requireRole('admin'), async (c) => {
   try {
