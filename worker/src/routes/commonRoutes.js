@@ -154,6 +154,142 @@ function generateSpellingVariants(query) {
   return Array.from(variants);
 }
 
+// Helper: Clean place name removing administrative post-office suffixes to get clean City/Village
+function cleanPlaceName(name) {
+  if (!name) return '';
+  return name
+    .replace(/\s*\b(Head Post Office|Sub Post Office|Branch Post Office|Post Office|H\.O\.|S\.O\.|B\.O\.|H\.O|S\.O|B\.O|G\.P\.O|M\.D\.G|Kty)\b/gi, '')
+    .replace(/\s*\(.*?\)/gi, '')
+    .replace(/[.,\-_/]+$/g, '')
+    .replace(/^[.,\-_/]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Helper: Filter out non-residential technical/administrative offices (courts, railway, zilla parishad, etc.)
+function isTechnicalOffice(name) {
+  if (!name) return true;
+  const l = name.toLowerCase().trim();
+  return (
+    l.includes('civil court') ||
+    l.includes('zilla parishad') ||
+    l.includes('collectorate') ||
+    l.includes('treasury') ||
+    l.includes('court') ||
+    l.includes('cantt') ||
+    l.includes('kutchery') ||
+    l.includes('railway station') ||
+    l.includes(' r s') ||
+    l.endsWith(' rs') ||
+    l === 'rs' ||
+    l.includes('bus stand') ||
+    l.includes('police line') ||
+    l.includes('secretariat') ||
+    l.includes('post office') ||
+    l.includes('h.o.') ||
+    l.includes('s.o.') ||
+    l.includes('b.o.')
+  );
+}
+
+// Helper: Intelligent resolution of primary City/Town and clean village lists for any Indian Pincode
+function resolveBestCityAndVillages(offices, localMatches, pincode) {
+  if (!offices || offices.length === 0) {
+    if (localMatches && localMatches.length > 0) {
+      const first = localMatches[0];
+      const villages = Array.from(new Set(localMatches.map(m => m.name)));
+      return {
+        city: first.name,
+        district: first.district,
+        state: first.state,
+        villages,
+        postOffices: villages.map(v => ({ name: v, district: first.district, state: first.state, deliveryStatus: 'Delivery' }))
+      };
+    }
+    return null;
+  }
+
+  const district = offices[0].District || '';
+  const state = offices[0].State || '';
+  const blocks = Array.from(new Set(offices.map(o => o.Block).filter(Boolean)));
+  const primaryBlock = blocks[0] || '';
+
+  // Clean names
+  const cleanNames = offices.map(o => cleanPlaceName(o.Name || '')).filter(Boolean);
+
+  // Strategy to pick best City/Town name:
+  // 1. If an office exactly matches District or Division
+  let bestCity = '';
+  const matchDist = cleanNames.find(n => n.toLowerCase() === district.toLowerCase() && !isTechnicalOffice(n));
+  if (matchDist) {
+    bestCity = matchDist;
+  }
+
+  // 2. If an office has 'Head Post Office' in BranchType (Head office is the principal city)
+  if (!bestCity) {
+    const headOffice = offices.find(o => String(o.BranchType).toLowerCase().includes('head'));
+    if (headOffice) {
+      let n = cleanPlaceName(headOffice.Name);
+      if (n && !isTechnicalOffice(n)) bestCity = n;
+    }
+  }
+
+  // 3. If an office has 'Sub Post Office' (S.O.) - S.O. is the central town hub for the pincode
+  if (!bestCity) {
+    const subOffice = offices.find(o => String(o.BranchType).toLowerCase().includes('sub'));
+    if (subOffice) {
+      let n = cleanPlaceName(subOffice.Name);
+      if (n && !isTechnicalOffice(n)) bestCity = n;
+    }
+  }
+
+  // 4. If Block / Taluka is available and distinct
+  if (!bestCity && primaryBlock && primaryBlock.toLowerCase() !== 'na') {
+    bestCity = primaryBlock;
+  }
+
+  // 5. Fallback to first non-technical clean office name
+  if (!bestCity) {
+    bestCity = cleanNames.find(n => !isTechnicalOffice(n)) || cleanNames[0] || district;
+  }
+
+  // Check if local directory has special override (e.g. 362140 -> Ankolwadi)
+  if (localMatches && localMatches.length > 0) {
+    bestCity = localMatches[0].name;
+  }
+
+  // Build clean list of villages / localities (unique, sorted with bestCity first)
+  const uniqueVillages = new Set();
+  if (bestCity) uniqueVillages.add(bestCity);
+  if (localMatches) {
+    for (const l of localMatches) uniqueVillages.add(l.name);
+  }
+  if (primaryBlock && primaryBlock.toLowerCase() !== 'na' && primaryBlock !== district) {
+    uniqueVillages.add(primaryBlock);
+  }
+  for (const n of cleanNames) {
+    if (!isTechnicalOffice(n)) {
+      uniqueVillages.add(n);
+    }
+  }
+
+  const villagesList = Array.from(uniqueVillages);
+  const postOfficesList = villagesList.map(v => ({
+    name: v,
+    district,
+    state,
+    deliveryStatus: 'Delivery'
+  }));
+
+  return {
+    city: bestCity,
+    district,
+    state,
+    villages: villagesList,
+    postOffices: postOfficesList
+  };
+}
+
 // GET /api/location/pincode/:pincode
 commonRoutes.get('/location/pincode/:pincode', async (c) => {
   const pincode = (c.req.param('pincode') || '').replace(/\D/g, '');
@@ -202,36 +338,16 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
 
     if (Array.isArray(postalData) && postalData[0]?.Status === 'Success' && postalData[0]?.PostOffice?.length > 0) {
       const offices = postalData[0].PostOffice;
-      const primary = offices[0];
-
-      // Merge local village names if not already present
-      const officeNames = new Set(offices.map(o => (o.Name || '').toLowerCase()));
-      const mergedOffices = offices.map(o => ({
-        name: o.Name,
-        district: o.District,
-        state: o.State,
-        deliveryStatus: o.DeliveryStatus
-      }));
-
-      for (const loc of localMatches) {
-        if (!officeNames.has(loc.name.toLowerCase())) {
-          mergedOffices.unshift({
-            name: `${loc.name} (${loc.postOffice})`,
-            district: loc.district,
-            state: loc.state,
-            deliveryStatus: 'Delivery'
-          });
-        }
-      }
+      const resolved = resolveBestCityAndVillages(offices, localMatches, pincode);
 
       const result = {
         success: true,
         pincode,
-        city: localMatches[0]?.name || primary.Name || primary.Division || '',
-        district: primary.District || localMatches[0]?.district || '',
-        state: primary.State || localMatches[0]?.state || '',
-        postOffices: mergedOffices,
-        villages: mergedOffices.map(o => o.name)
+        city: resolved.city,
+        district: resolved.district,
+        state: resolved.state,
+        postOffices: resolved.postOffices,
+        villages: resolved.villages
       };
 
       if (pincodeMemoryCache.size > 500) {
@@ -254,19 +370,20 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
     // 4. Fallback to Local Directory if Postal API failed or had no records
     if (localMatches.length > 0) {
       const first = localMatches[0];
+      const villages = Array.from(new Set(localMatches.map(m => m.name)));
       const result = {
         success: true,
         pincode,
         city: first.name,
         district: first.district,
         state: first.state,
-        postOffices: localMatches.map(m => ({
-          name: m.postOffice,
-          district: m.district,
-          state: m.state,
+        postOffices: villages.map(v => ({
+          name: v,
+          district: first.district,
+          state: first.state,
           deliveryStatus: 'Delivery'
         })),
-        villages: localMatches.map(m => m.name)
+        villages
       };
       pincodeMemoryCache.set(pincode, result);
       return c.json(result);
@@ -276,19 +393,21 @@ commonRoutes.get('/location/pincode/:pincode', async (c) => {
     const govRecords = await fetchFromDataGovIn(`filters%5Bpincode%5D=${pincode}`);
     if (govRecords.length > 0) {
       const primary = govRecords[0];
+      const cleanCity = cleanPlaceName(primary.postOffice);
+      const villages = Array.from(new Set(govRecords.map(r => cleanPlaceName(r.postOffice)).filter(Boolean)));
       const result = {
         success: true,
         pincode,
-        city: primary.postOffice,
+        city: cleanCity,
         district: primary.district,
         state: primary.state,
-        postOffices: govRecords.map(r => ({
-          name: r.postOffice,
-          district: r.district,
-          state: r.state,
-          deliveryStatus: r.deliveryStatus
+        postOffices: villages.map(v => ({
+          name: v,
+          district: primary.district,
+          state: primary.state,
+          deliveryStatus: 'Delivery'
         })),
-        villages: govRecords.map(r => r.postOffice)
+        villages
       };
       pincodeMemoryCache.set(pincode, result);
       return c.json(result);
@@ -323,16 +442,26 @@ const handleLocationSearch = async (c) => {
   const pincodeMap = new Map();
 
   const addResult = (item) => {
-    if (!item.pincode || !item.postOffice) return;
-    const key = `${item.pincode}_${item.postOffice}`.toLowerCase();
+    if (!item.pincode) return;
+    const rawName = item.name || item.city || item.village || item.postOffice || '';
+    if (isTechnicalOffice(rawName)) return;
+    const cleanName = cleanPlaceName(rawName);
+    if (!cleanName || cleanName.length < 2) return;
+    if (isTechnicalOffice(cleanName)) return;
+
+    const key = `${item.pincode}_${cleanName}`.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
       results.push({
-        postOffice: item.postOffice,
+        name: cleanName,
+        city: cleanName,
+        village: cleanName,
+        postOffice: cleanName,
         pincode: item.pincode,
-        district: item.district,
-        state: item.state,
-        branchType: item.branchType || 'Branch Post Office',
+        district: item.district || '',
+        state: item.state || '',
+        taluka: item.taluka || '',
+        branchType: item.branchType || 'City / Village',
         deliveryStatus: item.deliveryStatus || 'Delivery'
       });
     }
@@ -340,14 +469,17 @@ const handleLocationSearch = async (c) => {
     if (!pincodeMap.has(item.pincode)) {
       pincodeMap.set(item.pincode, {
         pincode: item.pincode,
-        district: item.district,
-        state: item.state,
-        postOffices: [item.postOffice]
+        city: cleanName,
+        district: item.district || '',
+        state: item.state || '',
+        villages: [cleanName],
+        postOffices: [cleanName]
       });
     } else {
       const entry = pincodeMap.get(item.pincode);
-      if (!entry.postOffices.includes(item.postOffice) && entry.postOffices.length < 6) {
-        entry.postOffices.push(item.postOffice);
+      if (!entry.villages.includes(cleanName) && entry.villages.length < 6) {
+        entry.villages.push(cleanName);
+        entry.postOffices.push(cleanName);
       }
     }
   };
@@ -363,23 +495,15 @@ const handleLocationSearch = async (c) => {
                       loc.taluka.toLowerCase().includes(qLower);
       if (matches) {
         addResult({
-          postOffice: loc.name,
+          name: loc.name,
+          city: loc.name,
+          village: loc.name,
           pincode: loc.pincode,
           district: loc.district,
           state: loc.state,
-          branchType: 'Village / Branch Post Office',
-          deliveryStatus: 'Delivery'
+          taluka: loc.taluka,
+          branchType: 'City / Village'
         });
-        if (loc.postOffice !== loc.name) {
-          addResult({
-            postOffice: loc.postOffice,
-            pincode: loc.pincode,
-            district: loc.district,
-            state: loc.state,
-            branchType: 'Sub Post Office',
-            deliveryStatus: 'Delivery'
-          });
-        }
       }
     }
 
@@ -396,12 +520,12 @@ const handleLocationSearch = async (c) => {
       if (dbRes?.rows) {
         for (const row of dbRes.rows) {
           addResult({
-            postOffice: row.city,
+            name: row.city,
+            city: row.city,
             pincode: row.pincode,
-            district: row.district || 'Gujarat Region',
+            district: row.district || 'Gujarat',
             state: row.state || 'Gujarat',
-            branchType: 'Customer Location',
-            deliveryStatus: 'Active Service Zone'
+            branchType: 'City / Village'
           });
         }
       }
@@ -441,24 +565,42 @@ const handleLocationSearch = async (c) => {
 
     // Add Government OGD results
     for (const gr of govRecords) {
-      addResult(gr);
+      addResult({
+        name: cleanPlaceName(gr.postOffice),
+        city: cleanPlaceName(gr.postOffice),
+        pincode: gr.pincode,
+        district: gr.district,
+        state: gr.state,
+        taluka: gr.taluka
+      });
     }
 
-    // Add India Post results
+    // Add India Post results (cleaned into city/village names)
     for (const poList of postalOfficesLists) {
       for (const po of poList) {
         if (!po.Pincode || !po.Name) continue;
         addResult({
-          postOffice: po.Name,
+          name: cleanPlaceName(po.Name),
+          city: cleanPlaceName(po.Name),
           pincode: po.Pincode,
           district: po.District,
           state: po.State,
-          branchType: po.BranchType,
-          deliveryStatus: po.DeliveryStatus
+          taluka: po.Block || ''
         });
         if (results.length >= 35) break;
       }
     }
+
+    // Sort results: exact query match first, then startsWith, then others
+    results.sort((a, b) => {
+      const aName = (a.city || a.name || '').toLowerCase();
+      const bName = (b.city || b.name || '').toLowerCase();
+      if (aName === qLower && bName !== qLower) return -1;
+      if (bName === qLower && aName !== qLower) return 1;
+      if (aName.startsWith(qLower) && !bName.startsWith(qLower)) return -1;
+      if (bName.startsWith(qLower) && !aName.startsWith(qLower)) return 1;
+      return 0;
+    });
 
     const recommendedPincodes = Array.from(pincodeMap.values());
 
