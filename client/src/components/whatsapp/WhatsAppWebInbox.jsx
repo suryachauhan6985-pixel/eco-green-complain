@@ -219,6 +219,11 @@ export const WhatsAppWebInbox = ({
   const [filePreview, setFilePreview] = useState(null);
   const [sendingReply, setSendingReply] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+  });
+  const knownMsgIdsRef = useRef(new Set());
+  const initialLoadDoneRef = useRef(false);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'favorites' | 'groups'
   const [previewMedia, setPreviewMedia] = useState(null);
 
@@ -325,6 +330,36 @@ export const WhatsAppWebInbox = ({
     playLoudChime({ volume: 0.95 });
   };
 
+  const handleRequestNotificationPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    try {
+      const perm = await Notification.requestPermission();
+      setNotificationPermission(perm);
+      if (perm === 'granted') {
+        showOSNotification({
+          title: '💬 WhatsApp Notifications Active',
+          body: 'You will receive alerts for incoming WhatsApp messages.',
+          tag: 'wa-perm-granted'
+        });
+        showToast('Desktop notifications enabled!', 'success');
+      } else {
+        showToast('Notification permission denied in browser.', 'error');
+      }
+    } catch (err) {
+      console.warn('Error requesting notification permission:', err);
+    }
+  };
+
+  // Sync document.title with unread WhatsApp count (like real WhatsApp Web)
+  useEffect(() => {
+    const totalUnread = conversations.reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0);
+    if (totalUnread > 0) {
+      document.title = `(${totalUnread}) Eco Green Support`;
+    } else {
+      document.title = 'Eco Green Support';
+    }
+  }, [conversations]);
+
   const handleToggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
@@ -355,12 +390,37 @@ export const WhatsAppWebInbox = ({
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  // Load conversation list from server
+  // Load conversation list from server with real-time incoming notification dispatch
   const loadConversations = async (silent = false) => {
     if (!silent) setLoadingConversations(true);
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
+        // Detect newly arrived customer messages across all threads
+        if (initialLoadDoneRef.current) {
+          res.conversations.forEach(c => {
+            const msgId = Number(c.id || 0);
+            if (c.last_sender_type === 'customer' && msgId > 0 && !knownMsgIdsRef.current.has(msgId)) {
+              // Brand new incoming message!
+              knownMsgIdsRef.current.add(msgId);
+              playNotificationChime();
+              showOSNotification({
+                title: `💬 ${c.sender_name || c.phone}`,
+                body: c.last_message || 'New message received',
+                tag: `wa-${c.phone}`,
+                url: `/whatsapp-inbox?phone=${c.phone}`
+              });
+              showToast(`💬 New WhatsApp from ${c.sender_name || c.phone}: ${c.last_message || 'New message'}`, 'info');
+            }
+          });
+        } else {
+          // Initialize known message IDs on first load
+          res.conversations.forEach(c => {
+            if (c.id) knownMsgIdsRef.current.add(Number(c.id));
+          });
+          initialLoadDoneRef.current = true;
+        }
+
         // If a conversation is currently open, show 0 unread for it locally
         const mapped = res.conversations.map(c => {
           if (selectedPhone) {
@@ -1647,6 +1707,33 @@ export const WhatsAppWebInbox = ({
           </button>
         </div>
 
+        {/* WhatsApp Desktop Notification Enable Banner */}
+        {notificationPermission !== 'granted' && (
+          <div 
+            onClick={handleRequestNotificationPermission}
+            className="px-3.5 py-3 bg-[#e7f8f5] hover:bg-[#d5f2ec] border-b border-[#00a884]/25 flex items-center justify-between gap-2.5 cursor-pointer transition-colors shrink-0"
+            title="Click to enable desktop OS notifications"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#00a884] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <Bell className="w-4 h-4 animate-bounce" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-[#111b21] leading-tight">Get notified of new messages</p>
+                <p className="text-[11px] text-[#008069] flex items-center gap-0.5 font-semibold">
+                  Turn on desktop notifications <ChevronRight className="w-3 h-3 inline" />
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="px-2.5 py-1 bg-[#00a884] hover:bg-[#008f72] text-white text-[11px] font-bold rounded-full shrink-0 shadow-2xs cursor-pointer"
+            >
+              Enable
+            </button>
+          </div>
+        )}
+
         {/* Scrollable Conversation List */}
         <div className="flex-1 overflow-y-auto divide-y divide-[#f5f6f6] bg-white">
           {loadingConversations && conversations.length === 0 ? (
@@ -1696,12 +1783,12 @@ export const WhatsAppWebInbox = ({
                   {/* Body Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <h4 className="font-semibold text-[13.5px] text-[#111b21] truncate">
+                      <h4 className={`text-[13.5px] truncate ${Number(conv.unread_count) > 0 ? 'font-bold text-[#111b21]' : 'font-semibold text-[#111b21]'}`}>
                         {conv.sender_name || `+${conv.phone}`}
                       </h4>
                       <div className="flex items-center gap-1.5 shrink-0 ml-1">
                         <span className={`text-[11px] font-mono ${
-                          conv.unread_count ? 'text-[#00a884] font-bold' : 'text-[#8696a0]'
+                          Number(conv.unread_count) > 0 ? 'text-[#25d366] font-bold' : 'text-[#8696a0]'
                         }`}>
                           {formattedTime}
                         </span>
@@ -1720,12 +1807,11 @@ export const WhatsAppWebInbox = ({
                     </div>
 
                     <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs text-[#667781] truncate flex items-center gap-1 font-normal">
+                      <p className={`text-xs truncate flex items-center gap-1 ${
+                        Number(conv.unread_count) > 0 ? 'text-[#111b21] font-semibold' : 'text-[#667781] font-normal'
+                      }`}>
                         {conv.last_sender_type === 'company' && (
                           <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0 inline" />
-                        )}
-                        {conv.last_sender_type === 'customer' && !conv.unread_count && (
-                          <CheckCheck className="w-3.5 h-3.5 text-[#8696a0] shrink-0 inline" />
                         )}
                         <span className="truncate">
                           {conv.last_message?.toLowerCase().includes('unsupported')
@@ -1735,12 +1821,12 @@ export const WhatsAppWebInbox = ({
                       </p>
 
                       {/* Right indicators: Pinned icon OR Unread count badge */}
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         {conv.is_pinned && (
                           <Pin className="w-3.5 h-3.5 text-[#8696a0] rotate-45" />
                         )}
-                        {Boolean(conv.unread_count) && (
-                          <span className="w-4 h-4 rounded-full bg-[#25d366] text-white font-bold text-[10px] flex items-center justify-center">
+                        {Number(conv.unread_count) > 0 && (
+                          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#25d366] text-white font-bold text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
                             {conv.unread_count}
                           </span>
                         )}
