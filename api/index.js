@@ -6628,6 +6628,8 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/w
     res.setHeader('Content-Type', contentType);
     if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // Cache for 7 days
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', "frame-ancestors *;");
 
     const isDownload = req.query.download === '1' || req.query.download === 'true';
     const ext = contentType.includes('/') ? contentType.split('/')[1].replace('jpeg', 'jpg') : 'jpg';

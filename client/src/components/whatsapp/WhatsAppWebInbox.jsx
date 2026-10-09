@@ -1,3 +1,4 @@
+import PdfViewerModal from './PdfViewerModal';
 import { formatIndianDateOnly, formatIndianTimeOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useState, useEffect, useRef } from 'react';
 import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
@@ -1235,9 +1236,10 @@ export const WhatsAppWebInbox = ({
                   (() => {
                     const docUrl = getWhatsAppMediaUrl(msg);
                     if (!docUrl) return null;
+                    const docName = msg.media_caption || msg.message_body || 'Document.pdf';
                     return (
                       <div 
-                        onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
+                        onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
                         className="mb-2 p-3 bg-black/5 hover:bg-emerald-50/80 rounded-lg flex items-center justify-between gap-3 border border-black/5 hover:border-emerald-300 transition-all cursor-pointer group"
                         title="Click to view PDF in app"
                       >
@@ -1247,7 +1249,7 @@ export const WhatsAppWebInbox = ({
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-xs text-[#111b21] group-hover:text-[#008069] truncate max-w-[220px] transition-colors">
-                              {msg.media_caption || 'Attached Document.pdf'}
+                              {docName}
                             </p>
                             <span className="text-[10px] text-[#667781] uppercase font-mono flex items-center gap-1">
                               <Eye className="w-3 h-3 text-emerald-600" /> Click to read inside app
@@ -1257,7 +1259,7 @@ export const WhatsAppWebInbox = ({
                         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
-                            onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: msg.media_caption || 'Document.pdf' })}
+                            onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
                             className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer"
                             title="View PDF In App"
                           >
@@ -1265,7 +1267,7 @@ export const WhatsAppWebInbox = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDownloadFile(docUrl, msg.media_caption || 'document.pdf')}
+                            onClick={() => handleDownloadFile(docUrl, docName)}
                             className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/80 rounded-full transition-colors cursor-pointer"
                             title="Download PDF"
                           >
@@ -2821,61 +2823,12 @@ export const WhatsAppWebInbox = ({
           className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
         >
           {previewMedia.type === 'pdf' ? (
-            <div 
-              className="relative w-full max-w-5xl h-[92vh] bg-slate-900 rounded-2xl flex flex-col overflow-hidden shadow-2xl border border-slate-700/60"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* PDF Modal Header */}
-              <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between text-white shrink-0">
-                <div className="flex items-center gap-2.5 min-w-0 pr-4">
-                  <div className="p-1.5 bg-rose-500/20 text-rose-400 rounded-lg">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="font-bold text-sm truncate text-white">
-                      {previewMedia.title || 'PDF Document'}
-                    </h4>
-                    <p className="text-[11px] text-slate-400">In-App PDF Viewer • Eco Green Solar</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <a
-                    href={previewMedia.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                    title="Open in new window"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">New Tab</span>
-                  </a>
-                  <button
-                    onClick={() => handleDownloadFile(previewMedia.url, previewMedia.title || 'document.pdf')}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download</span>
-                  </button>
-                  <button
-                    onClick={() => setPreviewMedia(null)}
-                    className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer ml-1"
-                    title="Close Viewer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* PDF Embed Body */}
-              <div className="w-full flex-1 bg-slate-800 relative">
-                <iframe
-                  src={`${previewMedia.url}#toolbar=1&navpanes=0`}
-                  className="w-full h-full border-0 bg-white"
-                  title={previewMedia.title || 'PDF Preview'}
-                />
-              </div>
-            </div>
+            <PdfViewerModal
+              url={previewMedia.url}
+              title={previewMedia.title || 'Document.pdf'}
+              onClose={() => setPreviewMedia(null)}
+              onDownload={(url, filename) => handleDownloadFile(url, filename)}
+            />
           ) : previewMedia.type === 'video' ? (
             <div 
               className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center" 
