@@ -184,12 +184,17 @@ function AppContent() {
   };
 
   // Keep URL in sync with currentTab
-  const handleTabChange = (tab, sec = null) => {
+  const handleTabChange = (tab, sec = null, keepFilters = false) => {
     const normalized = normalizeTab(tab) || tab;
     const isSameTab = normalized === currentTab;
     setCurrentTab(normalized);
     try {
       localStorage.setItem('egs_active_tab', normalized);
+
+      // Reset any transient complaint filters so complaints page always starts in clean default state
+      if (normalized === 'complaints' && !keepFilters) {
+        setComplaintFilters(null);
+      }
 
       // Always close ticket drawer and new complaint modal when navigating via tab click
       setSelectedComplaintId(null);
@@ -538,7 +543,7 @@ function AppContent() {
               key={`ana-${refreshKey}`}
               onNavigateToComplaints={(filters) => {
                 setComplaintFilters(filters);
-                handleTabChange('complaints');
+                handleTabChange('complaints', null, true);
               }}
             />
           )}

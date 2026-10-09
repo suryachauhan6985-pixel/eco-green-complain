@@ -6,8 +6,9 @@ import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { playNotificationChime as playLoudChime } from '../../utils/sound';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { showOSNotification, requestPushPermission } from '../../utils/pushNotification';
 import { 
-  Search, Send, FileText, Paperclip, 
+  Search, Send, FileText, Paperclip, Bell, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
   ExternalLink, RefreshCw, AlertCircle, ArrowLeft, Download,
   Maximize2, X, Filter, Smile, MoreVertical, MessageSquarePlus,
@@ -359,9 +360,18 @@ export const WhatsAppWebInbox = ({
     try {
       const res = await api.getWhatsAppConversations();
       if (res && Array.isArray(res.conversations)) {
-        setConversations(res.conversations);
+        // If a conversation is currently open, show 0 unread for it locally
+        const mapped = res.conversations.map(c => {
+          if (selectedPhone) {
+            const cPhone = (c.phone || '').replace(/[^0-9]/g, '').slice(-10);
+            const sPhone = (selectedPhone || '').replace(/[^0-9]/g, '').slice(-10);
+            if (cPhone === sPhone) return { ...c, unread_count: 0 };
+          }
+          return c;
+        });
+        setConversations(mapped);
         try {
-          localStorage.setItem('egs_cached_wa_conversations', JSON.stringify(res.conversations));
+          localStorage.setItem('egs_cached_wa_conversations', JSON.stringify(mapped));
         } catch (_) {}
       }
     } catch (err) {
@@ -385,6 +395,15 @@ export const WhatsAppWebInbox = ({
           const latest = res.messages[res.messages.length - 1];
           if (latest?.sender_type === 'customer') {
             playNotificationChime();
+            // Trigger OS Notification if window/tab is in background or blurred
+            if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
+              showOSNotification({
+                title: `💬 WhatsApp: ${contactInfo?.sender_name || phone}`,
+                body: latest.message_body || 'New message received',
+                tag: `wa-${phone}`,
+                url: `/whatsapp-inbox?phone=${phone}`
+              });
+            }
           }
         }
         previousMessageCountRef.current = res.messages.length;
@@ -470,7 +489,7 @@ export const WhatsAppWebInbox = ({
     }
   };
 
-  // When selectedPhone changes, load thread
+  // When selectedPhone changes, load thread & mark as read
   useEffect(() => {
     if (selectedPhone) {
       loadMessages(selectedPhone);
@@ -481,6 +500,21 @@ export const WhatsAppWebInbox = ({
       setUnreadWhileScrolled(0);
       setShowScrollBottomBtn(false);
       isNearBottomRef.current = true;
+
+      // Mark this conversation as read locally immediately
+      setConversations(prev => prev.map(c => {
+        const cPhone10 = (c.phone || '').replace(/[^0-9]/g, '').slice(-10);
+        const selPhone10 = (selectedPhone || '').replace(/[^0-9]/g, '').slice(-10);
+        if (cPhone10 === selPhone10) {
+          return { ...c, unread_count: 0 };
+        }
+        return c;
+      }));
+
+      // Persist read state to backend
+      if (api.markWhatsAppAsRead) {
+        api.markWhatsAppAsRead(selectedPhone).catch(() => {});
+      }
     }
   }, [selectedPhone]);
 
@@ -1509,6 +1543,28 @@ export const WhatsAppWebInbox = ({
             )}
           </div>
         </div>
+
+        {/* OS Desktop Notification Activation Banner */}
+        {typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default' && (
+          <div className="bg-[#e7fce3] border-b border-[#25d366]/30 px-3 py-2 flex items-center justify-between gap-2 text-xs text-[#008069] shrink-0">
+            <div className="flex items-center gap-1.5 font-medium min-w-0">
+              <Bell className="w-4 h-4 text-[#00a884] shrink-0 animate-bounce" />
+              <span className="truncate">Enable desktop notifications for WhatsApp alerts</span>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await requestPushPermission(currentUser);
+                if (res === 'granted') {
+                  showToast('Desktop notifications enabled!', 'success');
+                }
+              }}
+              className="px-2.5 py-1 bg-[#00a884] hover:bg-[#008069] text-white font-semibold rounded text-[11px] shadow-sm transition cursor-pointer shrink-0"
+            >
+              Enable
+            </button>
+          </div>
+        )}
 
         {/* Search Bar */}
         <div className="px-3 py-1.5 shrink-0">

@@ -345,6 +345,45 @@ export const NotificationProvider = ({ children }) => {
     } catch (_) {}
   }, [currentUser, isNotificationForUser, isUnread]);
 
+  // Real-time WhatsApp incoming customer message monitor for OS-level alerts across the whole app
+  const lastKnownWAMsgIdRef = useRef(null);
+
+  const checkWhatsAppIncoming = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      if (api.getWhatsAppConversations) {
+        const res = await api.getWhatsAppConversations();
+        if (res && Array.isArray(res.conversations)) {
+          const customerConvs = res.conversations.filter(c => c.last_sender_type === 'customer');
+          if (customerConvs.length === 0) return;
+
+          const maxId = Math.max(...customerConvs.map(c => Number(c.id || 0)));
+
+          // On first load, initialize maxId so we don't alert for existing historic messages
+          if (lastKnownWAMsgIdRef.current === null) {
+            lastKnownWAMsgIdRef.current = maxId;
+            return;
+          }
+
+          if (maxId > lastKnownWAMsgIdRef.current) {
+            const newConvs = customerConvs.filter(c => Number(c.id || 0) > lastKnownWAMsgIdRef.current);
+            lastKnownWAMsgIdRef.current = maxId;
+
+            newConvs.forEach(conv => {
+              playNotificationChime({ force: true, volume: 1.0 });
+              showOSNotification({
+                title: `💬 WhatsApp: ${conv.sender_name || conv.phone}`,
+                body: conv.last_message || 'New customer WhatsApp message received.',
+                tag: `wa-${conv.last10 || conv.phone}`,
+                url: `/whatsapp-inbox?phone=${conv.phone}`
+              });
+            });
+          }
+        }
+      }
+    } catch (_) {}
+  }, [currentUser]);
+
   // Periodic poll and multi-tab / window sync
   useEffect(() => {
     fetchFromBackend();
@@ -396,7 +435,8 @@ export const NotificationProvider = ({ children }) => {
       if (document.visibilityState === 'visible') {
         fetchFromBackend();
       }
-    }, 7000);
+      checkWhatsAppIncoming();
+    }, 5000);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
@@ -406,7 +446,7 @@ export const NotificationProvider = ({ children }) => {
       window.removeEventListener('focus', handleVisibility);
       clearInterval(interval);
     };
-  }, [fetchFromBackend]);
+  }, [fetchFromBackend, checkWhatsAppIncoming]);
 
   // Automatically register device for OS background Web Push when permission is granted
   useEffect(() => {

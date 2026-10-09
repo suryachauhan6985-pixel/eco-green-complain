@@ -82,62 +82,41 @@ export const ComplaintList = ({
 
   const getInitialStatusFilter = () => {
     if (initialFilters?.status !== undefined) return initialFilters.status;
-    const urlStatus = getUrlParam('status');
-    if (urlStatus) {
-      const valid = ['all', 'Unassigned', 'Assigned', 'In Progress', 'Resolved', 'Closed', 'On Hold', 'Reopened', 'Overdue'];
-      const found = valid.find(v => v.toLowerCase() === urlStatus.toLowerCase());
-      if (found) return found;
-    }
     return 'Unassigned';
   };
 
-  // Filters
-  const [search, setSearch] = useState(() => initialFilters?.search || getUrlParam('q') || getUrlParam('search') || '');
+  // Filters - Fixed stable defaults as per standard view:
+  // Status: Unassigned, Product: All Products ('all'), Priority: All Priorities ('all'), Technician: All Technicians (''), Search: ''
+  const [search, setSearch] = useState(() => initialFilters?.search || '');
   const [statusFilter, setStatusFilter] = useState(() => getInitialStatusFilter());
-  const [productFilter, setProductFilter] = useState(() => initialFilters?.product_type || getUrlParam('product') || 'all');
-  const [priorityFilter, setPriorityFilter] = useState(() => initialFilters?.priority || getUrlParam('priority') || 'all');
-  const [technicianFilter, setTechnicianFilter] = useState(() => initialFilters?.technician_id || getUrlParam('tech_id') || '');
+  const [productFilter, setProductFilter] = useState(() => initialFilters?.product_type || 'all');
+  const [priorityFilter, setPriorityFilter] = useState(() => initialFilters?.priority || 'all');
+  const [technicianFilter, setTechnicianFilter] = useState(() => initialFilters?.technician_id || '');
 
+  // Manual filter handlers - Only change when explicitly clicked/selected by user
   const handleStatusFilterChange = (st) => {
     setStatusFilter(st);
-    updateUrlParams({ status: st === 'Unassigned' ? null : st });
   };
 
   const handleProductFilterChange = (prod) => {
     setProductFilter(prod);
-    updateUrlParams({ product: prod === 'all' ? null : prod });
   };
 
   const handlePriorityFilterChange = (prio) => {
     setPriorityFilter(prio);
-    updateUrlParams({ priority: prio === 'all' ? null : prio });
   };
 
   const handleTechnicianFilterChange = (tid) => {
     setTechnicianFilter(tid);
-    updateUrlParams({ tech_id: tid || null });
   };
 
   // Stage: If search text is present on Complaint List, clear search on Escape
   useEscapeHandler(() => {
     setSearch('');
-    updateUrlParams({ q: null, search: null });
     return true;
   }, Boolean(search && search.trim()), { priority: ESCAPE_PRIORITY.SUBVIEW });
 
-  useEffect(() => {
-    const handlePop = () => {
-      const st = getInitialStatusFilter();
-      setStatusFilter(st);
-      setProductFilter(getUrlParam('product') || 'all');
-      setPriorityFilter(getUrlParam('priority') || 'all');
-      setTechnicianFilter(getUrlParam('tech_id') || '');
-      setSearch(getUrlParam('q') || getUrlParam('search') || '');
-    };
-    window.addEventListener('popstate', handlePop);
-    return () => window.removeEventListener('popstate', handlePop);
-  }, []);
-
+  // Only apply initialFilters when explicitly passed from an external caller
   useEffect(() => {
     if (initialFilters) {
       if (initialFilters.status !== undefined) setStatusFilter(initialFilters.status);

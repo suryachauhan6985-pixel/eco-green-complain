@@ -5472,7 +5472,15 @@ app.get('/api/notifications/logs', authenticateToken, async (req, res) => {
 app.get('/api/whatsapp/conversations', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
-      WITH RankedMessages AS (
+      WITH UnreadCounts AS (
+        SELECT 
+          RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) as last10,
+          COUNT(*)::int as unread_count
+        FROM whatsapp_messages
+        WHERE sender_type = 'customer' AND (status != 'read' OR status IS NULL)
+        GROUP BY RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10)
+      ),
+      RankedMessages AS (
         SELECT 
           m.*,
           RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10) as last10,
@@ -5494,12 +5502,14 @@ app.get('/api/whatsapp/conversations', authenticateToken, async (req, res) => {
         rm.media_type as last_media_type,
         rm.status as last_status,
         rm.created_at as last_activity,
+        COALESCE(uc.unread_count, 0)::int as unread_count,
         c.ticket_id,
         c.customer_name as complaint_customer_name,
         c.customer_phone as complaint_customer_phone,
         c.product_type,
         c.status as complaint_status
       FROM RankedMessages rm
+      LEFT JOIN UnreadCounts uc ON uc.last10 = rm.last10
       LEFT JOIN complaints c ON c.id = rm.complaint_id
       WHERE rm.rn = 1
       ORDER BY rm.created_at DESC
@@ -5621,11 +5631,31 @@ app.get('/api/whatsapp/conversations', authenticateToken, async (req, res) => {
         complaint_status: complaintStatus,
         sender_name: customerName || displayPhone,
         is_technician: isTechnician,
-        unread_count: 0
+        unread_count: Number(row.unread_count || 0)
       };
     });
 
     return res.json({ success: true, conversations });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Universal WhatsApp Web Inbox: Get full chat history for a specific phone number
+app.post('/api/whatsapp/mark-read', authenticateToken, async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Phone is required' });
+    const cleanPhone = String(phone).replace(/[^0-9]/g, '');
+    const last10 = cleanPhone.slice(-10);
+    await query(`
+      UPDATE whatsapp_messages 
+      SET status = 'read', updated_at = CURRENT_TIMESTAMP
+      WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
+        AND sender_type = 'customer'
+        AND (status != 'read' OR status IS NULL)
+    `, [last10]);
+    return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -5638,6 +5668,15 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, async (req, res) => {
     const cleanPhone = (rawPhone || '').replace(/[^0-9]/g, '');
     const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
     const canonicalPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+
+    // Automatically mark customer messages for this open chat as read
+    await query(`
+      UPDATE whatsapp_messages 
+      SET status = 'read', updated_at = CURRENT_TIMESTAMP
+      WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
+        AND sender_type = 'customer'
+        AND (status != 'read' OR status IS NULL)
+    `, [last10]).catch(() => {});
 
     const msgRes = await query(`
       SELECT * FROM whatsapp_messages

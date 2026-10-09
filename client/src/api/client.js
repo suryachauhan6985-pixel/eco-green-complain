@@ -2081,6 +2081,11 @@ export const api = {
     }
   },
 
+  markWhatsAppAsRead: (phone) => request('/whatsapp/mark-read', {
+    method: 'POST',
+    body: JSON.stringify({ phone })
+  }).catch(() => ({ success: false })),
+
   getWhatsAppChatHistory: async (phone) => {
     try {
       const res = await request(`/whatsapp/chats/${encodeURIComponent(phone)}`);
