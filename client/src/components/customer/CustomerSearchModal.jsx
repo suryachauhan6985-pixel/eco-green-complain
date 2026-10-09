@@ -1,3 +1,4 @@
+import { formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../api/client';
 import { 
@@ -643,7 +644,7 @@ export const CustomerSearchModal = ({
                                 {ticket.status}
                               </span>
                               <span className="text-[10px] text-slate-400">
-                                {new Date(ticket.created_at).toLocaleDateString()}
+                                {formatIndianDateTime(ticket.created_at)}
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 truncate mt-0.5">

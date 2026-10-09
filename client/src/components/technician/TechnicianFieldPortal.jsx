@@ -9,7 +9,7 @@ import {
   UserCheck, ShieldCheck, Layers, ExternalLink, RotateCcw,
   LayoutGrid, List, Navigation, FileText, Users, Download
 } from 'lucide-react';
-import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime } from '../common/TicketAgeBadge';
+import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateOnly, formatIndianTimeOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import { buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
 import { TourLedgerSection } from './TourLedgerSection';
 import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
@@ -533,8 +533,8 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     try {
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return String(dateStr);
-      const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
-      const timePart = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+      const datePart = formatIndianDateOnly(d);
+      const timePart = formatIndianTimeOnly(d);
       return `${datePart}, ${timePart}`;
     } catch (_) {
       return String(dateStr);
@@ -1130,8 +1130,8 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                       )}
                                       {comp.payment_collected_at ? (
                                         <span className="text-[9px] text-slate-600 font-sans block mt-0.5" title="Customer Payment Collection Date & Timestamp">
-                                          📅 {new Date(comp.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}{' '}
-                                          ⏰ {new Date(comp.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
+                                          📅 {formatIndianDateOnly(comp.payment_collected_at)}{' '}
+                                          ⏰ {formatIndianTimeOnly(comp.payment_collected_at)}
                                         </span>
                                       ) : (
                                         <span className="text-[9px] text-slate-400 font-sans block mt-0.5">Date recorded</span>
@@ -1152,8 +1152,8 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                           )}
                                           {comp.company_settled_at && (
                                             <div className="text-[9px] text-slate-500 font-mono">
-                                              📅 {new Date(comp.company_settled_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}{' '}
-                                              ⏰ {new Date(comp.company_settled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
+                                              📅 {formatIndianDateOnly(comp.company_settled_at)}{' '}
+                                              ⏰ {formatIndianTimeOnly(comp.company_settled_at)}
                                             </div>
                                           )}
                                         </div>

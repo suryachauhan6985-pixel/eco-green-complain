@@ -1,3 +1,4 @@
+import { formatIndianDateOnly } from '../components/common/TicketAgeBadge';
 import { api } from '../api/client';
 
 let cachedTemplates = null;
@@ -78,7 +79,7 @@ export async function buildComplaintRegisteredWhatsApp(ticket) {
     complaint_id: ticket.ticket_id,
     product_type: ticket.product_type,
     issue_category: ticket.issue_category,
-    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    date: formatIndianDateOnly(new Date()),
     charges_line: chargesLine,
     feedback_url: trackingUrl
   };
@@ -113,7 +114,7 @@ export async function buildTechnicianAssignedWhatsApp(ticket, technician, expect
   const trackingUrl = `${window.location.origin}/track/${ticket.ticket_id}`;
 
   const formattedDate = expectedVisitDate
-    ? new Date(expectedVisitDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? formatIndianDateOnly(expectedVisitDate)
     : 'Within 24-48 Hours';
 
   const data = {
@@ -125,7 +126,7 @@ export async function buildTechnicianAssignedWhatsApp(ticket, technician, expect
     technician_phone: technician?.phone || '',
     expected_visit_date: formattedDate,
     feedback_url: trackingUrl,
-    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    date: formatIndianDateOnly(new Date())
   };
 
   const renderedText = renderTemplateText(rawBody, data);
@@ -146,7 +147,7 @@ export function buildTechnicianWorkOrderWhatsApp(ticket, technician, expectedVis
   const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
   
   const formattedDate = expectedVisitDate
-    ? new Date(expectedVisitDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? formatIndianDateOnly(expectedVisitDate)
     : 'Immediate / Next Available Slot';
 
   const portalLink = `${window.location.origin}/technician?ticket=${encodeURIComponent(ticket.ticket_id)}`;
@@ -176,7 +177,7 @@ export function buildTechnicianTeamWorkOrderWhatsApp(ticket, technician, partner
   const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
   
   const formattedDate = expectedVisitDate
-    ? new Date(expectedVisitDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? formatIndianDateOnly(expectedVisitDate)
     : 'Immediate / Next Available Slot';
 
   const portalLink = `${window.location.origin}/technician?ticket=${encodeURIComponent(ticket.ticket_id)}`;
@@ -240,7 +241,7 @@ export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
 
   const trackingUrl = `${window.location.origin}/track/${ticket?.ticket_id || ticket?.id || ''}`;
   const formattedDate = ticket?.expected_visit_date
-    ? new Date(ticket.expected_visit_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? formatIndianDateOnly(ticket.expected_visit_date)
     : 'Scheduled Visit';
 
   const data = {
@@ -258,7 +259,7 @@ export function buildTechnicianCustomerWhatsApp(ticket, technicianName) {
     status: ticket?.status || 'Assigned',
     notes: ticket?.notes || ticket?.issue_description || '',
     feedback_url: trackingUrl,
-    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    date: formatIndianDateOnly(new Date())
   };
 
   const renderedText = renderTemplateText(rawBody, data);

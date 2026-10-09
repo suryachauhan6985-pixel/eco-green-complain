@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { 
-  BarChart3, CheckCircle2, Clock, Wrench, Download, 
+  BarChart3, CheckCircle2, Clock, Wrench, Download, Calendar, Filter, X, Tag, Layers, 
   TrendingUp, Users, AlertCircle, RefreshCw, Star, Sun, Droplets, Wind,
   Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload
 } from 'lucide-react';
 import { AnalyticsDashboardSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync } from '../../utils/liveSync';
+import { formatIndianDateOnly, formatIndianDateTime, formatIndianTimeOnly, parseDateSafe } from '../common/TicketAgeBadge';
 
 
-// Client-side fallback metrics calculation from live complaints list & technicians
+// Client-side metrics calculation from live complaints list & technicians
 function computeMetricsFromComplaints(complaintsList = [], techsList = [], serverMetrics = null) {
   const total = complaintsList.length;
   const registeredCount = complaintsList.filter(c => ['Registered', 'Unassigned', 'New', 'Open'].includes(c.status)).length;
@@ -21,12 +22,29 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
   const reopenedCount = complaintsList.filter(c => c.status === 'Reopened').length;
   const activeCount = Math.max(0, total - (resolvedCount + closedCount));
 
-  // Product distribution
+  // Product distribution WITH per-product issue categories
   const productMap = {};
+  const standardProducts = ['Solar Rooftop Systems', 'Solar Water Heaters', 'Heat Pumps'];
+  standardProducts.forEach(p => {
+    productMap[p] = {
+      product_type: p,
+      count: 0,
+      active_count: 0,
+      resolved_count: 0,
+      issueCategories: {}
+    };
+  });
+
   complaintsList.forEach(c => {
     const pType = c.product_type || 'Solar Rooftop Systems';
     if (!productMap[pType]) {
-      productMap[pType] = { product_type: pType, count: 0, active_count: 0, resolved_count: 0 };
+      productMap[pType] = {
+        product_type: pType,
+        count: 0,
+        active_count: 0,
+        resolved_count: 0,
+        issueCategories: {}
+      };
     }
     productMap[pType].count++;
     if (['Resolved', 'Closed'].includes(c.status)) {
@@ -34,10 +52,29 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
     } else {
       productMap[pType].active_count++;
     }
-  });
-  const productStats = Object.values(productMap).sort((a, b) => b.count - a.count);
 
-  // Issue category distribution
+    const cat = c.issue_category || 'General Service & Maintenance';
+    productMap[pType].issueCategories[cat] = (productMap[pType].issueCategories[cat] || 0) + 1;
+  });
+
+  const productStats = Object.values(productMap)
+    .map(prod => {
+      const categories = Object.entries(prod.issueCategories)
+        .map(([issue_category, count]) => ({
+          issue_category,
+          count,
+          percent: prod.count > 0 ? Math.round((count / prod.count) * 100) : 0
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return {
+        ...prod,
+        categories
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  // Overall Issue category distribution
   const issueMap = {};
   complaintsList.forEach(c => {
     const cat = c.issue_category || 'General Service & Maintenance';
@@ -159,6 +196,13 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [customerStats, setCustomerStats] = useState(null);
+  const [allComplaints, setAllComplaints] = useState([]);
+  const [allTechs, setAllTechs] = useState([]);
+  const [filterPreset, setFilterPreset] = useState('all'); // 'all', 'today', 'yesterday', 'this_week', 'this_month', 'last_month', 'this_year', 'custom'
+  const [filterMonth, setFilterMonth] = useState('all'); // 'all', '1'..'12'
+  const [filterYear, setFilterYear] = useState('all'); // 'all', '2026', '2025'
+  const [customStartDate, setCustomStartDate] = useState(''); // 'YYYY-MM-DD'
+  const [customEndDate, setCustomEndDate] = useState(''); // 'YYYY-MM-DD'
   const [syncingExcel, setSyncingExcel] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
@@ -512,6 +556,9 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         ? techsRes.technicians 
         : (Array.isArray(techsRes) ? techsRes : []);
 
+      setAllComplaints(complaintsList);
+      setAllTechs(techsList);
+
       let finalMetrics = metricData;
       // If server metrics is empty, 0 total, or missing breakdowns, compute from live complaints list
       if (!finalMetrics || !finalMetrics.counts || Number(finalMetrics.counts.total || 0) === 0 || !finalMetrics.productStats || finalMetrics.productStats.length === 0) {
@@ -559,11 +606,152 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
     };
   }, []);
 
+  const availableYears = React.useMemo(() => {
+    const years = new Set([new Date().getFullYear()]);
+    allComplaints.forEach(c => {
+      const d = parseDateSafe(c.created_at);
+      if (d) years.add(d.getFullYear());
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [allComplaints]);
+
+  const isFilterActive = filterPreset !== 'all' || filterMonth !== 'all' || filterYear !== 'all' || !!customStartDate || !!customEndDate;
+
+  const handleResetFilter = () => {
+    setFilterPreset('all');
+    setFilterMonth('all');
+    setFilterYear('all');
+    setCustomStartDate('');
+    setCustomEndDate('');
+  };
+
+  const filteredComplaints = React.useMemo(() => {
+    if (!isFilterActive) return allComplaints;
+
+    const now = new Date();
+    const getISTInfo = (dateInput) => {
+      const d = parseDateSafe(dateInput);
+      if (!d) return null;
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        }).formatToParts(d);
+        const day = Number(parts.find(p => p.type === 'day')?.value);
+        const month = Number(parts.find(p => p.type === 'month')?.value);
+        const year = Number(parts.find(p => p.type === 'year')?.value);
+        const ymd = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return { day, month, year, ymd };
+      } catch (_) {
+        const day = d.getDate();
+        const month = d.getMonth() + 1;
+        const year = d.getFullYear();
+        const ymd = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return { day, month, year, ymd };
+      }
+    };
+
+    const currentIST = getISTInfo(now);
+    const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const yesterdayIST = getISTInfo(yesterdayDate);
+    const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const weekAgoIST = getISTInfo(weekAgoDate);
+
+    let lastMonthYear = currentIST.year;
+    let lastMonthNum = currentIST.month - 1;
+    if (lastMonthNum === 0) {
+      lastMonthNum = 12;
+      lastMonthYear -= 1;
+    }
+
+    return allComplaints.filter(c => {
+      const cIST = getISTInfo(c.created_at);
+      if (!cIST) return false;
+
+      if (filterYear !== 'all' && cIST.year !== Number(filterYear)) {
+        return false;
+      }
+      if (filterMonth !== 'all' && cIST.month !== Number(filterMonth)) {
+        return false;
+      }
+      if (customStartDate && cIST.ymd < customStartDate) {
+        return false;
+      }
+      if (customEndDate && cIST.ymd > customEndDate) {
+        return false;
+      }
+
+      if (filterPreset === 'today') {
+        return cIST.ymd === currentIST.ymd;
+      }
+      if (filterPreset === 'yesterday') {
+        return cIST.ymd === yesterdayIST.ymd;
+      }
+      if (filterPreset === 'this_week') {
+        return cIST.ymd >= weekAgoIST.ymd && cIST.ymd <= currentIST.ymd;
+      }
+      if (filterPreset === 'this_month') {
+        return cIST.year === currentIST.year && cIST.month === currentIST.month;
+      }
+      if (filterPreset === 'last_month') {
+        return cIST.year === lastMonthYear && cIST.month === lastMonthNum;
+      }
+      if (filterPreset === 'this_year') {
+        return cIST.year === currentIST.year;
+      }
+
+      return true;
+    });
+  }, [allComplaints, isFilterActive, filterPreset, filterMonth, filterYear, customStartDate, customEndDate]);
+
+  const activeMetrics = React.useMemo(() => {
+    if (isFilterActive || (allComplaints.length > 0 && (!metrics?.productStats || metrics.productStats.length === 0))) {
+      return computeMetricsFromComplaints(filteredComplaints, allTechs, metrics);
+    }
+    return metrics || computeMetricsFromComplaints(allComplaints, allTechs, null);
+  }, [isFilterActive, filteredComplaints, allComplaints, allTechs, metrics]);
+
+  const getProductIcon = (productType) => {
+    const p = String(productType || '').toLowerCase();
+    if (p.includes('rooftop') || p.includes('solar')) return <Sun className="w-5 h-5 text-amber-500" />;
+    if (p.includes('water') || p.includes('heater')) return <Droplets className="w-5 h-5 text-cyan-500" />;
+    if (p.includes('pump') || p.includes('heat')) return <Wind className="w-5 h-5 text-emerald-500" />;
+    return <Layers className="w-5 h-5 text-slate-500" />;
+  };
+
+  const getFilterSummaryText = () => {
+    if (!isFilterActive) return 'All Time Live Data';
+    const parts = [];
+    if (filterPreset === 'today') parts.push('Today');
+    else if (filterPreset === 'yesterday') parts.push('Yesterday');
+    else if (filterPreset === 'this_week') parts.push('This Week');
+    else if (filterPreset === 'this_month') parts.push('This Month');
+    else if (filterPreset === 'last_month') parts.push('Last Month');
+    else if (filterPreset === 'this_year') parts.push('This Year');
+    else if (filterPreset === 'custom') parts.push('Custom Dates');
+
+    if (filterMonth !== 'all') {
+      const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      parts.push(`Month: ${monthNames[Number(filterMonth)]}`);
+    }
+    if (filterYear !== 'all') {
+      parts.push(`Year: ${filterYear}`);
+    }
+    if (customStartDate || customEndDate) {
+      const fromFormatted = customStartDate ? formatIndianDateOnly(customStartDate) : 'Start';
+      const toFormatted = customEndDate ? formatIndianDateOnly(customEndDate) : 'Now';
+      parts.push(`${fromFormatted} to ${toFormatted}`);
+    }
+    return parts.join(' • ');
+  };
+
   if (loading && !metrics) {
     return <AnalyticsDashboardSkeleton />;
   }
 
-  const counts = metrics?.counts || {};
+  const counts = activeMetrics?.counts || {};
   const totalCount = Number(counts.total || 0);
   const registeredCount = Number(counts.registered_count || 0);
   const assignedCount = Number(counts.assigned_count || 0);
@@ -573,10 +761,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const activeCount = counts.active_count !== undefined 
     ? Number(counts.active_count) 
     : Math.max(0, totalCount - (resolvedCount + closedCount));
-  const avgResolutionHours = Number(metrics?.avg_resolution_hours || 0);
-  const resolvedTotal = Number(metrics?.resolved_total || counts.resolved_count || 0);
-  const csatRating = Number(metrics?.customerSatisfaction?.averageRating || 0);
-  const csatReviews = Number(metrics?.customerSatisfaction?.totalReviews || 0);
+  const avgResolutionHours = Number(activeMetrics?.avg_resolution_hours || 0);
+  const resolvedTotal = Number(activeMetrics?.resolved_total || counts.resolved_count || 0);
+  const csatRating = Number(activeMetrics?.customerSatisfaction?.averageRating || 0);
+  const csatReviews = Number(activeMetrics?.customerSatisfaction?.totalReviews || 0);
+
 
   return (
     <div className="space-y-6">
@@ -761,6 +950,178 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         </div>
       </div>
 
+      {/* Date Range & Time Period Filter Bar */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                <span>Time Period & Date Filter</span>
+                {isFilterActive && (
+                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Filtered ({filteredComplaints.length} tickets)
+                  </span>
+                )}
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Filter analytics by Month, Year, Custom Date Range (DD-MM-YYYY), or quick presets
+              </p>
+            </div>
+          </div>
+
+          {isFilterActive && (
+            <button
+              onClick={handleResetFilter}
+              className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-bold border border-slate-200 hover:border-rose-200 flex items-center gap-1.5 transition-all"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Reset to All Time</span>
+            </button>
+          )}
+        </div>
+
+        {/* Quick Presets Pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Quick:</span>
+          {[
+            { id: 'all', label: 'All Time' },
+            { id: 'today', label: 'Today' },
+            { id: 'yesterday', label: 'Yesterday' },
+            { id: 'this_week', label: 'This Week' },
+            { id: 'this_month', label: 'This Month' },
+            { id: 'last_month', label: 'Last Month' },
+            { id: 'this_year', label: 'This Year' },
+            { id: 'custom', label: 'Custom Range' }
+          ].map((preset) => {
+            const isActive = filterPreset === preset.id;
+            return (
+              <button
+                key={preset.id}
+                onClick={() => {
+                  setFilterPreset(preset.id);
+                  if (preset.id !== 'custom') {
+                    setCustomStartDate('');
+                    setCustomEndDate('');
+                  }
+                  if (['today', 'yesterday', 'this_week', 'this_month', 'last_month', 'this_year'].includes(preset.id)) {
+                    setFilterMonth('all');
+                    setFilterYear('all');
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                  isActive 
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' 
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Month, Year & Date Pickers Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          {/* Month Selector */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+              Select Month
+            </label>
+            <select
+              value={filterMonth}
+              onChange={(e) => {
+                setFilterMonth(e.target.value);
+                setFilterPreset('all');
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+            >
+              <option value="all">All Months</option>
+              <option value="1">01 - January</option>
+              <option value="2">02 - February</option>
+              <option value="3">03 - March</option>
+              <option value="4">04 - April</option>
+              <option value="5">05 - May</option>
+              <option value="6">06 - June</option>
+              <option value="7">07 - July</option>
+              <option value="8">08 - August</option>
+              <option value="9">09 - September</option>
+              <option value="10">10 - October</option>
+              <option value="11">11 - November</option>
+              <option value="12">12 - December</option>
+            </select>
+          </div>
+
+          {/* Year Selector */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+              Select Year
+            </label>
+            <select
+              value={filterYear}
+              onChange={(e) => {
+                setFilterYear(e.target.value);
+                setFilterPreset('all');
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+            >
+              <option value="all">All Years</option>
+              {availableYears.map(yr => (
+                <option key={yr} value={String(yr)}>{yr}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* From Date */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
+              <span>From Date</span>
+              <span className="text-[10px] text-slate-400 font-normal">DD-MM-YYYY</span>
+            </label>
+            <input
+              type="date"
+              value={customStartDate}
+              onChange={(e) => {
+                setCustomStartDate(e.target.value);
+                setFilterPreset('custom');
+              }}
+              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+            />
+          </div>
+
+          {/* To Date */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
+              <span>To Date</span>
+              <span className="text-[10px] text-slate-400 font-normal">DD-MM-YYYY</span>
+            </label>
+            <input
+              type="date"
+              value={customEndDate}
+              onChange={(e) => {
+                setCustomEndDate(e.target.value);
+                setFilterPreset('custom');
+              }}
+              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Filter Summary Status */}
+        <div className="flex items-center justify-between text-xs pt-1 px-1 text-slate-500">
+          <div className="flex items-center gap-1.5 font-medium">
+            <Filter className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Active Range:</span>
+            <strong className="text-slate-800">{getFilterSummaryText()}</strong>
+          </div>
+          <span className="font-semibold text-slate-700">
+            {filteredComplaints.length} tickets matching period
+          </span>
+        </div>
+      </div>
+
       {/* KPI Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div 
@@ -822,93 +1183,191 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         </div>
       </div>
 
-      {/* Product Breakdown & Category Trends */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Product Type Breakdown */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-          <h3 className="font-bold text-sm text-slate-900 flex items-center justify-between">
-            <span>Product Breakdown</span>
-            <span className="text-xs font-normal text-slate-500">Share of complaints</span>
-          </h3>
-
-          {(!metrics?.productStats || metrics.productStats.length === 0 || totalCount === 0) ? (
-            <div className="py-8 text-center text-slate-400 text-xs">
-              No complaint tickets registered yet
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {metrics.productStats.map((prod) => {
-                const total = totalCount || 1;
-                const pct = Math.round((Number(prod.count) / total) * 100);
-                return (
-                  <div 
-                    key={prod.product_type} 
-                    onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
-                    className="space-y-1 text-xs p-2 rounded-xl hover:bg-emerald-50/70 cursor-pointer transition-all border border-transparent hover:border-emerald-200 group"
-                    title={`Click to filter complaints by ${prod.product_type}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800 group-hover:text-emerald-900">{prod.product_type}</span>
-                      <span className="text-slate-500 group-hover:text-emerald-700">
-                        <strong>{prod.count}</strong> complaints ({pct}%) →
-                      </span>
-                    </div>
-                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-600 rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-slate-400 flex justify-between">
-                      <span>{prod.active_count || 0} Active</span>
-                      <span>{prod.resolved_count || 0} Resolved</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            {/* Product-Wise Linked Issue Categories */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
+          <div>
+            <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-emerald-600" />
+              <span>Product Line Breakdown & Ranked Issue Categories</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Each product line is paired with its specific ranked issue categories and frequency distribution
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 self-start sm:self-auto">
+            {activeMetrics?.productStats?.length || 0} Product Lines Monitored
+          </span>
         </div>
 
-        {/* Most Common Issues */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-          <h3 className="font-bold text-sm text-slate-900 flex items-center justify-between">
-            <span>Top Issue Categories</span>
-            <span className="text-xs font-normal text-slate-500">Frequency distribution</span>
-          </h3>
+        {(!activeMetrics?.productStats || activeMetrics.productStats.length === 0 || totalCount === 0) ? (
+          <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-2xs text-center text-slate-400 text-xs">
+            No complaint tickets found for the selected period
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {activeMetrics.productStats.map((prod) => {
+              const total = totalCount || 1;
+              const pct = Math.round((Number(prod.count) / total) * 100);
+              const categories = prod.categories || [];
 
-          {(!metrics?.issueCategoryStats || metrics.issueCategoryStats.length === 0 || totalCount === 0) ? (
-            <div className="py-8 text-center text-slate-400 text-xs">
-              No complaint issues reported yet
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {metrics.issueCategoryStats.map((issue) => {
-                const maxCount = Number(metrics.issueCategoryStats[0]?.count) || 1;
-                const pct = Math.round((Number(issue.count) / maxCount) * 100);
-                return (
-                  <div 
-                    key={issue.issue_category} 
-                    onClick={() => onNavigateToComplaints && onNavigateToComplaints({ search: issue.issue_category })}
-                    className="space-y-1 text-xs p-2 rounded-xl hover:bg-amber-50/70 cursor-pointer transition-all border border-transparent hover:border-amber-200 group"
-                    title={`Click to filter complaints matching "${issue.issue_category}"`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-700 group-hover:text-amber-950 truncate max-w-xs">{issue.issue_category}</span>
-                      <span className="font-bold text-slate-900 group-hover:text-amber-800">{issue.count} →</span>
+              return (
+                <div 
+                  key={prod.product_type} 
+                  className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all overflow-hidden"
+                >
+                  <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+                    {/* Left Box: Product Details (4 of 12 cols on desktop) */}
+                    <div className="lg:col-span-4 p-5 bg-gradient-to-br from-slate-50/90 via-emerald-50/20 to-white flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-slate-200 flex items-center justify-center font-bold">
+                              {getProductIcon(prod.product_type)}
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-sm text-slate-900">{prod.product_type}</h4>
+                              <span className="text-[11px] text-slate-500">{pct}% share of complaints</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-black text-slate-900">{prod.count}</div>
+                            <div className="text-[10px] text-slate-400 uppercase font-semibold">Tickets</div>
+                          </div>
+                        </div>
+
+                        {/* Share Progress Bar */}
+                        <div className="space-y-1 mb-4">
+                          <div className="w-full h-2.5 bg-slate-200/70 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-500 font-medium">
+                            <span>{pct}% of all {totalCount} complaints</span>
+                            <span>{prod.count} recorded</span>
+                          </div>
+                        </div>
+
+                        {/* Active vs Resolved Badges */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            <span>{prod.active_count || 0} Active In-Pipeline</span>
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>{prod.resolved_count || 0} Resolved</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bottom link to complaints */}
+                      <div className="mt-5 pt-3.5 border-t border-slate-200/80 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          {categories.length} {categories.length === 1 ? 'category' : 'categories'} recorded
+                        </span>
+                        <button
+                          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
+                          className="text-xs font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition-colors group"
+                        >
+                          <span>View Product Complaints</span>
+                          <span className="group-hover:translate-x-1 transition-transform">→</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
+
+                    {/* Right Box: Issue Categories Specific to This Product (8 of 12 cols on desktop) */}
+                    <div className="lg:col-span-8 p-5 bg-white flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <Tag className="w-4 h-4 text-amber-500" />
+                            <span className="text-xs font-bold text-slate-900">
+                              Top Issues for {prod.product_type}
+                            </span>
+                            {categories.length > 0 && (
+                              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/70 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                {categories.length} Issue {categories.length === 1 ? 'Type' : 'Types'}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-400">Ranked by Frequency</span>
+                        </div>
+
+                        {categories.length === 0 ? (
+                          <div className="py-8 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-1.5">
+                            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                            <span className="font-medium text-slate-600">Zero Issues Reported</span>
+                            <span className="text-[11px] text-slate-400">No complaints registered for {prod.product_type} in this selected time period</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {categories.map((issue, idx) => {
+                              const topCount = Number(categories[0]?.count) || 1;
+                              const relativePct = Math.round((Number(issue.count) / topCount) * 100);
+                              const isTop = idx === 0;
+
+                              return (
+                                <div 
+                                  key={issue.issue_category} 
+                                  onClick={() => onNavigateToComplaints && onNavigateToComplaints({ 
+                                    product_type: prod.product_type,
+                                    search: issue.issue_category 
+                                  })}
+                                  className={`p-3 rounded-xl border transition-all cursor-pointer group ${
+                                    isTop 
+                                      ? 'bg-amber-50/30 border-amber-200/80 hover:bg-amber-50/70 hover:border-amber-400' 
+                                      : 'bg-slate-50/40 border-slate-200/70 hover:bg-emerald-50/50 hover:border-emerald-300'
+                                  }`}
+                                  title={`Filter complaints for ${prod.product_type} with "${issue.issue_category}"`}
+                                >
+                                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 ${
+                                        isTop 
+                                          ? 'bg-amber-500 text-white shadow-2xs' 
+                                          : idx === 1 
+                                            ? 'bg-slate-200 text-slate-700 font-bold' 
+                                            : 'bg-slate-100 text-slate-500 font-semibold'
+                                      }`}>
+                                        #{idx + 1}
+                                      </span>
+                                      <span className="font-bold text-xs text-slate-800 group-hover:text-emerald-950 truncate">
+                                        {issue.issue_category}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-xs font-black text-slate-900 group-hover:text-emerald-800">
+                                        {issue.count} {issue.count === 1 ? 'complaint' : 'complaints'}
+                                      </span>
+                                      <span className="text-[11px] font-bold text-slate-500 group-hover:text-emerald-700">
+                                        ({issue.percent}%) →
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="w-full h-2 bg-slate-200/60 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-500 ${
+                                        isTop ? 'bg-amber-500' : 'bg-emerald-600'
+                                      }`}
+                                      style={{ width: `${relativePct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Technician Leaderboard Table */}
@@ -919,7 +1378,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <p className="text-xs text-slate-500">Workload, resolution speed, and average customer rating (Click row to view technician tickets)</p>
           </div>
           <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full">
-            {metrics?.technicianLeaderboard?.length || 0} Active Specialists
+            {activeMetrics?.technicianLeaderboard?.length || 0} Active Specialists
           </span>
         </div>
 
@@ -937,14 +1396,14 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(!metrics?.technicianLeaderboard || metrics.technicianLeaderboard.length === 0) ? (
+              {(!activeMetrics?.technicianLeaderboard || activeMetrics.technicianLeaderboard.length === 0) ? (
                 <tr>
                   <td colSpan="7" className="px-4 py-8 text-center text-slate-400">
                     No active technicians assigned yet
                   </td>
                 </tr>
               ) : (
-                metrics.technicianLeaderboard.map((tech) => {
+                activeMetrics.technicianLeaderboard.map((tech) => {
                   const rating = tech.avg_rating || tech.average_rating;
                   const hasRating = rating && Number(rating) > 0;
                   return (

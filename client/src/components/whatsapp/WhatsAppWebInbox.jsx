@@ -1,3 +1,4 @@
+import { formatIndianDateOnly, formatIndianTimeOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useState, useEffect, useRef } from 'react';
 import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -129,7 +130,7 @@ function formatWhatsAppTime(dateInput) {
   if (!dateInput) return '';
   const d = parseToLocalDate(dateInput);
   if (!d) return String(dateInput);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return formatIndianTimeOnly(dateInput);
 }
 
 function formatWhatsAppListTime(dateInput) {
@@ -145,7 +146,7 @@ function formatWhatsAppListTime(dateInput) {
   const isYesterday = d.toDateString() === yesterday.toDateString();
 
   if (isToday) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatIndianTimeOnly(dateInput);
   }
   if (isYesterday) {
     return 'Yesterday';
@@ -969,7 +970,7 @@ export const WhatsAppWebInbox = ({
         {messages.map((msg, idx) => {
           const isCustomer = msg.sender_type === 'customer';
           const timeStr = formatWhatsAppTime(msg.created_at) || '12:00 PM';
-          const fullDateTimeStr = parseToLocalDate(msg.created_at)?.toLocaleString() || timeStr;
+          const fullDateTimeStr = formatIndianDateTime(msg.created_at) || timeStr;
 
           const prevMsg = idx > 0 ? messages[idx - 1] : null;
           const currentDateKey = getMessageDateKey(msg.created_at);

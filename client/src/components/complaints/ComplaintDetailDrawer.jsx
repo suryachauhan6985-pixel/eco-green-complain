@@ -12,7 +12,7 @@ import {
   Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX,
   ClipboardCheck
 } from 'lucide-react';
-import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
+import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly, formatIndianTimeOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUpload';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
@@ -1799,9 +1799,9 @@ export const ComplaintDetailDrawer = ({
                             </div>
                             <p className="text-[11px] text-slate-600 leading-relaxed">
                               {ticket.company_settlement_status === 'Settled with Company' ? (
-                                <>Amount ₹<strong>{ticket.payment_collected}</strong> {ticket.payment_collected_at ? `(collected on ${new Date(ticket.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at ${new Date(ticket.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })})` : ''} received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
+                                <>Amount ₹<strong>{ticket.payment_collected}</strong> {ticket.payment_collected_at ? `(collected on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)})` : ''} received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
                               ) : (
-                                <>₹<strong>{ticket.payment_collected}</strong> was collected {ticket.payment_collected_at ? `on ${new Date(ticket.payment_collected_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at ${new Date(ticket.payment_collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''} by <strong>{ticket.assigned_tech_name || ticket.technician_name || 'the technician'}</strong> and is currently in technician's possession.</>
+                                <>₹<strong>{ticket.payment_collected}</strong> was collected {ticket.payment_collected_at ? `on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)}` : ''} by <strong>{ticket.assigned_tech_name || ticket.technician_name || 'the technician'}</strong> and is currently in technician's possession.</>
                               )}
                             </p>
                           </div>
@@ -3344,7 +3344,7 @@ export const ComplaintDetailDrawer = ({
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-bold text-slate-900">{item.action}</span>
                               <span className="text-[11px] text-slate-400">
-                                {new Date(item.created_at).toLocaleString()}
+                                {formatIndianDateTime(item.created_at)}
                               </span>
                             </div>
                             <p className="text-slate-700 leading-relaxed">{item.notes}</p>
@@ -3430,7 +3430,7 @@ export const ComplaintDetailDrawer = ({
 
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-slate-400">
-                                {new Date(notif.created_at).toLocaleTimeString()}
+                                {formatIndianTimeOnly(notif.created_at)}
                               </span>
                               <button
                                 onClick={() => handleResendNotif(notif.id)}
@@ -3500,8 +3500,8 @@ export const ComplaintDetailDrawer = ({
                           const msgDate = new Date(msg.created_at);
                           const prevDate = prevMsg ? new Date(prevMsg.created_at) : null;
                           const isNewDay = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
-                          const dateBadge = msgDate.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
-                          const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          const dateBadge = formatIndianDateOnly(msgDate);
+                          const timeStr = formatIndianTimeOnly(msgDate);
 
                           return (
                             <React.Fragment key={msg.id || idx}>
@@ -3976,7 +3976,7 @@ export const ComplaintDetailDrawer = ({
                   <span className="text-slate-500 font-medium">Expected Visit:</span>
                   <strong className="text-emerald-800 font-bold">
                     {assignSuccessModal.expectedDate
-                      ? new Date(assignSuccessModal.expectedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                      ? formatIndianDateOnly(assignSuccessModal.expectedDate)
                       : 'Within 24 Hours'}
                   </strong>
                 </div>

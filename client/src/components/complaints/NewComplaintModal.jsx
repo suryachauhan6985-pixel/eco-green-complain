@@ -1,3 +1,4 @@
+import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
@@ -1220,7 +1221,7 @@ export const NewComplaintModal = ({
                     {createdTicket.ticket_id}
                   </h3>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    Registered on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • Status: <strong className="text-amber-700">Unassigned</strong>
+                    Registered on {formatIndianDateOnly(new Date())} • Status: <strong className="text-amber-700">Unassigned</strong>
                   </p>
                 </div>
               </div>
@@ -1443,7 +1444,7 @@ export const NewComplaintModal = ({
                     </p>
                     <div className="mt-2 p-2 bg-white/80 rounded-xl border border-rose-200 text-[11px] text-rose-900 font-semibold flex items-center justify-between flex-wrap gap-2">
                       <span>⚠️ Duplicate tickets cannot be registered for the same product until Ticket #{activeComplaintWarning.ticket_id} is marked <strong>Closed</strong>.</span>
-                      <span className="text-slate-500 font-normal">Created: {new Date(activeComplaintWarning.created_at).toLocaleDateString()}</span>
+                      <span className="text-slate-500 font-normal">Created: {formatIndianDateTime(activeComplaintWarning.created_at)}</span>
                     </div>
                   </div>
                 </div>

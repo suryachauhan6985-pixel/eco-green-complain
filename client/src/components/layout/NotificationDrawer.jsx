@@ -1,3 +1,4 @@
+import { formatIndianDateOnly, formatIndianTimeOnly } from '../common/TicketAgeBadge';
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -301,7 +302,7 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
       if (diffMins < 60) return `${diffMins}m ago`;
       const diffHours = Math.floor(diffMins / 60);
       if (diffHours < 24) return `${diffHours}h ago`;
-      return new Date(isoString).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      return formatIndianDateOnly(isoString);
     } catch (_) {
       return 'Recent';
     }
@@ -1062,7 +1063,7 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
 
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-slate-500">
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {formatIndianTimeOnly(msg.created_at)}
                           </span>
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
                             msg.status === 'sent' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'

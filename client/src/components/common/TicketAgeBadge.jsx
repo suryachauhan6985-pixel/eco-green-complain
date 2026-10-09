@@ -35,16 +35,7 @@ export const parseDateSafe = (dateStr) => {
 export const formatIndianDateTime = (dateStr) => {
   const d = parseDateSafe(dateStr);
   if (!d) return '—';
-
-  return d.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+  return formatIndianDateOnly(d) + ', ' + formatIndianTimeOnly(d);
 };
 
 /**
@@ -53,13 +44,20 @@ export const formatIndianDateTime = (dateStr) => {
 export const formatIndianTimeOnly = (dateStr) => {
   const d = parseDateSafe(dateStr);
   if (!d) return '—';
-
-  return d.toLocaleTimeString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(d);
+  } catch (_) {
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return String(hours).padStart(2, '0') + ':' + minutes + ' ' + ampm;
+  }
 };
 
 /**
@@ -68,13 +66,23 @@ export const formatIndianTimeOnly = (dateStr) => {
 export const formatIndianDateOnly = (dateStr) => {
   const d = parseDateSafe(dateStr);
   if (!d) return '—';
-
-  return d.toLocaleDateString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  });
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).formatToParts(d);
+    const day = parts.find(p => p.type === 'day')?.value || '01';
+    const month = parts.find(p => p.type === 'month')?.value || '01';
+    const year = parts.find(p => p.type === 'year')?.value || '2026';
+    return day + '-' + month + '-' + year;
+  } catch (_) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return day + '-' + month + '-' + year;
+  }
 };
 
 export const getTicketAgeInfo = (complaint) => {

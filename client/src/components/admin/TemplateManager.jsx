@@ -1,3 +1,4 @@
+import { formatIndianDateOnly } from '../common/TicketAgeBadge';
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
@@ -495,7 +496,7 @@ export const TemplateManager = () => {
     notes: 'Inverter inspection assigned. Customer requested rooftop visit before 1 PM.',
     charges_line: '\n💰 Estimated Service Charge: ₹350 (Standard Visit Fee)',
     feedback_url: 'https://complain.ecogreensolar.co.in/track/EGS-2026-000101',
-    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    date: formatIndianDateOnly(new Date())
   };
 
   const simulatedWhatsAppPreview = useMemo(() => {

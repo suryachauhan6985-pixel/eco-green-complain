@@ -1,3 +1,4 @@
+import { formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { X, Phone, History, Calendar, Wrench, ChevronRight } from 'lucide-react';
@@ -86,7 +87,7 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
                       {c.status}
                     </span>
                     <span className="text-[11px] text-slate-500 font-medium">
-                      {new Date(c.created_at).toLocaleDateString()}
+                      {formatIndianDateTime(c.created_at)}
                     </span>
                   </div>
                   <div className="text-xs font-semibold text-slate-800">{c.product_type} — {c.issue_category}</div>
