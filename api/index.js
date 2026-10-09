@@ -6627,6 +6627,22 @@ app.post('/api/products', authenticateToken, async (req, res) => {
   }
 });
 
+app.put('/api/products/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, category, description } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Product name is required' });
+    const r = await query(
+      'UPDATE products SET name = $1, category = COALESCE($2, category), description = COALESCE($3, description) WHERE id = $4 RETURNING *',
+      [name.trim(), category || 'General', description || '', id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+    return res.json({ product: r.rows[0], message: 'Product updated successfully' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/products/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -6662,6 +6678,22 @@ app.post('/api/categories', authenticateToken, async (req, res) => {
       [product_type, category_name.trim(), default_priority || 'Medium']
     );
     return res.status(201).json({ category: r.rows[0], message: 'Category added' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/categories/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category_name, default_priority, product_type } = req.body;
+    if (!category_name?.trim()) return res.status(400).json({ error: 'Category name is required' });
+    const r = await query(
+      'UPDATE issue_categories SET category_name = $1, default_priority = COALESCE($2, default_priority), product_type = COALESCE($3, product_type) WHERE id = $4 RETURNING *',
+      [category_name.trim(), default_priority, product_type, id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Category not found' });
+    return res.json({ category: r.rows[0], message: 'Category updated successfully' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

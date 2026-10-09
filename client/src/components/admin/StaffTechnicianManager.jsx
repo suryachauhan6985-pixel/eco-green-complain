@@ -57,6 +57,11 @@ export const StaffTechnicianManager = () => {
   const [newProdName, setNewProdName] = useState('');
   const [newProdDesc, setNewProdDesc] = useState('');
   const [addingProd, setAddingProd] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [savingProdEdit, setSavingProdEdit] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [savingCatEdit, setSavingCatEdit] = useState(false);
 
   // Edit Member Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -297,6 +302,47 @@ export const StaffTechnicianManager = () => {
     }
   };
 
+  const handleUpdateProduct = async (e) => {
+    e.preventDefault();
+    if (!editingProduct?.name?.trim()) return;
+    try {
+      setSavingProdEdit(true);
+      await api.updateProduct(editingProduct.id, {
+        name: editingProduct.name.trim(),
+        description: editingProduct.description?.trim() || ''
+      });
+      showToast(`Product "${editingProduct.name.trim()}" updated successfully!`);
+      setEditingProduct(null);
+      await loadCatalog();
+      broadcastCatalogUpdate({ action: 'update_product', id: editingProduct.id });
+    } catch (err) {
+      showGlobalToast('Failed to update product: ' + err.message, 'error');
+    } finally {
+      setSavingProdEdit(false);
+    }
+  };
+
+  const handleUpdateCategory = async (e, catId) => {
+    if (e) e.preventDefault();
+    if (!editingCategoryName?.trim()) return;
+    try {
+      setSavingCatEdit(true);
+      await api.updateCategory(catId, {
+        category_name: editingCategoryName.trim(),
+        product_type: selectedProductForCat
+      });
+      showToast(`Category updated to "${editingCategoryName.trim()}"!`);
+      setEditingCategoryId(null);
+      setEditingCategoryName('');
+      await loadCatalog();
+      broadcastCatalogUpdate({ action: 'update_category', id: catId });
+    } catch (err) {
+      showGlobalToast('Failed to update category: ' + err.message, 'error');
+    } finally {
+      setSavingCatEdit(false);
+    }
+  };
+
   const handleAddProduct = async (e) => {
     e.preventDefault();
     if (!newProdName.trim()) return;
@@ -452,6 +498,8 @@ export const StaffTechnicianManager = () => {
 
       await api.createUser({
         ...formData,
+        area_zone: formData.area_zone || 'General Zone',
+        specialization: formData.specialization || 'All Products',
         phone: cleanPhone,
         username: safeUsername,
         email: safeEmail
@@ -1017,18 +1065,26 @@ export const StaffTechnicianManager = () => {
                       <h4 className="font-bold text-xs text-slate-900">{p.name}</h4>
                       <p className="text-[11px] text-slate-500 mt-0.5">{p.description || 'No description'}</p>
                     </div>
-                    {p.is_default ? (
-                      <span className="text-[9px] font-bold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded shrink-0">System</span>
-                    ) : (
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        onClick={() => handleDeleteProduct(p.id, p.name)}
-                        className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded transition-colors shrink-0 cursor-pointer"
-                        title="Delete Product"
+                        onClick={() => setEditingProduct({ id: p.id, name: p.name, description: p.description || '' })}
+                        className="text-slate-400 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors shrink-0 cursor-pointer"
+                        title="Edit Product"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Edit3 className="w-3.5 h-3.5" />
                       </button>
-                    )}
+                      {!p.is_default && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProduct(p.id, p.name)}
+                          className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded transition-colors shrink-0 cursor-pointer"
+                          title="Delete Product"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1107,22 +1163,68 @@ export const StaffTechnicianManager = () => {
                     .filter(c => c.product_type === selectedProductForCat)
                     .map((cat) => (
                       <div key={cat.id} className="p-3 flex items-center justify-between gap-2 hover:bg-white transition-colors">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs font-bold text-slate-800 truncate">{cat.category_name}</span>
-                          {cat.is_default ? (
-                            <span className="text-[9px] font-semibold text-slate-500 bg-slate-200/70 px-1.5 py-0.2 rounded">Default</span>
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          {editingCategoryId === cat.id ? (
+                            <form onSubmit={(e) => handleUpdateCategory(e, cat.id)} className="flex items-center gap-2 flex-1">
+                              <input
+                                type="text"
+                                value={editingCategoryName}
+                                onChange={e => setEditingCategoryName(e.target.value)}
+                                className="flex-1 bg-white border border-emerald-500 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none"
+                                autoFocus
+                              />
+                              <button
+                                type="submit"
+                                disabled={savingCatEdit}
+                                className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                                title="Save"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingCategoryId(null)}
+                                className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 cursor-pointer"
+                                title="Cancel"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </form>
                           ) : (
-                            <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">Custom</span>
+                            <>
+                              <span className="text-xs font-bold text-slate-800 truncate">{cat.category_name}</span>
+                              {cat.is_default ? (
+                                <span className="text-[9px] font-semibold text-slate-500 bg-slate-200/70 px-1.5 py-0.2 rounded">Default</span>
+                              ) : (
+                                <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">Custom</span>
+                              )}
+                            </>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCategory(cat.id, cat.category_name)}
-                          className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Delete category"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+
+                        {editingCategoryId !== cat.id && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCategoryId(cat.id);
+                                setEditingCategoryName(cat.category_name);
+                              }}
+                              className="text-slate-400 hover:text-emerald-700 p-1.5 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit category"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(cat.id, cat.category_name)}
+                              className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete category"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))
                 )}
@@ -1556,6 +1658,65 @@ export const StaffTechnicianManager = () => {
                 >
                   {resetLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>Save New Password</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Product Modal */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-emerald-600" />
+                <span>Edit Product Catalog</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateProduct} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Product Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingProduct.name}
+                  onChange={e => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Description (Optional)</label>
+                <textarea
+                  rows={3}
+                  value={editingProduct.description}
+                  onChange={e => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingProdEdit || !editingProduct.name.trim()}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {savingProdEdit ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Save Changes</span>
                 </button>
               </div>
             </form>

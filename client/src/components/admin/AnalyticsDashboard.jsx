@@ -1184,175 +1184,132 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       </div>
 
             {/* Product-Wise Linked Issue Categories */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
-          <div>
-            <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
-              <Layers className="w-5 h-5 text-emerald-600" />
-              <span>Product Line Breakdown & Ranked Issue Categories</span>
-            </h3>
-            <p className="text-xs text-slate-500">
-              Each product line is paired with its specific ranked issue categories and frequency distribution
-            </p>
-          </div>
-          <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 self-start sm:self-auto">
-            {activeMetrics?.productStats?.length || 0} Product Lines Monitored
-          </span>
-        </div>
+      <div className="space-y-6">
+        {(() => {
+          const activeProducts = (activeMetrics?.productStats || []).filter(p => Number(p.count) > 0);
 
-        {(!activeMetrics?.productStats || activeMetrics.productStats.length === 0 || totalCount === 0) ? (
-          <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-2xs text-center text-slate-400 text-xs">
-            No complaint tickets found for the selected period
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {activeMetrics.productStats.map((prod) => {
-              const total = totalCount || 1;
-              const pct = Math.round((Number(prod.count) / total) * 100);
-              const categories = prod.categories || [];
+          if (activeProducts.length === 0 || totalCount === 0) {
+            return (
+              <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-2xs text-center text-slate-400 text-xs">
+                No complaint tickets registered in this selected time period
+              </div>
+            );
+          }
 
-              return (
-                <div 
-                  key={prod.product_type} 
-                  className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all overflow-hidden"
-                >
-                  <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
-                    {/* Left Box: Product Details (4 of 12 cols on desktop) */}
-                    <div className="lg:col-span-4 p-5 bg-gradient-to-br from-slate-50/90 via-emerald-50/20 to-white flex flex-col justify-between">
+          return (
+            <div className="space-y-6">
+              {activeProducts.map((prod) => {
+                const total = totalCount || 1;
+                const pct = Math.round((Number(prod.count) / total) * 100);
+                const categories = prod.categories || [];
+
+                return (
+                  <div key={prod.product_type} className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                    {/* Part 1 (Left 50%): Product Breakdown Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                       <div>
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-slate-200 flex items-center justify-center font-bold">
+                        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
                               {getProductIcon(prod.product_type)}
                             </div>
-                            <div>
-                              <h4 className="font-bold text-sm text-slate-900">{prod.product_type}</h4>
-                              <span className="text-[11px] text-slate-500">{pct}% share of complaints</span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-black text-slate-900">{prod.count}</div>
-                            <div className="text-[10px] text-slate-400 uppercase font-semibold">Tickets</div>
-                          </div>
+                            <span>Product Breakdown</span>
+                          </h3>
+                          <span className="text-xs font-normal text-slate-500">Share of complaints</span>
                         </div>
 
-                        {/* Share Progress Bar */}
-                        <div className="space-y-1 mb-4">
-                          <div className="w-full h-2.5 bg-slate-200/70 rounded-full overflow-hidden">
+                        <div 
+                          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
+                          className="space-y-2 text-xs p-3 rounded-xl bg-slate-50/60 hover:bg-emerald-50/70 cursor-pointer transition-all border border-slate-200/60 hover:border-emerald-300 group"
+                          title={`Click to filter complaints by ${prod.product_type}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-sm text-slate-800 group-hover:text-emerald-900">{prod.product_type}</span>
+                            <span className="text-slate-500 group-hover:text-emerald-700 font-semibold">
+                              <strong className="text-slate-900 group-hover:text-emerald-900 text-sm">{prod.count}</strong> complaints ({pct}%) →
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 bg-slate-200/80 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-emerald-600 rounded-full transition-all duration-500"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <div className="flex justify-between text-[10px] text-slate-500 font-medium">
-                            <span>{pct}% of all {totalCount} complaints</span>
-                            <span>{prod.count} recorded</span>
+                          <div className="text-[11px] text-slate-500 flex justify-between font-medium pt-1">
+                            <span className="text-amber-700 font-semibold">{prod.active_count || 0} Active In-Pipeline</span>
+                            <span className="text-emerald-700 font-semibold">{prod.resolved_count || 0} Resolved</span>
                           </div>
-                        </div>
-
-                        {/* Active vs Resolved Badges */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-amber-600" />
-                            <span>{prod.active_count || 0} Active In-Pipeline</span>
-                          </span>
-                          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>{prod.resolved_count || 0} Resolved</span>
-                          </span>
                         </div>
                       </div>
 
-                      {/* Bottom link to complaints */}
-                      <div className="mt-5 pt-3.5 border-t border-slate-200/80 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-500 font-medium">
-                          {categories.length} {categories.length === 1 ? 'category' : 'categories'} recorded
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-xs text-slate-500 font-medium">
+                          {categories.length} issue {categories.length === 1 ? 'type' : 'types'} identified
                         </span>
                         <button
                           onClick={() => onNavigateToComplaints && onNavigateToComplaints({ product_type: prod.product_type })}
-                          className="text-xs font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition-colors group"
+                          className="text-xs font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 group transition-colors"
                         >
-                          <span>View Product Complaints</span>
+                          <span>View Tickets</span>
                           <span className="group-hover:translate-x-1 transition-transform">→</span>
                         </button>
                       </div>
                     </div>
 
-                    {/* Right Box: Issue Categories Specific to This Product (8 of 12 cols on desktop) */}
-                    <div className="lg:col-span-8 p-5 bg-white flex flex-col justify-between">
+                    {/* Part 2 (Right 50%): Top Issue Categories for this Product */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                       <div>
-                        <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                             <Tag className="w-4 h-4 text-amber-500" />
-                            <span className="text-xs font-bold text-slate-900">
-                              Top Issues for {prod.product_type}
-                            </span>
-                            {categories.length > 0 && (
-                              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/70 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                {categories.length} Issue {categories.length === 1 ? 'Type' : 'Types'}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[11px] text-slate-400">Ranked by Frequency</span>
+                            <span>Top Issue Categories</span>
+                            <span className="text-[11px] font-normal text-slate-500">({prod.product_type})</span>
+                          </h3>
+                          <span className="text-xs font-normal text-slate-500">Frequency distribution</span>
                         </div>
 
                         {categories.length === 0 ? (
-                          <div className="py-8 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-1.5">
-                            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                            <span className="font-medium text-slate-600">Zero Issues Reported</span>
-                            <span className="text-[11px] text-slate-400">No complaints registered for {prod.product_type} in this selected time period</span>
+                          <div className="py-8 text-center text-slate-400 text-xs">
+                            No complaint issues reported for this product
                           </div>
                         ) : (
                           <div className="space-y-2.5">
                             {categories.map((issue, idx) => {
-                              const topCount = Number(categories[0]?.count) || 1;
-                              const relativePct = Math.round((Number(issue.count) / topCount) * 100);
+                              const maxCount = Number(categories[0]?.count) || 1;
+                              const catPct = Math.round((Number(issue.count) / maxCount) * 100);
                               const isTop = idx === 0;
 
                               return (
                                 <div 
                                   key={issue.issue_category} 
                                   onClick={() => onNavigateToComplaints && onNavigateToComplaints({ 
-                                    product_type: prod.product_type,
+                                    product_type: prod.product_type, 
                                     search: issue.issue_category 
                                   })}
-                                  className={`p-3 rounded-xl border transition-all cursor-pointer group ${
-                                    isTop 
-                                      ? 'bg-amber-50/30 border-amber-200/80 hover:bg-amber-50/70 hover:border-amber-400' 
-                                      : 'bg-slate-50/40 border-slate-200/70 hover:bg-emerald-50/50 hover:border-emerald-300'
-                                  }`}
-                                  title={`Filter complaints for ${prod.product_type} with "${issue.issue_category}"`}
+                                  className="space-y-1 text-xs p-2.5 rounded-xl hover:bg-amber-50/70 cursor-pointer transition-all border border-slate-100 hover:border-amber-300 group"
+                                  title={`Click to filter complaints matching "${issue.issue_category}"`}
                                 >
-                                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                                  <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2 min-w-0">
-                                      <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 ${
-                                        isTop 
-                                          ? 'bg-amber-500 text-white shadow-2xs' 
-                                          : idx === 1 
-                                            ? 'bg-slate-200 text-slate-700 font-bold' 
-                                            : 'bg-slate-100 text-slate-500 font-semibold'
+                                      <span className={`w-4 h-4 rounded text-[10px] font-black flex items-center justify-center shrink-0 ${
+                                        isTop ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700'
                                       }`}>
-                                        #{idx + 1}
+                                        {idx + 1}
                                       </span>
-                                      <span className="font-bold text-xs text-slate-800 group-hover:text-emerald-950 truncate">
+                                      <span className="font-medium text-slate-700 group-hover:text-amber-950 truncate max-w-xs">
                                         {issue.issue_category}
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-xs font-black text-slate-900 group-hover:text-emerald-800">
-                                        {issue.count} {issue.count === 1 ? 'complaint' : 'complaints'}
-                                      </span>
-                                      <span className="text-[11px] font-bold text-slate-500 group-hover:text-emerald-700">
-                                        ({issue.percent}%) →
-                                      </span>
-                                    </div>
+                                    <span className="font-bold text-slate-900 group-hover:text-amber-800 shrink-0">
+                                      {issue.count} →
+                                    </span>
                                   </div>
-                                  <div className="w-full h-2 bg-slate-200/60 rounded-full overflow-hidden">
+                                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                                     <div
                                       className={`h-full rounded-full transition-all duration-500 ${
                                         isTop ? 'bg-amber-500' : 'bg-emerald-600'
                                       }`}
-                                      style={{ width: `${relativePct}%` }}
+                                      style={{ width: `${catPct}%` }}
                                     />
                                   </div>
                                 </div>
@@ -1363,11 +1320,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Technician Leaderboard Table */}

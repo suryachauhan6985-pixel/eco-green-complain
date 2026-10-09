@@ -1632,7 +1632,7 @@ export const ComplaintDetailDrawer = ({
                         </div>
                         <div>
                           <span className="text-slate-400 block text-[11px]">Invoice Date:</span>
-                          <span className="font-mono font-semibold text-slate-800">{ticket.invoice_date || 'N/A'}</span>
+                          <span className="font-mono font-semibold text-slate-800">{ticket.invoice_date ? formatIndianDateOnly(ticket.invoice_date) : 'N/A'}</span>
                         </div>
                         <div>
                           <span className="text-slate-400 block text-[11px]">Consumer No:</span>

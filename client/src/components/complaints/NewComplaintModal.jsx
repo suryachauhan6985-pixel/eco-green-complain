@@ -1578,7 +1578,7 @@ export const NewComplaintModal = ({
                         <strong className="text-xs text-slate-900">{selectedCustomer.customer_name}</strong>
                       </div>
                       <p className="text-[11px] text-slate-600">
-                        {selectedCustomer.city_village} • Consumer No: <strong className="font-mono text-slate-800">{selectedCustomer.consumer_no || 'N/A'}</strong> • Invoice: <strong className="font-mono text-slate-800">{selectedCustomer.invoice_no || 'N/A'}</strong> ({selectedCustomer.invoice_date || 'Date N/A'})
+                        {selectedCustomer.city_village} • Consumer No: <strong className="font-mono text-slate-800">{selectedCustomer.consumer_no || 'N/A'}</strong> • Invoice: <strong className="font-mono text-slate-800">{selectedCustomer.invoice_no || 'N/A'}</strong> ({selectedCustomer.invoice_date ? formatIndianDateOnly(selectedCustomer.invoice_date) : 'Date N/A'})
                       </p>
                     </div>
 

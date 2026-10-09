@@ -612,6 +612,76 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
   });
   const [newCatInput, setNewCatInput] = useState('');
   const [selectedProductView, setSelectedProductView] = useState('Solar Rooftop Systems');
+  const [editingExpenseIndex, setEditingExpenseIndex] = useState(null);
+  const [editingExpenseValue, setEditingExpenseValue] = useState('');
+
+  const [diagnosticsMap, setDiagnosticsMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem('egs_custom_diagnostics_data');
+      return saved ? JSON.parse(saved) : ISSUE_DIAGNOSTICS_DATA;
+    } catch (_) {
+      return ISSUE_DIAGNOSTICS_DATA;
+    }
+  });
+  const [newDiagnosticInput, setNewDiagnosticInput] = useState('');
+  const [editingDiagIndex, setEditingDiagIndex] = useState(null);
+  const [editingDiagValue, setEditingDiagValue] = useState('');
+
+  const handleSaveEditExpense = (idx) => {
+    const clean = editingExpenseValue.trim();
+    if (!clean) return;
+    const updated = [...expenseCategories];
+    updated[idx] = clean;
+    setExpenseCategories(updated);
+    localStorage.setItem('egs_custom_expense_categories', JSON.stringify(updated));
+    setEditingExpenseIndex(null);
+    showToast(`Expense category updated to "${clean}"`, 'success');
+  };
+
+  const handleAddDiagnostic = (e) => {
+    e.preventDefault();
+    const clean = newDiagnosticInput.trim();
+    if (!clean) return;
+    const currentList = diagnosticsMap[selectedProductView] || [];
+    if (currentList.some(d => d.toLowerCase() === clean.toLowerCase())) {
+      return showToast('Diagnostic fault category already exists', 'warning');
+    }
+    const updatedList = [...currentList, clean];
+    const updatedMap = { ...diagnosticsMap, [selectedProductView]: updatedList };
+    setDiagnosticsMap(updatedMap);
+    localStorage.setItem('egs_custom_diagnostics_data', JSON.stringify(updatedMap));
+    setNewDiagnosticInput('');
+    showToast(`Added fault "${clean}" for ${selectedProductView}`, 'success');
+  };
+
+  const handleSaveEditDiagnostic = (idx) => {
+    const clean = editingDiagValue.trim();
+    if (!clean) return;
+    const currentList = diagnosticsMap[selectedProductView] || [];
+    const updatedList = [...currentList];
+    updatedList[idx] = clean;
+    const updatedMap = { ...diagnosticsMap, [selectedProductView]: updatedList };
+    setDiagnosticsMap(updatedMap);
+    localStorage.setItem('egs_custom_diagnostics_data', JSON.stringify(updatedMap));
+    setEditingDiagIndex(null);
+    showToast(`Diagnostic fault updated to "${clean}"`, 'success');
+  };
+
+  const handleDeleteDiagnostic = async (faultToRemove) => {
+    const ok = await confirm({
+      title: 'Remove Diagnostic Category?',
+      message: `Are you sure you want to remove "${faultToRemove}" from ${selectedProductView}?`,
+      type: 'warning',
+      confirmText: 'Remove'
+    });
+    if (!ok) return;
+    const currentList = diagnosticsMap[selectedProductView] || [];
+    const updatedList = currentList.filter(f => f !== faultToRemove);
+    const updatedMap = { ...diagnosticsMap, [selectedProductView]: updatedList };
+    setDiagnosticsMap(updatedMap);
+    localStorage.setItem('egs_custom_diagnostics_data', JSON.stringify(updatedMap));
+    showToast(`Diagnostic fault "${faultToRemove}" removed`, 'info');
+  };
 
   const handleAddExpenseCategory = (e) => {
     e.preventDefault();
@@ -1917,27 +1987,68 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {expenseCategories.map((cat, idx) => {
-                const isDefault = DEFAULT_EXPENSE_CATEGORIES.includes(cat);
                 return (
                   <div 
-                    key={cat}
-                    className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 hover:border-emerald-300 transition-colors"
+                    key={idx + '_' + cat}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 hover:border-emerald-300 transition-colors"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black flex items-center justify-center">
-                        {idx + 1}
-                      </span>
-                      <span>{cat}</span>
-                    </div>
+                    {editingExpenseIndex === idx ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <input
+                          type="text"
+                          value={editingExpenseValue}
+                          onChange={(e) => setEditingExpenseValue(e.target.value)}
+                          className="flex-1 bg-white border border-emerald-500 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEditExpense(idx)}
+                          className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                          title="Save"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingExpenseIndex(null)}
+                          className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 cursor-pointer"
+                          title="Cancel"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="truncate">{cat}</span>
+                        </div>
 
-                    {!isDefault && (
-                      <button
-                        onClick={() => handleRemoveExpenseCategory(cat)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Delete custom category"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingExpenseIndex(idx);
+                              setEditingExpenseValue(cat);
+                            }}
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                            title="Edit category"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExpenseCategory(cat)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete category"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 );
@@ -1985,7 +2096,7 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
 
           {/* Section 3: Diagnostic Fault Categories for Selected Product */}
           <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs">
-            <div className="pb-4 border-b border-slate-100 mb-4 flex items-center justify-between">
+            <div className="pb-4 border-b border-slate-100 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <AlertCircle className="w-5 h-5 text-amber-600" />
@@ -1995,18 +2106,89 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                   Standard issue diagnostics selectable during ticket registration and field reporting.
                 </p>
               </div>
+
+              {/* Add Custom Diagnostic Fault Form */}
+              <form onSubmit={handleAddDiagnostic} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newDiagnosticInput}
+                  onChange={(e) => setNewDiagnosticInput(e.target.value)}
+                  placeholder={`New diagnostic for ${selectedProductView}...`}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add</span>
+                </button>
+              </form>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {(ISSUE_DIAGNOSTICS_DATA[selectedProductView] || []).map((fault, fIdx) => (
+              {(diagnosticsMap[selectedProductView] || []).map((fault, fIdx) => (
                 <div 
-                  key={fault}
-                  className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center gap-2.5"
+                  key={fIdx + '_' + fault}
+                  className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center justify-between gap-2 hover:border-emerald-300 transition-colors"
                 >
-                  <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center justify-center shrink-0">
-                    {fIdx + 1}
-                  </span>
-                  <span className="leading-snug">{fault}</span>
+                  {editingDiagIndex === fIdx ? (
+                    <div className="flex items-center gap-2 w-full">
+                      <input
+                        type="text"
+                        value={editingDiagValue}
+                        onChange={(e) => setEditingDiagValue(e.target.value)}
+                        className="flex-1 bg-white border border-emerald-500 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEditDiagnostic(fIdx)}
+                        className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                        title="Save"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingDiagIndex(null)}
+                        className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 cursor-pointer"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {fIdx + 1}
+                        </span>
+                        <span className="leading-snug truncate">{fault}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingDiagIndex(fIdx);
+                            setEditingDiagValue(fault);
+                          }}
+                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          title="Edit diagnostic"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDiagnostic(fault)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Delete diagnostic"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>

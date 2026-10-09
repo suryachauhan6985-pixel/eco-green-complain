@@ -2038,6 +2038,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+  updateProduct: (id, data) => request(`/products/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
   deleteProduct: (id) => request(`/products/${id}`, {
     method: 'DELETE'
   }),
@@ -2049,6 +2053,10 @@ export const api = {
   },
   addCategory: (data) => request('/categories', {
     method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  updateCategory: (id, data) => request(`/categories/${id}`, {
+    method: 'PUT',
     body: JSON.stringify(data)
   }),
   deleteCategory: (id) => request(`/categories/${id}`, {
