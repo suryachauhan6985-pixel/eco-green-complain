@@ -6,7 +6,7 @@ function getDashboardMetrics(req, res) {
     const counts = db.prepare(`
       SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'Registered' THEN 1 ELSE 0 END) as registered_count,
+        SUM(CASE WHEN status IN ('Registered', 'Unassigned', 'New', 'Open') THEN 1 ELSE 0 END) as registered_count,
         SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END) as assigned_count,
         SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END) as in_progress_count,
         SUM(CASE WHEN status = 'On Hold' THEN 1 ELSE 0 END) as on_hold_count,
@@ -32,7 +32,7 @@ function getDashboardMetrics(req, res) {
         product_type,
         COUNT(*) as count,
         SUM(CASE WHEN status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as resolved_count,
-        SUM(CASE WHEN status IN ('Registered', 'Assigned', 'In Progress') THEN 1 ELSE 0 END) as active_count
+        SUM(CASE WHEN status NOT IN ('Resolved', 'Closed', 'Cancelled') THEN 1 ELSE 0 END) as active_count
       FROM complaints
       GROUP BY product_type
       ORDER BY count DESC
@@ -67,7 +67,7 @@ function getDashboardMetrics(req, res) {
         t.specialization,
         COUNT(c.id) as total_assigned,
         SUM(CASE WHEN c.status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as resolved_count,
-        SUM(CASE WHEN c.status IN ('Assigned', 'In Progress', 'On Hold') THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN c.status NOT IN ('Resolved', 'Closed', 'Cancelled') AND c.id IS NOT NULL THEN 1 ELSE 0 END) as pending_count,
         ROUND(AVG((julianday(c.resolved_at) - julianday(c.created_at)) * 24), 1) as avg_resolution_hours,
         ROUND(AVG(c.rating), 1) as avg_rating
       FROM technicians t

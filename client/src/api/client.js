@@ -951,7 +951,20 @@ class LocalMockStore {
   }
 
   getMetrics() {
-    const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    let list = [];
+    try {
+      const perm = localStorage.getItem('egs_permanent_complaints');
+      if (perm) list = JSON.parse(perm);
+    } catch (_) {}
+    if (!list || list.length === 0) {
+      try {
+        const mock = localStorage.getItem('egs_mock_complaints');
+        if (mock) list = JSON.parse(mock);
+      } catch (_) {}
+    }
+    if (!list || list.length === 0) {
+      list = INITIAL_COMPLAINTS || [];
+    }
     const counts = {
       total: list.length,
       registered_count: list.filter(c => c.status === 'Registered').length,

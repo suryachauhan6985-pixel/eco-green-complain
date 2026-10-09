@@ -8,6 +8,153 @@ import {
 import { AnalyticsDashboardSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync } from '../../utils/liveSync';
 
+
+// Client-side fallback metrics calculation from live complaints list & technicians
+function computeMetricsFromComplaints(complaintsList = [], techsList = [], serverMetrics = null) {
+  const total = complaintsList.length;
+  const registeredCount = complaintsList.filter(c => ['Registered', 'Unassigned', 'New', 'Open'].includes(c.status)).length;
+  const assignedCount = complaintsList.filter(c => c.status === 'Assigned').length;
+  const inProgressCount = complaintsList.filter(c => c.status === 'In Progress').length;
+  const onHoldCount = complaintsList.filter(c => c.status === 'On Hold').length;
+  const resolvedCount = complaintsList.filter(c => c.status === 'Resolved').length;
+  const closedCount = complaintsList.filter(c => c.status === 'Closed').length;
+  const reopenedCount = complaintsList.filter(c => c.status === 'Reopened').length;
+  const activeCount = Math.max(0, total - (resolvedCount + closedCount));
+
+  // Product distribution
+  const productMap = {};
+  complaintsList.forEach(c => {
+    const pType = c.product_type || 'Solar Rooftop Systems';
+    if (!productMap[pType]) {
+      productMap[pType] = { product_type: pType, count: 0, active_count: 0, resolved_count: 0 };
+    }
+    productMap[pType].count++;
+    if (['Resolved', 'Closed'].includes(c.status)) {
+      productMap[pType].resolved_count++;
+    } else {
+      productMap[pType].active_count++;
+    }
+  });
+  const productStats = Object.values(productMap).sort((a, b) => b.count - a.count);
+
+  // Issue category distribution
+  const issueMap = {};
+  complaintsList.forEach(c => {
+    const cat = c.issue_category || 'General Service & Maintenance';
+    issueMap[cat] = (issueMap[cat] || 0) + 1;
+  });
+  const issueCategoryStats = Object.entries(issueMap)
+    .map(([issue_category, count]) => ({ issue_category, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Priority distribution
+  const priorityMap = {};
+  complaintsList.forEach(c => {
+    const pri = c.priority || 'Medium';
+    priorityMap[pri] = (priorityMap[pri] || 0) + 1;
+  });
+  const priorityStats = Object.entries(priorityMap).map(([priority, count]) => ({ priority, count }));
+
+  // Average Resolution Hours
+  let totalHours = 0;
+  let resolvedWithDates = 0;
+  complaintsList.forEach(c => {
+    if (c.resolved_at && c.created_at) {
+      const hrs = (new Date(c.resolved_at) - new Date(c.created_at)) / (1000 * 60 * 60);
+      if (hrs >= 0 && hrs < 2000) {
+        totalHours += hrs;
+        resolvedWithDates++;
+      }
+    }
+  });
+  const avgResolutionHours = resolvedWithDates > 0 ? Math.round((totalHours / resolvedWithDates) * 10) / 10 : (serverMetrics?.avg_resolution_hours || 0);
+
+  // Customer satisfaction
+  let ratingSum = 0;
+  let ratingCount = 0;
+  complaintsList.forEach(c => {
+    const r = Number(c.rating);
+    if (r > 0) {
+      ratingSum += r;
+      ratingCount++;
+    }
+  });
+  const averageRating = ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : (serverMetrics?.customerSatisfaction?.averageRating || 0);
+
+  // Technician leaderboard
+  const techMap = {};
+  techsList.forEach(t => {
+    techMap[t.id] = {
+      id: t.id,
+      name: t.name,
+      area_zone: t.area_zone || 'Field Specialist',
+      specialization: t.specialization || 'Solar Technical',
+      total_assigned: 0,
+      resolved_count: 0,
+      pending_count: 0,
+      ratings: [],
+      resolution_hours: []
+    };
+  });
+
+  complaintsList.forEach(c => {
+    const tId = c.assigned_technician_id || c.technician_id;
+    if (tId && techMap[tId]) {
+      techMap[tId].total_assigned++;
+      if (['Resolved', 'Closed'].includes(c.status)) {
+        techMap[tId].resolved_count++;
+      } else {
+        techMap[tId].pending_count++;
+      }
+      if (c.rating && Number(c.rating) > 0) techMap[tId].ratings.push(Number(c.rating));
+      if (c.resolved_at && c.created_at) {
+        const h = (new Date(c.resolved_at) - new Date(c.created_at)) / (1000 * 60 * 60);
+        if (h >= 0 && h < 2000) techMap[tId].resolution_hours.push(h);
+      }
+    }
+  });
+
+  const technicianLeaderboard = Object.values(techMap).map(t => {
+    const avgR = t.ratings.length > 0 ? Math.round((t.ratings.reduce((a, b) => a + b, 0) / t.ratings.length) * 10) / 10 : 0;
+    const avgH = t.resolution_hours.length > 0 ? Math.round((t.resolution_hours.reduce((a, b) => a + b, 0) / t.resolution_hours.length) * 10) / 10 : 0;
+    return {
+      id: t.id,
+      name: t.name,
+      area_zone: t.area_zone,
+      specialization: t.specialization,
+      total_assigned: t.total_assigned,
+      resolved_count: t.resolved_count,
+      pending_count: t.pending_count,
+      avg_rating: avgR,
+      avg_resolution_hours: avgH
+    };
+  }).sort((a, b) => b.resolved_count - a.resolved_count || b.total_assigned - a.total_assigned);
+
+  return {
+    counts: {
+      total,
+      registered_count: registeredCount,
+      assigned_count: assignedCount,
+      in_progress_count: inProgressCount,
+      on_hold_count: onHoldCount,
+      resolved_count: resolvedCount,
+      closed_count: closedCount,
+      reopened_count: reopenedCount,
+      active_count: activeCount
+    },
+    avg_resolution_hours: avgResolutionHours,
+    resolved_total: resolvedCount + closedCount,
+    productStats,
+    issueCategoryStats,
+    priorityStats,
+    technicianLeaderboard,
+    customerSatisfaction: {
+      averageRating,
+      totalReviews: ratingCount || (serverMetrics?.customerSatisfaction?.totalReviews || 0)
+    }
+  };
+}
+
 export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -351,11 +498,39 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const fetchMetrics = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [metricData] = await Promise.all([
-        api.getMetrics(),
+      const [metricData, complaintsRes, techsRes] = await Promise.all([
+        api.getMetrics().catch(() => null),
+        api.getComplaints().catch(() => null),
+        api.getTechnicians().catch(() => null),
         fetchCustomerStats()
       ]);
-      setMetrics(metricData);
+
+      const complaintsList = Array.isArray(complaintsRes?.complaints) 
+        ? complaintsRes.complaints 
+        : (Array.isArray(complaintsRes) ? complaintsRes : []);
+      const techsList = Array.isArray(techsRes?.technicians) 
+        ? techsRes.technicians 
+        : (Array.isArray(techsRes) ? techsRes : []);
+
+      let finalMetrics = metricData;
+      // If server metrics is empty, 0 total, or missing breakdowns, compute from live complaints list
+      if (!finalMetrics || !finalMetrics.counts || Number(finalMetrics.counts.total || 0) === 0 || !finalMetrics.productStats || finalMetrics.productStats.length === 0) {
+        if (complaintsList.length > 0) {
+          finalMetrics = computeMetricsFromComplaints(complaintsList, techsList, finalMetrics);
+        }
+      }
+
+      if (finalMetrics) {
+        const total = Number(finalMetrics.counts?.total || complaintsList.length || 0);
+        const resolved = Number(finalMetrics.counts?.resolved_count || 0);
+        const closed = Number(finalMetrics.counts?.closed_count || 0);
+        const active = Math.max(0, total - (resolved + closed));
+        if (!finalMetrics.counts) finalMetrics.counts = {};
+        finalMetrics.counts.active_count = active;
+        if (!finalMetrics.counts.total) finalMetrics.counts.total = total;
+      }
+
+      setMetrics(finalMetrics);
     } catch (err) {
       if (!silent) console.error('Failed to load metrics:', err);
     } finally {
@@ -393,7 +568,11 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const registeredCount = Number(counts.registered_count || 0);
   const assignedCount = Number(counts.assigned_count || 0);
   const inProgressCount = Number(counts.in_progress_count || 0);
-  const activeCount = registeredCount + assignedCount + inProgressCount;
+  const resolvedCount = Number(counts.resolved_count || 0);
+  const closedCount = Number(counts.closed_count || 0);
+  const activeCount = counts.active_count !== undefined 
+    ? Number(counts.active_count) 
+    : Math.max(0, totalCount - (resolvedCount + closedCount));
   const avgResolutionHours = Number(metrics?.avg_resolution_hours || 0);
   const resolvedTotal = Number(metrics?.resolved_total || counts.resolved_count || 0);
   const csatRating = Number(metrics?.customerSatisfaction?.averageRating || 0);

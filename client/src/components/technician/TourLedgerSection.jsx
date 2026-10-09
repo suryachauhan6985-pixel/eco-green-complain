@@ -3034,7 +3034,15 @@ export const TourLedgerSection = ({
                     className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-1 focus:ring-emerald-500 cursor-pointer"
                   >
                     <option value="all">All Complaints & Tours</option>
-                    {(loadedComplaints || complaints).map(c => (
+                    {(loadedComplaints || complaints)
+                      .filter(c => {
+                        if (!selectedTechId || selectedTechId === 'all') return true;
+                        const tId = String(selectedTechId).trim();
+                        return String(c.assigned_technician_id ?? c.technician_id ?? '').trim() === tId ||
+                               String(c.secondary_technician_id ?? '').trim() === tId ||
+                               String(c.resolved_by_technician_id ?? '').trim() === tId;
+                      })
+                      .map(c => (
                       <option key={c.id} value={c.ticket_id}>
                         {c.ticket_id} — {c.customer_name}
                       </option>
@@ -3726,7 +3734,7 @@ export const TourLedgerSection = ({
                   <select
                     required
                     value={expenseForm.technician_id}
-                    onChange={(e) => setExpenseForm(prev => ({ ...prev, technician_id: e.target.value }))}
+                    onChange={(e) => setExpenseForm(prev => ({ ...prev, technician_id: e.target.value, ticket_id: '' }))}
                     className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 cursor-pointer"
                   >
                     <option value="">-- Choose Specialist --</option>
@@ -3747,18 +3755,38 @@ export const TourLedgerSection = ({
                       <Ticket className="w-3.5 h-3.5 text-blue-600" />
                       <span>Voucher Ticket / Tour (Optional)</span>
                     </label>
-                    <select
-                      value={expenseForm.ticket_id}
-                      onChange={(e) => setExpenseForm(prev => ({ ...prev, ticket_id: e.target.value }))}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800 cursor-pointer"
-                    >
-                      <option value="">-- General / Non-ticket Tour Travel --</option>
-                      {(loadedComplaints || complaints).map(c => (
-                        <option key={c.id} value={c.ticket_id}>
-                          {c.ticket_id} — {c.customer_name} ({c.city || 'Site'})
-                        </option>
-                      ))}
-                    </select>
+                    {(() => {
+                        const currentModalTechId = expenseForm.technician_id 
+                          || (!isAdminOrStaff && scopedTechProfile?.id ? String(scopedTechProfile.id) : (selectedTechId !== 'all' ? String(selectedTechId) : ''));
+                        const techAssignedTickets = (loadedComplaints || complaints || []).filter(c => {
+                          if (!currentModalTechId) return false;
+                          const tId = String(currentModalTechId).trim();
+                          return String(c.assigned_technician_id ?? c.technician_id ?? '').trim() === tId ||
+                                 String(c.secondary_technician_id ?? '').trim() === tId ||
+                                 String(c.resolved_by_technician_id ?? '').trim() === tId;
+                        });
+
+                        return (
+                          <select
+                            value={expenseForm.ticket_id}
+                            onChange={(e) => setExpenseForm(prev => ({ ...prev, ticket_id: e.target.value }))}
+                            className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800 cursor-pointer"
+                          >
+                            <option value="">-- General / Non-ticket Tour Travel --</option>
+                            {!currentModalTechId ? (
+                              <option value="" disabled>-- Please select a specialist above first --</option>
+                            ) : techAssignedTickets.length === 0 ? (
+                              <option value="" disabled>No tickets currently assigned to this specialist</option>
+                            ) : (
+                              techAssignedTickets.map(c => (
+                                <option key={c.id} value={c.ticket_id}>
+                                  {c.ticket_id} — {c.customer_name} ({c.city || 'Site'}) [{c.status}]
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        );
+                      })()}
                     <p className="text-[10px] text-slate-500 mt-0.5">
                       All expenses logged against this ticket will be consolidated onto a single dedicated voucher slip.
                     </p>

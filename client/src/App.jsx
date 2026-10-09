@@ -164,10 +164,15 @@ function AppContent() {
 
   useEffect(() => {
     if (!currentTab) return;
+    // When returning to root complaints tab, reset history so we never ping-pong back to secondary tabs
+    if (currentTab === 'complaints') {
+      tabHistoryRef.current = ['complaints'];
+      return;
+    }
     const stack = tabHistoryRef.current;
     if (stack[stack.length - 1] !== currentTab) {
       stack.push(currentTab);
-      if (stack.length > 30) stack.shift();
+      if (stack.length > 20) stack.shift();
     }
   }, [currentTab]);
 
@@ -396,37 +401,25 @@ function AppContent() {
     return false;
   }, Boolean(currentTab === 'technician' && techSection && techSection !== 'field_ops'), { priority: ESCAPE_PRIORITY.SUBVIEW });
 
-  // Stage: Navigation Tab History Stack (Steps back one tab at a time, landing on root dashboard)
+  // Stage: Navigation Tab History Stack (Return to root dashboard, then STOP)
   useEscapeHandler(() => {
     // If any drawer or modal is open, let its own handler take precedence
     if (selectedComplaintId || isNewComplaintOpen || isCustomerSearchOpen || historyPhone || isNotificationDrawerOpen || isTourOpen) {
       return false;
     }
 
-    const stack = tabHistoryRef.current;
-
-    // Pop current tab if at top of stack
-    while (stack.length > 0 && stack[stack.length - 1] === currentTab) {
-      stack.pop();
+    // CRITICAL: Once on root dashboard ('complaints') with no drawers or modals open,
+    // Escape must NEVER navigate to previous tabs (like WhatsApp or Analytics). Stop completely!
+    if (currentTab === 'complaints') {
+      tabHistoryRef.current = ['complaints'];
+      return false;
     }
 
-    if (stack.length > 0) {
-      const prevTab = stack.pop();
-      if (prevTab && prevTab !== currentTab) {
-        handleTabChange(prevTab);
-        return true;
-      }
-    }
-
-    // If no previous tab in stack and not already on root dashboard, return to dashboard
-    if (currentTab !== 'complaints') {
-      handleTabChange('complaints');
-      return true;
-    }
-
-    // Already on root dashboard ('complaints') with no drawers or sub-views. Stage stack is fully clear!
-    return false;
-  }, true, { priority: ESCAPE_PRIORITY.TAB_STACK });
+    // If on a secondary tab, return directly to root dashboard
+    tabHistoryRef.current = ['complaints'];
+    handleTabChange('complaints');
+    return true;
+  }, currentTab !== 'complaints', { priority: ESCAPE_PRIORITY.TAB_STACK });
 
   const handleReloadDemoData = async () => {
     const ok = await confirm({
