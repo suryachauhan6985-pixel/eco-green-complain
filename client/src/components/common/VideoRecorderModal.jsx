@@ -15,7 +15,9 @@ import {
   Info,
   Sparkles,
   FlipHorizontal,
-  Maximize2
+  Maximize2,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
@@ -39,6 +41,15 @@ export function VideoRecorderModal({
   const [isInitializing, setIsInitializing] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [hasAudio, setHasAudio] = useState(true);
+
+  // Zoom control state - Strictly defaults to 1x zoom
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomCapabilities, setZoomCapabilities] = useState({
+    supported: false,
+    min: 1,
+    max: 5,
+    step: 0.1
+  });
 
   // Device orientation state
   const [isDevicePortrait, setIsDevicePortrait] = useState(() => {
@@ -68,6 +79,10 @@ export function VideoRecorderModal({
   const accumulatedSizeRef = useRef(0);
   const timerIntervalRef = useRef(null);
   const fileFallbackInputRef = useRef(null);
+
+  // Touch pinch-to-zoom tracking refs
+  const touchStartDistanceRef = useRef(null);
+  const touchStartZoomRef = useRef(1);
 
   // Monitor orientation changes
   useEffect(() => {
@@ -120,6 +135,7 @@ export function VideoRecorderModal({
     setPreviewUrl(null);
     setRecordingSeconds(0);
     setCurrentSizeBytes(0);
+    setZoomLevel(1); // strictly reset zoom to 1x
     setPreviewMeta({ width: 0, height: 0, isLandscape: false, rotation: 0 });
     recordedChunksRef.current = [];
     accumulatedSizeRef.current = 0;
@@ -147,11 +163,31 @@ export function VideoRecorderModal({
     return '';
   };
 
-  // Start hardware camera stream
+  // Apply zoom level (both native hardware optical/sensor zoom and smooth fallback digital scale)
+  const applyZoom = useCallback(async (targetZoom) => {
+    const minZ = zoomCapabilities.min || 1;
+    const maxZ = zoomCapabilities.max || 5;
+    const clamped = Math.max(minZ, Math.min(maxZ, Number(Number(targetZoom).toFixed(1))));
+    setZoomLevel(clamped);
+
+    if (stream) {
+      const track = stream.getVideoTracks()[0];
+      if (track && zoomCapabilities.supported) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: clamped }] });
+        } catch (e) {
+          console.warn('Hardware zoom constraint application error:', e);
+        }
+      }
+    }
+  }, [stream, zoomCapabilities]);
+
+  // Start hardware camera stream with strict 1x zoom and orientation-aware constraints
   const initializeCamera = useCallback(async (desiredFacingMode = facingMode) => {
     if (!isOpen) return;
     setIsInitializing(true);
     setCameraError(null);
+    setZoomLevel(1); // strictly enforce 1x base zoom
 
     // Stop any existing stream
     if (stream) {
@@ -169,8 +205,8 @@ export function VideoRecorderModal({
       const portrait = typeof window !== 'undefined' ? window.innerHeight >= window.innerWidth : true;
 
       // Dynamic resolution matching device orientation:
-      // In portrait: 720x1280 (vertical)
-      // In landscape: 1280x720 (horizontal)
+      // In portrait: 720x1280 (vertical 9:16)
+      // In landscape: 1280x720 (horizontal 16:9)
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
@@ -199,6 +235,41 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({ video: true });
           setHasAudio(false);
         }
+      }
+
+      // Check hardware zoom capabilities and strictly initialize at 1.0x
+      const track = newStream.getVideoTracks()[0];
+      if (track) {
+        let isHardwareZoomAvailable = false;
+        let minZ = 1;
+        let maxZ = 5;
+        let stepZ = 0.1;
+
+        if (typeof track.getCapabilities === 'function') {
+          const caps = track.getCapabilities();
+          if ('zoom' in caps) {
+            isHardwareZoomAvailable = true;
+            minZ = caps.zoom.min ?? 1;
+            maxZ = caps.zoom.max ?? 5;
+            stepZ = caps.zoom.step ?? 0.1;
+
+            // Explicitly force hardware zoom to base 1x (or min)
+            try {
+              const defaultZoom = Math.max(1, minZ);
+              await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+            } catch (err) {
+              console.warn('Initial hardware 1x zoom constraint error:', err);
+            }
+          }
+        }
+
+        setZoomCapabilities({
+          supported: isHardwareZoomAvailable,
+          min: minZ,
+          max: Math.max(3, maxZ),
+          step: stepZ
+        });
+        setZoomLevel(1);
       }
 
       setStream(newStream);
@@ -253,6 +324,34 @@ export function VideoRecorderModal({
     await initializeCamera(nextMode);
   };
 
+  // Touch pinch-to-zoom event handlers
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartDistanceRef.current = dist;
+      touchStartZoomRef.current = zoomLevel;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && touchStartDistanceRef.current) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const factor = dist / touchStartDistanceRef.current;
+      const target = touchStartZoomRef.current * factor;
+      applyZoom(target);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartDistanceRef.current = null;
+  };
+
   // Start compressed high-quality recording (3 minutes ≈ 48 MB)
   const handleStartRecording = () => {
     if (!stream) return;
@@ -262,7 +361,6 @@ export function VideoRecorderModal({
     }
 
     try {
-      resetRecording();
       recordedChunksRef.current = [];
       accumulatedSizeRef.current = 0;
       setCurrentSizeBytes(0);
@@ -429,6 +527,9 @@ export function VideoRecorderModal({
     progressColorClass = 'bg-amber-400';
   }
 
+  // Preset zoom levels to display (clamped to max zoom capability)
+  const availableZoomPresets = [1, 2, 3, 5].filter(z => z <= (zoomCapabilities.max || 5));
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-slate-950/85 sm:backdrop-blur-md animate-in fade-in">
       {/* Full-screen on mobile, large immersive modal on tablet/desktop */}
@@ -444,17 +545,27 @@ export function VideoRecorderModal({
           </div>
         )}
 
-        {/* Viewfinder Canvas (MAXIMIZED - Fills 100% of the screen) */}
-        <div className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden">
+        {/* Viewfinder Canvas (MAXIMIZED - Fills 100% of the screen with touch pinch-to-zoom) */}
+        <div 
+          className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           
-          {/* Active Live Camera Stream */}
+          {/* Active Live Camera Stream (Strictly object-contain to eliminate default forced crop/zoom) */}
           {!recordedBlob && !cameraError && (
             <video
               ref={videoPreviewRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover sm:object-contain bg-black"
+              style={{
+                transform: (!zoomCapabilities.supported && zoomLevel > 1) ? `scale(${zoomLevel})` : undefined,
+                transformOrigin: 'center center',
+                transition: 'transform 0.15s ease-out'
+              }}
+              className="w-full h-full object-contain bg-black"
             />
           )}
 
@@ -492,7 +603,7 @@ export function VideoRecorderModal({
           {isInitializing && (
             <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center gap-3 text-slate-200 z-10">
               <RefreshCw className="w-9 h-9 text-teal-400 animate-spin" />
-              <p className="text-xs font-semibold tracking-wide">Starting high-quality HD camera...</p>
+              <p className="text-xs font-semibold tracking-wide">Starting 1x HD camera...</p>
             </div>
           )}
 
@@ -547,6 +658,9 @@ export function VideoRecorderModal({
                   <span className="text-[11px] text-slate-300 font-mono border-l border-white/20 pl-2">
                     {formatSizeMB(currentSizeBytes)} / 50 MB
                   </span>
+                  <span className="text-[10px] text-teal-300 font-mono border-l border-white/20 pl-2">
+                    {zoomLevel.toFixed(1)}x
+                  </span>
                 </div>
               ) : recordedBlob ? (
                 /* Review Mode Pill */
@@ -563,7 +677,7 @@ export function VideoRecorderModal({
                   <span className="w-2 h-2 rounded-full bg-teal-400"></span>
                   <span className="font-semibold text-[11px]">50 MB Limit</span>
                   <span className="text-[10px] text-teal-300 font-mono">• 3 min max</span>
-                  <span className="text-[10px] text-slate-300 font-mono hidden sm:inline">• High Quality HD</span>
+                  <span className="text-[10px] text-slate-300 font-mono hidden sm:inline">• 1x HD Base</span>
                 </div>
               )}
             </div>
@@ -613,6 +727,36 @@ export function VideoRecorderModal({
               <span>
                 <strong>Approaching 50 MB limit!</strong> Auto-stops at 48.5 MB. Conclude your recording.
               </span>
+            </div>
+          )}
+
+          {/* FLOATING ZOOM PRESET CONTROLS (Positioned right above the bottom shutter bar) */}
+          {!recordedBlob && !cameraError && (
+            <div className="absolute bottom-24 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
+              <div className="pointer-events-auto flex items-center gap-1.5 p-1 rounded-full bg-black/65 backdrop-blur-md border border-white/20 shadow-2xl">
+                {availableZoomPresets.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => applyZoom(preset)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold font-mono transition-all cursor-pointer ${
+                      Math.abs(zoomLevel - preset) < 0.2
+                        ? 'bg-teal-500 text-slate-950 shadow-md scale-105'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    title={`Set zoom to ${preset}x`}
+                  >
+                    {preset}x
+                  </button>
+                ))}
+
+                {/* Show custom decimal zoom level if pinched between presets */}
+                {!availableZoomPresets.some(p => Math.abs(zoomLevel - p) < 0.2) && (
+                  <span className="px-2.5 py-0.5 text-xs font-mono font-bold text-teal-400 bg-teal-950/80 rounded-full border border-teal-500/40">
+                    {zoomLevel.toFixed(1)}x
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
