@@ -6,7 +6,7 @@ import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp, buil
 import { 
   X, User, Phone, Mail, MapPin, Calendar, Clock, Wrench, 
   Send, CheckCircle, CheckCircle2, AlertCircle, RefreshCw, Paperclip, MessageSquare, 
-  History, RotateCcw, Check, Star, ShieldCheck, Tag, ChevronRight,
+  History, RotateCcw, RotateCw, Check, Star, ShieldCheck, Tag, ChevronRight,
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
   Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX,
@@ -117,6 +117,7 @@ export const ComplaintDetailDrawer = ({
   const [savingPayment, setSavingPayment] = useState(false);
   const [revertingPayment, setRevertingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
+  const [previewVideoMeta, setPreviewVideoMeta] = useState({ isLandscape: false, rotation: 0 });
   const [uploadingAtt, setUploadingAtt] = useState(false);
   const [deletingAttId, setDeletingAttId] = useState(null);
   const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
@@ -4221,15 +4222,35 @@ export const ComplaintDetailDrawer = ({
           }}
         >
           <div 
-            className="relative max-w-3xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150" 
+            className={`relative w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150 transition-all ${
+              previewDocModal?.isVideo
+                ? (previewVideoMeta.isLandscape ? 'max-w-5xl' : 'max-w-md')
+                : 'max-w-3xl'
+            }`} 
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="text-xs font-bold text-slate-800 truncate">{previewDocModal.name}</span>
+                {previewDocModal.isVideo && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold shrink-0">
+                    {previewVideoMeta.isLandscape ? 'Landscape' : 'Portrait'}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {previewDocModal.isVideo && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVideoMeta(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }))}
+                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Rotate video (0°, 90°, 180°, 270°)"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>Rotate{previewVideoMeta.rotation ? ` ${previewVideoMeta.rotation}°` : ''}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
@@ -4263,7 +4284,22 @@ export const ComplaintDetailDrawer = ({
                     autoPlay 
                     playsInline
                     preload="metadata"
-                    className="max-w-full max-h-[70vh] rounded-lg shadow-sm bg-black"
+                    onLoadedMetadata={(e) => {
+                      const w = e.target.videoWidth || 0;
+                      const h = e.target.videoHeight || 0;
+                      if (w && h) {
+                        setPreviewVideoMeta(prev => ({ ...prev, isLandscape: w > h }));
+                      }
+                    }}
+                    style={{
+                      transform: previewVideoMeta.rotation ? `rotate(${previewVideoMeta.rotation}deg)` : undefined,
+                      transition: 'transform 0.25s ease'
+                    }}
+                    className={`rounded-lg shadow-sm bg-black object-contain ${
+                      previewVideoMeta.isLandscape
+                        ? 'w-full aspect-video max-h-[75vh]'
+                        : 'max-w-full max-h-[75vh] aspect-[9/16]'
+                    }`}
                     onError={() => {
                       const fb = document.getElementById('preview-video-fallback-view');
                       if (fb) fb.style.display = 'flex';
