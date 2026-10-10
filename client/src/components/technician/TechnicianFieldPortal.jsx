@@ -1350,11 +1350,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
             <select
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700 flex-1 sm:flex-initial"
+              className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700 flex-1 sm:flex-initial min-w-0 max-w-[135px] sm:max-w-xs truncate"
+              title="Filter tasks by Product"
             >
               <option value="all">All Products</option>
               {products.map((prod) => (
@@ -1369,39 +1370,42 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               <button
                 type="button"
                 onClick={handleExportFieldTasksStatement}
-                className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                className="p-2 sm:px-3 sm:py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0"
                 title="Export Field Tasks Statement (CSV)"
+                aria-label="Export Field Tasks Statement (CSV)"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Export Statement</span>
               </button>
 
-              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleViewModeChange('card')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                     viewMode === 'card'
                       ? 'bg-white text-emerald-700 shadow-2xs'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                   title="Card View (Default)"
+                  aria-label="Card View"
                 >
                   <LayoutGrid className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">Cards</span>
+                  <span className="hidden sm:inline text-[11px]">Cards</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleViewModeChange('list')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                     viewMode === 'list'
                       ? 'bg-white text-emerald-700 shadow-2xs'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                   title="Compact List View"
+                  aria-label="Compact List View"
                 >
                   <List className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">List</span>
+                  <span className="hidden sm:inline text-[11px]">List</span>
                 </button>
               </div>
             </div>
