@@ -1636,7 +1636,7 @@ export const ComplaintDetailDrawer = ({
                         </div>
                         <div>
                           <span className="text-slate-400 block text-[11px]">Consumer No:</span>
-                          <span className="font-mono font-semibold text-slate-800">{ticket.consumer_no || 'N/A'}</span>
+                          <span className="font-mono font-semibold text-slate-800">{ticket.consumer_no || ticket.installation_id || 'N/A'}</span>
                         </div>
                         <div>
                           <span className="text-slate-400 block text-[11px]">Order No:</span>
@@ -1646,10 +1646,12 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-slate-400 block text-[11px]">Product Serial:</span>
                           <span className="font-mono text-slate-800">{ticket.product_serial || 'N/A'}</span>
                         </div>
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Installation ID:</span>
-                          <span className="font-mono text-slate-800">{ticket.installation_id || 'N/A'}</span>
-                        </div>
+                        {ticket.installation_id && ticket.consumer_no && ticket.installation_id !== ticket.consumer_no && (
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Installation ID:</span>
+                            <span className="font-mono text-slate-800">{ticket.installation_id}</span>
+                          </div>
+                        )}
                         {ticket.pv_capacity && (
                           <div>
                             <span className="text-slate-400 block text-[11px]">System Size (kW):</span>
@@ -3333,7 +3335,7 @@ export const ComplaintDetailDrawer = ({
                                   customer_email: ticket.customer_email || '',
                                   customer_address: ticket.customer_address || '',
                                   city: ticket.city || '',
-                                  consumer_no: ticket.consumer_no || '',
+                                  consumer_no: ticket.consumer_no || ticket.installation_id || '',
                                   product_type: ticket.product_type || 'Solar Equipment',
                                   issue_description: `Follow-up service requested after Ticket #${ticket.ticket_id} (Resolved/Closed >24h ago).`
                                 });

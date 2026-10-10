@@ -6875,7 +6875,7 @@ app.get('/api/reports/export-csv', authenticateToken, async (req, res) => {
         c.customer_address,
         c.product_type,
         c.product_serial,
-        c.installation_id,
+        COALESCE(c.consumer_no, c.installation_id) as consumer_no,
         c.issue_category,
         c.priority,
         c.status,
@@ -6899,7 +6899,7 @@ app.get('/api/reports/export-csv', authenticateToken, async (req, res) => {
 
     const headers = [
       'Ticket ID', 'Customer Name', 'Phone', 'Email', 'Address',
-      'Product Type', 'Serial Number', 'Installation ID', 'Issue Category', 'Priority',
+      'Product Type', 'Serial Number', 'Consumer No', 'Issue Category', 'Priority',
       'Status', 'Assigned Technician', 'Expected Visit Date', 'Resolution Notes',
       'Spare Parts Used', 'Rating (1-5)', 'Feedback Comments', 'Collected Amount',
       'Cash With Tech', 'Company Settled', 'Created At', 'Assigned At', 'Resolved At', 'Closed At'
@@ -6921,7 +6921,7 @@ app.get('/api/reports/export-csv', authenticateToken, async (req, res) => {
         escapeCsv(c.customer_address),
         escapeCsv(c.product_type),
         escapeCsv(c.product_serial),
-        escapeCsv(c.installation_id),
+        escapeCsv(c.consumer_no),
         escapeCsv(c.issue_category),
         escapeCsv(c.priority),
         escapeCsv(c.status),

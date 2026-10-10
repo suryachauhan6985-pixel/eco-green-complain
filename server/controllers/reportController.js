@@ -227,7 +227,7 @@ function exportComplaintsCsv(req, res) {
         escapeCsv(c.customer_address),
         escapeCsv(c.city || ''),
         escapeCsv(c.location_url || ''),
-        escapeCsv(c.consumer_no || ''),
+        escapeCsv(c.consumer_no || c.installation_id || ''),
         escapeCsv(c.order_no || ''),
         escapeCsv(c.invoice_no || ''),
         escapeCsv(c.invoice_date || ''),
