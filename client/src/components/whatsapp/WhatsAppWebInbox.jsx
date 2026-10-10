@@ -330,6 +330,8 @@ export const WhatsAppWebInbox = ({
   const lastSelectedPhoneRef = useRef(null);
   const userSentMessageRef = useRef(false);
   const previousMessageCountRef = useRef(0);
+  const activeChatPhoneRef = useRef(null);
+  const activeChatMsgIdsRef = useRef(new Set());
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -482,15 +484,36 @@ export const WhatsAppWebInbox = ({
   const loadMessages = async (phone, silent = false) => {
     if (!phone) {
       setMessages([]);
+      activeChatPhoneRef.current = null;
+      activeChatMsgIdsRef.current = new Set();
+      previousMessageCountRef.current = 0;
       return;
     }
+
+    const isChatSwitchOrOpen = activeChatPhoneRef.current !== phone;
+    if (isChatSwitchOrOpen) {
+      // Opening or switching chat thread: reset active thread tracker and NEVER play chime on opening chat
+      activeChatPhoneRef.current = phone;
+      activeChatMsgIdsRef.current = new Set();
+      previousMessageCountRef.current = 0;
+    }
+
     if (!silent) setLoadingMessages(true);
     try {
       const res = await api.getWhatsAppChatHistory(phone);
       if (res && Array.isArray(res.messages)) {
-        if (previousMessageCountRef.current > 0 && res.messages.length > previousMessageCountRef.current) {
-          const latest = res.messages[res.messages.length - 1];
-          if (latest?.sender_type === 'customer') {
+        // Play notification chime ONLY for real-time new incoming messages while user is already in this open chat
+        if (!isChatSwitchOrOpen && silent) {
+          const newCustomerMessages = res.messages.filter(m => {
+            const mId = Number(m.id || 0);
+            return mId > 0 &&
+                   !activeChatMsgIdsRef.current.has(mId) &&
+                   !knownMsgIdsRef.current.has(mId) &&
+                   m.sender_type === 'customer';
+          });
+
+          if (newCustomerMessages.length > 0) {
+            const latest = newCustomerMessages[newCustomerMessages.length - 1];
             playNotificationChime();
             // Trigger OS Notification if window/tab is in background or blurred
             if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
@@ -503,6 +526,16 @@ export const WhatsAppWebInbox = ({
             }
           }
         }
+
+        // Register loaded message IDs so we never alert for historic or existing messages
+        res.messages.forEach(m => {
+          if (m.id) {
+            const idNum = Number(m.id);
+            activeChatMsgIdsRef.current.add(idNum);
+            knownMsgIdsRef.current.add(idNum);
+          }
+        });
+
         previousMessageCountRef.current = res.messages.length;
         setMessages(res.messages);
         if (res.contact) {
@@ -613,6 +646,10 @@ export const WhatsAppWebInbox = ({
       if (api.markWhatsAppAsRead) {
         api.markWhatsAppAsRead(selectedPhone).catch(() => {});
       }
+    } else {
+      activeChatPhoneRef.current = null;
+      activeChatMsgIdsRef.current = new Set();
+      previousMessageCountRef.current = 0;
     }
   }, [selectedPhone]);
 
