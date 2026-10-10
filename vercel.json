@@ -21,6 +21,19 @@
       ]
     },
     {
+      "source": "/api/attachments/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate, max-age=0"
+        },
+        {
+          "key": "Vary",
+          "value": "Range, Accept-Encoding, Origin"
+        }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         {

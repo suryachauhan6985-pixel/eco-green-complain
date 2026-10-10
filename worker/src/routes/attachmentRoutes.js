@@ -279,26 +279,31 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
         c.executionCtx
       ).catch(() => ({ rows: [] }));
 
-      if (matchInDb.rows.length === 0) {
-        // Also allow if complaintId part of key exists in complaints table
+      if (matchInDb.rows && matchInDb.rows.length === 0) {
+        // Also allow if complaintId part of key exists in complaints table or is a temporary upload
         const keyParts = cleanKey.split('/');
         const folderId = keyParts[1];
-        const compExists = folderId && folderId !== 'general' ? await query(
-          'SELECT id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
-          [folderId],
-          c.env,
-          c.executionCtx
-        ).catch(() => ({ rows: [] })) : { rows: [] };
+        if (folderId && folderId !== 'general' && folderId !== 'temp') {
+          const compExists = await query(
+            'SELECT id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+            [folderId],
+            c.env,
+            c.executionCtx
+          ).catch(() => ({ rows: [] }));
 
-        if (compExists.rows.length === 0) {
-          return c.json({ error: 'Unauthorized file access' }, 401);
+          if (!compExists.rows || compExists.rows.length === 0) {
+            return c.json({ error: 'Unauthorized file access' }, 401);
+          }
         }
       }
     }
 
     const rangeHeader = c.req.header('range');
+    const isDownload = c.req.query('download') === '1';
+
+    // If explicit download is requested, serve full content unless range is specifically required
     let getOptions = {};
-    if (rangeHeader) {
+    if (rangeHeader && !isDownload) {
       const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
       if (match) {
         const start = match[1] !== '' ? parseInt(match[1], 10) : undefined;
@@ -325,7 +330,7 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
           c.env,
           c.executionCtx
         ).catch(() => ({ rows: [] }));
-        if (checkClosed.rows.length > 0) {
+        if (checkClosed.rows && checkClosed.rows.length > 0) {
           const comp = checkClosed.rows[0];
           const isClosed = ['Closed', 'closed'].includes(comp.status);
           const closedDate = comp.closed_at ? new Date(comp.closed_at) : null;
@@ -345,24 +350,40 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
     headers.set('X-Content-Type-Options', 'nosniff');
     headers.set('Accept-Ranges', 'bytes');
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Disposition, ETag, Accept-Ranges');
+    headers.set('Vary', 'Range, Accept-Encoding, Origin');
 
     const mimeType = object.httpMetadata?.contentType || getMimeTypeFromKey(cleanKey);
     headers.set('Content-Type', mimeType);
 
     const filename = cleanKey.split('/').pop() || 'attachment';
-    const isDownload = c.req.query('download') === '1';
-    headers.set('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${filename}"`);
-    headers.set('Access-Control-Allow-Origin', '*');
+    const encodedFilename = encodeURIComponent(filename);
+    headers.set('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
 
-    if (rangeHeader && object.range) {
+    // If partial range response
+    if (rangeHeader && object.range && !isDownload) {
+      // CRITICAL: 206 Partial Content must never be cached with public TTL by edge proxies/CDNs (like Vercel)
+      headers.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      headers.set('Pragma', 'no-cache');
+      headers.set('Expires', '0');
+
       const offset = object.range.offset ?? 0;
       const length = object.range.length ?? (object.size - offset);
       headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
       headers.set('Content-Length', String(length));
       return new Response(object.body, { headers, status: 206 });
+    }
+
+    // Full 200 response
+    if (isDownload || mimeType.startsWith('video/')) {
+      // Force private no-store so CDNs never cache incomplete byte streams
+      headers.set('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0');
+      headers.set('Pragma', 'no-cache');
+    } else {
+      headers.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
     }
 
     headers.set('Content-Length', String(object.size));

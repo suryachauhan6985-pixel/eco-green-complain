@@ -271,6 +271,44 @@ export const ComplaintDetailDrawer = ({
     : 0;
   const areDocumentsPurged = ticket?.documents_purged === 1 || (isTicketClosed && daysSinceClosure >= 30);
 
+  const getDownloadUrl = (url) => {
+    if (!url) return '';
+    return url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
+  };
+
+  const getStreamUrl = (url) => {
+    if (!url) return '';
+    return url.includes('?') ? `${url}&stream=1&_cb=2` : `${url}?stream=1&_cb=2`;
+  };
+
+  const handleDownloadFile = async (url, filename) => {
+    if (!url) return;
+    try {
+      showToast('Starting file download...', 'info');
+      const dlUrl = getDownloadUrl(url);
+      const res = await fetch(dlUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename || 'downloaded_file';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+      showToast('File downloaded successfully!', 'success');
+    } catch (err) {
+      const a = document.createElement('a');
+      a.href = getDownloadUrl(url);
+      a.download = filename || 'downloaded_file';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   const cachedUser = React.useMemo(() => {
     try {
       return JSON.parse(sessionStorage.getItem('egs_cached_user') || localStorage.getItem('egs_cached_user') || '{}');
@@ -937,7 +975,7 @@ export const ComplaintDetailDrawer = ({
         showToast(`Uploading ${resolutionPhotos.length} resolution file(s) to cloud storage...`, 'info');
         const uploadPromises = resolutionPhotos.map(async (item) => {
           try {
-            const uploaded = await uploadFileToSupabase(item.file);
+            const uploaded = await uploadFileToSupabase(item.file, ticket.ticket_id || ticket.id);
             return { success: true, uploaded };
           } catch (storageErr) {
             console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
@@ -2236,16 +2274,14 @@ export const ComplaintDetailDrawer = ({
                                       >
                                         <Eye className="w-3 h-3" /> Preview
                                       </button>
-                                      <a
-                                        href={fileUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        download={att.file_name}
-                                        className="text-[10px] text-slate-500 hover:text-slate-700 flex items-center gap-0.5"
-                                        title="Open or download file"
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDownloadFile(fileUrl, att.file_name)}
+                                        className="text-[10px] text-slate-500 hover:text-slate-700 flex items-center gap-0.5 cursor-pointer"
+                                        title="Download file"
                                       >
-                                        <ExternalLink className="w-3 h-3" />
-                                      </a>
+                                        <Download className="w-3 h-3" />
+                                      </button>
                                       {isAdminOrStaff && !isResolvedOrClosed && (
                                         <button
                                           type="button"
@@ -3299,16 +3335,14 @@ export const ComplaintDetailDrawer = ({
                                       >
                                         <Eye className="w-3.5 h-3.5" />
                                       </button>
-                                      <a
-                                        href={fileUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        download={closingProof.file_name || 'closing_proof'}
-                                        className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-colors"
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDownloadFile(fileUrl, closingProof.file_name || 'closing_proof')}
+                                        className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                                         title="Download proof"
                                       >
                                         <Download className="w-3.5 h-3.5" />
-                                      </a>
+                                      </button>
                                       {['admin', 'staff'].includes(currentUser?.role) && !isResolvedOrClosed && closingProof.id !== 'closing_photo' && (
                                         <button
                                           type="button"
@@ -3525,15 +3559,13 @@ export const ComplaintDetailDrawer = ({
                                     <span>View Technician Closing Proof {isVideo ? '(Video)' : '(Photo)'}</span>
                                   </button>
 
-                                  <a
-                                    href={fileUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    download={closingProof.file_name || 'closing_proof'}
-                                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadFile(fileUrl, closingProof.file_name || 'closing_proof')}
+                                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
                                   >
                                     <Download className="w-3 h-3" /> Save
-                                  </a>
+                                  </button>
                                 </div>
                               );
                             })()}
@@ -4188,14 +4220,20 @@ export const ComplaintDetailDrawer = ({
                 <span className="text-xs font-bold text-slate-800 truncate">{previewDocModal.name}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download File
+                </button>
                 <a
-                  href={previewDocModal.url}
+                  href={getDownloadUrl(previewDocModal.url)}
                   target="_blank"
                   rel="noreferrer"
-                  download={previewDocModal.name}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" /> Full Tab / Download
+                  <ExternalLink className="w-3.5 h-3.5" /> Full Tab
                 </a>
                 <button 
                   type="button"
@@ -4210,14 +4248,35 @@ export const ComplaintDetailDrawer = ({
               {previewDocModal.isVideo ? (
                 <div className="relative flex flex-col items-center justify-center w-full">
                   <video 
+                    key={previewDocModal.url}
                     controls 
                     autoPlay 
                     playsInline
-                    src={previewDocModal.url} 
+                    preload="metadata"
                     className="max-w-full max-h-[70vh] rounded-lg shadow-sm bg-black"
+                    onError={() => {
+                      const fb = document.getElementById('preview-video-fallback-view');
+                      if (fb) fb.style.display = 'flex';
+                    }}
                   >
+                    <source src={getStreamUrl(previewDocModal.url)} type="video/mp4" />
+                    <source src={getDownloadUrl(previewDocModal.url)} type="video/mp4" />
                     Your browser does not support video playback.
                   </video>
+                  <div id="preview-video-fallback-view" style={{ display: 'none' }} className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border border-slate-200 my-4 w-full">
+                    <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 mx-auto mb-2">
+                      <Video className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-800">{previewDocModal.name}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original MP4 video:</p>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Download Video
+                    </button>
+                  </div>
                 </div>
               ) : previewDocModal.isImage ? (
                 <div className="relative flex flex-col items-center justify-center w-full">
