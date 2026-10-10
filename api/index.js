@@ -1471,18 +1471,23 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
       SELECT t.*, 
-        COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress', 'On Hold')) as active_tickets_count,
-        COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
-        ROUND(AVG(c.rating)::numeric, 1) as average_rating,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
+        ROUND((SELECT AVG(c.rating) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.rating IS NOT NULL)::numeric, 1) as average_rating,
         COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id), 0) as total_collected,
         COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND c2.company_settlement_status = 'Settled with Company'), 0) as total_settled_with_company,
         COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND (c2.company_settlement_status IS NULL OR c2.company_settlement_status != 'Settled with Company')), 0) as cash_in_hand_due
       FROM technicians t
-      LEFT JOIN complaints c ON c.assigned_technician_id = t.id
-      GROUP BY t.id
       ORDER BY t.name ASC
     `);
-    return res.json({ technicians: r.rows });
+    const mapped = (r.rows || []).map(row => ({
+      ...row,
+      active_tickets_count: parseInt(row.active_tickets_count || 0, 10),
+      active_jobs_count: parseInt(row.active_jobs_count || 0, 10),
+      resolved_tickets_count: parseInt(row.resolved_tickets_count || 0, 10)
+    }));
+    return res.json({ technicians: mapped });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -4815,7 +4820,7 @@ app.get('/api/reports/metrics', authenticateToken, async (req, res) => {
       `),
       query(`
         SELECT t.id, t.name, t.phone, t.area_zone, t.specialization, t.is_available,
-          COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress')) as active_tickets_count,
+          COUNT(c.id) FILTER (WHERE c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
           COUNT(c.id) FILTER (WHERE c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
           ROUND(AVG(c.rating)::numeric, 1) as average_rating
         FROM technicians t

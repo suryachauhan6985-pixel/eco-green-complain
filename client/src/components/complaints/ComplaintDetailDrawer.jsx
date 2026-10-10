@@ -18,6 +18,7 @@ import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUplo
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { NewComplaintModal } from './NewComplaintModal';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -546,6 +547,7 @@ export const ComplaintDetailDrawer = ({
         if (!isEditingRef.current) {
           fetchTicketDetailsSilent();
           fetchWhatsAppChat();
+          fetchTechs();
         }
       });
 
@@ -604,6 +606,7 @@ export const ComplaintDetailDrawer = ({
       const res = await api.assignTechnician(ticket.id, selectedTechId, expectedDate, secondaryTechId || null);
       setIsReassignOpen(false);
       await fetchTicketDetails();
+      fetchTechs();
       notifyComplaintChanged({ action: 'assigned', techId: selectedTechId });
       broadcastTechniciansUpdate({ techId: selectedTechId });
 
@@ -2429,7 +2432,7 @@ export const ComplaintDetailDrawer = ({
                                       value={t.id}
                                       className={!t.is_available ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
                                     >
-                                      {t.is_available ? '🟢' : '🔴'} {t.name} ({t.area_zone}) — {t.is_available ? `${t.active_tickets_count || 0} Active` : 'OFF-DUTY'}
+                                      {formatTechnicianOptionLabel(t)}
                                     </option>
                                   ))}
                                 </select>
@@ -2473,7 +2476,7 @@ export const ComplaintDetailDrawer = ({
                                       value={t.id}
                                       className={!t.is_available ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
                                     >
-                                      {t.is_available ? '🟢' : '🔴'} {t.name} ({t.area_zone})
+                                      {formatTechnicianOptionLabel(t)}
                                     </option>
                                   ))}
                                 </select>
@@ -3273,16 +3276,19 @@ export const ComplaintDetailDrawer = ({
                                 onChange={(e) => setReopenTechId(e.target.value)}
                                 className="w-full text-xs px-3 py-2 bg-white border border-rose-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium text-slate-800"
                               >
-                                {ticket.assigned_technician_id && (
-                                  <option value={ticket.assigned_technician_id}>
-                                    👤 {ticket.technician_name || 'Previous Specialist'} (Previous Technician - Default)
-                                  </option>
-                                )}
+                                {ticket.assigned_technician_id && (() => {
+                                  const prevTech = technicians.find(t => String(t.id) === String(ticket.assigned_technician_id));
+                                  return (
+                                    <option value={ticket.assigned_technician_id}>
+                                      {prevTech ? `${formatTechnicianOptionLabel(prevTech)} (Previous Technician - Default)` : `👤 ${ticket.technician_name || 'Previous Specialist'} (Previous Technician - Default)`}
+                                    </option>
+                                  );
+                                })()}
                                 {technicians
                                   .filter(t => String(t.id) !== String(ticket.assigned_technician_id))
                                   .map(t => (
                                     <option key={t.id} value={t.id}>
-                                      👤 {t.name} ({t.area_zone || 'Field Zone'} {t.specialization ? `• ${t.specialization}` : ''})
+                                      {formatTechnicianOptionLabel(t)}
                                     </option>
                                   ))}
                               </select>

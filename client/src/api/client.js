@@ -1298,7 +1298,21 @@ function fallbackHandler(endpoint, options) {
       const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
       return mockStore.updateTechnician(id, body);
     }
-    return { technicians: JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]') };
+    const rawTechs = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
+    const mockComplaints = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const enhancedTechs = rawTechs.map(t => {
+      const activeCount = mockComplaints.filter(c => {
+        const matchTech = String(c.assigned_technician_id) === String(t.id) || String(c.secondary_technician_id) === String(t.id);
+        const isActive = c.status && !['Resolved', 'Closed', 'Unassigned', 'Registered'].includes(c.status);
+        return matchTech && isActive;
+      }).length;
+      return {
+        ...t,
+        active_tickets_count: activeCount,
+        active_jobs_count: activeCount
+      };
+    });
+    return { technicians: enhancedTechs };
   }
 
   if (endpoint.startsWith('/notifications/simulated')) {

@@ -586,16 +586,22 @@ technicianRoutes.get('/technicians', authenticateToken, async (c) => {
   try {
     const res = await query(
       `SELECT t.*, 
-        COUNT(CASE WHEN c.status IN ('Assigned', 'In Progress', 'On Hold') THEN 1 END) as active_jobs_count
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count
        FROM technicians t
-       LEFT JOIN complaints c ON t.id = c.assigned_technician_id
-       GROUP BY t.id
        ORDER BY t.name ASC`,
       [],
       c.env,
       c.executionCtx
     );
-    return c.json({ technicians: res.rows });
+    const mapped = (res.rows || []).map(r => ({
+      ...r,
+      active_tickets_count: parseInt(r.active_tickets_count || 0, 10),
+      active_jobs_count: parseInt(r.active_jobs_count || 0, 10),
+      resolved_tickets_count: parseInt(r.resolved_tickets_count || 0, 10)
+    }));
+    return c.json({ technicians: mapped });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

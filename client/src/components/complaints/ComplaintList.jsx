@@ -13,6 +13,7 @@ import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/Skeleto
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -609,7 +610,7 @@ export const ComplaintList = ({
               <option value="">All Technicians</option>
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.is_available ? '🟢' : '🔴'} {t.name} ({t.area_zone}) {t.is_available ? '' : '— Off-Duty'}
+                  {formatTechnicianOptionLabel(t, allComplaints)}
                 </option>
               ))}
             </select>

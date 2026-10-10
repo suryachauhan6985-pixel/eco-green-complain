@@ -1346,7 +1346,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
                 <th className="px-4 py-3">Technician</th>
                 <th className="px-4 py-3">Service Area</th>
                 <th className="px-4 py-3">Specialization</th>
-                <th className="px-4 py-3 text-center">Active Jobs</th>
+                <th className="px-4 py-3 text-center">Assigned Jobs</th>
                 <th className="px-4 py-3 text-center">Resolved</th>
                 <th className="px-4 py-3 text-center">Avg Hours</th>
                 <th className="px-4 py-3 text-right">Customer Rating</th>
@@ -1383,7 +1383,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-center font-bold text-amber-600">
-                        {tech.active_tickets_count || tech.pending_count || 0}
+                        {tech.active_tickets_count || tech.active_jobs_count || tech.pending_count || 0}
                       </td>
                       <td className="px-4 py-3.5 text-center font-bold text-emerald-600">
                         {tech.resolved_tickets_count || tech.resolved_count || 0}

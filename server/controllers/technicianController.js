@@ -7,8 +7,9 @@ function listTechnicians(req, res) {
       SELECT 
         t.*,
         u.username,
-        (SELECT COUNT(*) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.status IN ('Assigned', 'In Progress', 'On Hold')) as active_tickets_count,
-        (SELECT COUNT(*) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
         (SELECT ROUND(AVG(c.rating), 1) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.rating IS NOT NULL) as average_rating,
         COALESCE((SELECT SUM(c.payment_collected) FROM complaints c WHERE c.assigned_technician_id = t.id), 0) as total_collected,
         COALESCE((SELECT SUM(c.payment_collected) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.company_settlement_status = 'Settled with Company'), 0) as total_settled_with_company,

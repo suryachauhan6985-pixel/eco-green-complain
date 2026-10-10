@@ -15,6 +15,7 @@ import { TourLedgerSection } from './TourLedgerSection';
 import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 
 const checkHasLocation = (job) => {
   if (!job) return false;
@@ -727,7 +728,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             >
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
-                  👤 {t.name} ({t.area_zone || t.phone || 'Field'})
+                  {formatTechnicianOptionLabel(t)}
                 </option>
               ))}
             </select>
@@ -811,7 +812,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                 >
                   {technicians.map((t) => (
                     <option key={t.id} value={t.id}>
-                      👤 {t.name}
+                      {formatTechnicianOptionLabel(t)}
                     </option>
                   ))}
                 </select>
