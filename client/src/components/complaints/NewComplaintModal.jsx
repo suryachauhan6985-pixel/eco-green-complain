@@ -14,7 +14,7 @@ import {
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
   Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera, Info,
-  ClipboardCheck
+  ClipboardCheck, Zap
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -132,7 +132,11 @@ export const NewComplaintModal = ({
     installation_id: '',
     issue_category: 'No Power Output',
     issue_description: '',
-    priority: 'Medium'
+    priority: 'Medium',
+    pv_capacity: '',
+    panel_make: '',
+    inverter_make: '',
+    scheme: ''
   });
 
   const [isDragging, setIsDragging] = useState(false);
@@ -201,7 +205,11 @@ export const NewComplaintModal = ({
           issue_category: initialData.issue_category || 'No Power Output',
           issue_description: initialData.issue_description || initialData.description || '',
           priority: initialData.priority || 'Medium',
-          status: initialData.status || 'Unassigned'
+          status: initialData.status || 'Unassigned',
+          pv_capacity: initialData.pv_capacity ? String(initialData.pv_capacity) : '',
+          panel_make: initialData.panel_make || '',
+          inverter_make: initialData.inverter_make || '',
+          scheme: initialData.scheme || ''
         });
         if (editPincode) {
           setPincodeStatus('valid');
@@ -271,6 +279,10 @@ export const NewComplaintModal = ({
           product_type: prev.product_type || 'Solar Rooftop Systems',
           installation_id: c.consumer_no || c.order_no || prev.installation_id || '',
           product_serial: c.inverter_serial || c.product_serial || prev.product_serial || '',
+          pv_capacity: c.pv_capacity ? String(c.pv_capacity) : (prev.pv_capacity || ''),
+          panel_make: c.panel_make || prev.panel_make || '',
+          inverter_make: c.inverter_make || prev.inverter_make || '',
+          scheme: c.scheme || prev.scheme || '',
           issue_description: initialData.issue_description || prev.issue_description || ''
         }));
 
@@ -751,7 +763,11 @@ export const NewComplaintModal = ({
       is_in_warranty: computedWarranty,
       product_type: prev.product_type || 'Solar Rooftop Systems',
       installation_id: c.consumer_no || c.order_no || prev.installation_id,
-      product_serial: c.inverter_serial || c.product_serial || prev.product_serial
+      product_serial: c.inverter_serial || c.product_serial || prev.product_serial,
+      pv_capacity: c.pv_capacity ? String(c.pv_capacity) : (prev.pv_capacity || ''),
+      panel_make: c.panel_make || prev.panel_make || '',
+      inverter_make: c.inverter_make || prev.inverter_make || '',
+      scheme: c.scheme || prev.scheme || ''
     }));
   };
 
@@ -778,6 +794,10 @@ export const NewComplaintModal = ({
       location_url: '',
       installation_id: '',
       product_serial: '',
+      pv_capacity: '',
+      panel_make: '',
+      inverter_make: '',
+      scheme: '',
       is_in_warranty: 1
     }));
     setPincodeStatus(null);
@@ -1535,8 +1555,27 @@ export const NewComplaintModal = ({
                                   Cons: {c.consumer_no}
                                 </span>
                               )}
-                              {c.pv_capacity && <span>• {c.pv_capacity} kW</span>}
+                              {c.pv_capacity && (
+                                <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  ⚡ {c.pv_capacity} kW
+                                </span>
+                              )}
+                              {c.panel_make && (
+                                <span className="text-[10px] text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                                  🔲 {c.panel_make}
+                                </span>
+                              )}
+                              {c.inverter_make && (
+                                <span className="text-[10px] text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                                  🔌 {c.inverter_make}
+                                </span>
+                              )}
                               {c.inverter_serial && <span>• Inv: <code className="bg-slate-100 px-1 rounded text-slate-700">{c.inverter_serial}</code></span>}
+                              {c.scheme && (
+                                <span className="text-[10px] text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded">
+                                  📋 {c.scheme}
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -1569,7 +1608,7 @@ export const NewComplaintModal = ({
                 {/* Verified Customer Card Banner */}
                 {selectedCustomer && (
                   <div className="mt-3 p-3 bg-white rounded-xl border border-emerald-300/80 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
-                    <div className="space-y-0.5">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-emerald-950 flex items-center gap-1">
                           <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1580,6 +1619,35 @@ export const NewComplaintModal = ({
                       <p className="text-[11px] text-slate-600">
                         {selectedCustomer.city_village} • Consumer No: <strong className="font-mono text-slate-800">{selectedCustomer.consumer_no || 'N/A'}</strong> • Invoice: <strong className="font-mono text-slate-800">{selectedCustomer.invoice_no || 'N/A'}</strong> ({selectedCustomer.invoice_date ? formatIndianDateOnly(selectedCustomer.invoice_date) : 'Date N/A'})
                       </p>
+                      {(selectedCustomer.pv_capacity || selectedCustomer.panel_make || selectedCustomer.inverter_make || selectedCustomer.scheme || selectedCustomer.dealer_name) && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {selectedCustomer.pv_capacity && (
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                              ⚡ {selectedCustomer.pv_capacity} kW Plant
+                            </span>
+                          )}
+                          {selectedCustomer.panel_make && (
+                            <span className="text-[10px] text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                              🔲 Panels: {selectedCustomer.panel_make}
+                            </span>
+                          )}
+                          {selectedCustomer.inverter_make && (
+                            <span className="text-[10px] text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                              🔌 Inverter: {selectedCustomer.inverter_make}
+                            </span>
+                          )}
+                          {selectedCustomer.scheme && (
+                            <span className="text-[10px] text-sky-800 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-md">
+                              📋 Scheme: {selectedCustomer.scheme}
+                            </span>
+                          )}
+                          {selectedCustomer.dealer_name && (
+                            <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                              🏢 Dealer: {selectedCustomer.dealer_name}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="shrink-0 flex flex-col sm:items-end gap-1">
@@ -2148,6 +2216,75 @@ export const NewComplaintModal = ({
                         <ShieldAlert className="w-3.5 h-3.5" />
                         Out of Warranty
                       </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Solar Plant & Technical Equipment Specifications */}
+                <div className="pt-2 border-t border-slate-200/80">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Sun className="w-3.5 h-3.5 text-amber-500" />
+                      Solar Plant & Equipment Specifications (Autofilled / Optional)
+                    </span>
+                    <span className="text-[10px] text-slate-600 font-medium">Non-mandatory</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-500" />
+                        System Size / Plant (kW)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., 3 kW, 5 kW"
+                        value={formData.pv_capacity || ''}
+                        onChange={(e) => setFormData({ ...formData, pv_capacity: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                        <Layers className="w-3 h-3 text-blue-500" />
+                        Solar Panels / Make
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Tier 1 PV Modules, Adani 540W"
+                        value={formData.panel_make || ''}
+                        onChange={(e) => setFormData({ ...formData, panel_make: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                        <Gauge className="w-3 h-3 text-purple-500" />
+                        Inverter Make / Brand
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Standard Inverter, Growatt, Solis"
+                        value={formData.inverter_make || ''}
+                        onChange={(e) => setFormData({ ...formData, inverter_make: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                        <FileText className="w-3 h-3 text-teal-500" />
+                        Scheme / Model
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Solar Subsidy, Surya Ghar"
+                        value={formData.scheme || ''}
+                        onChange={(e) => setFormData({ ...formData, scheme: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
                     </div>
                   </div>
                 </div>

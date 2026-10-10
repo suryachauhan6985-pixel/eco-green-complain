@@ -1650,6 +1650,34 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-slate-400 block text-[11px]">Installation ID:</span>
                           <span className="font-mono text-slate-800">{ticket.installation_id || 'N/A'}</span>
                         </div>
+                        {ticket.pv_capacity && (
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">System Size (kW):</span>
+                            <span className="font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[11px] inline-block font-mono">
+                              ⚡ {ticket.pv_capacity} kW
+                            </span>
+                          </div>
+                        )}
+                        {ticket.panel_make && (
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Solar Panels:</span>
+                            <span className="font-semibold text-slate-800">{ticket.panel_make}</span>
+                          </div>
+                        )}
+                        {ticket.inverter_make && (
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Inverter Make:</span>
+                            <span className="font-semibold text-slate-800">{ticket.inverter_make}</span>
+                          </div>
+                        )}
+                        {ticket.scheme && (
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Scheme / Model:</span>
+                            <span className="font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded text-[11px] inline-block">
+                              📋 {ticket.scheme}
+                            </span>
+                          </div>
+                        )}
                         {ticket.dealer_name && (
                           <div>
                             <span className="text-slate-400 block text-[11px]">Dealer Name:</span>

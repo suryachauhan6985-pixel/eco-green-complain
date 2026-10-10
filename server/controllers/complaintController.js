@@ -334,7 +334,11 @@ async function createComplaint(req, res) {
       installation_id,
       issue_category,
       issue_description,
-      priority = 'Medium'
+      priority = 'Medium',
+      pv_capacity,
+      panel_make,
+      inverter_make,
+      scheme
     } = req.body;
 
     if (!customer_name || !customer_phone || !customer_address || !product_type || !issue_category || !issue_description) {
@@ -383,13 +387,15 @@ async function createComplaint(req, res) {
         city, consumer_no, order_no, invoice_no, invoice_date, location_url, is_in_warranty,
         estimated_charges, notify_charges, payment_collected, payment_status,
         product_type, product_serial, installation_id, issue_category, issue_description,
-        priority, status, registered_by_user_id, created_at, status_updated_at, updated_at
+        priority, status, registered_by_user_id, pv_capacity, panel_make, inverter_make, scheme,
+        created_at, status_updated_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, 0, 'Unpaid',
         ?, ?, ?, ?, ?,
-        ?, 'Unassigned', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ?, 'Unassigned', ?, ?, ?, ?, ?,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     `);
 
@@ -414,7 +420,11 @@ async function createComplaint(req, res) {
       issue_category,
       issue_description.trim(),
       priority,
-      registeredByUserId
+      registeredByUserId,
+      pv_capacity ? String(pv_capacity).trim() : null,
+      panel_make ? panel_make.trim() : null,
+      inverter_make ? inverter_make.trim() : null,
+      scheme ? scheme.trim() : null
     );
 
     const complaintId = result.lastInsertRowid;
@@ -551,7 +561,11 @@ async function updateComplaint(req, res) {
       installation_id,
       issue_category,
       issue_description,
-      priority
+      priority,
+      pv_capacity,
+      panel_make,
+      inverter_make,
+      scheme
     } = req.body;
 
     const warrantyVal = is_in_warranty !== undefined
@@ -591,6 +605,10 @@ async function updateComplaint(req, res) {
         issue_category = ?,
         issue_description = ?,
         priority = ?,
+        pv_capacity = ?,
+        panel_make = ?,
+        inverter_make = ?,
+        scheme = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -615,6 +633,10 @@ async function updateComplaint(req, res) {
       issue_category || existing.issue_category,
       issue_description !== undefined ? issue_description.trim() : existing.issue_description,
       priority || existing.priority,
+      pv_capacity !== undefined ? (pv_capacity ? String(pv_capacity).trim() : null) : existing.pv_capacity,
+      panel_make !== undefined ? (panel_make ? panel_make.trim() : null) : existing.panel_make,
+      inverter_make !== undefined ? (inverter_make ? inverter_make.trim() : null) : existing.inverter_make,
+      scheme !== undefined ? (scheme ? scheme.trim() : null) : existing.scheme,
       id
     );
 

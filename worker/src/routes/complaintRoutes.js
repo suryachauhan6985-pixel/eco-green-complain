@@ -50,6 +50,10 @@ async function ensureRetentionSchema(env, ctx) {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS district TEXT;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS state TEXT;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS post_office TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS pv_capacity TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS panel_make TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS inverter_make TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS scheme TEXT;
     `, [], env, ctx);
     retentionSchemaEnsured = true;
   } catch (_) {}
@@ -577,7 +581,7 @@ async function handleCreateComplaint(c, isPublic = false) {
       is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
       product_type, product_serial, installation_id, issue_category, issue_description,
       priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
-      dealer_name, created_at, updated_at
+      dealer_name, pv_capacity, panel_make, inverter_make, scheme, created_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9, $10,
@@ -585,7 +589,7 @@ async function handleCreateComplaint(c, isPublic = false) {
       $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25,
       $26, $27, $28, $29, $30,
-      $31, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     ) RETURNING *
   `;
 
@@ -626,7 +630,11 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.assigned_technician_id || null,
     body.expected_visit_date || null,
     user?.id || null,
-    dealer_name
+    dealer_name,
+    body.pv_capacity ? String(body.pv_capacity).trim() : '',
+    body.panel_make ? String(body.panel_make).trim() : '',
+    body.inverter_make ? String(body.inverter_make).trim() : '',
+    body.scheme ? String(body.scheme).trim() : ''
   ];
 
   const r = await query(insertSql, values, c.env, c.executionCtx);
@@ -1860,9 +1868,13 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         location_url = COALESCE($24, location_url),
         installation_id = COALESCE($25, installation_id),
         dealer_name = COALESCE($26, dealer_name),
+        pv_capacity = COALESCE($27, pv_capacity),
+        panel_make = COALESCE($28, panel_make),
+        inverter_make = COALESCE($29, inverter_make),
+        scheme = COALESCE($30, scheme),
         updated_at = CURRENT_TIMESTAMP,
         status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $27
+      WHERE id = $31
     `, [
       b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
       b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
@@ -1890,6 +1902,10 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
       b.installation_id !== undefined ? (b.installation_id ? b.installation_id.trim() : null) : null,
       b.dealer_name !== undefined ? (b.dealer_name ? b.dealer_name.trim() : null) : null,
+      b.pv_capacity !== undefined ? (b.pv_capacity ? String(b.pv_capacity).trim() : null) : null,
+      b.panel_make !== undefined ? (b.panel_make ? b.panel_make.trim() : null) : null,
+      b.inverter_make !== undefined ? (b.inverter_make ? b.inverter_make.trim() : null) : null,
+      b.scheme !== undefined ? (b.scheme ? b.scheme.trim() : null) : null,
       current.id
     ], c.env, c.executionCtx);
 

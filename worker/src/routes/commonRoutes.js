@@ -641,7 +641,8 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
         SELECT 
           id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
           dealer_name, invoice_no, invoice_date, installation_date,
-          warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty
+          warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty,
+          scheme, pv_capacity
         FROM installed_customers 
         ORDER BY id DESC 
         LIMIT 10
@@ -673,7 +674,8 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
       SELECT 
         id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
         dealer_name, invoice_no, invoice_date, installation_date,
-        warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty
+        warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty,
+        scheme, pv_capacity
       FROM installed_customers 
       WHERE ${whereClause}
       ORDER BY id DESC 
@@ -701,8 +703,9 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
         SELECT DISTINCT ON (customer_phone, customer_name)
           id, customer_name, customer_phone as consumer_mobile, consumer_no, city as city_village, order_no,
           dealer_name, invoice_no, invoice_date, NULL as installation_date,
-          NULL as warranty_expiry_date, NULL as panel_make, NULL as inverter_make,
-          product_serial as inverter_serial, is_in_warranty, customer_address
+          NULL as warranty_expiry_date, panel_make, inverter_make,
+          product_serial as inverter_serial, is_in_warranty, customer_address,
+          scheme, pv_capacity
         FROM complaints
         WHERE ${compWhere}
         ORDER BY customer_phone, customer_name, id DESC

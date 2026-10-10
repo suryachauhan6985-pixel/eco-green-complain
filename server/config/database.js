@@ -538,7 +538,11 @@ function migrateComplaintsTable() {
         { name: 'status_updated_at', type: 'DATETIME' },
         { name: 'secondary_technician_id', type: 'INTEGER' },
         { name: 'resolved_by_technician_id', type: 'TEXT' },
-        { name: 'resolved_by_technician_name', type: 'TEXT' }
+        { name: 'resolved_by_technician_name', type: 'TEXT' },
+        { name: 'pv_capacity', type: 'TEXT' },
+        { name: 'panel_make', type: 'TEXT' },
+        { name: 'inverter_make', type: 'TEXT' },
+        { name: 'scheme', type: 'TEXT' }
       ];
 
       for (const col of newColumns) {

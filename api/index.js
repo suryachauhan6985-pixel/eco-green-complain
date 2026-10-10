@@ -4730,12 +4730,13 @@ app.get('/api/customers/search', optionalAuth, async (req, res) => {
     if (!q || q.length < 2) {
       const sample = await query(`
         SELECT 
-          id, customer_name, consumer_mobile, consumer_no, city_village, 
+          id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
           dealer_name, invoice_no, 
           invoice_date,
           installation_date,
           warranty_expiry_date,
-          panel_make, inverter_make, inverter_serial, is_in_warranty
+          panel_make, inverter_make, inverter_serial, is_in_warranty,
+          scheme, pv_capacity
         FROM installed_customers 
         ORDER BY id DESC 
         LIMIT 10
@@ -4758,6 +4759,7 @@ app.get('/api/customers/search', optionalAuth, async (req, res) => {
         OR inverter_serial ILIKE $${paramIdx}
         OR invoice_no ILIKE $${paramIdx}
         OR dealer_name ILIKE $${paramIdx}
+        OR order_no ILIKE $${paramIdx}
       )`);
     });
 
@@ -4765,12 +4767,13 @@ app.get('/api/customers/search', optionalAuth, async (req, res) => {
 
     const r = await query(`
       SELECT 
-        id, customer_name, consumer_mobile, consumer_no, city_village, 
+        id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
         dealer_name, invoice_no, 
         invoice_date,
         installation_date,
         warranty_expiry_date,
-        panel_make, inverter_make, inverter_serial, is_in_warranty
+        panel_make, inverter_make, inverter_serial, is_in_warranty,
+        scheme, pv_capacity
       FROM installed_customers 
       WHERE ${whereClause}
       ORDER BY customer_name ASC 
@@ -6083,7 +6086,7 @@ app.get('/api/whatsapp/verify-number/:phone', async (req, res) => {
     const [regRes, compRes, custRes, msgRes] = await Promise.all([
       query("SELECT * FROM whatsapp_number_registry WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
       query("SELECT id, ticket_id, customer_name, city, product_type, invoice_no, invoice_date FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
-      query("SELECT id, customer_name, city_village, consumer_no, order_no, invoice_no, invoice_date, inverter_serial, panel_make, inverter_make, is_in_warranty FROM installed_customers WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
+      query("SELECT id, customer_name, city_village, consumer_no, order_no, invoice_no, invoice_date, inverter_serial, panel_make, inverter_make, is_in_warranty, scheme, pv_capacity FROM installed_customers WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10]),
       query("SELECT sender_name FROM whatsapp_messages WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1", [last10])
     ]);
 
