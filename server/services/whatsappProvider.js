@@ -503,7 +503,7 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
       const newTech = cleanParam(variables.new_technician_name, 'another specialist');
       const reopenReason = cleanParam(variables.reopen_reason || variables.reason, 'Follow-up requested');
 
-      deliveredText = `*Eco Green Solar - Reopened Job Transferred*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTech}*).\n\n*Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Dispatch`;
+      deliveredText = `*Eco Green Solar - Reopened Job Transferred*\n\nHello ${techName}, please note that ticket *${tktId}* (Customer: ${custName}) previously resolved by you has been *REOPENED* upon customer request and reassigned to another technician (*${newTech}*).\n\n*Customer Reopen Reason:* ${reopenReason}\n\nYou are not required to attend to this complaint as another technician has been dispatched.\n- Eco Green Solar`;
 
       payload.type = 'template';
       payload.template = {

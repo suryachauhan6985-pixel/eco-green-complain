@@ -295,6 +295,27 @@ app.post('/api/products', authenticateToken, (req, res) => {
   }
 });
 
+app.put('/api/products/:id', authenticateToken, requireRole('admin'), (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, icon, category } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Product name is required' });
+    const cleanName = name.trim();
+    const cleanDesc = description !== undefined ? (description ? description.trim() : '') : null;
+
+    const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+
+    db.prepare('UPDATE products SET name = ?, description = COALESCE(?, description), icon = COALESCE(?, icon), category = COALESCE(?, category) WHERE id = ?')
+      .run(cleanName, cleanDesc, icon || null, category || null, id);
+
+    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    res.json({ product: updated, message: 'Product updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update product: ' + err.message });
+  }
+});
+
 app.delete('/api/products/:id', authenticateToken, requireRole('admin'), (req, res) => {
   try {
     const { id } = req.params;
@@ -313,6 +334,7 @@ app.delete('/api/products/:id', authenticateToken, requireRole('admin'), (req, r
 // ================= ISSUE CATEGORY ROUTES =================
 app.get('/api/categories', complaintController.listCategories);
 app.post('/api/categories', authenticateToken, requireRole('admin', 'staff'), complaintController.addCategory);
+app.put('/api/categories/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.updateCategory);
 app.delete('/api/categories/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.deleteCategory);
 
 // ================= LOCATION / PINCODE ROUTES =================

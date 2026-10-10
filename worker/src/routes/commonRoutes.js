@@ -985,6 +985,39 @@ commonRoutes.delete('/products/:id', authenticateToken, async (c) => {
   }
 });
 
+// PUT /api/products/:id
+commonRoutes.put('/products/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { name, description, icon, category } = body;
+    if (!name || !name.trim()) {
+      return c.json({ error: 'Product name is required' }, 400);
+    }
+    const cleanName = name.trim();
+    const cleanDesc = description !== undefined ? (description ? description.trim() : '') : null;
+
+    const res = await query(
+      'UPDATE products SET name = $1, description = COALESCE($2, description), icon = COALESCE($3, icon), category = COALESCE($4, category) WHERE id = $5 RETURNING *',
+      [cleanName, cleanDesc, icon || null, category || null, id],
+      c.env,
+      c.executionCtx
+    );
+
+    if (res.rows.length === 0) {
+      return c.json({ error: 'Product not found' }, 404);
+    }
+
+    return c.json({
+      product: res.rows[0],
+      message: 'Product updated successfully'
+    });
+  } catch (err) {
+    console.error('[Update Product Error]', err);
+    return c.json({ error: 'Failed to update product: ' + err.message }, 500);
+  }
+});
+
 // GET /api/categories
 commonRoutes.get('/categories', async (c) => {
   try {
@@ -1048,6 +1081,38 @@ commonRoutes.post('/categories', authenticateToken, async (c) => {
   }
 });
 
+// PUT /api/categories/:id
+commonRoutes.put('/categories/:id', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { category_name, product_type, default_priority } = body;
+    if (!category_name || !category_name.trim()) {
+      return c.json({ error: 'Category name is required' }, 400);
+    }
+    const cleanCat = category_name.trim();
+
+    const res = await query(
+      'UPDATE issue_categories SET category_name = $1, default_priority = COALESCE($2, default_priority), product_type = COALESCE($3, product_type) WHERE id = $4 RETURNING *',
+      [cleanCat, default_priority || null, product_type || null, id],
+      c.env,
+      c.executionCtx
+    );
+
+    if (res.rows.length === 0) {
+      return c.json({ error: 'Category not found' }, 404);
+    }
+
+    return c.json({
+      category: res.rows[0],
+      message: 'Category updated successfully'
+    });
+  } catch (err) {
+    console.error('[Update Category Error]', err);
+    return c.json({ error: 'Failed to update category: ' + err.message }, 500);
+  }
+});
+
 // DELETE /api/categories/:id
 commonRoutes.delete('/categories/:id', authenticateToken, async (c) => {
   try {
@@ -1064,6 +1129,9 @@ commonRoutes.delete('/categories/:id', authenticateToken, async (c) => {
 // GET /api/notifications/templates
 commonRoutes.get('/notifications/templates', authenticateToken, async (c) => {
   try {
+    await query("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, 'Eco Green Dispatch', 'Eco Green Solar') WHERE whatsapp_body LIKE '%Eco Green Dispatch%'", [], c.env, c.executionCtx).catch(() => {});
+    await query("UPDATE notification_templates SET footer_text = 'Eco Green Solar' WHERE footer_text LIKE '%Dispatch%'", [], c.env, c.executionCtx).catch(() => {});
+
     let res = await query(`
       SELECT * FROM notification_templates 
       ORDER BY 

@@ -931,6 +931,36 @@ async function deleteCategory(req, res) {
   }
 }
 
+async function updateCategory(req, res) {
+  try {
+    const { id } = req.params;
+    const { category_name, default_priority, product_type } = req.body;
+    if (!category_name || !category_name.trim()) {
+      return res.status(400).json({ error: 'Category name is required' });
+    }
+    const cleanCat = category_name.trim();
+
+    const category = db.prepare('SELECT * FROM issue_categories WHERE id = ?').get(id);
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    db.prepare(`
+      UPDATE issue_categories 
+      SET category_name = ?, 
+          default_priority = COALESCE(?, default_priority), 
+          product_type = COALESCE(?, product_type) 
+      WHERE id = ?
+    `).run(cleanCat, default_priority || null, product_type || null, id);
+
+    const updated = db.prepare('SELECT * FROM issue_categories WHERE id = ?').get(id);
+    res.json({ category: updated, message: 'Category updated successfully' });
+  } catch (err) {
+    console.error('Update category error:', err);
+    res.status(500).json({ error: 'Failed to update category: ' + err.message });
+  }
+}
+
 async function assignTechnician(req, res) {
   try {
     const { id } = req.params;
@@ -2041,5 +2071,6 @@ module.exports = {
   syncBackupComplaints,
   listCategories,
   addCategory,
+  updateCategory,
   deleteCategory
 };

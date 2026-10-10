@@ -4979,6 +4979,8 @@ async function ensureNotificationTemplatesTable() {
     `).catch(() => {});
 
     await query('UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL').catch(() => {});
+    await query("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, 'Eco Green Dispatch', 'Eco Green Solar') WHERE whatsapp_body LIKE '%Eco Green Dispatch%'").catch(() => {});
+    await query("UPDATE notification_templates SET footer_text = 'Eco Green Solar' WHERE footer_text LIKE '%Dispatch%'").catch(() => {});
     templatesTableInitialized = true;
   } catch (err) {
     console.error('ensureNotificationTemplatesTable error:', err.message);

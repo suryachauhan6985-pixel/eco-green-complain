@@ -1088,6 +1088,8 @@ function migrateAttachmentsTable() {
 
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
+  db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, 'Eco Green Dispatch', 'Eco Green Solar') WHERE whatsapp_body LIKE '%Eco Green Dispatch%'").run();
+  db.prepare("UPDATE notification_templates SET footer_text = 'Eco Green Solar' WHERE footer_text LIKE '%Dispatch%'").run();
 } catch (e) {}
 
 initializeSchema();

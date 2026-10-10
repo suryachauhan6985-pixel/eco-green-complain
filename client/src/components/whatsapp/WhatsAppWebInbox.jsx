@@ -96,7 +96,7 @@ function getTemplateFooter(msg) {
     return 'Reach us for any Queries';
   }
   if (tName.includes('work_order')) {
-    return 'Eco Green Solar Dispatch';
+    return 'Eco Green Solar';
   }
   return null;
 }
