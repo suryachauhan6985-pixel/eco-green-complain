@@ -1357,10 +1357,10 @@ export const WhatsAppWebInbox = ({
               )}
 
               <div
-                className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group`}
+                className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group ${actionMessageMenuId === msg.id ? 'z-30' : 'z-1'}`}
               >
                 <div
-                  className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg ${
+                  className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] ${
                     isCustomer
                       ? 'bg-white text-[#111b21] rounded-tl-none'
                       : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
@@ -1368,7 +1368,7 @@ export const WhatsAppWebInbox = ({
                 >
                 {/* Message Action Trigger Button (Revealed on hover) */}
                 {['admin', 'staff'].includes(currentUser?.role) && !editingMessageId && (
-                  <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className={`absolute top-1 right-1 z-20 ${actionMessageMenuId === msg.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1383,29 +1383,31 @@ export const WhatsAppWebInbox = ({
 
                     {/* Popover Action Menu */}
                     {actionMessageMenuId === msg.id && (
-                      <div className="msg-action-menu-container absolute right-0 top-6 w-36 bg-white rounded-xl shadow-xl border border-slate-200/90 py-1.5 z-30 text-xs text-[#111b21] animate-in fade-in zoom-in-95 duration-100 font-medium select-none">
+                      <div className={`msg-action-menu-container absolute top-6 w-40 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-40 text-xs text-[#111b21] animate-in fade-in zoom-in-95 duration-100 font-medium select-none ring-1 ring-black/5 ${
+                        isCustomer ? 'left-0' : 'right-0'
+                      }`}>
                         <button
                           type="button"
                           onClick={() => handleQuoteReply(msg)}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+                          className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21] transition-colors"
                         >
-                          <Reply className="w-3.5 h-3.5 text-slate-500" />
+                          <Reply className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                           <span>Reply</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCopyMessageText(msg)}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+                          className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21] transition-colors"
                         >
-                          <Copy className="w-3.5 h-3.5 text-slate-500" />
+                          <Copy className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                           <span>Copy message</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleStartForwardMessage(msg)}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+                          className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21] transition-colors"
                         >
-                          <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                          <Share2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                           <span>Forward</span>
                         </button>
 
@@ -1414,9 +1416,9 @@ export const WhatsAppWebInbox = ({
                           <button
                             type="button"
                             onClick={() => handleStartEditMessage(msg)}
-                            className="w-full px-3 py-1.5 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+                            className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21] transition-colors"
                           >
-                            <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                            <Edit2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                             <span>Edit</span>
                           </button>
                         )}
@@ -1427,9 +1429,9 @@ export const WhatsAppWebInbox = ({
                           type="button"
                           onClick={() => handleDeleteMessage(msg.id)}
                           disabled={deletingMessageId === msg.id}
-                          className="w-full px-3 py-1.5 text-left hover:bg-rose-50 text-rose-600 flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                          className="w-full px-3 py-2 text-left hover:bg-rose-50 text-rose-600 flex items-center gap-2.5 cursor-pointer disabled:opacity-50 transition-colors"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                           <span>Delete</span>
                         </button>
                       </div>
@@ -2526,7 +2528,7 @@ export const WhatsAppWebInbox = ({
             <div 
               ref={chatContainerRef}
               onScroll={handleChatScroll}
-              className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#efeae2] relative"
+              className="flex-1 overflow-y-auto p-4 pb-12 space-y-2 bg-[#efeae2] relative"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='140' height='140' viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='15' y='15' width='28' height='20' rx='2' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cline x1='29' y1='15' x2='29' y2='35' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cline x1='15' y1='25' x2='43' y2='25' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Ccircle cx='95' cy='25' r='7' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cpath d='M95 13v3 M95 34v3 M83 25h3 M104 25h3 M87 17l2 2 M101 31l2 2 M87 33l2-2 M101 19l2-2' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cpath d='M25 80 c0-8 8-12 15-12 c0 8-8 12-15 12z' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Ctext x='48' y='110' font-family='sans-serif' font-size='9' font-weight='800' fill='%23047857' fill-opacity='0.06' transform='rotate(-20 48 110)'%3EECO GREEN SOLAR%3C/text%3E%3C/svg%3E")`,
                 backgroundSize: '160px 160px'
