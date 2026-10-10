@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-support-v268';
+const CACHE_NAME = 'ecogreen-support-v269';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
@@ -38,16 +38,33 @@ self.addEventListener('message', (event) => {
   }
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, icon, badge, data, tag } = event.data;
-    self.registration.showNotification(title || 'Eco Green Support', {
+    const isMobile = /android|iphone|ipad|ipod|mobile/i.test(self.navigator?.userAgent || '');
+    const notificationTag = tag || (data?.ticketId ? `ticket-${data.ticketId}` : `egs-alert-${Date.now()}`);
+
+    const options = {
       body: body || 'New service update received.',
       icon: icon || '/support-icon-192.png',
       badge: badge || '/support-icon-192.png',
-      tag: tag || (data?.ticketId ? `ticket-${data.ticketId}` : `egs-alert-${Date.now()}`),
+      tag: notificationTag,
       renotify: true,
-      requireInteraction: true,
+      requireInteraction: isMobile, // True on mobile so it stays in notification shade; False on Windows so it doesn't get stuck
       silent: false,
       vibrate: [300, 100, 300, 100, 300],
       data: data || { url: '/complaints' }
+    };
+
+    self.registration.showNotification(title || 'Eco Green Support', options).then(() => {
+      // On Windows/Desktop, auto-dismiss after 6 seconds so it never lingers on screen
+      if (!isMobile) {
+        setTimeout(async () => {
+          try {
+            const activeNotifications = await self.registration.getNotifications({ tag: notificationTag });
+            activeNotifications.forEach((n) => n.close());
+          } catch (_) {}
+        }, 6000);
+      }
+    }).catch((err) => {
+      console.warn('[SW] showNotification failed:', err);
     });
   }
 });
@@ -65,14 +82,16 @@ self.addEventListener('push', (event) => {
 
   const title = data.title || 'Eco Green Support Alert';
   const targetUrl = data.url || (data.ticketId ? `/complaints?ticket=${data.ticketId}` : '/complaints');
+  const isMobile = /android|iphone|ipad|ipod|mobile/i.test(self.navigator?.userAgent || '');
+  const notificationTag = data.tag || (data.ticketId ? `ticket-${data.ticketId}` : `egs-push-${Date.now()}`);
 
   const options = {
     body: data.body || 'New complaint or service update received.',
     icon: data.icon || '/support-icon-192.png',
     badge: data.badge || '/support-icon-192.png',
-    tag: data.tag || (data.ticketId ? `ticket-${data.ticketId}` : `egs-push-${Date.now()}`),
+    tag: notificationTag,
     renotify: true,
-    requireInteraction: true,
+    requireInteraction: isMobile, // True on mobile so it stays in notification shade; False on Windows
     silent: false,
     vibrate: [300, 100, 300, 100, 300],
     data: {
@@ -82,7 +101,17 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(title, options).catch((err) => {
+    self.registration.showNotification(title, options).then(() => {
+      // On Windows/Desktop, auto-dismiss after 6 seconds so it never lingers on screen
+      if (!isMobile) {
+        setTimeout(async () => {
+          try {
+            const activeNotifications = await self.registration.getNotifications({ tag: notificationTag });
+            activeNotifications.forEach((n) => n.close());
+          } catch (_) {}
+        }, 6000);
+      }
+    }).catch((err) => {
       console.warn('[SW] showNotification failed:', err);
     })
   );

@@ -165,6 +165,7 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
 
+  const isMobile = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
   const targetTitle = title || 'Eco Green Support';
   const targetBody = body || 'New complaint or service update received.';
   const targetUrl = url || (ticketId ? `/complaints?ticket=${ticketId}` : '/complaints');
@@ -176,6 +177,7 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
     badge: '/support-icon-192.png',
     tag: notificationTag,
     renotify: true,
+    requireInteraction: isMobile,
     vibrate: [250, 100, 250, 100, 350],
     data: {
       url: targetUrl,
@@ -189,10 +191,23 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
       const reg = await navigator.serviceWorker.ready.catch(() => null);
       if (reg && typeof reg.showNotification === 'function') {
         await reg.showNotification(targetTitle, options);
+        if (!isMobile) {
+          setTimeout(async () => {
+            try {
+              const activeNotifications = await reg.getNotifications({ tag: notificationTag });
+              activeNotifications.forEach((n) => n.close());
+            } catch (_) {}
+          }, 6000);
+        }
         return;
       }
     }
-    new Notification(targetTitle, options);
+    const n = new Notification(targetTitle, options);
+    if (!isMobile && n && typeof n.close === 'function') {
+      setTimeout(() => {
+        try { n.close(); } catch (_) {}
+      }, 6000);
+    }
   } catch (err) {
     console.warn('OS notification display error:', err);
   }

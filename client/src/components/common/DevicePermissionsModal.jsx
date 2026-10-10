@@ -92,10 +92,13 @@ export const DevicePermissionsModal = () => {
         if (res === 'granted') {
           // Fire an actual genuine native OS desktop notification so the user verifies it
           try {
-            new Notification('Eco Green Solar Support', {
+            const testNotif = new Notification('Eco Green Solar Support', {
               body: 'Push Notifications Enabled! You will receive live complaint and dispatch alerts.',
               icon: '/favicon.ico'
             });
+            setTimeout(() => {
+              try { testNotif?.close(); } catch (_) {}
+            }, 6000);
           } catch (_) {}
         }
         return res;
