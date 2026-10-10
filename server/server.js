@@ -295,7 +295,7 @@ app.post('/api/products', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/products/:id', authenticateToken, requireRole('admin'), (req, res) => {
+app.put('/api/products/:id', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, icon, category } = req.body;
@@ -303,11 +303,20 @@ app.put('/api/products/:id', authenticateToken, requireRole('admin'), (req, res)
     const cleanName = name.trim();
     const cleanDesc = description !== undefined ? (description ? description.trim() : '') : null;
 
+    const existing = db.prepare('SELECT id FROM products WHERE LOWER(name) = LOWER(?) AND id != ?').get(cleanName, id);
+    if (existing) {
+      return res.status(409).json({ error: 'Product name already exists in catalog' });
+    }
+
     const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
 
-    db.prepare('UPDATE products SET name = ?, description = COALESCE(?, description), icon = COALESCE(?, icon), category = COALESCE(?, category) WHERE id = ?')
-      .run(cleanName, cleanDesc, icon || null, category || null, id);
+    db.prepare('UPDATE products SET name = ?, description = COALESCE(?, description), icon = COALESCE(?, icon) WHERE id = ?')
+      .run(cleanName, cleanDesc, icon || null, id);
+
+    if (prod.name && prod.name !== cleanName) {
+      db.prepare('UPDATE issue_categories SET product_type = ? WHERE product_type = ?').run(cleanName, prod.name);
+    }
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     res.json({ product: updated, message: 'Product updated successfully' });

@@ -973,6 +973,62 @@ commonRoutes.post('/products', authenticateToken, async (c) => {
   }
 });
 
+// PUT /api/products/:id
+const handleUpdateProduct = async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { name, description } = body;
+    if (!name || !name.trim()) {
+      return c.json({ error: 'Product name is required' }, 400);
+    }
+    const cleanName = name.trim();
+    const cleanDesc = description ? description.trim() : '';
+
+    const duplicate = await query(
+      'SELECT id FROM products WHERE LOWER(name) = LOWER($1) AND id != $2',
+      [cleanName, id],
+      c.env,
+      c.executionCtx
+    );
+    if (duplicate.rows && duplicate.rows.length > 0) {
+      return c.json({ error: `Product "${cleanName}" already exists in catalog` }, 409);
+    }
+
+    const oldProd = await query('SELECT name FROM products WHERE id = $1', [id], c.env, c.executionCtx);
+
+    const res = await query(
+      'UPDATE products SET name = $1, description = $2 WHERE id = $3 RETURNING *',
+      [cleanName, cleanDesc, id],
+      c.env,
+      c.executionCtx
+    );
+
+    if (!res.rows || res.rows.length === 0) {
+      return c.json({ error: 'Product not found' }, 404);
+    }
+
+    if (oldProd.rows && oldProd.rows.length > 0 && oldProd.rows[0].name && oldProd.rows[0].name !== cleanName) {
+      await query(
+        'UPDATE issue_categories SET product_type = $1 WHERE product_type = $2',
+        [cleanName, oldProd.rows[0].name],
+        c.env,
+        c.executionCtx
+      );
+    }
+
+    return c.json({
+      product: res.rows[0],
+      message: 'Product updated successfully'
+    });
+  } catch (err) {
+    console.error('[Update Product Error]', err);
+    return c.json({ error: 'Failed to update product: ' + err.message }, 500);
+  }
+};
+commonRoutes.put('/products/:id', authenticateToken, handleUpdateProduct);
+commonRoutes.patch('/products/:id', authenticateToken, handleUpdateProduct);
+
 // DELETE /api/products/:id
 commonRoutes.delete('/products/:id', authenticateToken, async (c) => {
   try {
@@ -1081,25 +1137,37 @@ commonRoutes.post('/categories', authenticateToken, async (c) => {
   }
 });
 
-// PUT /api/categories/:id
-commonRoutes.put('/categories/:id', authenticateToken, async (c) => {
+// PUT & PATCH /api/categories/:id
+const handleUpdateCategory = async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
-    const { category_name, product_type, default_priority } = body;
+    const { category_name, product_type } = body;
     if (!category_name || !category_name.trim()) {
       return c.json({ error: 'Category name is required' }, 400);
     }
     const cleanCat = category_name.trim();
 
+    if (product_type) {
+      const existing = await query(
+        'SELECT id FROM issue_categories WHERE product_type = $1 AND LOWER(category_name) = LOWER($2) AND id != $3',
+        [product_type, cleanCat, id],
+        c.env,
+        c.executionCtx
+      );
+      if (existing.rows && existing.rows.length > 0) {
+        return c.json({ error: 'Category already exists for this product' }, 409);
+      }
+    }
+
     const res = await query(
-      'UPDATE issue_categories SET category_name = $1, default_priority = COALESCE($2, default_priority), product_type = COALESCE($3, product_type) WHERE id = $4 RETURNING *',
-      [cleanCat, default_priority || null, product_type || null, id],
+      'UPDATE issue_categories SET category_name = $1 WHERE id = $2 RETURNING *',
+      [cleanCat, id],
       c.env,
       c.executionCtx
     );
 
-    if (res.rows.length === 0) {
+    if (!res.rows || res.rows.length === 0) {
       return c.json({ error: 'Category not found' }, 404);
     }
 
@@ -1111,7 +1179,9 @@ commonRoutes.put('/categories/:id', authenticateToken, async (c) => {
     console.error('[Update Category Error]', err);
     return c.json({ error: 'Failed to update category: ' + err.message }, 500);
   }
-});
+};
+commonRoutes.put('/categories/:id', authenticateToken, handleUpdateCategory);
+commonRoutes.patch('/categories/:id', authenticateToken, handleUpdateCategory);
 
 // DELETE /api/categories/:id
 commonRoutes.delete('/categories/:id', authenticateToken, async (c) => {

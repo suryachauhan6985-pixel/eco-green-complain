@@ -971,6 +971,32 @@ async function addCategory(req, res) {
   }
 }
 
+async function updateCategory(req, res) {
+  try {
+    const { id } = req.params;
+    const { category_name, product_type } = req.body;
+    if (!category_name || !category_name.trim()) {
+      return res.status(400).json({ error: 'Category name is required' });
+    }
+    const cleanCat = category_name.trim();
+    if (product_type) {
+      const existing = db.prepare('SELECT id FROM issue_categories WHERE product_type = ? AND LOWER(category_name) = LOWER(?) AND id != ?').get(product_type, cleanCat, id);
+      if (existing) {
+        return res.status(400).json({ error: 'Category already exists for ' + product_type });
+      }
+    }
+    db.prepare('UPDATE issue_categories SET category_name = ? WHERE id = ?').run(cleanCat, id);
+    const updated = db.prepare('SELECT * FROM issue_categories WHERE id = ?').get(id);
+    if (!updated) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    res.json({ message: 'Category updated successfully', category: updated });
+  } catch (err) {
+    console.error('Update category error:', err);
+    res.status(500).json({ error: 'Failed to update category: ' + err.message });
+  }
+}
+
 async function deleteCategory(req, res) {
   try {
     const { id } = req.params;
