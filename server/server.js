@@ -1298,6 +1298,19 @@ const { normalizePhone, getLast10Digits, formatDisplayPhone } = require('./utils
 // 5. Universal WhatsApp Web Inbox: Get all conversation threads (linked or unlinked)
 app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
   try {
+    const userId = String(req.user?.id || req.user?.username || 'admin');
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS whatsapp_conversation_reads (
+        user_id TEXT NOT NULL,
+        phone_10 TEXT NOT NULL,
+        last_read_message_id INTEGER DEFAULT 0,
+        last_read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_manual_unread INTEGER DEFAULT 0,
+        manual_unread_at DATETIME,
+        PRIMARY KEY (user_id, phone_10)
+      )
+    `).run();
+
     // Group by normalized 10-digit phone number to avoid thread splitting
     const rows = db.prepare(`
       WITH NormalizedMessages AS (
@@ -1417,21 +1430,95 @@ app.get('/api/whatsapp/conversations', authenticateToken, requireRole('admin', '
       // Priority 3: Formatted phone fallback
       const displayPhone = formatDisplayPhone(canonicalPhone);
 
+      // Unread state tracking
+      const readRow = db.prepare(`
+        SELECT last_read_message_id, is_manual_unread 
+        FROM whatsapp_conversation_reads 
+        WHERE user_id = ? AND phone_10 = ?
+      `).get(userId, last10);
+
+      const lastReadId = readRow?.last_read_message_id || 0;
+      const isManualUnread = Boolean(readRow?.is_manual_unread);
+
+      const unreadRow = db.prepare(`
+        SELECT COUNT(id) as count 
+        FROM whatsapp_messages 
+        WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ?
+          AND sender_type = 'customer'
+          AND id > ?
+      `).get(`%${last10}%`, lastReadId);
+
+      const unreadCount = Number(unreadRow?.count || 0);
+
       return {
         ...r,
+        id: r.id,
         phone: canonicalPhone,
         complaint_id: complaintId,
         ticket_id: ticketId,
         is_technician: isTechnician,
         sender_name: customerName || displayPhone,
         last_activity: formatIsoUtc(r.last_activity),
-        created_at: formatIsoUtc(r.created_at)
+        created_at: formatIsoUtc(r.created_at),
+        unread_count: unreadCount,
+        is_manual_unread: isManualUnread
       };
     });
 
     res.json({ success: true, conversations });
   } catch (err) {
     console.error('Error fetching WhatsApp conversations:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark WhatsApp conversation as read
+app.post('/api/whatsapp/mark-read', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const rawPhone = req.body?.phone || req.query?.phone;
+    if (!rawPhone) return res.status(400).json({ error: 'Phone is required' });
+    const last10 = getLast10Digits(rawPhone);
+    const userId = String(req.user?.id || req.user?.username || 'admin');
+
+    const maxRow = db.prepare(`
+      SELECT MAX(id) as max_id FROM whatsapp_messages 
+      WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ?
+    `).get(`%${last10}%`);
+    const maxId = Number(maxRow?.max_id || 0);
+
+    db.prepare(`
+      INSERT INTO whatsapp_conversation_reads (user_id, phone_10, last_read_message_id, last_read_at, is_manual_unread)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP, 0)
+      ON CONFLICT(user_id, phone_10) DO UPDATE SET
+        last_read_message_id = MAX(whatsapp_conversation_reads.last_read_message_id, excluded.last_read_message_id),
+        last_read_at = CURRENT_TIMESTAMP,
+        is_manual_unread = 0
+    `).run(userId, last10, maxId);
+
+    res.json({ success: true, phone: last10, unread_count: 0, is_manual_unread: false });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manually mark WhatsApp conversation as unread
+app.post('/api/whatsapp/mark-unread', authenticateToken, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const rawPhone = req.body?.phone || req.query?.phone;
+    if (!rawPhone) return res.status(400).json({ error: 'Phone is required' });
+    const last10 = getLast10Digits(rawPhone);
+    const userId = String(req.user?.id || req.user?.username || 'admin');
+
+    db.prepare(`
+      INSERT INTO whatsapp_conversation_reads (user_id, phone_10, is_manual_unread, manual_unread_at)
+      VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, phone_10) DO UPDATE SET
+        is_manual_unread = 1,
+        manual_unread_at = CURRENT_TIMESTAMP
+    `).run(userId, last10);
+
+    res.json({ success: true, phone: last10, is_manual_unread: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

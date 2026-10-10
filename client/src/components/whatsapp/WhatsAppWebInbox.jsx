@@ -246,6 +246,11 @@ export const WhatsAppWebInbox = ({
   const [savingEditMessage, setSavingEditMessage] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState(null);
 
+  // Chat conversation context menu & mobile touch states
+  const [chatContextMenu, setChatContextMenu] = useState(null); // { x, y, conv }
+  const longPressTimerRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+
   // Sound notification preference
   const [soundEnabled, setSoundEnabled] = useState(() => {
     return localStorage.getItem('egs_wa_sound') !== 'false';
@@ -275,14 +280,15 @@ export const WhatsAppWebInbox = ({
     return true;
   }, Boolean(filePreview), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-  // Stage 3: Emoji picker / action menu
+  // Stage 3: Emoji picker / action menu / chat context menu
   useEscapeHandler(() => {
     setShowEmojiPicker(false);
     setActionMessageMenuId(null);
     setShowHeaderMenu(false);
     setShowSidebarMenu(false);
+    setChatContextMenu(null);
     return true;
-  }, Boolean(showEmojiPicker || actionMessageMenuId || showHeaderMenu || showSidebarMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+  }, Boolean(showEmojiPicker || actionMessageMenuId || showHeaderMenu || showSidebarMenu || chatContextMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info)
   useEscapeHandler(() => {
@@ -352,7 +358,10 @@ export const WhatsAppWebInbox = ({
 
   // Sync document.title with unread WhatsApp count (like real WhatsApp Web)
   useEffect(() => {
-    const totalUnread = conversations.reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0);
+    const totalUnread = conversations.reduce((acc, c) => {
+      const count = Number(c.unread_count) || 0;
+      return acc + (count > 0 ? count : (c.is_manual_unread ? 1 : 0));
+    }, 0);
     if (totalUnread > 0) {
       document.title = `(${totalUnread}) Eco Green Support`;
     } else {
@@ -385,9 +394,19 @@ export const WhatsAppWebInbox = ({
       if (!e.target.closest('.msg-action-menu-container') && !e.target.closest('.msg-action-trigger')) {
         setActionMessageMenuId(null);
       }
+      if (!e.target.closest('#chat-context-menu-container') && !e.target.closest('.chat-menu-trigger')) {
+        setChatContextMenu(null);
+      }
+    };
+    const handleScrollOrResize = () => {
+      setChatContextMenu(null);
     };
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
   }, []);
 
   // Load conversation list from server with real-time incoming notification dispatch
@@ -422,14 +441,26 @@ export const WhatsAppWebInbox = ({
         }
 
         // If a conversation is currently open, show 0 unread for it locally
+        let hasOpenUnread = false;
         const mapped = res.conversations.map(c => {
           if (selectedPhone) {
             const cPhone = (c.phone || '').replace(/[^0-9]/g, '').slice(-10);
             const sPhone = (selectedPhone || '').replace(/[^0-9]/g, '').slice(-10);
-            if (cPhone === sPhone) return { ...c, unread_count: 0 };
+            if (cPhone === sPhone) {
+              if (Number(c.unread_count) > 0 || c.is_manual_unread) {
+                hasOpenUnread = true;
+              }
+              return { ...c, unread_count: 0, is_manual_unread: false };
+            }
           }
           return c;
         });
+
+        // If open chat had unread messages delivered, sync read state to backend
+        if (hasOpenUnread && selectedPhone && api.markWhatsAppAsRead) {
+          api.markWhatsAppAsRead(selectedPhone).catch(() => {});
+        }
+
         setConversations(mapped);
         try {
           localStorage.setItem('egs_cached_wa_conversations', JSON.stringify(mapped));
@@ -558,6 +589,7 @@ export const WhatsAppWebInbox = ({
       setFilePreview(null);
       setShowEmojiPicker(false);
       setShowHeaderMenu(false);
+      setChatContextMenu(null);
       setUnreadWhileScrolled(0);
       setShowScrollBottomBtn(false);
       isNearBottomRef.current = true;
@@ -567,7 +599,7 @@ export const WhatsAppWebInbox = ({
         const cPhone10 = (c.phone || '').replace(/[^0-9]/g, '').slice(-10);
         const selPhone10 = (selectedPhone || '').replace(/[^0-9]/g, '').slice(-10);
         if (cPhone10 === selPhone10) {
-          return { ...c, unread_count: 0 };
+          return { ...c, unread_count: 0, is_manual_unread: false };
         }
         return c;
       }));
@@ -1020,9 +1052,126 @@ export const WhatsAppWebInbox = ({
     return cleanName.charAt(0).toUpperCase();
   };
 
+  // Open Context Menu on Right Click (WhatsApp Web desktop style)
+  const handleConversationContextMenu = (e, conv) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 200;
+    const menuHeight = 140;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 10);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
+    setChatContextMenu({ x: Math.max(10, x), y: Math.max(10, y), conv });
+  };
+
+  // Open Context Menu on Mobile / Menu Trigger Button
+  const handleOpenConversationMenu = (e, conv) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menuWidth = 200;
+    const menuHeight = 140;
+    const x = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 10);
+    const y = Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 10);
+    setChatContextMenu({ x: Math.max(10, x), y: Math.max(10, y), conv });
+  };
+
+  // Touch handlers for Long Press on mobile
+  const handleTouchStart = (e, conv) => {
+    const touch = e.touches[0];
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      const menuWidth = 200;
+      const menuHeight = 140;
+      const x = Math.min(touch.clientX, window.innerWidth - menuWidth - 10);
+      const y = Math.min(touch.clientY, window.innerHeight - menuHeight - 10);
+      setChatContextMenu({ x: Math.max(10, x), y: Math.max(10, y), conv });
+    }, 550);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+    if (dx > 10 || dy > 10) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+  };
+
+  // Mark as Unread Action
+  const handleMarkAsUnread = async (conv) => {
+    setChatContextMenu(null);
+    if (!conv || !conv.phone) return;
+    const phone = conv.phone;
+    const last10 = String(phone).replace(/\D/g, '').slice(-10);
+
+    // Optimistically update conversation list
+    setConversations(prev => prev.map(c => {
+      const c10 = String(c.phone || '').replace(/\D/g, '').slice(-10);
+      if (c10 === last10) {
+        return { ...c, is_manual_unread: true };
+      }
+      return c;
+    }));
+
+    // If currently selected, deselect so it is not immediately marked as read
+    if (selectedPhone) {
+      const s10 = String(selectedPhone || '').replace(/\D/g, '').slice(-10);
+      if (s10 === last10) {
+        setSelectedPhone(null);
+      }
+    }
+
+    try {
+      if (api.markWhatsAppAsUnread) {
+        await api.markWhatsAppAsUnread(phone);
+      }
+      showToast('Chat marked as unread', 'info');
+    } catch (err) {
+      console.warn('Failed to mark conversation as unread:', err);
+    }
+  };
+
+  // Mark as Read Action (when unread)
+  const handleMarkAsRead = async (conv) => {
+    setChatContextMenu(null);
+    if (!conv || !conv.phone) return;
+    const phone = conv.phone;
+    const last10 = String(phone).replace(/\D/g, '').slice(-10);
+
+    // Optimistically update conversation list
+    setConversations(prev => prev.map(c => {
+      const c10 = String(c.phone || '').replace(/\D/g, '').slice(-10);
+      if (c10 === last10) {
+        return { ...c, unread_count: 0, is_manual_unread: false };
+      }
+      return c;
+    }));
+
+    try {
+      if (api.markWhatsAppAsRead) {
+        await api.markWhatsAppAsRead(phone);
+      }
+      showToast('Chat marked as read', 'success');
+    } catch (err) {
+      console.warn('Failed to mark conversation as read:', err);
+    }
+  };
+
   // Filter conversations (All incoming & outgoing conversations are fully preserved and visible)
   const filteredConversations = conversations.filter(conv => {
-    if (activeFilter === 'unread' && !conv.unread_count) return false;
+    const isUnread = Number(conv.unread_count) > 0 || Boolean(conv.is_manual_unread);
+    if (activeFilter === 'unread' && !isUnread) return false;
     if (activeFilter === 'customers' && conv.is_technician) return false;
     if (activeFilter === 'technicians' && !conv.is_technician) return false;
 
@@ -1699,9 +1848,9 @@ export const WhatsAppWebInbox = ({
             }`}
           >
             <span>Unread</span>
-            {conversations.filter(c => c.unread_count > 0).length > 0 && (
+            {conversations.filter(c => Number(c.unread_count) > 0 || c.is_manual_unread).length > 0 && (
               <span className="font-mono text-[10px] ml-1 bg-[#25d366] text-white px-1.5 py-0.2 rounded-full">
-                {conversations.filter(c => c.unread_count > 0).length}
+                {conversations.filter(c => Number(c.unread_count) > 0 || c.is_manual_unread).length}
               </span>
             )}
           </button>
@@ -1760,12 +1909,18 @@ export const WhatsAppWebInbox = ({
             filteredConversations.map(conv => {
               const isSelected = conv.phone === selectedPhone;
               const formattedTime = formatWhatsAppListTime(conv.last_activity);
+              const hasUnreadCount = Number(conv.unread_count) > 0;
+              const isUnread = hasUnreadCount || Boolean(conv.is_manual_unread);
 
               return (
                 <div
                   key={conv.phone}
                   onClick={() => setSelectedPhone(conv.phone)}
-                  className={`px-3 py-2.5 cursor-pointer transition-colors flex items-center gap-3 relative group ${
+                  onContextMenu={(e) => handleConversationContextMenu(e, conv)}
+                  onTouchStart={(e) => handleTouchStart(e, conv)}
+                  onTouchEnd={handleTouchEnd}
+                  onTouchMove={handleTouchMove}
+                  className={`px-3 py-2.5 cursor-pointer transition-colors flex items-center gap-3 relative group select-none ${
                     isSelected ? 'bg-[#f0f2f5]' : 'hover:bg-[#f5f6f6] bg-white'
                   }`}
                 >
@@ -1783,32 +1938,30 @@ export const WhatsAppWebInbox = ({
                   {/* Body Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <h4 className={`text-[13.5px] truncate ${Number(conv.unread_count) > 0 ? 'font-bold text-[#111b21]' : 'font-semibold text-[#111b21]'}`}>
+                      <h4 className={`text-[13.5px] truncate ${isUnread ? 'font-bold text-[#111b21]' : 'font-semibold text-[#111b21]'}`}>
                         {conv.sender_name || `+${conv.phone}`}
                       </h4>
                       <div className="flex items-center gap-1.5 shrink-0 ml-1">
                         <span className={`text-[11px] font-mono ${
-                          Number(conv.unread_count) > 0 ? 'text-[#25d366] font-bold' : 'text-[#8696a0]'
+                          isUnread ? 'text-[#25d366] font-bold' : 'text-[#8696a0]'
                         }`}>
                           {formattedTime}
                         </span>
+                        {/* 3-Dots / Dropdown Options Button for touch & hover */}
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteConversation(conv.phone);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
-                          title="Delete contact & chat history"
+                          onClick={(e) => handleOpenConversationMenu(e, conv)}
+                          className="chat-menu-trigger opacity-0 group-hover:opacity-100 hover:opacity-100 p-0.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/80 rounded transition-all cursor-pointer"
+                          title="Conversation options"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <ChevronDown className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between gap-1">
                       <p className={`text-xs truncate flex items-center gap-1 ${
-                        Number(conv.unread_count) > 0 ? 'text-[#111b21] font-semibold' : 'text-[#667781] font-normal'
+                        isUnread ? 'text-[#111b21] font-semibold' : 'text-[#667781] font-normal'
                       }`}>
                         {conv.last_sender_type === 'company' && (
                           <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0 inline" />
@@ -1820,16 +1973,21 @@ export const WhatsAppWebInbox = ({
                         </span>
                       </p>
 
-                      {/* Right indicators: Pinned icon OR Unread count badge */}
+                      {/* Right indicators: Pinned icon OR Unread count badge OR Unread dot */}
                       <div className="flex items-center gap-1.5 shrink-0">
                         {conv.is_pinned && (
                           <Pin className="w-3.5 h-3.5 text-[#8696a0] rotate-45" />
                         )}
-                        {Number(conv.unread_count) > 0 && (
+                        {hasUnreadCount ? (
                           <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#25d366] text-white font-bold text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
                             {conv.unread_count}
                           </span>
-                        )}
+                        ) : conv.is_manual_unread ? (
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full bg-[#25d366] shrink-0 shadow-2xs ring-1 ring-white" 
+                            title="Marked as unread"
+                          />
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1838,6 +1996,54 @@ export const WhatsAppWebInbox = ({
             })
           )}
         </div>
+
+        {/* WhatsApp-Style Conversation Context Menu */}
+        {chatContextMenu && (
+          <div
+            id="chat-context-menu-container"
+            style={{
+              position: 'fixed',
+              left: `${chatContextMenu.x}px`,
+              top: `${chatContextMenu.y}px`
+            }}
+            className="w-52 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-100 text-xs font-semibold text-[#111b21] animate-in fade-in zoom-in-95 duration-100"
+          >
+            {Number(chatContextMenu.conv?.unread_count) > 0 || chatContextMenu.conv?.is_manual_unread ? (
+              <button
+                type="button"
+                onClick={() => handleMarkAsRead(chatContextMenu.conv)}
+                className="w-full px-4 py-2.5 text-left hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+              >
+                <CheckCheck className="w-4 h-4 text-[#008069]" />
+                <span>Mark as read</span>
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => handleMarkAsUnread(chatContextMenu.conv)}
+              className="w-full px-4 py-2.5 text-left hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+            >
+              <span className="w-3.5 h-3.5 rounded-full bg-[#25d366] inline-block shrink-0 shadow-xs" />
+              <span>Mark as unread</span>
+            </button>
+
+            <div className="my-1 border-t border-slate-100" />
+
+            <button
+              type="button"
+              onClick={() => {
+                const conv = chatContextMenu.conv;
+                setChatContextMenu(null);
+                handleDeleteConversation(conv?.phone);
+              }}
+              className="w-full px-4 py-2.5 text-left hover:bg-rose-50 flex items-center gap-2.5 cursor-pointer text-rose-600"
+            >
+              <Trash2 className="w-4 h-4 text-rose-500" />
+              <span>Delete chat</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ================= RIGHT MAIN CHAT AREA (AUTHENTIC WHATSAPP WEB REPLICA) ================= */}

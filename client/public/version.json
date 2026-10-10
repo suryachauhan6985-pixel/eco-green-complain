@@ -1,8 +1,8 @@
 {
   "version": "2.6.3",
-  "buildTime": 1791554212527,
-  "buildId": "b_1791554212527",
-  "releaseDate": "2026-10-09",
+  "buildTime": 1791610876156,
+  "buildId": "b_1791610876156",
+  "releaseDate": "2026-10-10",
   "mandatory": false,
   "title": "Eco Green Support v2.6.3",
   "summary": "New official release with continuous deploy sync and optimizations.",

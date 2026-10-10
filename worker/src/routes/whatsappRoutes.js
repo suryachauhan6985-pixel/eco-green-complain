@@ -316,9 +316,34 @@ async function resolveContactIdentities(activeLast10, env, executionCtx) {
   return { techMap, userMap, custMap, regMap };
 }
 
-// GET /api/whatsapp/conversations - List Inbox Chats with unified phone grouping
+export async function ensureReadsTable(env, ctx) {
+  try {
+    await query(
+      `CREATE TABLE IF NOT EXISTS whatsapp_conversation_reads (
+        user_id TEXT NOT NULL,
+        phone_10 VARCHAR(10) NOT NULL,
+        last_read_message_id BIGINT DEFAULT 0,
+        last_read_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        is_manual_unread BOOLEAN DEFAULT FALSE,
+        manual_unread_at TIMESTAMP WITH TIME ZONE,
+        PRIMARY KEY (user_id, phone_10)
+      );
+      CREATE INDEX IF NOT EXISTS idx_wa_conv_reads_phone ON whatsapp_conversation_reads(phone_10);`,
+      [],
+      env,
+      ctx
+    );
+  } catch (_) {}
+}
+
+// GET /api/whatsapp/conversations - List Inbox Chats with unified phone grouping & real unread tracking
 whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
   try {
+    const user = c.get('user');
+    const userId = String(user?.id || user?.username || 'admin');
+
+    await ensureReadsTable(c.env, c.executionCtx);
+
     const res = await query(
       `WITH NormalizedMessages AS (
         SELECT 
@@ -330,8 +355,21 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
           ) as rn
         FROM whatsapp_messages m
         WHERE LENGTH(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g')) >= 5
+      ),
+      UnreadCounts AS (
+        SELECT 
+          RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10) as last10_phone,
+          COUNT(m.id) as unread_count
+        FROM whatsapp_messages m
+        LEFT JOIN whatsapp_conversation_reads r 
+          ON r.phone_10 = RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10)
+          AND r.user_id = $1
+        WHERE m.sender_type = 'customer'
+          AND m.id > COALESCE(r.last_read_message_id, 0)
+        GROUP BY RIGHT(REGEXP_REPLACE(m.phone, '[^0-9]', '', 'g'), 10)
       )
       SELECT 
+        nm.id as last_message_id,
         nm.phone,
         nm.last10_phone,
         nm.complaint_id,
@@ -345,12 +383,17 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
         c.customer_name as complaint_customer_name,
         c.customer_phone as complaint_customer_phone,
         c.product_type,
-        c.status as complaint_status
+        c.status as complaint_status,
+        COALESCE(uc.unread_count, 0)::int as unread_count,
+        COALESCE(r.is_manual_unread, false) as is_manual_unread
       FROM NormalizedMessages nm
       LEFT JOIN complaints c ON c.id = nm.complaint_id
+      LEFT JOIN UnreadCounts uc ON uc.last10_phone = nm.last10_phone
+      LEFT JOIN whatsapp_conversation_reads r 
+        ON r.phone_10 = nm.last10_phone AND r.user_id = $1
       WHERE nm.rn = 1
       ORDER BY nm.created_at DESC`,
-      [],
+      [userId],
       c.env,
       c.executionCtx
     );
@@ -395,6 +438,7 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
         : (r.phone || '').length === 10 ? `91${r.phone}` : r.phone;
 
       return {
+        id: r.last_message_id,
         phone: canonicalPhone,
         sender_name: senderName || 'Customer',
         is_technician: isTechnician,
@@ -404,11 +448,95 @@ whatsappRoutes.get('/conversations', authenticateToken, async (c) => {
         last_activity: r.last_activity,
         last_status: r.last_status,
         last_sender_type: r.last_sender_type,
-        unread_count: 0
+        unread_count: Number(r.unread_count || 0),
+        is_manual_unread: Boolean(r.is_manual_unread)
       };
     });
 
     return c.json({ success: true, conversations });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/whatsapp/mark-read - Mark incoming messages in conversation as read for current user
+whatsappRoutes.post('/mark-read', authenticateToken, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const rawPhone = body.phone || c.req.query('phone');
+    if (!rawPhone) return c.json({ error: 'Phone is required' }, 400);
+    const cleanDigits = String(rawPhone).replace(/\D/g, '');
+    const last10 = cleanDigits.slice(-10);
+    if (!last10) return c.json({ error: 'Valid phone required' }, 400);
+
+    const user = c.get('user');
+    const userId = String(user?.id || user?.username || 'admin');
+
+    await ensureReadsTable(c.env, c.executionCtx);
+
+    // Get max message id for this phone
+    const maxRes = await query(
+      `SELECT COALESCE(MAX(id), 0) as max_id 
+       FROM whatsapp_messages 
+       WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1`,
+      [last10],
+      c.env,
+      c.executionCtx
+    ).catch(() => ({ rows: [{ max_id: 0 }] }));
+
+    const maxId = Number(maxRes.rows?.[0]?.max_id || 0);
+
+    await query(
+      `INSERT INTO whatsapp_conversation_reads (user_id, phone_10, last_read_message_id, last_read_at, is_manual_unread)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP, FALSE)
+       ON CONFLICT (user_id, phone_10) DO UPDATE SET
+         last_read_message_id = GREATEST(whatsapp_conversation_reads.last_read_message_id, EXCLUDED.last_read_message_id),
+         last_read_at = CURRENT_TIMESTAMP,
+         is_manual_unread = FALSE`,
+      [userId, last10, maxId],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ 
+      success: true, 
+      phone: last10, 
+      last_read_message_id: maxId, 
+      unread_count: 0, 
+      is_manual_unread: false 
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/whatsapp/mark-unread - Manually mark conversation as unread for current user
+whatsappRoutes.post('/mark-unread', authenticateToken, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const rawPhone = body.phone || c.req.query('phone');
+    if (!rawPhone) return c.json({ error: 'Phone is required' }, 400);
+    const cleanDigits = String(rawPhone).replace(/\D/g, '');
+    const last10 = cleanDigits.slice(-10);
+    if (!last10) return c.json({ error: 'Valid phone required' }, 400);
+
+    const user = c.get('user');
+    const userId = String(user?.id || user?.username || 'admin');
+
+    await ensureReadsTable(c.env, c.executionCtx);
+
+    await query(
+      `INSERT INTO whatsapp_conversation_reads (user_id, phone_10, is_manual_unread, manual_unread_at)
+       VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP)
+       ON CONFLICT (user_id, phone_10) DO UPDATE SET
+         is_manual_unread = TRUE,
+         manual_unread_at = CURRENT_TIMESTAMP`,
+      [userId, last10],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ success: true, phone: last10, is_manual_unread: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -916,6 +1044,14 @@ whatsappRoutes.delete('/conversations/:phone', authenticateToken, async (c) => {
       `DELETE FROM whatsapp_raw_events 
        WHERE RIGHT(REGEXP_REPLACE(sender_phone, '[^0-9]', '', 'g'), 10) = $1 
           OR RIGHT(REGEXP_REPLACE(recipient_phone, '[^0-9]', '', 'g'), 10) = $1`,
+      [last10],
+      c.env,
+      c.executionCtx
+    ).catch(() => {});
+
+    // 4. Delete unread tracking state for this contact
+    await query(
+      `DELETE FROM whatsapp_conversation_reads WHERE phone_10 = $1`,
       [last10],
       c.env,
       c.executionCtx
