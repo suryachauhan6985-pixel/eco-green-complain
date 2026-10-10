@@ -145,6 +145,27 @@ export async function handleWebhookPost(c) {
               textBody = '🎨 Sticker';
               mediaId = msg.sticker?.id || null;
               mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
+            } else if (msg.type === 'location') {
+              mediaType = 'location';
+              const loc = msg.location || {};
+              const locDesc = loc.name || loc.address || 'Shared Location';
+              const mapsUrl = `https://maps.google.com/?q=${loc.latitude},${loc.longitude}`;
+              textBody = loc.name ? `📍 ${loc.name}${loc.address ? `\n${loc.address}` : ''}\n${mapsUrl}` : `📍 Location Pin: ${mapsUrl}`;
+            } else if (msg.type === 'interactive') {
+              const inter = msg.interactive || {};
+              const title = inter.button_reply?.title || inter.list_reply?.title || '';
+              textBody = title ? `🔘 ${title}` : '🔘 [Interactive reply]';
+            } else if (msg.type === 'button') {
+              textBody = msg.button?.text ? `🔘 ${msg.button.text}` : '🔘 [Button reply]';
+            } else if (msg.type === 'contacts') {
+              const firstContact = msg.contacts?.[0] || {};
+              const cName = firstContact.name?.formatted_name || 'Contact';
+              const cPhone = firstContact.phones?.[0]?.phone || '';
+              textBody = `👤 Contact Card: ${cName}${cPhone ? ` (${cPhone})` : ''}`;
+            }
+
+            if (!textBody && !mediaId) {
+              textBody = msg.text?.body || (mediaType === 'location' ? '📍 Shared Location Pin' : '[WhatsApp message]');
             }
 
             // Raw Event Audit Log
@@ -653,10 +674,12 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
           headers.set('Cache-Control', 'public, max-age=31536000, immutable');
           headers.set('Access-Control-Allow-Origin', '*');
           headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+          const isDownload = c.req.query('download') === '1' || c.req.query('dl') === '1';
+          const dispositionType = isDownload ? 'attachment' : 'inline';
           if (filename) {
-            headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+            headers.set('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
           } else {
-            headers.set('Content-Disposition', 'inline');
+            headers.set('Content-Disposition', dispositionType);
           }
           return new Response(cached.body, { status: 200, headers });
         }
@@ -710,10 +733,12 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
     headers.set('Cache-Control', 'public, max-age=31536000, immutable');
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    const isDownload = c.req.query('download') === '1' || c.req.query('dl') === '1';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
     if (filename) {
-      headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+      headers.set('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
     } else {
-      headers.set('Content-Disposition', 'inline');
+      headers.set('Content-Disposition', dispositionType);
     }
 
     return new Response(arrayBuffer, {

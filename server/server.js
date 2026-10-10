@@ -1210,8 +1210,15 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/w
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Type', contentType);
-    if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    const isDownload = req.query.download === '1' || req.query.dl === '1';
+    const filename = req.query.filename || '';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    if (filename) {
+      res.setHeader('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
+    } else {
+      res.setHeader('Content-Disposition', dispositionType);
+    }
 
     const arrayBuffer = await fileRes.arrayBuffer();
     return res.status(200).send(Buffer.from(arrayBuffer));
