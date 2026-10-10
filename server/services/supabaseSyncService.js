@@ -4,6 +4,7 @@ class SupabaseSyncService {
   constructor() {
     this.syncQueue = [];
     this.isProcessingQueue = false;
+    this.isPulling = false;
   }
 
   get isEnabled() {
@@ -23,6 +24,7 @@ class SupabaseSyncService {
       return;
     }
 
+    this.isPulling = true;
     console.log('[SupabaseSync] 🔄 Starting startup sync: pulling latest records from Supabase Cloud...');
 
     const tables = [
@@ -56,7 +58,9 @@ class SupabaseSyncService {
           }
 
           if (rows && rows.length > 0) {
-            const columns = Object.keys(rows[0]);
+            const localCols = localDb.pragma(`table_info("${table}")`).map(col => col.name);
+            const columns = Object.keys(rows[0]).filter(c => localCols.includes(c));
+            if (columns.length === 0) continue;
             const colNames = columns.map(c => `"${c}"`).join(', ');
             const placeholders = columns.map(() => '?').join(', ');
             const insertStmt = localDb.prepare(`INSERT OR REPLACE INTO "${table}" (${colNames}) VALUES (${placeholders})`);
@@ -80,6 +84,8 @@ class SupabaseSyncService {
       console.log('[SupabaseSync] ✅ Startup sync completed! Local database is 100% matched with Supabase Cloud.');
     } catch (err) {
       console.error('[SupabaseSync] ⚠️ Startup sync error:', err.message);
+    } finally {
+      this.isPulling = false;
       try { localDb.pragma('foreign_keys = ON'); } catch (_) {}
     }
   }
@@ -198,7 +204,7 @@ class SupabaseSyncService {
       stmt.run = function (...args) {
         const info = originalRun(...args);
 
-        if (!self.isEnabled) return info;
+        if (!self.isEnabled || self.isPulling) return info;
 
         try {
           const trimmedSql = sql.trim();

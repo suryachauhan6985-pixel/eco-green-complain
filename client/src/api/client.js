@@ -44,9 +44,8 @@ const PERMANENT_STORAGE_KEY = 'egs_permanent_complaints';
 export function getPermanentComplaints() {
   try {
     const list = JSON.parse(localStorage.getItem(PERMANENT_STORAGE_KEY) || '[]');
-    const dummyTicketPrefixes = ['EGS-2026-000101', 'EGS-2026-000102', 'EGS-2026-000103', 'EGS-2026-000104', 'EGS-2026-000105', 'EGS-2026-000106', 'EGS-2026-000107', 'EGS-2026-000108', 'EGS-2026-000109', 'EGS-2026-000110', 'EGS-2026-000111', 'EGS-2026-000112'];
-    // Clean out old automated test rows & dummy complaints
-    const cleaned = list.filter(c => !(c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112') && !dummyTicketPrefixes.includes(c.ticket_id));
+    // Clean out old automated test rows
+    const cleaned = list.filter(c => !(c.customer_name === 'Harish Nambiar' && c.ticket_id > 'EGS-2026-000112'));
     if (cleaned.length !== list.length) {
       localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(cleaned));
     }

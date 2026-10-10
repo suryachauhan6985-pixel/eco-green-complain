@@ -6,6 +6,7 @@ class TursoSyncService {
     this.isEnabled = false;
     this.syncQueue = [];
     this.isProcessingQueue = false;
+    this.isPulling = false;
     this.init();
   }
 
@@ -44,6 +45,7 @@ class TursoSyncService {
       return;
     }
 
+    this.isPulling = true;
     console.log('[TursoSync] 🔄 Starting startup sync: pulling latest records from Turso Cloud...');
 
     const tables = [
@@ -75,7 +77,9 @@ class TursoSyncService {
           const rows = cloudRes.rows;
 
           if (rows && rows.length > 0) {
-            const columns = Object.keys(rows[0]);
+            const localCols = localDb.pragma(`table_info("${table}")`).map(col => col.name);
+            const columns = Object.keys(rows[0]).filter(c => localCols.includes(c));
+            if (columns.length === 0) continue;
             const colNames = columns.map(c => `"${c}"`).join(', ');
             const placeholders = columns.map(() => '?').join(', ');
             const insertStmt = localDb.prepare(`INSERT OR REPLACE INTO "${table}" (${colNames}) VALUES (${placeholders})`);
@@ -99,6 +103,8 @@ class TursoSyncService {
       console.log('[TursoSync] ✅ Startup sync completed! Local database is 100% matched with Turso Cloud.');
     } catch (err) {
       console.error('[TursoSync] ⚠️ Startup sync error:', err.message);
+    } finally {
+      this.isPulling = false;
       try { localDb.pragma('foreign_keys = ON'); } catch (_) {}
     }
   }
@@ -214,6 +220,7 @@ class TursoSyncService {
 
       stmt.run = function (...args) {
         const info = originalRun(...args);
+        if (self.isPulling) return info;
 
         try {
           const trimmedSql = sql.trim();

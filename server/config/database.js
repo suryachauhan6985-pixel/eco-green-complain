@@ -542,7 +542,18 @@ function migrateComplaintsTable() {
         { name: 'pv_capacity', type: 'TEXT' },
         { name: 'panel_make', type: 'TEXT' },
         { name: 'inverter_make', type: 'TEXT' },
-        { name: 'scheme', type: 'TEXT' }
+        { name: 'scheme', type: 'TEXT' },
+        { name: 'payment_notes', type: 'TEXT' },
+        { name: 'dealer_name', type: 'TEXT' },
+        { name: 'pincode', type: 'TEXT' },
+        { name: 'district', type: 'TEXT' },
+        { name: 'state', type: 'TEXT' },
+        { name: 'post_office', type: 'TEXT' },
+        { name: 'previous_resolution_history', type: 'TEXT' },
+        { name: 'previous_technician_id', type: 'INTEGER' },
+        { name: 'previous_technician_name', type: 'TEXT' },
+        { name: 'documents_purged', type: 'INTEGER DEFAULT 0' },
+        { name: 'documents_purged_at', type: 'DATETIME' }
       ];
 
       for (const col of newColumns) {
@@ -680,6 +691,9 @@ function migrateNotificationTemplates() {
     }
     if (!cols.includes('channel')) {
       db.exec("ALTER TABLE notification_templates ADD COLUMN channel TEXT DEFAULT 'whatsapp'");
+    }
+    if (!cols.includes('meta_template_id')) {
+      db.exec("ALTER TABLE notification_templates ADD COLUMN meta_template_id TEXT");
     }
     if (!cols.includes('created_at')) {
       db.exec("ALTER TABLE notification_templates ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP");
@@ -1080,6 +1094,14 @@ function migrateAttachmentsTable() {
     if (!columnNames.includes('file_data')) {
       db.exec('ALTER TABLE complaint_attachments ADD COLUMN file_data TEXT');
       console.log('✅ Added file_data column to local complaint_attachments');
+    }
+    if (!columnNames.includes('is_purged')) {
+      db.exec('ALTER TABLE complaint_attachments ADD COLUMN is_purged INTEGER DEFAULT 0');
+      console.log('✅ Added is_purged column to local complaint_attachments');
+    }
+    if (!columnNames.includes('purged_at')) {
+      db.exec('ALTER TABLE complaint_attachments ADD COLUMN purged_at DATETIME');
+      console.log('✅ Added purged_at column to local complaint_attachments');
     }
   } catch (err) {
     console.warn('[Database] Attachments migration note:', err.message);
