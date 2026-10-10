@@ -79,6 +79,13 @@ export function VideoRecorderModal({
     rotation: 0
   });
 
+  // Live camera stream dimensions metadata
+  const [liveStreamMeta, setLiveStreamMeta] = useState({
+    width: 0,
+    height: 0,
+    isLandscape: false
+  });
+
   const videoPreviewRef = useRef(null);
   const playbackVideoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -144,6 +151,7 @@ export function VideoRecorderModal({
     setCurrentSizeBytes(0);
     setZoomLevel(1); // strictly reset zoom to 1x
     setPreviewMeta({ width: 0, height: 0, isLandscape: false, rotation: 0 });
+    setLiveStreamMeta({ width: 0, height: 0, isLandscape: false });
     recordedChunksRef.current = [];
     accumulatedSizeRef.current = 0;
     if (timerIntervalRef.current) {
@@ -201,7 +209,9 @@ export function VideoRecorderModal({
 
     // Stop any existing stream
     if (stream) {
-      stream.getTracks().forEach(t => t.stop());
+      stream.getTracks().forEach(t => {
+        try { t.stop(); } catch (_) {}
+      });
       setStream(null);
     }
 
@@ -212,17 +222,42 @@ export function VideoRecorderModal({
     }
 
     try {
-      const isPortraitMode = desiredOrientation === 'portrait';
+      const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isScreenPortrait = typeof window !== 'undefined' ? window.innerHeight >= window.innerWidth : true;
 
-      // Dynamic resolution strictly honoring user's chosen Landscape vs Portrait option:
-      // Portrait: 720x1280 (vertical 9:16)
-      // Landscape: 1280x720 (horizontal 16:9)
+      // On mobile devices held in portrait mode, the browser rotates the native landscape camera sensor by 90°.
+      // Therefore, requesting standard 1280x720 yields a 720x1280 PORTRAIT stream,
+      // and requesting 720x1280 yields a 1280x720 LANDSCAPE stream!
+      let idealWidth, idealHeight, idealAspectRatio;
+      if (desiredOrientation === 'portrait') {
+        if (isMobileDevice && isScreenPortrait) {
+          idealWidth = 1280;
+          idealHeight = 720;
+          idealAspectRatio = 16 / 9;
+        } else {
+          idealWidth = 720;
+          idealHeight = 1280;
+          idealAspectRatio = 9 / 16;
+        }
+      } else {
+        // desiredOrientation === 'landscape'
+        if (isMobileDevice && isScreenPortrait) {
+          idealWidth = 720;
+          idealHeight = 1280;
+          idealAspectRatio = 9 / 16;
+        } else {
+          idealWidth = 1280;
+          idealHeight = 720;
+          idealAspectRatio = 16 / 9;
+        }
+      }
+
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: { ideal: isPortraitMode ? 720 : 1280 },
-          height: { ideal: isPortraitMode ? 1280 : 720 },
-          aspectRatio: { ideal: isPortraitMode ? 9 / 16 : 16 / 9 },
+          width: { ideal: idealWidth },
+          height: { ideal: idealHeight },
+          aspectRatio: { ideal: idealAspectRatio },
           frameRate: { ideal: 30 }
         },
         audio: {
@@ -241,8 +276,8 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: desiredFacingMode,
-              width: isPortraitMode ? { ideal: 720 } : { ideal: 1280 },
-              height: isPortraitMode ? { ideal: 1280 } : { ideal: 720 }
+              width: { ideal: idealWidth },
+              height: { ideal: idealHeight }
             }
           });
           setHasAudio(false);
@@ -252,8 +287,29 @@ export function VideoRecorderModal({
         }
       }
 
-      // Check hardware zoom capabilities and strictly initialize at 1.0x
+      // Check actual track settings to verify whether delivered stream matches requested orientation
       const track = newStream.getVideoTracks()[0];
+      if (track && typeof track.getSettings === 'function') {
+        const settings = track.getSettings();
+        if (settings.width && settings.height) {
+          const isActualLandscape = settings.width > settings.height;
+          const wantsLandscape = desiredOrientation === 'landscape';
+          if (isActualLandscape !== wantsLandscape && typeof track.applyConstraints === 'function') {
+            console.warn(`[Camera] Orientation mismatch: requested ${desiredOrientation}, delivered ${settings.width}x${settings.height}. Correcting constraints...`);
+            try {
+              await track.applyConstraints({
+                width: { ideal: settings.height },
+                height: { ideal: settings.width },
+                aspectRatio: { ideal: settings.height / settings.width }
+              });
+            } catch (flipErr) {
+              console.warn('[Camera] Failed to auto-flip constraints:', flipErr);
+            }
+          }
+        }
+      }
+
+      // Check hardware zoom capabilities and strictly initialize at 1.0x
       if (track) {
         let isHardwareZoomAvailable = false;
         let minZ = 1;
@@ -310,7 +366,7 @@ export function VideoRecorderModal({
 
   // Switch between Portrait and Landscape
   const handleChangeOrientation = async (targetOrientation) => {
-    if (isRecording) return;
+    if (isRecording || isInitializing) return;
     setRecordingOrientation(targetOrientation);
     await initializeCamera(facingMode, targetOrientation);
   };
@@ -582,15 +638,26 @@ export function VideoRecorderModal({
               autoPlay
               playsInline
               muted
+              onLoadedMetadata={(e) => {
+                const w = e.target.videoWidth || 0;
+                const h = e.target.videoHeight || 0;
+                setLiveStreamMeta({
+                  width: w,
+                  height: h,
+                  isLandscape: w > h
+                });
+              }}
               style={{
                 transform: (!zoomCapabilities.supported && zoomLevel > 1) ? `scale(${zoomLevel})` : undefined,
                 transformOrigin: 'center center',
                 transition: 'transform 0.15s ease-out'
               }}
               className={`object-contain bg-black transition-all duration-300 ${
-                recordingOrientation === 'landscape'
-                  ? 'w-full aspect-video max-h-full'
-                  : 'h-full aspect-[9/16] max-w-full'
+                recordingOrientation === 'portrait'
+                  ? 'w-full h-full max-h-full max-w-full'
+                  : isDevicePortrait
+                    ? 'w-full aspect-video max-h-full'
+                    : 'w-full h-full max-h-full max-w-full'
               }`}
             />
           )}
@@ -618,12 +685,24 @@ export function VideoRecorderModal({
                   transform: previewMeta.rotation ? `rotate(${previewMeta.rotation}deg)` : undefined,
                   transition: 'transform 0.25s ease'
                 }}
-                className={`max-h-full object-contain ${
-                  recordingOrientation === 'landscape' || previewMeta.isLandscape
-                    ? 'w-full aspect-video'
-                    : 'h-full aspect-[9/16]'
+                className={`max-h-full max-w-full object-contain ${
+                  recordingOrientation === 'portrait'
+                    ? 'w-full h-full'
+                    : isDevicePortrait
+                      ? 'w-full aspect-video'
+                      : 'w-full h-full'
                 }`}
               />
+            </div>
+          )}
+
+          {/* Landscape mode hint when phone is held vertically */}
+          {recordingOrientation === 'landscape' && isDevicePortrait && !isRecording && !recordedBlob && !cameraError && (
+            <div className="absolute top-16 inset-x-0 flex justify-center pointer-events-none z-10 px-4">
+              <div className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-teal-500/30 text-teal-300 text-[11px] font-mono flex items-center gap-1.5 shadow-md">
+                <RotateCw className="w-3 h-3 animate-pulse" />
+                <span>Rotate phone sideways for full-screen landscape view</span>
+              </div>
             </div>
           )}
 
