@@ -4,10 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
-import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { playNotificationChime as playLoudChime } from '../../utils/sound';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { showOSNotification, requestPushPermission } from '../../utils/pushNotification';
+import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import { 
   Search, Send, FileText, Paperclip, Bell, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -260,6 +260,9 @@ export const WhatsAppWebInbox = ({
   const [soundEnabled, setSoundEnabled] = useState(() => {
     return localStorage.getItem('egs_wa_sound') !== 'false';
   });
+
+  // Live In-App Compressed Video Recorder Modal State (50 MB limit guard)
+  const [isVideoRecorderOpen, setIsVideoRecorderOpen] = useState(false);
 
   // New Chat Modal state
   const [newChatPhone, setNewChatPhone] = useState('');
@@ -2703,7 +2706,7 @@ export const WhatsAppWebInbox = ({
                   type="button"
                   onClick={() => {
                     setShowAttachMenu(false);
-                    cameraVideoInputRef.current?.click();
+                    setIsVideoRecorderOpen(true);
                   }}
                   className="w-full p-2.5 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group text-left"
                 >
@@ -3582,6 +3585,17 @@ export const WhatsAppWebInbox = ({
           </div>
         </div>
       )}
+      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard) */}
+      <VideoRecorderModal
+        isOpen={isVideoRecorderOpen}
+        onClose={() => setIsVideoRecorderOpen(false)}
+        onRecordingComplete={(file) => {
+          processWhatsAppFile(file);
+          setIsVideoRecorderOpen(false);
+        }}
+        title="Record WhatsApp Video Message"
+        subtitle="50 MB limit active • 720p HD auto-compressed recording"
+      />
     </div>
   );
 };

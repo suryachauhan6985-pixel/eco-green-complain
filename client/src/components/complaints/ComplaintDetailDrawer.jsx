@@ -17,6 +17,7 @@ import { useDialog } from '../../context/DialogContext';
 import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUpload';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { NewComplaintModal } from './NewComplaintModal';
+import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 
@@ -120,6 +121,19 @@ export const ComplaintDetailDrawer = ({
   const [deletingAttId, setDeletingAttId] = useState(null);
   const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
   const [isResolutionDragging, setIsResolutionDragging] = useState(false);
+
+  // Live In-App Compressed Video Recorder Modal State (50 MB limit guard)
+  const [videoRecorderTarget, setVideoRecorderTarget] = useState(null); // 'registration' | 'resolution' | null
+
+  const handleVideoRecorded = (file) => {
+    if (!file) return;
+    if (videoRecorderTarget === 'registration') {
+      uploadFilesList([file]);
+    } else if (videoRecorderTarget === 'resolution') {
+      processResolutionFiles([file]);
+    }
+    setVideoRecorderTarget(null);
+  };
 
   // --- HIERARCHICAL STAGE ESCAPE HANDLERS ---
   // Stage: Document/Media Preview Modal (Inner Modal Stage)
@@ -2048,18 +2062,16 @@ export const ComplaintDetailDrawer = ({
                                     onChange={handleUploadMoreAttachments}
                                   />
                                 </label>
-                                <label className="cursor-pointer px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors" title="Record live video with camera">
+                                <button
+                                  type="button"
+                                  onClick={() => setVideoRecorderTarget('registration')}
+                                  disabled={uploadingAtt}
+                                  className="cursor-pointer px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                  title="Record live video with camera (50 MB limit, auto-compressed 720p HD)"
+                                >
                                   {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Video className="w-3 h-3" />}
                                   <span>{uploadingAtt ? '...' : 'Record Video'}</span>
-                                  <input
-                                    type="file"
-                                    accept="video/*"
-                                    capture="environment"
-                                    className="hidden"
-                                    disabled={uploadingAtt}
-                                    onChange={handleUploadMoreAttachments}
-                                  />
-                                </label>
+                                </button>
                                 <label className="cursor-pointer px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors" title="Upload files, photos, videos or PDFs from gallery">
                                   {uploadingAtt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                                   <span>{uploadingAtt ? '...' : 'Add Doc'}</span>
@@ -3031,17 +3043,15 @@ export const ComplaintDetailDrawer = ({
                                           className="hidden"
                                         />
                                       </label>
-                                      <label className="cursor-pointer px-2.5 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs" title="Record video with camera">
+                                      <button
+                                        type="button"
+                                        onClick={() => setVideoRecorderTarget('resolution')}
+                                        className="cursor-pointer px-2.5 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                                        title="Record video with camera (50 MB limit, auto-compressed 720p HD)"
+                                      >
                                         <Video className="w-3.5 h-3.5 text-teal-700" />
                                         <span>Record Video</span>
-                                        <input
-                                          type="file"
-                                          accept="video/*"
-                                          capture="environment"
-                                          onChange={handleResolutionPhotoChange}
-                                          className="hidden"
-                                        />
-                                      </label>
+                                      </button>
                                       <label className="cursor-pointer px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
                                         <Upload className="w-3.5 h-3.5 text-slate-500" />
                                         <span>Browse Files / Gallery</span>
@@ -4314,6 +4324,14 @@ export const ComplaintDetailDrawer = ({
           </div>
         </div>
       )}
+      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard) */}
+      <VideoRecorderModal
+        isOpen={Boolean(videoRecorderTarget)}
+        onClose={() => setVideoRecorderTarget(null)}
+        onRecordingComplete={handleVideoRecorded}
+        title={videoRecorderTarget === 'resolution' ? 'Record Resolution Site Video' : 'Record Initial Complaint Video'}
+        subtitle="50 MB limit active • 720p HD auto-compressed recording"
+      />
     </div>
   );
 };

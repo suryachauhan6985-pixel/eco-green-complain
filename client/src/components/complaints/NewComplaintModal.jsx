@@ -4,10 +4,10 @@ import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
-import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { broadcastComplaintsUpdate } from '../../utils/liveSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
@@ -140,6 +140,7 @@ export const NewComplaintModal = ({
   });
 
   const [isDragging, setIsDragging] = useState(false);
+  const [isVideoRecorderOpen, setIsVideoRecorderOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({
     isUploading: false,
     progress: 0,
@@ -2470,18 +2471,16 @@ export const NewComplaintModal = ({
                           className="hidden"
                         />
                       </label>
-                      <label className="border-2 border-dashed border-teal-300 hover:border-teal-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-teal-50/40 hover:bg-teal-50/70 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => setIsVideoRecorderOpen(true)}
+                        className="border-2 border-dashed border-teal-300 hover:border-teal-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-teal-50/40 hover:bg-teal-50/70 transition-colors"
+                        title="Record live video with camera (50 MB limit, auto-compressed 720p HD)"
+                      >
                         <Video className="w-5 h-5 text-teal-600 mb-1" />
                         <span className="text-xs text-teal-800 font-bold">Record Live Video</span>
-                        <span className="text-[10px] text-teal-600/80">Direct camera recording</span>
-                        <input
-                          type="file"
-                          accept="video/*"
-                          capture="environment"
-                          onChange={handleFileChange}
-                          className="hidden"
-                        />
-                      </label>
+                        <span className="text-[10px] text-teal-600/80">Auto-compressed • Max 50 MB</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2650,6 +2649,17 @@ export const NewComplaintModal = ({
           </div>
         </div>
       )}
+      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard) */}
+      <VideoRecorderModal
+        isOpen={isVideoRecorderOpen}
+        onClose={() => setIsVideoRecorderOpen(false)}
+        onRecordingComplete={(file) => {
+          processFiles([file]);
+          setIsVideoRecorderOpen(false);
+        }}
+        title="Record Initial Complaint Video"
+        subtitle="50 MB limit active • 720p HD auto-compressed recording"
+      />
     </div>
   );
 };
