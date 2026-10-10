@@ -114,6 +114,7 @@ export const ComplaintDetailDrawer = ({
   });
   const [showUnderpaidWarning, setShowUnderpaidWarning] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [revertingPayment, setRevertingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
   const [uploadingAtt, setUploadingAtt] = useState(false);
   const [deletingAttId, setDeletingAttId] = useState(null);
@@ -184,11 +185,19 @@ export const ComplaintDetailDrawer = ({
   const isResolved = ticket?.status === 'Resolved';
   const isClosed = ticket?.status === 'Closed';
 
-  const currentTechId = String(currentUser?.technicianId || currentUser?.technician_id || currentUser?.id || '');
+  const currentTechId = String(currentUser?.technicianId || currentUser?.technician_id || '');
+  const isPrimaryTechnician = currentUser?.role === 'technician' &&
+    Boolean(ticket?.assigned_technician_id) &&
+    String(ticket.assigned_technician_id) === currentTechId;
   const isSecondaryPartnerOnly = currentUser?.role === 'technician' &&
     Boolean(ticket?.secondary_technician_id) &&
     String(ticket.secondary_technician_id) === currentTechId &&
-    String(ticket.assigned_technician_id) !== currentTechId;
+    !isPrimaryTechnician;
+  const isAssignedTechnician = isPrimaryTechnician || (
+    currentUser?.role === 'technician' &&
+    Boolean(ticket?.secondary_technician_id) &&
+    String(ticket.secondary_technician_id) === currentTechId
+  );
 
   // Previous resolution history extraction for reopened tickets
   const previousResolution = React.useMemo(() => {
@@ -719,8 +728,8 @@ export const ComplaintDetailDrawer = ({
 
   const handleQuickStatusChange = async (newStatus, defaultNote) => {
     if (!ticket?.id) return;
-    if (isSecondaryPartnerOnly) {
-      showToast('Co-partner view: Only the primary technician can update the complaint status.', 'warning');
+    if (currentUser?.role === 'technician' && !isPrimaryTechnician) {
+      showToast('Only the primary assigned technician can update the complaint status.', 'warning');
       return;
     }
     if (isResolvedOrClosed) {
@@ -872,8 +881,8 @@ export const ComplaintDetailDrawer = ({
       (collectedAmt > 0 && normalizedStatus === 'partially paid')
     );
 
-    if (isSecondaryPartnerOnly) {
-      showToast('Co-partner view: Only the primary technician can mark this complaint as resolved.', 'warning');
+    if (currentUser?.role === 'technician' && !isPrimaryTechnician) {
+      showToast('Only the primary assigned technician can mark this complaint as resolved.', 'warning');
       return;
     }
 
@@ -1195,11 +1204,18 @@ export const ComplaintDetailDrawer = ({
       showToast('Co-partner view: Only the primary technician can collect or record payment.', 'warning');
       return;
     }
-    if (isResolvedOrClosed) {
-      showToast('Payment collection is locked on Resolved and Closed complaints.', 'warning');
+    if (currentUser?.role === 'technician' && !isPrimaryTechnician) {
+      showToast('Only the primary assigned technician can record payment.', 'warning');
       return;
     }
-    if (isPaymentFullyCollected && !isAdminOrStaff) {
+    if (isResolvedOrClosed && !isAdminOrStaff) {
+      const isRevertedOrUnpaid = ticket?.payment_status === 'Payment Reverted' || ticket?.payment_status === 'Unpaid' || Number(ticket?.payment_collected || 0) === 0;
+      if (!isRevertedOrUnpaid) {
+        showToast('Payment collection is locked on Resolved and Closed complaints. Contact Admin to revert payment for re-entry.', 'warning');
+        return;
+      }
+    }
+    if (isPaymentFullyCollected && !isAdminOrStaff && ticket?.payment_status !== 'Payment Reverted') {
       showToast('Payment has already been collected in full for this ticket.', 'info');
       return;
     }
@@ -1234,10 +1250,18 @@ export const ComplaintDetailDrawer = ({
       setIsRecordingPayment(false);
       return;
     }
-    if (isResolvedOrClosed) {
-      showToast('Payment collection is locked on Resolved and Closed complaints.', 'warning');
+    if (currentUser?.role === 'technician' && !isPrimaryTechnician) {
+      showToast('Only the primary assigned technician can record payment.', 'warning');
       setIsRecordingPayment(false);
       return;
+    }
+    if (isResolvedOrClosed && !isAdminOrStaff) {
+      const isRevertedOrUnpaid = ticket?.payment_status === 'Payment Reverted' || ticket?.payment_status === 'Unpaid' || Number(ticket?.payment_collected || 0) === 0;
+      if (!isRevertedOrUnpaid) {
+        showToast('Payment collection is locked on Resolved and Closed complaints. Contact Admin to revert payment for re-entry.', 'warning');
+        setIsRecordingPayment(false);
+        return;
+      }
     }
     if (!ticket.assigned_technician_id && !isAdminOrStaff) {
       setIsRecordingPayment(false);
@@ -1277,6 +1301,32 @@ export const ComplaintDetailDrawer = ({
       showToast('Failed to record payment: ' + err.message, 'error');
     } finally {
       setSavingPayment(false);
+    }
+  };
+
+  const handleRevertPayment = async () => {
+    if (!ticket) return;
+    if (!isAdminOrStaff) {
+      showToast('Only Admin or Staff can revert payment collection.', 'error');
+      return;
+    }
+    const enteredReason = window.prompt(
+      `Revert payment collection of ₹${ticket.payment_collected || 0} on ${ticket.ticket_id}?\n\nThis will reset payment collection to 0 and allow the technician to re-enter the correct collection amount.\n\nEnter reason (optional):`,
+      'Correction: Technician reported wrong amount recorded'
+    );
+    if (enteredReason === null) return;
+
+    try {
+      setRevertingPayment(true);
+      await api.revertPayment(ticket.id, { reason: enteredReason });
+      await fetchTicketDetails();
+      notifyComplaintChanged({ action: 'payment_reverted' });
+      broadcastLedgerUpdate({ ticketId: ticket?.ticket_id });
+      showToast('Payment collection reverted successfully! Technician can now re-record the correct amount.', 'success');
+    } catch (err) {
+      showToast('Failed to revert payment: ' + err.message, 'error');
+    } finally {
+      setRevertingPayment(false);
     }
   };
 
@@ -1732,9 +1782,62 @@ export const ComplaintDetailDrawer = ({
 
                         <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex flex-col justify-center">
                           {isResolvedOrClosed ? (
-                            <div className="w-full py-2 bg-slate-100 text-slate-500 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-200 select-none">
-                              <Lock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Collection Locked ({ticket.status})</span>
+                            <div className="space-y-2 w-full">
+                              <div className="w-full py-1.5 px-2 bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-between border border-slate-200">
+                                <div className="flex items-center gap-1.5">
+                                  {isPaymentFullyCollected ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Lock className="w-3.5 h-3.5 text-slate-400" />}
+                                  <span>{isPaymentFullyCollected ? `Collected: ₹${ticket.payment_collected}` : `Status: ${ticket.payment_status || 'Unpaid'}`}</span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono">({ticket.status})</span>
+                              </div>
+
+                              {/* Alert banner if payment was reverted */}
+                              {ticket.payment_status === 'Payment Reverted' && (
+                                <div className="p-2 bg-amber-50 border border-amber-300 rounded-lg text-[10px] text-amber-900 font-semibold flex items-center gap-1.5 leading-tight">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>Payment collection was reverted by Admin. Ready for technician re-entry.</span>
+                                </div>
+                              )}
+
+                              {/* Admin Action Buttons on Resolved/Closed Tickets */}
+                              {isAdminOrStaff && (
+                                <div className="flex items-center gap-1.5 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={openPaymentModal}
+                                    className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-300 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                    title="Edit or adjust collection amount directly"
+                                  >
+                                    <CreditCard className="w-3 h-3" />
+                                    <span>Adjust / Edit Amount</span>
+                                  </button>
+
+                                  {(Number(ticket.payment_collected || 0) > 0 || ticket.payment_status === 'Collected') && (
+                                    <button
+                                      type="button"
+                                      onClick={handleRevertPayment}
+                                      disabled={revertingPayment}
+                                      className="py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[11px] font-bold border border-amber-300 flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                                      title="Revert payment collection so technician can re-record correct amount"
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      <span>{revertingPayment ? 'Reverting...' : 'Revert for Tech'}</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Technician Re-record Button on Resolved Ticket if Reverted or Uncollected */}
+                              {currentUser?.role === 'technician' && isPrimaryTechnician && (ticket.payment_status === 'Payment Reverted' || Number(ticket.payment_collected || 0) === 0) && (
+                                <button
+                                  type="button"
+                                  onClick={openPaymentModal}
+                                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                  <span>💰 {ticket.payment_status === 'Payment Reverted' ? 'Record Corrected Amount' : 'Record Payment Collected'}</span>
+                                </button>
+                              )}
                             </div>
                           ) : isSecondaryPartnerOnly ? (
                             <div className="w-full py-2 bg-amber-50 text-amber-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border border-amber-300 select-none text-center">
@@ -1748,14 +1851,26 @@ export const ComplaintDetailDrawer = ({
                                 <span>Payment Collected</span>
                               </div>
                               {isAdminOrStaff && (
-                                <button
-                                  type="button"
-                                  onClick={openPaymentModal}
-                                  className="mt-1 text-[10px] text-emerald-800 hover:text-emerald-950 underline font-medium cursor-pointer"
-                                  title="Admin/Staff: Adjust payment record details"
-                                >
-                                  Adjust / Edit Record
-                                </button>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={openPaymentModal}
+                                    className="text-[10px] text-emerald-800 hover:text-emerald-950 underline font-medium cursor-pointer"
+                                    title="Admin/Staff: Adjust payment record details"
+                                  >
+                                    Adjust / Edit Record
+                                  </button>
+                                  <span className="text-slate-300 text-[10px]">•</span>
+                                  <button
+                                    type="button"
+                                    onClick={handleRevertPayment}
+                                    disabled={revertingPayment}
+                                    className="text-[10px] text-amber-800 hover:text-amber-950 underline font-medium cursor-pointer"
+                                    title="Revert payment collection for technician to re-enter"
+                                  >
+                                    {revertingPayment ? 'Reverting...' : 'Revert for Tech'}
+                                  </button>
+                                </div>
                               )}
                             </div>
                           ) : (ticket.assigned_technician_id || ticket.technician_name || effectiveRole === 'technician') ? (
@@ -2552,7 +2667,7 @@ export const ComplaintDetailDrawer = ({
                     )}
 
                     {/* TECHNICIAN QUICK STAGE ACTIONS BAR */}
-                    {currentUser?.role === 'technician' && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
+                    {currentUser?.role === 'technician' && isAssignedTechnician && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
                       <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-900 text-white rounded-xl p-4 border border-emerald-700/50 shadow-sm space-y-2.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">

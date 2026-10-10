@@ -386,6 +386,7 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), c
 app.post('/api/complaints/:id/attachments', authenticateToken, upload.array('attachments', 5), complaintController.addAttachments);
 app.put('/api/complaints/:id', authenticateToken, requireRole('admin', 'staff'), complaintController.updateComplaint);
 app.post('/api/complaints/:id/payment', authenticateToken, complaintController.recordPayment);
+app.post('/api/complaints/:id/payment/revert', authenticateToken, requireRole('admin', 'staff'), complaintController.revertPayment);
 app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), complaintController.settleCompanyPayment);
 app.post('/api/complaints/:id/assign', authenticateToken, requireRole('admin', 'staff'), complaintController.assignTechnician);
 app.post('/api/complaints/:id/remind-tech', authenticateToken, requireRole('admin', 'staff'), complaintController.remindTechnician);

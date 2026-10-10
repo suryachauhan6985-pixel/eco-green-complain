@@ -36,6 +36,37 @@ export function isSurveyTicket(productType, issueCategory) {
   return p.includes('SURVEY') || c.includes('SURVEY');
 }
 
+// Resolve the authenticated user's actual technician ID strictly without arbitrary fallback to user.id
+export async function resolveUserTechnicianId(user, env, ctx) {
+  if (!user || user.role !== 'technician') return null;
+  if (user.technician_id) return String(user.technician_id);
+  try {
+    const userPhoneDigits = (user.phone || '').replace(/\D/g, '').slice(-10);
+    const techRes = await query(
+      `SELECT id FROM technicians 
+       WHERE user_id = $1 
+          OR ($2 != '' AND phone LIKE '%' || $2)
+          OR ($3 != '' AND LOWER(name) = LOWER($3))
+       ORDER BY CASE WHEN user_id = $1 THEN 0 ELSE 1 END ASC, id DESC 
+       LIMIT 1`,
+      [user.id, userPhoneDigits, (user.name || '').trim()],
+      env,
+      ctx
+    );
+    const foundId = techRes.rows[0]?.id || null;
+    if (foundId) {
+      await query(
+        'UPDATE technicians SET user_id = $1 WHERE id = $2 AND (user_id IS NULL OR user_id != $1)',
+        [user.id, foundId],
+        env,
+        ctx
+      ).catch(() => {});
+      return String(foundId);
+    }
+  } catch (_) {}
+  return null;
+}
+
 // Self-healing check for retention schema
 let retentionSchemaEnsured = false;
 async function ensureRetentionSchema(env, ctx) {
@@ -54,6 +85,9 @@ async function ensureRetentionSchema(env, ctx) {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS panel_make TEXT;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS inverter_make TEXT;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS scheme TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS collection_reason TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS payment_notes TEXT;
+      UPDATE complaints SET status = 'On Hold', status_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE ticket_id = 'EGS-2026-000109' AND status = 'In Progress';
     `, [], env, ctx);
     retentionSchemaEnsured = true;
   } catch (_) {}
@@ -216,7 +250,7 @@ complaintRoutes.get('/', authenticateToken, async (c) => {
 
     // Role-based visibility
     if (user.role === 'technician') {
-      const techId = user.technician_id || user.id;
+      const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
       if (techId) {
         params.push(String(techId));
         sql += ` AND (c.assigned_technician_id::text = $${params.length} OR c.secondary_technician_id = $${params.length})`;
@@ -1052,9 +1086,16 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
-    // Co-partner access check
-    if (user.role === 'technician' && user.technician_id) {
-      if (String(complaint.secondary_technician_id) === String(user.technician_id) && String(complaint.assigned_technician_id) !== String(user.technician_id)) {
+    // Technician assignment check
+    if (user.role === 'technician') {
+      const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
+      const isPrimary = techId && String(complaint.assigned_technician_id) === String(techId);
+      const isSecondary = techId && String(complaint.secondary_technician_id) === String(techId);
+
+      if (!isPrimary && !isSecondary) {
+        return c.json({ error: 'Access denied: You are not assigned to this complaint.' }, 403);
+      }
+      if (normalizedStatus && normalizedStatus !== complaint.status && !isPrimary) {
         return c.json({ error: 'Co-partner technician is restricted to view-only access. Stage updates must be submitted by the primary technician.' }, 403);
       }
     }
@@ -1141,10 +1182,12 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
-    // Co-partner technician restricted
-    if (user.role === 'technician' && user.technician_id) {
-      if (String(complaint.secondary_technician_id) === String(user.technician_id) && String(complaint.assigned_technician_id) !== String(user.technician_id)) {
-        return c.json({ error: 'Co-partner technician cannot resolve complaints. Only the primary technician can submit resolution proof.' }, 403);
+    // Technician assignment check
+    if (user.role === 'technician') {
+      const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
+      const isPrimary = techId && String(complaint.assigned_technician_id) === String(techId);
+      if (!isPrimary) {
+        return c.json({ error: 'Only the primary assigned technician can mark complaints as resolved.' }, 403);
       }
     }
 
@@ -1224,7 +1267,7 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
   }
 });
 
-// POST /api/complaints/:id/payment - Collect Service Charge (Co-Partner Restricted)
+// POST /api/complaints/:id/payment - Collect Service Charge / Record Payment
 complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
   try {
     const id = c.req.param('id');
@@ -1236,21 +1279,32 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
-    // Co-partner check
-    if (user.role === 'technician' && user.technician_id) {
-      if (String(complaint.secondary_technician_id) === String(user.technician_id) && String(complaint.assigned_technician_id) !== String(user.technician_id)) {
-        return c.json({ error: 'Co-partner technician is restricted to view-only. Only primary technician can collect payments.' }, 403);
+    // Role-based authorization
+    if (user.role === 'technician') {
+      const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
+      const isPrimary = techId && String(complaint.assigned_technician_id) === String(techId);
+      const isSecondary = techId && String(complaint.secondary_technician_id) === String(techId);
+
+      if (!isPrimary) {
+        if (isSecondary) {
+          return c.json({ error: 'Co-partner technician is restricted to view-only. Only primary technician can collect payments.' }, 403);
+        }
+        return c.json({ error: 'Technicians can only collect payments on tickets assigned to them.' }, 403);
       }
+
+      // If ticket is resolved/closed, allow technician only if payment was reverted or uncollected
+      const isRevertedOrUnpaid = complaint.payment_status === 'Payment Reverted' || complaint.payment_status === 'Unpaid' || Number(complaint.payment_collected || 0) === 0;
+      if (['Resolved', 'Closed'].includes(complaint.status) && !isRevertedOrUnpaid) {
+        return c.json({ error: 'Payment collection is locked on resolved complaints. Contact Admin to revert payment for correction.' }, 400);
+      }
+    } else if (!['admin', 'staff'].includes(user.role)) {
+      return c.json({ error: 'Unauthorized to record payments.' }, 403);
     }
 
-    // If no technician assigned, allow direct office collection for admin/staff only
-    if (!complaint.assigned_technician_id && !['admin', 'staff'].includes(user.role)) {
-      return c.json({ error: 'Technicians can only collect payments on tickets assigned to them.' }, 403);
-    }
-
+    const prevAmt = Number(complaint.payment_collected || 0);
     const collectedAmt = Number(payment_collected || 0);
     const estCharges = Number(complaint.estimated_charges || 0);
-    const status = collectedAmt >= estCharges ? 'Collected' : 'Partially Paid';
+    const status = (estCharges > 0 && collectedAmt >= estCharges) || (estCharges === 0 && collectedAmt > 0) ? 'Collected' : (collectedAmt > 0 ? 'Partially Paid' : 'Unpaid');
 
     await query(
       `UPDATE complaints
@@ -1259,6 +1313,7 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
            payment_mode = $3,
            payment_notes = $4,
            collection_reason = $5,
+           company_settlement_status = 'Pending Settlement',
            payment_collected_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $6`,
@@ -1267,19 +1322,26 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
       c.executionCtx
     );
 
-    const isAlreadyCollected = complaint.payment_status === 'Collected' || (Number(complaint.payment_collected || 0) > 0 && Number(complaint.payment_collected || 0) >= estCharges);
-    if (isAlreadyCollected && user.role === 'technician') {
-      return c.json({ error: 'Payment has already been collected in full for this ticket.' }, 400);
-    }
-
-    const collector = user?.name || user?.username || 'Staff';
+    const isAdjustment = prevAmt > 0 && ['admin', 'staff'].includes(user.role);
+    const isReentry = complaint.payment_status === 'Payment Reverted';
     const isDirectOffice = !complaint.assigned_technician_id;
-    const actionName = isAlreadyCollected ? 'Payment Updated' : 'Payment Collected';
-    const noteText = isAlreadyCollected
-      ? `Payment record updated from ₹${complaint.payment_collected || 0} to ₹${collectedAmt} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}`
-      : (isDirectOffice
-        ? `Direct office payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}. Note: Collected without assigned field technician.`
-        : `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.`);
+    const collector = user?.name || user?.username || 'Staff';
+
+    let actionName = 'Payment Collected';
+    let noteText = '';
+    if (isAdjustment) {
+      actionName = 'Payment Record Adjusted';
+      noteText = `Payment record adjusted by Admin (${collector}) from ₹${prevAmt} to ₹${collectedAmt} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+    } else if (isReentry) {
+      actionName = 'Corrected Payment Recorded';
+      noteText = `Corrected payment collection of ₹${collectedAmt} recorded via ${payment_mode || 'Cash'} by ${collector}.${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+    } else if (isDirectOffice) {
+      actionName = 'Office Payment Collected';
+      noteText = `Direct office payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'} by ${collector}.`;
+    } else {
+      actionName = 'Payment Collected';
+      noteText = `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.${collection_reason ? ` (${collection_reason})` : ''}`;
+    }
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
@@ -1290,7 +1352,62 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
 
     return c.json({
       success: true,
-      message: isAlreadyCollected ? 'Payment record updated successfully' : 'Payment recorded successfully'
+      message: isAdjustment ? 'Payment record adjusted successfully' : 'Payment recorded successfully'
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/complaints/:id/payment/revert - Revert Payment Collection for Technician Re-entry (Admin/Staff only)
+complaintRoutes.post('/:id/payment/revert', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const body = await c.req.json().catch(() => ({}));
+    const reason = (body.reason || body.notes || 'Reverted by admin for technician re-entry').trim();
+
+    const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id], c.env, c.executionCtx);
+    if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
+    const complaint = compRes.rows[0];
+
+    const prevAmt = Number(complaint.payment_collected || 0);
+    const prevMode = complaint.payment_mode || 'Cash';
+    const techName = complaint.technician_name || 'Assigned Technician';
+
+    // Reset payment fields
+    await query(
+      `UPDATE complaints
+       SET payment_collected = 0,
+           payment_status = 'Payment Reverted',
+           company_settlement_status = 'Pending Settlement',
+           company_settled_at = NULL,
+           company_settled_by = NULL,
+           payment_notes = CASE 
+             WHEN payment_notes IS NOT NULL AND payment_notes != '' 
+             THEN 'Prior collection (₹' || $1 || ') reverted for correction. ' || payment_notes 
+             ELSE 'Prior collection (₹' || $1 || ') reverted for correction.' 
+           END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [prevAmt, complaint.id],
+      c.env,
+      c.executionCtx
+    );
+
+    const adminName = user?.name || user?.username || 'Admin';
+    const noteText = `Payment collection of ₹${prevAmt} (${prevMode}) reverted by Admin (${adminName}) to allow technician (${techName}) to re-enter correct collection.${reason ? ` Reason: ${reason}` : ''}`;
+
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+      [complaint.id, 'Payment Collection Reverted', noteText, adminName, user?.role || 'admin'],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      success: true,
+      message: `Payment collection reverted successfully. Technician ${techName} can now re-record the correct amount.`
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);

@@ -1558,6 +1558,16 @@ export const api = {
     }
     return res;
   },
+  revertPayment: async (id, data = {}) => {
+    const res = await request(`/complaints/${id}/payment/revert`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
   publicRegister: async (formData) => {
     const res = await request('/complaints/public-register', {
       method: 'POST',

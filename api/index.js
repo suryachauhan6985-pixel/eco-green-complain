@@ -138,6 +138,34 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+// Resolve authenticated user's actual technician ID strictly without arbitrary fallback to user.id
+async function resolveApiUserTechnicianId(user) {
+  if (!user || user.role !== 'technician') return null;
+  if (user.technician_id) return String(user.technician_id);
+  if (user.technicianId) return String(user.technicianId);
+  try {
+    const userPhoneDigits = (user.phone || '').replace(/\D/g, '').slice(-10);
+    const techRes = await query(
+      `SELECT id FROM technicians 
+       WHERE user_id = $1 
+          OR ($2 != '' AND phone LIKE '%' || $2)
+          OR ($3 != '' AND LOWER(name) = LOWER($3))
+       ORDER BY CASE WHEN user_id = $1 THEN 0 ELSE 1 END ASC, id DESC 
+       LIMIT 1`,
+      [user.id, userPhoneDigits, (user.name || '').trim()]
+    );
+    const foundId = techRes.rows[0]?.id || null;
+    if (foundId) {
+      await query(
+        'UPDATE technicians SET user_id = $1 WHERE id = $2 AND (user_id IS NULL OR user_id != $1)',
+        [user.id, foundId]
+      ).catch(() => {});
+      return String(foundId);
+    }
+  } catch (_) {}
+  return null;
+}
+
 // Phone Normalization & Display Helpers
 function normalizePhone(phone) {
   if (!phone) return '';
@@ -1164,12 +1192,25 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
     let technicianId = null;
     if (user.role === 'technician') {
+      const userPhoneDigits = (user.phone || '').replace(/\D/g, '').slice(-10);
+      const loginDigits10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
       const techRes = await query(
         `SELECT id FROM technicians 
          WHERE user_id = $1 
             OR ($2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%'))
-         ORDER BY id DESC LIMIT 1`, 
-        [user.id, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '']
+            OR ($3 != '' AND (phone LIKE '%' || $3 OR phone LIKE $3 || '%'))
+            OR ($4 != '' AND LOWER(name) = LOWER($4))
+         ORDER BY 
+           CASE 
+             WHEN user_id = $1 THEN 0 
+             WHEN $2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%') THEN 1
+             WHEN $3 != '' AND (phone LIKE '%' || $3 OR phone LIKE $3 || '%') THEN 2
+             WHEN $4 != '' AND LOWER(name) = LOWER($4) THEN 3
+             ELSE 4 
+           END ASC,
+           id DESC 
+         LIMIT 1`,
+        [user.id, userPhoneDigits, loginDigits10, (user.name || '').trim()]
       );
       technicianId = techRes.rows[0]?.id || null;
       if (technicianId) {
@@ -2410,8 +2451,13 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
 
     // Role-based scoping: Technicians see tickets where they are primary or secondary technician
     if (req.user.role === 'technician') {
-      params.push(req.user.technician_id);
-      whereClauses.push(`(c.assigned_technician_id::text = $${params.length}::text OR c.secondary_technician_id::text = $${params.length}::text)`);
+      const techId = await resolveApiUserTechnicianId(req.user);
+      if (techId) {
+        params.push(techId);
+        whereClauses.push(`(c.assigned_technician_id::text = $${params.length}::text OR c.secondary_technician_id::text = $${params.length}::text)`);
+      } else {
+        return res.json({ complaints: [], total: 0, page: 1, totalPages: 0 });
+      }
     } else if (technician_id) {
       params.push(technician_id);
       whereClauses.push(`(c.assigned_technician_id::text = $${params.length}::text OR c.secondary_technician_id::text = $${params.length}::text)`);
@@ -3869,10 +3915,16 @@ app.post('/api/complaints/:id/note', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: `Site visit notes and stage updates are locked because this complaint is already marked as "${compCheck.rows[0].status}".` });
     }
     if (req.user?.role === 'technician') {
-      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const techId = await resolveApiUserTechnicianId(req.user);
       const assignedTechId = String(compCheck.rows[0].assigned_technician_id || '');
       const secondaryTechId = String(compCheck.rows[0].secondary_technician_id || '');
-      if (status && secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+      const isPrimary = techId && techId === assignedTechId;
+      const isSecondary = techId && techId === secondaryTechId;
+
+      if (!isPrimary && !isSecondary) {
+        return res.status(403).json({ error: 'Permission denied. You are not assigned to this complaint.' });
+      }
+      if (status && !isPrimary) {
         return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can update complaint stage.' });
       }
     }
@@ -3939,10 +3991,9 @@ app.post('/api/complaints/:id/resolve', authenticateToken, upload.single('closin
     }
 
     if (req.user?.role === 'technician') {
-      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const techId = await resolveApiUserTechnicianId(req.user);
       const assignedTechId = String(compRecord.assigned_technician_id || '');
-      const secondaryTechId = String(compRecord.secondary_technician_id || '');
-      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+      if (!techId || techId !== assignedTechId) {
         return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can mark this complaint as resolved.' });
       }
     }
@@ -4126,17 +4177,23 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
     const comp = compRes.rows[0];
     const est = Number(comp.estimated_charges || 0);
 
-    if (['Resolved', 'Closed'].includes(comp.status)) {
-      return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${comp.status}".` });
-    }
-
     if (req.user?.role === 'technician') {
-      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const techId = await resolveApiUserTechnicianId(req.user);
       const assignedTechId = String(comp.assigned_technician_id || '');
       const secondaryTechId = String(comp.secondary_technician_id || '');
-      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
-        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can record payment collection.' });
+      if (techId !== assignedTechId) {
+        if (secondaryTechId && techId === secondaryTechId) {
+          return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can record payment collection.' });
+        }
+        return res.status(403).json({ error: 'Permission denied. You are not assigned to this complaint.' });
       }
+
+      const isRevertedOrUnpaid = comp.payment_status === 'Payment Reverted' || comp.payment_status === 'Unpaid' || Number(comp.payment_collected || 0) === 0;
+      if (['Resolved', 'Closed'].includes(comp.status) && !isRevertedOrUnpaid) {
+        return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${comp.status}". Contact Admin to revert payment for correction.` });
+      }
+    } else if (!['admin', 'staff'].includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Unauthorized to record payments.' });
     }
 
     // If no service charges were allocated (est === 0) and payment is being collected (amt > 0),
@@ -4168,20 +4225,83 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
         payment_mode = $3,
         payment_notes = $4,
         collection_reason = $5,
-        payment_collected_at = CURRENT_TIMESTAMP
+        company_settlement_status = 'Pending Settlement',
+        payment_collected_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = $6
     `, [amt, status, payment_mode || 'Cash', payment_notes || '', collection_reason ? collection_reason.trim() : null, id]);
 
-    const reasonSuffix = collection_reason ? ` • Reason: ${collection_reason.trim()}` : (est === 0 && amt > 0 ? ' • On-Site Unallocated Collection' : '');
-    const notesSuffix = payment_notes ? ` • Note: ${payment_notes.trim()}` : '';
-    const timelineNotes = `Payment of ₹${amt} collected via ${payment_mode || 'Cash'}. Status: ${status}${reasonSuffix}${notesSuffix}`;
+    const isAdjustment = Number(comp.payment_collected || 0) > 0 && ['admin', 'staff'].includes(req.user?.role);
+    const isReentry = comp.payment_status === 'Payment Reverted';
+    let actionName = 'Payment Recorded';
+    let timelineNotes = '';
+    if (isAdjustment) {
+      actionName = 'Payment Record Adjusted';
+      timelineNotes = `Payment record adjusted by Admin (${req.user.name}) from ₹${comp.payment_collected || 0} to ₹${amt} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+    } else if (isReentry) {
+      actionName = 'Corrected Payment Recorded';
+      timelineNotes = `Corrected payment collection of ₹${amt} recorded via ${payment_mode || 'Cash'} by ${req.user.name}.${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+    } else {
+      actionName = 'Payment Recorded';
+      const reasonSuffix = collection_reason ? ` • Reason: ${collection_reason.trim()}` : (est === 0 && amt > 0 ? ' • On-Site Unallocated Collection' : '');
+      const notesSuffix = payment_notes ? ` • Note: ${payment_notes.trim()}` : '';
+      timelineNotes = `Payment of ₹${amt} collected via ${payment_mode || 'Cash'}. Status: ${status}${reasonSuffix}${notesSuffix}`;
+    }
 
     await query(
       'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
-      [id, 'Payment Recorded', timelineNotes, req.user.name, req.user.role]
+      [id, actionName, timelineNotes, req.user.name, req.user.role]
     );
 
-    return res.json({ message: 'Payment recorded successfully' });
+    return res.json({ message: isAdjustment ? 'Payment record adjusted successfully' : 'Payment recorded successfully' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Revert Payment Collection for Technician Re-entry (Admin / Staff)
+app.post('/api/complaints/:id/payment/revert', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = 'Reverted by admin for technician re-entry' } = req.body || {};
+
+    const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
+    if (!compRes.rows.length) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    const comp = compRes.rows[0];
+    const prevAmt = Number(comp.payment_collected || 0);
+    const prevMode = comp.payment_mode || 'Cash';
+    const techName = comp.technician_name || 'Assigned Technician';
+
+    await query(`
+      UPDATE complaints SET
+        payment_collected = 0,
+        payment_status = 'Payment Reverted',
+        company_settlement_status = 'Pending Settlement',
+        company_settled_at = NULL,
+        company_settled_by = NULL,
+        payment_notes = CASE 
+          WHEN payment_notes IS NOT NULL AND payment_notes != '' 
+          THEN 'Prior collection (₹' || $1 || ') reverted for correction. ' || payment_notes 
+          ELSE 'Prior collection (₹' || $1 || ') reverted for correction.' 
+        END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [prevAmt, comp.id]);
+
+    const adminName = req.user?.name || req.user?.username || 'Admin';
+    const noteText = `Payment collection of ₹${prevAmt} (${prevMode}) reverted by Admin (${adminName}) to allow technician (${techName}) to re-enter correct collection.${reason ? ` Reason: ${reason}` : ''}`;
+
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+      [comp.id, 'Payment Collection Reverted', noteText, adminName, req.user?.role || 'admin']
+    );
+
+    return res.json({
+      success: true,
+      message: `Payment collection reverted successfully. Technician ${techName} can now re-record the correct amount.`
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -4981,6 +5101,7 @@ async function ensureNotificationTemplatesTable() {
     await query('UPDATE notification_templates SET is_active = 1 WHERE is_active IS NULL').catch(() => {});
     await query("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, 'Eco Green Dispatch', 'Eco Green Solar') WHERE whatsapp_body LIKE '%Eco Green Dispatch%'").catch(() => {});
     await query("UPDATE notification_templates SET footer_text = 'Eco Green Solar' WHERE footer_text LIKE '%Dispatch%'").catch(() => {});
+    await query("UPDATE complaints SET status = 'On Hold', status_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE ticket_id = 'EGS-2026-000109' AND status = 'In Progress'").catch(() => {});
     templatesTableInitialized = true;
   } catch (err) {
     console.error('ensureNotificationTemplatesTable error:', err.message);

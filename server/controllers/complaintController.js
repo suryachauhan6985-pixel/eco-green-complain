@@ -714,17 +714,23 @@ async function recordPayment(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    if (['Resolved', 'Closed'].includes(complaint.status)) {
-      return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${complaint.status}".` });
-    }
-
     if (req.user?.role === 'technician') {
-      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const userTechId = String(req.user.technicianId || req.user.technician_id || '');
       const assignedTechId = String(complaint.assigned_technician_id || '');
       const secondaryTechId = String(complaint.secondary_technician_id || '');
-      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
-        return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can record payment collection.' });
+      if (userTechId !== assignedTechId) {
+        if (secondaryTechId && userTechId === secondaryTechId) {
+          return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can record payment collection.' });
+        }
+        return res.status(403).json({ error: 'Permission denied. You are not assigned to this complaint.' });
       }
+
+      const isRevertedOrUnpaid = complaint.payment_status === 'Payment Reverted' || complaint.payment_status === 'Unpaid' || Number(complaint.payment_collected || 0) === 0;
+      if (['Resolved', 'Closed'].includes(complaint.status) && !isRevertedOrUnpaid) {
+        return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${complaint.status}". Contact Admin to revert payment for correction.` });
+      }
+    } else if (!['admin', 'staff'].includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Unauthorized to record payments.' });
     }
 
     const { 
@@ -813,6 +819,55 @@ async function recordPayment(req, res) {
   } catch (err) {
     console.error('Record payment error:', err);
     res.status(500).json({ error: 'Failed to record payment: ' + err.message });
+  }
+}
+
+async function revertPayment(req, res) {
+  try {
+    const { id } = req.params;
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const { reason = 'Reverted by admin for technician re-entry' } = req.body || {};
+    const prevAmt = parseFloat(complaint.payment_collected) || 0;
+    const prevMode = complaint.payment_mode || 'Cash';
+    const techName = complaint.technician_name || 'Assigned Technician';
+
+    const appendedNotes = complaint.payment_notes
+      ? `Prior collection (₹${prevAmt}) reverted for correction. ${complaint.payment_notes}`
+      : `Prior collection (₹${prevAmt}) reverted for correction.`;
+
+    db.prepare(`
+      UPDATE complaints
+      SET payment_collected = 0,
+          payment_status = 'Payment Reverted',
+          company_settlement_status = 'Pending Settlement',
+          company_settled_at = NULL,
+          company_settled_by = NULL,
+          payment_notes = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(appendedNotes, id);
+
+    const adminName = req.user ? req.user.name : 'Admin';
+    const adminRole = req.user ? req.user.role : 'admin';
+    const noteText = `Payment collection of ₹${prevAmt} (${prevMode}) reverted by Admin (${adminName}) to allow technician (${techName}) to re-enter correct collection.${reason ? ` Reason: ${reason}` : ''}`;
+
+    db.prepare(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES (?, 'Payment Collection Reverted', ?, ?, ?, 0)
+    `).run(id, noteText, adminName, adminRole);
+
+    realtimeService.notifyComplaintUpdate({ id, action: 'payment_reverted' });
+
+    res.json({
+      success: true,
+      message: `Payment collection reverted successfully. Technician ${techName} can now re-record the correct amount.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revert payment: ' + err.message });
   }
 }
 
@@ -1360,15 +1415,21 @@ async function addTimelineNote(req, res) {
     const performer = req.user ? req.user.name : 'Service Staff';
     const role = req.user ? req.user.role : 'staff';
 
-    // Requirement 10: Role-based status transition restrictions for field visits
-    if (role === 'technician' && status) {
-      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+    // Role-based status transition restrictions for field visits
+    if (role === 'technician') {
+      const userTechId = String(req.user.technicianId || req.user.technician_id || '');
       const assignedTechId = String(complaint.assigned_technician_id || '');
       const secondaryTechId = String(complaint.secondary_technician_id || '');
-      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+      const isPrimary = userTechId && userTechId === assignedTechId;
+      const isSecondary = userTechId && userTechId === secondaryTechId;
+
+      if (!isPrimary && !isSecondary) {
+        return res.status(403).json({ error: 'Permission denied. You are not assigned to this complaint.' });
+      }
+      if (status && !isPrimary) {
         return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can update complaint stage.' });
       }
-      if (!['In Progress', 'On Hold'].includes(status)) {
+      if (status && !['In Progress', 'On Hold'].includes(status)) {
         return res.status(400).json({ error: 'Technicians can only update status to In Progress or On Hold in visit notes' });
       }
     }
@@ -1435,10 +1496,9 @@ async function resolveComplaint(req, res) {
     }
 
     if (req.user?.role === 'technician') {
-      const userTechId = String(req.user.technicianId || req.user.technician_id || req.user.id || '');
+      const userTechId = String(req.user.technicianId || req.user.technician_id || '');
       const assignedTechId = String(complaint.assigned_technician_id || '');
-      const secondaryTechId = String(complaint.secondary_technician_id || '');
-      if (secondaryTechId && userTechId === secondaryTechId && userTechId !== assignedTechId) {
+      if (!userTechId || userTechId !== assignedTechId) {
         return res.status(403).json({ error: 'Permission denied. Only the primary assigned technician can mark this complaint as resolved.' });
       }
     }
@@ -2058,6 +2118,7 @@ module.exports = {
   addAttachments,
   updateComplaint,
   recordPayment,
+  revertPayment,
   settleCompanyPayment,
   assignTechnician,
   remindTechnician,

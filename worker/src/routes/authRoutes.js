@@ -65,15 +65,25 @@ authRoutes.post('/login', async (c) => {
 
     let technicianId = null;
     if (user.role === 'technician') {
+      const userPhoneDigits = (user.phone || '').replace(/\D/g, '').slice(-10);
+      const loginDigits10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
       const techRes = await query(
         `SELECT id FROM technicians 
          WHERE user_id = $1 
             OR ($2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%'))
+            OR ($3 != '' AND (phone LIKE '%' || $3 OR phone LIKE $3 || '%'))
+            OR ($4 != '' AND LOWER(name) = LOWER($4))
          ORDER BY 
-           CASE WHEN user_id = $1 THEN 0 ELSE 1 END ASC,
+           CASE 
+             WHEN user_id = $1 THEN 0 
+             WHEN $2 != '' AND (phone LIKE '%' || $2 OR phone LIKE $2 || '%') THEN 1
+             WHEN $3 != '' AND (phone LIKE '%' || $3 OR phone LIKE $3 || '%') THEN 2
+             WHEN $4 != '' AND LOWER(name) = LOWER($4) THEN 3
+             ELSE 4 
+           END ASC,
            id DESC 
          LIMIT 1`,
-        [user.id, cleanDigits.length >= 10 ? cleanDigits.slice(-10) : ''],
+        [user.id, userPhoneDigits, loginDigits10, (user.name || '').trim()],
         c.env,
         c.executionCtx
       );
