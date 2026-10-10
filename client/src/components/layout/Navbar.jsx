@@ -286,18 +286,6 @@ export const Navbar = ({
 
           {/* Right Action Controls - Guaranteed No Overflow */}
           <div className="shrink-0 flex items-center gap-1 sm:gap-2">
-            {/* Feature Tour Guide Button (Visible ONLY for Admin on Desktop & Mobile) */}
-            {currentUser?.role === 'admin' && (
-              <button
-                onClick={onOpenTour}
-                className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer"
-                title="Interactive Step-by-Step Feature Guide"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Tour</span>
-              </button>
-            )}
-
             {/* Direct Customer Directory & Plant Search Button (Admin & Staff) */}
             {['admin', 'staff'].includes(currentUser?.role) && onOpenCustomerSearch && (
               <button
