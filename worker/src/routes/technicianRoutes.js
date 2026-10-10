@@ -586,9 +586,9 @@ technicianRoutes.get('/technicians', authenticateToken, async (c) => {
   try {
     const res = await query(
       `SELECT t.*, 
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text OR c.assigned_technician_id::text = t.user_id::text OR c.secondary_technician_id::text = t.user_id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text OR c.assigned_technician_id::text = t.user_id::text OR c.secondary_technician_id::text = t.user_id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text OR c.assigned_technician_id::text = t.user_id::text OR c.secondary_technician_id::text = t.user_id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count
        FROM technicians t
        ORDER BY t.name ASC`,
       [],

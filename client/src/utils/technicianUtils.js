@@ -18,14 +18,9 @@ export function getTechnicianAssignedCount(tech, complaintsList = null) {
   // If live complaints list is provided, calculate dynamically in real-time
   if (Array.isArray(complaintsList) && complaintsList.length > 0) {
     const techId = String(tech.id);
-    const userId = tech.user_id ? String(tech.user_id) : null;
     const liveCount = complaintsList.filter(c => {
-      const matchAssigned =
-        String(c.assigned_technician_id) === techId ||
-        (userId && String(c.assigned_technician_id) === userId);
-      const matchSecondary =
-        String(c.secondary_technician_id) === techId ||
-        (userId && String(c.secondary_technician_id) === userId);
+      const matchAssigned = String(c.assigned_technician_id) === techId;
+      const matchSecondary = String(c.secondary_technician_id) === techId;
       const isAssigned = matchAssigned || matchSecondary;
       const isActive =
         c.status &&

@@ -1306,13 +1306,10 @@ function fallbackHandler(endpoint, options) {
     );
     const enhancedTechs = rawTechs.map(t => {
       const techId = String(t.id);
-      const userId = t.user_id ? String(t.user_id) : null;
       const activeCount = mockComplaints.filter(c => {
         const matchTech =
           String(c.assigned_technician_id) === techId ||
-          (userId && String(c.assigned_technician_id) === userId) ||
-          String(c.secondary_technician_id) === techId ||
-          (userId && String(c.secondary_technician_id) === userId);
+          String(c.secondary_technician_id) === techId;
         const isActive = c.status && !['Resolved', 'Closed', 'Unassigned', 'Registered'].includes(c.status);
         return matchTech && isActive;
       }).length;
