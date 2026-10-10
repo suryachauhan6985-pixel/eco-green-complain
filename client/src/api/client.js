@@ -1299,10 +1299,20 @@ function fallbackHandler(endpoint, options) {
       return mockStore.updateTechnician(id, body);
     }
     const rawTechs = JSON.parse(localStorage.getItem('egs_mock_technicians') || '[]');
-    const mockComplaints = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+    const mockComplaints = JSON.parse(
+      localStorage.getItem('egs_permanent_complaints') ||
+      localStorage.getItem('egs_mock_complaints') ||
+      '[]'
+    );
     const enhancedTechs = rawTechs.map(t => {
+      const techId = String(t.id);
+      const userId = t.user_id ? String(t.user_id) : null;
       const activeCount = mockComplaints.filter(c => {
-        const matchTech = String(c.assigned_technician_id) === String(t.id) || String(c.secondary_technician_id) === String(t.id);
+        const matchTech =
+          String(c.assigned_technician_id) === techId ||
+          (userId && String(c.assigned_technician_id) === userId) ||
+          String(c.secondary_technician_id) === techId ||
+          (userId && String(c.secondary_technician_id) === userId);
         const isActive = c.status && !['Resolved', 'Closed', 'Unassigned', 'Registered'].includes(c.status);
         return matchTech && isActive;
       }).length;

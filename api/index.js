@@ -1471,9 +1471,9 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
       SELECT t.*, 
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id = t.id OR c.secondary_technician_id = t.id) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text OR c.assigned_technician_id::text = t.user_id::text OR c.secondary_technician_id::text = t.user_id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text OR c.assigned_technician_id::text = t.user_id::text OR c.secondary_technician_id::text = t.user_id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text OR c.assigned_technician_id::text = t.user_id::text OR c.secondary_technician_id::text = t.user_id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
         ROUND((SELECT AVG(c.rating) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.rating IS NOT NULL)::numeric, 1) as average_rating,
         COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id), 0) as total_collected,
         COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND c2.company_settlement_status = 'Settled with Company'), 0) as total_settled_with_company,

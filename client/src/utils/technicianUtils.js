@@ -18,10 +18,15 @@ export function getTechnicianAssignedCount(tech, complaintsList = null) {
   // If live complaints list is provided, calculate dynamically in real-time
   if (Array.isArray(complaintsList) && complaintsList.length > 0) {
     const techId = String(tech.id);
+    const userId = tech.user_id ? String(tech.user_id) : null;
     const liveCount = complaintsList.filter(c => {
-      const isAssigned =
+      const matchAssigned =
         String(c.assigned_technician_id) === techId ||
-        String(c.secondary_technician_id) === techId;
+        (userId && String(c.assigned_technician_id) === userId);
+      const matchSecondary =
+        String(c.secondary_technician_id) === techId ||
+        (userId && String(c.secondary_technician_id) === userId);
+      const isAssigned = matchAssigned || matchSecondary;
       const isActive =
         c.status &&
         !['Resolved', 'Closed', 'Unassigned', 'Registered'].includes(c.status);
@@ -35,8 +40,25 @@ export function getTechnicianAssignedCount(tech, complaintsList = null) {
     tech.active_tickets_count ??
     tech.active_jobs_count ??
     tech.pending_count ??
-    0;
-  return parseInt(raw, 10) || 0;
+    null;
+
+  if (raw !== null && raw !== undefined) {
+    return parseInt(raw, 10) || 0;
+  }
+
+  // Fallback to local storage complaints if raw count is not on object
+  try {
+    const cached = JSON.parse(
+      localStorage.getItem('egs_permanent_complaints') ||
+      localStorage.getItem('egs_mock_complaints') ||
+      '[]'
+    );
+    if (Array.isArray(cached) && cached.length > 0) {
+      return getTechnicianAssignedCount(tech, cached);
+    }
+  } catch (_) {}
+
+  return 0;
 }
 
 /**
