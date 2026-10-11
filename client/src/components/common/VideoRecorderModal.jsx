@@ -99,6 +99,7 @@ export function VideoRecorderModal({
     isLandscape: false
   });
 
+  const activeStreamRef = useRef(null);
   const videoPreviewRef = useRef(null);
   const playbackVideoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -154,8 +155,16 @@ export function VideoRecorderModal({
 
   useEscapeHandler(handleClose, isOpen, { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-  // Stop active camera stream tracks
+  // Stop active camera stream tracks safely
   const stopStream = useCallback(() => {
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (_) {}
+      });
+      activeStreamRef.current = null;
+    }
     if (stream) {
       stream.getTracks().forEach(track => {
         try {
@@ -248,7 +257,13 @@ export function VideoRecorderModal({
     setCameraError(null);
     setZoomLevel(1); // strictly enforce 1x base zoom
 
-    // Stop any existing stream
+    // Stop any existing stream tracks cleanly
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(t => {
+        try { t.stop(); } catch (_) {}
+      });
+      activeStreamRef.current = null;
+    }
     if (stream) {
       stream.getTracks().forEach(t => {
         try { t.stop(); } catch (_) {}
@@ -285,23 +300,44 @@ export function VideoRecorderModal({
         newStream = await navigator.mediaDevices.getUserMedia(constraints);
         setHasAudio(true);
       } catch (audioOrModeErr) {
-        console.warn('Audio or specific video constraint failed, trying basic video:', audioOrModeErr);
+        console.warn('Audio or preferred constraint failed, trying basic video with audio:', audioOrModeErr);
         try {
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
-              facingMode: desiredFacingMode,
+              facingMode: { ideal: desiredFacingMode },
               width: { ideal: 1280, max: 1280 },
               frameRate: { ideal: 24, max: 30 }
-            }
+            },
+            audio: true
           });
-          setHasAudio(false);
-        } catch (basicErr) {
-          newStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          setHasAudio(false);
+          setHasAudio(true);
+        } catch (modeErr) {
+          console.warn('Audio with video failed, trying video only:', modeErr);
+          try {
+            newStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: desiredFacingMode } }
+            });
+            setHasAudio(false);
+          } catch (basicErr) {
+            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setHasAudio(false);
+          }
         }
       }
 
-      // Check hardware zoom capabilities and strictly initialize at 1.0x
+      activeStreamRef.current = newStream;
+      setStream(newStream);
+
+      // Immediately connect to video element to eliminate black screen
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = newStream;
+        const playPromise = videoPreviewRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => console.warn('Preview play warning:', e));
+        }
+      }
+
+      // Check hardware zoom capabilities in background and strictly initialize at 1.0x
       const track = newStream.getVideoTracks()[0];
       if (track) {
         let isHardwareZoomAvailable = false;
@@ -317,10 +353,9 @@ export function VideoRecorderModal({
             maxZ = caps.zoom.max ?? 5;
             stepZ = caps.zoom.step ?? 0.1;
 
-            // Explicitly force hardware zoom to base 1x (or min)
             try {
               const defaultZoom = Math.max(1, minZ);
-              await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+              track.applyConstraints({ advanced: [{ zoom: defaultZoom }] }).catch(() => {});
             } catch (err) {
               console.warn('Initial hardware 1x zoom constraint error:', err);
             }
@@ -334,12 +369,6 @@ export function VideoRecorderModal({
           step: stepZ
         });
         setZoomLevel(1);
-      }
-
-      setStream(newStream);
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = newStream;
-        videoPreviewRef.current.play().catch(() => {});
       }
     } catch (err) {
       console.error('Camera initialization failed:', err);
@@ -355,7 +384,33 @@ export function VideoRecorderModal({
     } finally {
       setIsInitializing(false);
     }
-  }, [isOpen, facingMode, stream]);
+  }, [isOpen, facingMode]);
+
+  // CRITICAL: Initialize camera stream immediately as soon as modal opens, and cleanly stop when it closes
+  useEffect(() => {
+    if (isOpen) {
+      initializeCamera(facingMode);
+    } else {
+      stopStream();
+      resetRecording();
+    }
+    return () => {
+      stopStream();
+    };
+  }, [isOpen]);
+
+  // CRITICAL: Keep video element synchronized with active stream at all times (guarantees preview on first load)
+  useEffect(() => {
+    if (videoPreviewRef.current && stream) {
+      if (videoPreviewRef.current.srcObject !== stream) {
+        videoPreviewRef.current.srcObject = stream;
+      }
+      const playPromise = videoPreviewRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {});
+      }
+    }
+  }, [stream]);
 
   // Flip camera between environment (back) and user (front)
   const handleToggleFacingMode = async () => {
@@ -526,7 +581,12 @@ export function VideoRecorderModal({
 
   // Start compressed high-quality recording with multi-part auto-split
   const handleStartRecording = () => {
-    if (!stream) return;
+    if (!stream) {
+      if (!isInitializing && !cameraError) {
+        initializeCamera();
+      }
+      return;
+    }
     if (typeof MediaRecorder === 'undefined') {
       alert('MediaRecorder is not supported in this browser. Please use the device file picker.');
       return;
@@ -734,7 +794,13 @@ export function VideoRecorderModal({
           {/* Active Live Camera Stream (Strictly object-contain to eliminate default forced crop/zoom) */}
           {!recordedBlob && !cameraError && (
             <video
-              ref={videoPreviewRef}
+              ref={(el) => {
+                videoPreviewRef.current = el;
+                if (el && stream && el.srcObject !== stream) {
+                  el.srcObject = stream;
+                  el.play().catch(() => {});
+                }
+              }}
               autoPlay
               playsInline
               muted
@@ -1078,10 +1144,10 @@ export function VideoRecorderModal({
                 /* Idle: Big Camera Shutter Record Button */
                 <button
                   type="button"
-                  disabled={isInitializing || !!cameraError}
+                  disabled={isInitializing || !stream || !!cameraError}
                   onClick={handleStartRecording}
                   className="w-18 h-18 sm:w-20 sm:h-20 rounded-full border-4 border-white bg-white/10 backdrop-blur-md flex items-center justify-center cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-transform shadow-2xl"
-                  title="Start recording (HD auto-compressed • auto-splits under 50 MB)"
+                  title={!stream ? "Connecting to camera..." : "Start recording (HD auto-compressed • auto-splits under 50 MB)"}
                 >
                   <div className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 transition-colors shadow-inner" />
                 </button>
