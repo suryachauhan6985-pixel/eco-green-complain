@@ -87,6 +87,9 @@ async function ensureRetentionSchema(env, ctx) {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS scheme TEXT;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS collection_reason TEXT;
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS payment_notes TEXT;
+      ALTER TABLE complaints DROP CONSTRAINT IF EXISTS complaints_status_check;
+      ALTER TABLE complaints ADD CONSTRAINT complaints_status_check 
+        CHECK (status IN ('Draft', 'Registered', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'Cancelled'));
       UPDATE complaints SET status = 'On Hold', status_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE ticket_id = 'EGS-2026-000109' AND status = 'In Progress';
     `, [], env, ctx);
     retentionSchemaEnsured = true;
@@ -564,6 +567,278 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
   }
 });
 
+// Dedicated Draft Creation Handler - ZERO Customer Notifications Guaranteed
+async function handleCreateDraftComplaint(c, preParsedBody = null) {
+  let body = preParsedBody;
+  if (!body) {
+    const cType = c.req.header('content-type') || '';
+    if (cType.includes('multipart/form-data') || cType.includes('application/x-www-form-urlencoded')) {
+      body = await c.req.parseBody().catch(() => ({}));
+    } else {
+      body = await c.req.json().catch(() => ({}));
+    }
+  }
+
+  const customer_name = (body.customer_name || 'Draft Customer').trim();
+  const raw_phone = (body.customer_phone || '').trim();
+  const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
+  const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+  const canonicalPhone = last10 ? `+91${last10}` : (raw_phone || '');
+  const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
+  const dealer_name = (body.dealer_name || '').trim();
+
+  const ticket_id = await generateNextTicketId(c.env, c.executionCtx);
+  const user = c.get('user');
+
+  await ensureRetentionSchema(c.env, c.executionCtx);
+
+  const cleanPin = (body.pincode || (body.customer_address ? (body.customer_address.match(/\b\d{6}\b/) || [])[0] : '') || '').trim();
+  const cleanDist = (body.district || '').trim();
+  const cleanState = (body.state || '').trim();
+  const cleanPostOffice = (body.post_office || '').trim();
+
+  const insertSql = `
+    INSERT INTO complaints (
+      ticket_id, customer_name, customer_phone, customer_email, customer_address,
+      city, district, state, pincode, post_office,
+      consumer_no, order_no, invoice_no, invoice_date, location_url,
+      is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
+      product_type, product_serial, installation_id, issue_category, issue_description,
+      priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
+      dealer_name, pv_capacity, panel_make, inverter_make, scheme, created_at, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5,
+      $6, $7, $8, $9, $10,
+      $11, $12, $13, $14, $15,
+      $16, $17, $18, $19, $20,
+      $21, $22, $23, $24, $25,
+      $26, $27, $28, $29, $30,
+      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    ) RETURNING *
+  `;
+
+  const values = [
+    ticket_id,
+    customer_name,
+    canonicalPhone,
+    body.customer_email || '',
+    body.customer_address || '',
+    body.city || '',
+    cleanDist,
+    cleanState,
+    cleanPin,
+    cleanPostOffice,
+    body.consumer_no || '',
+    body.order_no || '',
+    body.invoice_no || '',
+    body.invoice_date || '',
+    body.location_url || '',
+    (body.is_in_warranty === 1 || body.is_in_warranty === true || body.is_in_warranty === '1' || body.is_in_warranty === 'true') ? 1 : 0,
+    Number(body.estimated_charges || 0),
+    (body.notify_charges === 1 || body.notify_charges === true || body.notify_charges === '1' || body.notify_charges === 'true') ? 1 : 0,
+    0,
+    Number(body.estimated_charges || 0) > 0 ? 'Unpaid' : 'Not Applicable',
+    product_type,
+    body.product_serial || '',
+    body.installation_id || '',
+    body.issue_category || 'General Inquiry',
+    body.issue_description || body.description || 'Draft complaint record',
+    (() => {
+      const raw = (body.priority || 'Medium').toString().trim().toLowerCase();
+      if (raw === 'urgent') return 'Urgent';
+      if (raw === 'high') return 'High';
+      if (raw === 'low') return 'Low';
+      return 'Medium';
+    })(),
+    'Draft', // Strictly Draft status
+    null,    // No technician assignment on draft
+    null,    // No visit date on draft
+    user?.id || null,
+    dealer_name,
+    body.pv_capacity ? String(body.pv_capacity).trim() : '',
+    body.panel_make ? String(body.panel_make).trim() : '',
+    body.inverter_make ? String(body.inverter_make).trim() : '',
+    body.scheme ? String(body.scheme).trim() : ''
+  ];
+
+  const r = await query(insertSql, values, c.env, c.executionCtx);
+  const newComp = r.rows[0];
+
+  // Save Direct Attachments if any
+  let directAttachments = [];
+  if (body.attachment_urls) {
+    try {
+      directAttachments = typeof body.attachment_urls === 'string' ? JSON.parse(body.attachment_urls) : body.attachment_urls;
+    } catch (_) {}
+  } else if (Array.isArray(body.attachments)) {
+    directAttachments = body.attachments;
+  }
+
+  if (Array.isArray(directAttachments) && directAttachments.length > 0) {
+    for (const att of directAttachments) {
+      let fileUrl = att.file_url || att.storage_key || '';
+      if (fileUrl && fileUrl.includes('complaints/temp/') && c.env?.MEDIA_BUCKET && newComp.ticket_id) {
+        const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+        const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${newComp.ticket_id}/`);
+        try {
+          const moved = await moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey);
+          if (moved) fileUrl = `/api/attachments/r2/${newKey}`;
+        } catch (_) {}
+      }
+
+      await query(`
+        INSERT INTO complaint_attachments (
+          complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'registration')
+      `, [
+        newComp.id,
+        att.file_name || 'Document',
+        fileUrl,
+        att.file_type || 'application/octet-stream',
+        fileUrl,
+        user?.name || 'Helpdesk'
+      ], c.env, c.executionCtx).catch(() => {});
+    }
+  }
+
+  // Record timeline entry specifically as Draft with notify_customer = 0
+  await query(
+    'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+    [newComp.id, 'Draft', 'Complaint saved as Draft.', user?.name || 'Helpdesk', user?.role || 'staff'],
+    c.env,
+    c.executionCtx
+  );
+
+  // STRICT RULE: ABSOLUTELY ZERO WHATSAPP DISPATCH, ZERO PUSH NOTIFICATION, ZERO CUSTOMER ALERT
+  return c.json({
+    message: 'Complaint saved as Draft',
+    complaint: newComp,
+    ticket: newComp
+  }, 201);
+}
+
+// Dedicated Draft Update Handler - ZERO Customer Notifications Guaranteed
+async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBody = null) {
+  const id = c.req.param('id');
+  const user = c.get('user');
+  let current = existingRecord;
+  if (!current) {
+    const existingComp = await query(
+      'SELECT id, ticket_id, customer_name, customer_phone, product_type, issue_category, status, is_in_warranty, estimated_charges, notify_charges FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+      [id],
+      c.env,
+      c.executionCtx
+    );
+    if (!existingComp.rows.length) {
+      return c.json({ error: 'Complaint not found' }, 404);
+    }
+    current = existingComp.rows[0];
+  }
+
+  let b = preParsedBody;
+  if (!b) {
+    const cType = c.req.header('content-type') || '';
+    if (cType.includes('multipart/form-data') || cType.includes('application/x-www-form-urlencoded')) {
+      b = await c.req.parseBody().catch(() => ({}));
+    } else {
+      b = await c.req.json().catch(() => ({}));
+    }
+  }
+
+  const cleanIsInWarranty = b.is_in_warranty !== undefined
+    ? ((b.is_in_warranty === 'true' || b.is_in_warranty === 1 || b.is_in_warranty === true || b.is_in_warranty === '1') ? 1 : 0)
+    : current.is_in_warranty;
+
+  const cleanEstimatedCharges = b.estimated_charges !== undefined && b.estimated_charges !== null && b.estimated_charges !== ''
+    ? (parseFloat(b.estimated_charges) || 0)
+    : (current.estimated_charges !== null ? (parseFloat(current.estimated_charges) || 0) : 0);
+
+  const cleanNotifyCharges = b.notify_charges !== undefined
+    ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
+    : (cleanEstimatedCharges > 0 ? 1 : (current.notify_charges ? 1 : 0));
+
+  const cleanDistrict = b.district !== undefined ? (b.district ? b.district.trim() : null) : null;
+  const cleanState = b.state !== undefined ? (b.state ? b.state.trim() : null) : null;
+  const cleanPincode = b.pincode !== undefined ? (b.pincode ? b.pincode.trim() : null) : null;
+  const cleanPostOffice = b.post_office !== undefined ? (b.post_office ? b.post_office.trim() : null) : null;
+
+  await query(`
+    UPDATE complaints SET
+      customer_name = COALESCE($1, customer_name),
+      customer_phone = COALESCE($2, customer_phone),
+      customer_email = COALESCE($3, customer_email),
+      customer_address = COALESCE($4, customer_address),
+      city = COALESCE($5, city),
+      district = COALESCE($6, district),
+      state = COALESCE($7, state),
+      pincode = COALESCE($8, pincode),
+      post_office = COALESCE($9, post_office),
+      consumer_no = COALESCE($10, consumer_no),
+      order_no = COALESCE($11, order_no),
+      product_type = COALESCE($12, product_type),
+      product_serial = COALESCE($13, product_serial),
+      issue_category = COALESCE($14, issue_category),
+      issue_description = COALESCE($15, issue_description),
+      priority = COALESCE($16, priority),
+      status = 'Draft',
+      is_in_warranty = $17,
+      estimated_charges = $18,
+      notify_charges = $19,
+      invoice_no = COALESCE($20, invoice_no),
+      invoice_date = COALESCE($21, invoice_date),
+      location_url = COALESCE($22, location_url),
+      installation_id = COALESCE($23, installation_id),
+      dealer_name = COALESCE($24, dealer_name),
+      pv_capacity = COALESCE($25, pv_capacity),
+      panel_make = COALESCE($26, panel_make),
+      inverter_make = COALESCE($27, inverter_make),
+      scheme = COALESCE($28, scheme),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $29
+  `, [
+    b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
+    b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
+    b.customer_email !== undefined ? (b.customer_email ? b.customer_email.trim() : null) : null,
+    b.customer_address !== undefined ? (b.customer_address ? b.customer_address.trim() : null) : null,
+    b.city !== undefined ? (b.city ? b.city.trim() : null) : null,
+    cleanDistrict,
+    cleanState,
+    cleanPincode,
+    cleanPostOffice,
+    b.consumer_no !== undefined ? (b.consumer_no ? b.consumer_no.trim() : null) : null,
+    b.order_no !== undefined ? (b.order_no ? b.order_no.trim() : null) : null,
+    b.product_type !== undefined ? (b.product_type ? b.product_type.trim() : null) : null,
+    b.product_serial !== undefined ? (b.product_serial ? b.product_serial.trim() : null) : null,
+    b.issue_category !== undefined ? (b.issue_category ? b.issue_category.trim() : null) : null,
+    b.issue_description !== undefined ? (b.issue_description ? b.issue_description.trim() : null) : null,
+    b.priority !== undefined ? (b.priority ? b.priority.trim() : null) : null,
+    cleanIsInWarranty,
+    cleanEstimatedCharges,
+    cleanNotifyCharges,
+    b.invoice_no !== undefined ? (b.invoice_no ? b.invoice_no.trim() : null) : null,
+    b.invoice_date !== undefined ? (b.invoice_date ? b.invoice_date.trim() : null) : null,
+    b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
+    b.installation_id !== undefined ? (b.installation_id ? b.installation_id.trim() : null) : null,
+    b.dealer_name !== undefined ? (b.dealer_name ? b.dealer_name.trim() : null) : null,
+    b.pv_capacity !== undefined ? (b.pv_capacity ? String(b.pv_capacity).trim() : null) : null,
+    b.panel_make !== undefined ? (b.panel_make ? b.panel_make.trim() : null) : null,
+    b.inverter_make !== undefined ? (b.inverter_make ? b.inverter_make.trim() : null) : null,
+    b.scheme !== undefined ? (b.scheme ? b.scheme.trim() : null) : null,
+    current.id
+  ]);
+
+  // Fetch updated record
+  const updatedRes = await query('SELECT * FROM complaints WHERE id = $1 LIMIT 1', [current.id], c.env, c.executionCtx);
+  const updatedComp = updatedRes.rows[0] || current;
+
+  // STRICT RULE: ZERO WHATSAPP MESSAGES, ZERO CUSTOMER NOTIFICATIONS
+  return c.json({
+    message: 'Complaint saved as Draft',
+    complaint: updatedComp,
+    ticket: updatedComp
+  }, 200);
+}
+
 // Helper for Complaint Creation
 async function handleCreateComplaint(c, isPublic = false) {
   let body = {};
@@ -575,6 +850,10 @@ async function handleCreateComplaint(c, isPublic = false) {
   }
 
   const isDraft = Boolean(
+    c.req.query('draft') === 'true' ||
+    c.req.query('draft') === '1' ||
+    c.req.query('is_draft') === '1' ||
+    c.req.query('is_draft') === 'true' ||
     body.status === 'Draft' ||
     body.is_draft === '1' ||
     body.is_draft === 1 ||
@@ -584,7 +863,12 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.save_as_draft === true
   );
 
-  const customer_name = (body.customer_name || (isDraft ? 'Draft Customer' : '')).trim();
+  // If this is a draft submission, immediately route to the dedicated draft handler
+  if (isDraft) {
+    return handleCreateDraftComplaint(c, body);
+  }
+
+  const customer_name = (body.customer_name || '').trim();
   const raw_phone = (body.customer_phone || '').trim();
   const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
   const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
@@ -824,6 +1108,11 @@ async function handleCreateComplaint(c, isPublic = false) {
     whatsapp: waResult
   }, 201);
 }
+
+// POST /api/complaints/draft - Explicit Save as Draft Endpoint (ZERO Customer Notifications)
+complaintRoutes.post('/draft', optionalAuth, async (c) => {
+  return handleCreateDraftComplaint(c);
+});
 
 // POST /api/complaints - Register Complaint (Admin / Staff)
 complaintRoutes.post('/', optionalAuth, async (c) => {
@@ -1946,6 +2235,11 @@ async function handleSendTechnicianReminder(c) {
 complaintRoutes.post('/:id/send-reminder', authenticateToken, handleSendTechnicianReminder);
 complaintRoutes.post('/:id/remind-tech', authenticateToken, handleSendTechnicianReminder);
 
+// PUT /api/complaints/:id/draft - Explicit Update Draft Endpoint (ZERO Customer Notifications)
+complaintRoutes.put('/:id/draft', authenticateToken, async (c) => {
+  return handleUpdateDraftComplaint(c);
+});
+
 // PUT /api/complaints/:id - Update Complaint
 complaintRoutes.put('/:id', authenticateToken, async (c) => {
   try {
@@ -1970,6 +2264,18 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       b = await c.req.parseBody().catch(() => ({}));
     } else {
       b = await c.req.json().catch(() => ({}));
+    }
+
+    const isDraftUpdate = Boolean(
+      c.req.query('draft') === 'true' ||
+      c.req.query('draft') === '1' ||
+      c.req.query('is_draft') === '1' ||
+      (current.status === 'Draft' && !b.finalize && b.status !== 'Unassigned' && b.status !== 'Assigned') ||
+      b.status === 'Draft'
+    );
+
+    if (isDraftUpdate) {
+      return handleUpdateDraftComplaint(c, current, b);
     }
 
     const isFinalizing = Boolean(

@@ -2666,11 +2666,24 @@ app.get('/api/complaints/check-active', authenticateToken, async (req, res) => {
   }
 });
 
-// Create Complaint
+// Dedicated Draft Complaint Endpoint (ZERO Customer Notifications)
+app.post('/api/complaints/draft', authenticateToken, upload.array('attachments', 10), async (req, res) => {
+  req.query.draft = 'true';
+  return handleExpressCreateComplaint(req, res);
+});
+
 app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), async (req, res) => {
+  return handleExpressCreateComplaint(req, res);
+});
+
+async function handleExpressCreateComplaint(req, res) {
   try {
     const body = req.body;
     const isDraft = Boolean(
+      req.query.draft === 'true' ||
+      req.query.draft === '1' ||
+      req.query.is_draft === '1' ||
+      req.query.is_draft === 'true' ||
       body.status === 'Draft' ||
       body.is_draft === '1' ||
       body.is_draft === 1 ||
@@ -3295,8 +3308,18 @@ app.get(['/api/attachments/:id', '/uploads/:filename'], async (req, res) => {
   }
 });
 
+// Dedicated Update Draft Complaint Endpoint (ZERO Customer Notifications)
+app.put('/api/complaints/:id/draft', authenticateToken, async (req, res) => {
+  req.query.draft = 'true';
+  return handleExpressUpdateComplaint(req, res);
+});
+
 // Update Complaint
 app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
+  return handleExpressUpdateComplaint(req, res);
+});
+
+async function handleExpressUpdateComplaint(req, res) {
   try {
     const { id } = req.params;
     const existingComp = await query('SELECT id, status, is_in_warranty, estimated_charges, notify_charges FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id]);
@@ -3308,6 +3331,14 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: `Complaint cannot be edited while in "${current.status}" status. Please reopen the complaint first to make changes.` });
     }
     const b = req.body;
+
+    const isDraftUpdate = Boolean(
+      req.query.draft === 'true' ||
+      req.query.draft === '1' ||
+      req.query.is_draft === '1' ||
+      (current.status === 'Draft' && !b.finalize && b.status !== 'Unassigned' && b.status !== 'Assigned') ||
+      b.status === 'Draft'
+    );
 
     const cleanIsInWarranty = b.is_in_warranty !== undefined
       ? ((b.is_in_warranty === 'true' || b.is_in_warranty === 1 || b.is_in_warranty === true || b.is_in_warranty === '1') ? 1 : 0)
@@ -3321,14 +3352,16 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
       ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
       : (cleanEstimatedCharges > 0 ? 1 : (current.notify_charges ? 1 : 0));
 
-    const isFinalizing = Boolean(
+    const isFinalizing = !isDraftUpdate && Boolean(
       (b.finalize === 'true' || b.finalize === true || b.finalize === 1 || b.finalize === '1') ||
       (current.status === 'Draft' && b.status && b.status !== 'Draft')
     );
 
-    const targetStatus = isFinalizing
-      ? (current.assigned_technician_id ? 'Assigned' : 'Unassigned')
-      : (current.status === 'Draft' ? 'Draft' : (b.status !== undefined ? (b.status ? b.status.trim() : null) : null));
+    const targetStatus = isDraftUpdate
+      ? 'Draft'
+      : (isFinalizing
+        ? (current.assigned_technician_id ? 'Assigned' : 'Unassigned')
+        : (current.status === 'Draft' ? 'Draft' : (b.status !== undefined ? (b.status ? b.status.trim() : null) : null)));
 
     let newPaymentStatus = current.payment_status;
     if (cleanEstimatedCharges > 0 && (!current.payment_status || current.payment_status === 'Not Applicable')) {

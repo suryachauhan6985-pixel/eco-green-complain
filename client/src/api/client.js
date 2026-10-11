@@ -1239,6 +1239,13 @@ function fallbackHandler(endpoint, options) {
         return { message: 'Payment settled with company successfully', complaint: comp };
       }
 
+      if (endpoint === '/complaints/draft' || endpoint.includes('draft=true')) {
+        const comp = mockStore.createComplaint(options.body);
+        comp.status = 'Draft';
+        saveComplaintPermanently(comp);
+        return { message: 'Complaint saved as Draft', complaint: comp };
+      }
+
       // Create complaint
       const comp = mockStore.createComplaint(options.body);
       saveComplaintPermanently(comp);
@@ -1248,8 +1255,11 @@ function fallbackHandler(endpoint, options) {
     if (method === 'PUT') {
       const id = endpoint.split('/')[2];
       const comp = mockStore.updateComplaint(id, options.body);
+      if (endpoint.includes('/draft') || endpoint.includes('draft=true')) {
+        comp.status = 'Draft';
+      }
       saveComplaintPermanently(comp);
-      return { message: 'Complaint updated successfully', complaint: comp };
+      return { message: (endpoint.includes('/draft') || endpoint.includes('draft=true')) ? 'Complaint saved as Draft' : 'Complaint updated successfully', complaint: comp };
     }
 
     if (method === 'DELETE') {
@@ -1527,6 +1537,26 @@ export const api = {
     const res = await request('/complaints', {
       method: 'POST',
       body: formData
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  saveDraftComplaint: async (formData) => {
+    const res = await request('/complaints/draft', {
+      method: 'POST',
+      body: formData
+    });
+    if (res && res.complaint) {
+      saveComplaintPermanently(res.complaint);
+    }
+    return res;
+  },
+  updateDraftComplaint: async (id, data) => {
+    const res = await request(`/complaints/${id}/draft`, {
+      method: 'PUT',
+      body: data instanceof FormData ? data : JSON.stringify(data)
     });
     if (res && res.complaint) {
       saveComplaintPermanently(res.complaint);

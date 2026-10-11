@@ -956,6 +956,9 @@ export const NewComplaintModal = ({
 
   const handleSaveDraft = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
+
+    console.log('[Draft Feature] "Save as Draft" clicked -> handleSaveDraft EXCLUSIVELY called. ZERO customer notifications mode.');
 
     try {
       setSubmitting(true);
@@ -1032,7 +1035,7 @@ export const NewComplaintModal = ({
 
       if (isEditMode) {
         const updateId = initialData.id || initialData.ticket_id;
-        const res = await api.updateComplaint(updateId, data);
+        const res = await api.updateDraftComplaint(updateId, data);
         const updatedTicket = res.complaint || res.ticket || res;
         broadcastComplaintsUpdate({ ticketId: initialData.ticket_id, action: 'edited', status: 'Draft' });
         if (onComplaintUpdated) {
@@ -1043,7 +1046,7 @@ export const NewComplaintModal = ({
         return;
       }
 
-      const res = await api.createComplaint(data);
+      const res = await api.saveDraftComplaint(data);
       broadcastComplaintsUpdate({ ticketId: res.complaint?.ticket_id, action: 'created', status: 'Draft' });
       if (onComplaintCreated) onComplaintCreated(res.complaint);
       showToast('Complaint saved as Draft', 'success');
@@ -1058,6 +1061,7 @@ export const NewComplaintModal = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('[Registration Feature] "Register & Notify Customer" clicked -> handleSubmit EXCLUSIVELY called. Mode: FULL registration & customer WhatsApp notification.');
     if (!formData.customer_name || !formData.customer_phone || !formData.customer_address || !formData.issue_description) {
       showToast('Please fill all required customer and issue details.', 'warning');
       return;
