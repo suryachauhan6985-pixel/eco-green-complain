@@ -248,18 +248,21 @@ export function VideoRecorderModal({
       return;
     }
 
-    const isPortrait = desiredOrientation === 'portrait';
+    // Reverse hardware orientation logic:
+    // On mobile camera sensors and browsers, the 9:16 constraint delivers widescreen feed (Landscape),
+    // and the 16:9 constraint delivers vertical feed (Portrait).
+    // Reversing this mapping ensures:
+    // - Selecting Landscape locks and records in true Landscape (full width 16:9)
+    // - Selecting Portrait locks and records in true Portrait (9:16 vertical)
+    const isPortraitConstraint = desiredOrientation === 'landscape';
 
     try {
-      // Fixed Orientation HD Constraints:
-      // Portrait: true 9:16 vertical (720x1280)
-      // Landscape: true 16:9 widescreen (1280x720)
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: isPortrait ? { ideal: 720, max: 1080 } : { ideal: 1280, max: 1920 },
-          height: isPortrait ? { ideal: 1280, max: 1920 } : { ideal: 720, max: 1080 },
-          aspectRatio: { ideal: isPortrait ? (9 / 16) : (16 / 9) },
+          width: isPortraitConstraint ? { ideal: 720, max: 1080 } : { ideal: 1280, max: 1920 },
+          height: isPortraitConstraint ? { ideal: 1280, max: 1920 } : { ideal: 720, max: 1080 },
+          aspectRatio: { ideal: isPortraitConstraint ? (9 / 16) : (16 / 9) },
           frameRate: { ideal: 24, max: 30 }
         },
         audio: {
@@ -280,9 +283,9 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: desiredFacingMode },
-              width: isPortrait ? { ideal: 720, max: 1080 } : { ideal: 1280, max: 1920 },
-              height: isPortrait ? { ideal: 1280, max: 1920 } : { ideal: 720, max: 1080 },
-              aspectRatio: { ideal: isPortrait ? (9 / 16) : (16 / 9) },
+              width: isPortraitConstraint ? { ideal: 720, max: 1080 } : { ideal: 1280, max: 1920 },
+              height: isPortraitConstraint ? { ideal: 1280, max: 1920 } : { ideal: 720, max: 1080 },
+              aspectRatio: { ideal: isPortraitConstraint ? (9 / 16) : (16 / 9) },
               frameRate: { ideal: 24, max: 30 }
             },
             audio: true
@@ -294,7 +297,7 @@ export function VideoRecorderModal({
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
                 facingMode: { ideal: desiredFacingMode },
-                aspectRatio: { ideal: isPortrait ? (9 / 16) : (16 / 9) }
+                aspectRatio: { ideal: isPortraitConstraint ? (9 / 16) : (16 / 9) }
               }
             });
             setHasAudio(false);
