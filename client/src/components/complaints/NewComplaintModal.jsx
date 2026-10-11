@@ -8,6 +8,7 @@ import { uploadFileToSupabase } from '../../utils/storageUpload';
 import { broadcastComplaintsUpdate } from '../../utils/liveSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
+import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
   X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
@@ -334,13 +335,19 @@ export const NewComplaintModal = ({
 
   // Dynamic template rendering for WhatsApp message
   useEffect(() => {
-    if (createdTicket) {
+    let isMounted = true;
+    if (createdTicket && typeof buildComplaintRegisteredWhatsApp === 'function') {
       buildComplaintRegisteredWhatsApp(createdTicket)
-        .then((data) => setWaData(data))
+        .then((data) => {
+          if (isMounted) setWaData(data);
+        })
         .catch((err) => console.error('Error generating WhatsApp text:', err));
     } else {
       setWaData(null);
     }
+    return () => {
+      isMounted = false;
+    };
   }, [createdTicket]);
 
   // 2-Step Registration Wizard state
@@ -1443,6 +1450,18 @@ export const NewComplaintModal = ({
                   <Copy className="w-3.5 h-3.5" />
                   <span>{copied ? 'Ticket ID Copied!' : 'Copy Ticket ID'}</span>
                 </button>
+
+                {waData?.sendUrl && (
+                  <a
+                    href={waData.sendUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 rounded-xl text-xs font-semibold text-emerald-800 flex items-center gap-1.5 transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp Customer</span>
+                  </a>
+                )}
 
                 {onViewComplaint && (
                   <button
