@@ -6085,6 +6085,33 @@ app.put('/api/in-app-notifications/:id/read', optionalAuth, async (req, res) => 
   }
 });
 
+app.put('/api/in-app-notifications/ticket/:ticketId/read', optionalAuth, async (req, res) => {
+  try {
+    await ensureInAppTable();
+    const { ticketId } = req.params;
+    const userKeys = [
+      req.user?.id ? String(req.user.id) : null,
+      req.user?.username || null,
+      req.user?.email || null,
+      req.user?.name || null,
+      req.user?.role || null,
+      'read'
+    ].filter(Boolean);
+
+    await query(`
+      UPDATE in_app_notifications
+      SET read_by = CASE
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || $1::jsonb
+        ELSE $1::jsonb
+      END
+      WHERE ticket_id = $2 OR id = $2
+    `, [JSON.stringify(userKeys), ticketId]);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/in-app-notifications/read-all', optionalAuth, async (req, res) => {
   try {
     await ensureInAppTable();

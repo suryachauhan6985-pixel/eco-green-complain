@@ -1786,6 +1786,9 @@ export const api = {
   markInAppNotificationRead: (id) => request(`/in-app-notifications/${id}/read`, {
     method: 'PUT'
   }),
+  markTicketInAppNotificationsRead: (ticketId) => request(`/in-app-notifications/ticket/${ticketId}/read`, {
+    method: 'PUT'
+  }),
   markAllInAppNotificationsRead: () => request('/in-app-notifications/read-all', {
     method: 'PUT'
   }),

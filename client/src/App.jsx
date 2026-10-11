@@ -239,6 +239,9 @@ function AppContent() {
         currentUrl.searchParams.delete('complaintId');
         currentUrl.searchParams.delete('id');
         window.history.pushState(null, '', currentUrl.pathname + currentUrl.search);
+        try {
+          window.dispatchEvent(new CustomEvent('egs_complaint_opened', { detail: { id } }));
+        } catch (_) {}
       } else {
         currentUrl.searchParams.delete('ticket');
         currentUrl.searchParams.delete('ticketId');

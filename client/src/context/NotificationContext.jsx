@@ -7,7 +7,9 @@ import {
   requestPushPermission as baseRequestPushPermission,
   getPushPermissionState,
   subscribeUserToPush,
-  testBackgroundPush
+  testBackgroundPush,
+  getAlertedOSNotificationIds,
+  markNotificationAsAlerted
 } from '../utils/pushNotification';
 
 const NotificationContext = createContext();
@@ -15,6 +17,59 @@ const NotificationContext = createContext();
 const STORAGE_KEY = 'egs_in_app_notifications';
 const PERMANENT_READ_KEY = 'egs_read_notification_ids';
 const CLEARED_TIMESTAMP_KEY = 'egs_notifications_cleared_at';
+const OPENED_COMPLAINTS_KEY = 'egs_opened_complaint_ids';
+const ARCHIVED_KEY = 'egs_archived_notification_ids';
+
+const getOpenedComplaintsMap = () => {
+  try {
+    const raw = localStorage.getItem(OPENED_COMPLAINTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {};
+  }
+};
+
+export const recordComplaintOpened = (ticketOrComplaintId) => {
+  if (!ticketOrComplaintId) return;
+  try {
+    const map = getOpenedComplaintsMap();
+    const key = String(ticketOrComplaintId).trim().toLowerCase();
+    map[key] = Date.now();
+    localStorage.setItem(OPENED_COMPLAINTS_KEY, JSON.stringify(map));
+  } catch (_) {}
+};
+
+export const isComplaintOpened = (ticketId, notifCreatedAt) => {
+  if (!ticketId) return false;
+  try {
+    const map = getOpenedComplaintsMap();
+    const key = String(ticketId).trim().toLowerCase();
+    const openedTime = map[key];
+    if (!openedTime) return false;
+    const notifTime = notifCreatedAt ? new Date(notifCreatedAt).getTime() : 0;
+    return notifTime <= openedTime;
+  } catch (_) {
+    return false;
+  }
+};
+
+const getArchivedIds = () => {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (_) {
+    return new Set();
+  }
+};
+
+const addArchivedId = (id) => {
+  if (!id) return;
+  try {
+    const set = getArchivedIds();
+    set.add(String(id));
+    localStorage.setItem(ARCHIVED_KEY, JSON.stringify(Array.from(set)));
+  } catch (_) {}
+};
 
 const getClearedTimestamp = () => {
   try {
@@ -246,15 +301,27 @@ export const NotificationProvider = ({ children }) => {
 
   const unreadCount = unreadNotifications.length;
 
+  const isInitialSyncDoneRef = useRef(false);
+
   // POPUP LOGIC: Automatically surface unread notifications until read
+  // Only show popup for genuinely unread, unopened notifications created in the last 24 hours
   useEffect(() => {
     if (!currentUser || currentUser.role === 'customer') {
       setActivePopup(null);
       return;
     }
 
-    // Find the latest unread notification that hasn't been temporarily dismissed
-    const nextUnread = unreadNotifications.find(n => !dismissedPopupIds.has(n.id));
+    // Find the latest unread notification that hasn't been dismissed, whose complaint hasn't already been opened
+    const nextUnread = unreadNotifications.find(n => {
+      if (dismissedPopupIds.has(n.id)) return false;
+      // If the ticket was already opened at or after this notification was created, suppress popup
+      if (isComplaintOpened(n.ticketId, n.createdAt)) return false;
+      // Do not surface ancient unread alerts (> 24 hours) as intrusive modal popups on app open
+      const ageMs = Date.now() - (new Date(n.createdAt || 0).getTime());
+      if (!isNaN(ageMs) && ageMs > 86400000) return false;
+      return true;
+    });
+
     setActivePopup(nextUnread || null);
   }, [currentUser, unreadNotifications, dismissedPopupIds]);
 
@@ -289,6 +356,8 @@ export const NotificationProvider = ({ children }) => {
             const localReadMap = new Map();
             const permReads = getPermanentReadIds();
             const prevIds = new Set(prev.map(p => p.id));
+            const isFirstSync = !isInitialSyncDoneRef.current;
+            const alertedSet = getAlertedOSNotificationIds();
 
             prev.forEach(p => {
               if (Array.isArray(p.readBy)) localReadMap.set(p.id, p.readBy);
@@ -305,14 +374,27 @@ export const NotificationProvider = ({ children }) => {
               }
               const notifObj = { ...r, readBy: combinedReads };
 
-              // Check if brand new unread notification for currentUser
-              if (!prevIds.has(r.id) && currentUser && isNotificationForUser(notifObj, currentUser) && isUnread(notifObj, currentUser)) {
-                hasNewUnreadForMe = true;
-                latestAlertForMe = notifObj;
+              // Gate 1: On the initial sync / page open, record all existing notification IDs as alerted so historic ones NEVER fire OS alerts
+              if (isFirstSync) {
+                markNotificationAsAlerted(r.id);
+              } else {
+                // Gate 2: Subsequent syncs: check if genuinely new unread notification for currentUser created within last 90 seconds
+                const notifAgeMs = Date.now() - new Date(r.createdAt || 0).getTime();
+                const isRecent = !isNaN(notifAgeMs) && notifAgeMs < 90000;
+                const wasAlerted = alertedSet.has(String(r.id));
+                const wasOpened = isComplaintOpened(r.ticketId, r.createdAt);
+
+                if (!prevIds.has(r.id) && !wasAlerted && !wasOpened && isRecent && currentUser && isNotificationForUser(notifObj, currentUser) && isUnread(notifObj, currentUser)) {
+                  hasNewUnreadForMe = true;
+                  latestAlertForMe = notifObj;
+                }
               }
 
               return notifObj;
             });
+
+            // Mark initial sync complete so future syncs can alert on truly new events
+            isInitialSyncDoneRef.current = true;
 
             // Keep ONLY very recent (< 15 seconds) unsynced local creations that have not been cleared
             prev.forEach(p => {
@@ -323,16 +405,16 @@ export const NotificationProvider = ({ children }) => {
               }
             });
 
-            if (hasNewUnreadForMe) {
+            if (hasNewUnreadForMe && latestAlertForMe) {
               playNotificationChime();
-              if (latestAlertForMe) {
-                showOSNotification({
-                  title: latestAlertForMe.title || 'Eco Green Support Alert',
-                  body: latestAlertForMe.message || 'New complaint or service update received.',
-                  ticketId: latestAlertForMe.ticketId,
-                  url: latestAlertForMe.ticketId ? `/complaints?ticket=${latestAlertForMe.ticketId}` : '/complaints'
-                });
-              }
+              showOSNotification({
+                title: latestAlertForMe.title || 'Eco Green Support Alert',
+                body: latestAlertForMe.message || 'New complaint or service update received.',
+                ticketId: latestAlertForMe.ticketId,
+                notificationId: latestAlertForMe.id,
+                createdAt: latestAlertForMe.createdAt,
+                url: latestAlertForMe.ticketId ? `/complaints?ticket=${latestAlertForMe.ticketId}` : '/complaints'
+              });
             }
 
             try {
@@ -505,6 +587,8 @@ export const NotificationProvider = ({ children }) => {
         title: newNotif.title || 'Eco Green Support Alert',
         body: newNotif.message || 'New complaint or service update received.',
         ticketId: newNotif.ticketId,
+        notificationId: newNotif.id,
+        createdAt: newNotif.createdAt,
         url: newNotif.ticketId ? `/complaints?ticket=${newNotif.ticketId}` : '/complaints'
       });
     }
@@ -552,6 +636,10 @@ export const NotificationProvider = ({ children }) => {
         api.markInAppNotificationRead(notificationId).catch(() => {});
       }
     } catch (_) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent('egs_in_app_notification_read', { detail: { id: notificationId } }));
+    } catch (_) {}
   }, [currentUser, getUserKeys]);
 
   // Mark all relevant notifications as read
@@ -583,14 +671,23 @@ export const NotificationProvider = ({ children }) => {
         api.markAllInAppNotificationsRead().catch(() => {});
       }
     } catch (_) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent('egs_in_app_notification_read', { detail: { all: true } }));
+    } catch (_) {}
   }, [currentUser, getUserKeys, isNotificationForUser]);
 
   // Mark all notifications for a specific ticket/complaint as read
+  // Guaranteed: Automatically marks as read when user opens a complaint from anywhere
   const markTicketAsRead = useCallback((ticketOrComplaintId) => {
     if (!ticketOrComplaintId || !currentUser) return;
     const userKeys = getUserKeys(currentUser);
     const targetKey = String(ticketOrComplaintId).trim().toLowerCase();
 
+    // 1. Immediately record complaint as opened with timestamp
+    recordComplaintOpened(ticketOrComplaintId);
+
+    // 2. Mark in local storage permanently and update in-memory state
     setNotifications(prev => {
       const updated = prev.map(n => {
         const notifTicket = String(n.ticketId || '').trim().toLowerCase();
@@ -609,12 +706,77 @@ export const NotificationProvider = ({ children }) => {
       return updated;
     });
 
+    // 3. Dismiss active popup if it matches this ticket
     setActivePopup(prev => {
       const prevTicket = String(prev?.ticketId || '').trim().toLowerCase();
       const prevComp = String(prev?.complaintId || '').trim().toLowerCase();
       return (prevTicket === targetKey || prevComp === targetKey) ? null : prev;
     });
+
+    // 4. Sync to backend database
+    try {
+      if (api.markTicketInAppNotificationsRead) {
+        api.markTicketInAppNotificationsRead(ticketOrComplaintId).catch(() => {});
+      } else if (api.markInAppNotificationRead) {
+        api.markInAppNotificationRead(ticketOrComplaintId).catch(() => {});
+      }
+    } catch (_) {}
+
+    // 5. Broadcast to all open tabs / windows
+    try {
+      window.dispatchEvent(new CustomEvent('egs_in_app_notification_read', { detail: { ticketId: ticketOrComplaintId } }));
+    } catch (_) {}
   }, [currentUser, getUserKeys]);
+
+  // Archive a single notification
+  const archiveNotification = useCallback((notificationId) => {
+    if (!notificationId) return;
+    addArchivedId(notificationId);
+    markAsRead(notificationId);
+  }, [markAsRead]);
+
+  // Archive all notifications belonging to a specific ticket
+  const archiveTicketNotifications = useCallback((ticketId) => {
+    if (!ticketId) return;
+    markTicketAsRead(ticketId);
+  }, [markTicketAsRead]);
+
+  // Get status of a notification: 'unread' | 'read' | 'archived'
+  const getNotificationStatus = useCallback((notif) => {
+    if (!notif) return 'read';
+    const archivedSet = getArchivedIds();
+    if (archivedSet.has(String(notif.id))) return 'archived';
+    const unread = isUnread(notif, currentUser);
+    return unread ? 'unread' : 'read';
+  }, [currentUser, isUnread]);
+
+  // Global listeners: Mark notifications as read when complaint is opened anywhere or when OS notification clicked
+  useEffect(() => {
+    const handleComplaintOpened = (e) => {
+      const id = e.detail?.id || e.detail?.ticketId;
+      if (id) {
+        markTicketAsRead(id);
+      }
+    };
+
+    const handleSWMessage = (e) => {
+      if (e.data?.type === 'NOTIFICATION_CLICKED' && e.data.ticketId) {
+        markTicketAsRead(e.data.ticketId);
+      }
+    };
+
+    window.addEventListener('egs_complaint_opened', handleComplaintOpened);
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    }
+
+    return () => {
+      window.removeEventListener('egs_complaint_opened', handleComplaintOpened);
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+      }
+    };
+  }, [markTicketAsRead]);
 
   // Delete a single notification completely
   const deleteNotification = useCallback((notificationId) => {
@@ -708,6 +870,11 @@ export const NotificationProvider = ({ children }) => {
     markAsRead,
     markTicketAsRead,
     markAllAsRead,
+    archiveNotification,
+    archiveTicketNotifications,
+    getNotificationStatus,
+    recordComplaintOpened,
+    isComplaintOpened,
     deleteNotification,
     deleteNotificationsForTicket,
     clearAllNotifications,

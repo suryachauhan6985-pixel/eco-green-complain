@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-support-v269';
+const CACHE_NAME = 'ecogreen-support-v270';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
@@ -142,9 +142,21 @@ self.addEventListener('notificationclick', (event) => {
   if (event.action === 'close') return;
 
   const targetUrl = event.notification.data?.url || '/complaints';
+  const ticketId = event.notification.data?.ticketId || null;
+  const notifId = event.notification.data?.notificationId || null;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Broadcast to all active clients that this notification was clicked so it is immediately marked read
+      windowClients.forEach((client) => {
+        client.postMessage({
+          type: 'NOTIFICATION_CLICKED',
+          ticketId,
+          notificationId: notifId,
+          url: targetUrl
+        });
+      });
+
       // Focus existing open tab if available
       for (const client of windowClients) {
         if ('focus' in client) {

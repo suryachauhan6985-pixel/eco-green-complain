@@ -17,6 +17,7 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
     dismissPopup, 
     dismissAllPopups, 
     markAsRead, 
+    markTicketAsRead,
     unreadCount 
   } = useNotifications();
 
@@ -73,17 +74,27 @@ export const NotificationPopup = ({ onSelectComplaint }) => {
 
   const handleOpenTicket = () => {
     if (!activePopup) return;
+    const targetTicket = activePopup.ticketId || activePopup.complaintId;
     if (activePopup.id) {
       markAsRead(activePopup.id);
     }
-    if (onSelectComplaint && (activePopup.ticketId || activePopup.complaintId)) {
-      onSelectComplaint(activePopup.ticketId || activePopup.complaintId);
+    if (targetTicket && typeof markTicketAsRead === 'function') {
+      markTicketAsRead(targetTicket);
+    }
+    if (onSelectComplaint && targetTicket) {
+      onSelectComplaint(targetTicket);
     }
   };
 
   const handleMarkRead = (e) => {
     e.stopPropagation();
-    markAsRead(activePopup.id);
+    if (activePopup.id) {
+      markAsRead(activePopup.id);
+    }
+    const targetTicket = activePopup.ticketId || activePopup.complaintId;
+    if (targetTicket && typeof markTicketAsRead === 'function') {
+      markTicketAsRead(targetTicket);
+    }
   };
 
   const handleDismissAll = (e) => {

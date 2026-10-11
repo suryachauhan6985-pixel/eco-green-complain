@@ -1780,6 +1780,34 @@ commonRoutes.put('/in-app-notifications/:id/read', optionalAuth, async (c) => {
   }
 });
 
+// PUT /api/in-app-notifications/ticket/:ticketId/read
+commonRoutes.put('/in-app-notifications/ticket/:ticketId/read', optionalAuth, async (c) => {
+  try {
+    const ticketId = c.req.param('ticketId');
+    const user = c.get('user');
+    const userKeys = [
+      user?.id ? String(user.id) : null,
+      user?.username || null,
+      user?.email || null,
+      user?.name || null,
+      user?.role || null,
+      'read'
+    ].filter(Boolean);
+
+    await query(`
+      UPDATE in_app_notifications
+      SET read_by = CASE
+        WHEN jsonb_typeof(read_by) = 'array' THEN read_by || $1::jsonb
+        ELSE $1::jsonb
+      END
+      WHERE ticket_id = $2 OR id = $2
+    `, [JSON.stringify(userKeys), ticketId], c.env, c.executionCtx);
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // PUT /api/in-app-notifications/read-all
 commonRoutes.put('/in-app-notifications/read-all', optionalAuth, async (c) => {
   try {

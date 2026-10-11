@@ -214,16 +214,24 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
   };
 
   const handleOpenTicket = (notif) => {
-    markAsRead(notif.id);
-    if (onSelectComplaint && (notif.ticketId || notif.complaintId)) {
-      onSelectComplaint(notif.ticketId || notif.complaintId);
+    if (!notif) return;
+    if (notif.id) markAsRead(notif.id);
+    const targetTicket = notif.ticketId || notif.complaintId;
+    if (targetTicket && typeof markTicketAsRead === 'function') {
+      markTicketAsRead(targetTicket);
+    }
+    if (onSelectComplaint && targetTicket) {
+      onSelectComplaint(targetTicket);
       if (onClose) onClose();
     }
   };
 
-  // Filter in-app notifications
+  const readCount = Math.max(0, notifications.length - unreadCount);
+
+  // Filter in-app notifications: all | unread | read
   const filteredInbox = notifications.filter(n => {
     if (inboxFilter === 'unread') return isUnread(n, currentUser);
+    if (inboxFilter === 'read') return !isUnread(n, currentUser);
     return true;
   });
 
@@ -481,6 +489,16 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                   >
                     Unread ({unreadCount})
                   </button>
+                  <button
+                    onClick={() => setInboxFilter('read')}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                      inboxFilter === 'read' 
+                        ? 'bg-white text-emerald-800 font-bold shadow-2xs border border-slate-200' 
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Read ({readCount})
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -595,7 +613,11 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                       <Bell className="w-6 h-6" />
                     </div>
                     <h4 className="font-semibold text-slate-700 text-sm">
-                      {inboxFilter === 'unread' ? 'No unread notifications' : 'No notification alerts yet'}
+                      {inboxFilter === 'unread' 
+                        ? 'No unread notifications' 
+                        : inboxFilter === 'read'
+                          ? 'No read notifications'
+                          : 'No notification alerts yet'}
                     </h4>
                     <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1">
                       {currentUser?.role === 'technician'
@@ -630,7 +652,7 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                           >
                             {/* Top Right Actions: Unread Beacon, Mark as Read, Dismiss (X) */}
                             <div className="absolute top-3 right-3 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                              {unread && (
+                              {unread ? (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -643,6 +665,10 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                                   <Check className="w-3 h-3" />
                                   <span>Mark read</span>
                                 </button>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200">
+                                  Read
+                                </span>
                               )}
                               <button
                                 type="button"

@@ -40,7 +40,7 @@ export const ComplaintDetailDrawer = ({
   onNewComplaintWithData
 }) => {
   const { currentUser } = useAuth();
-  const { addNotification } = useNotifications();
+  const { addNotification, markTicketAsRead } = useNotifications();
   const { confirm, alert, showToast } = useDialog();
   const [ticket, setTicket] = useState(null);
   const isSiteSurveyTicket = useMemo(() => {
@@ -503,11 +503,25 @@ export const ComplaintDetailDrawer = ({
 
   const fetchTicketDetails = async () => {
     if (!complaintId) return;
+    // Mark notifications for this complaint as read immediately upon opening
+    if (typeof markTicketAsRead === 'function') {
+      markTicketAsRead(complaintId);
+    }
     try {
       setLoading(true);
       const data = await api.getComplaint(complaintId);
       if (data && data.complaint) {
         setTicket(data.complaint);
+        // Also mark by official ticket_id (e.g. EGS-2026-...) and numeric id
+        if (typeof markTicketAsRead === 'function') {
+          if (data.complaint.ticket_id) markTicketAsRead(data.complaint.ticket_id);
+          if (data.complaint.id) markTicketAsRead(data.complaint.id);
+        }
+        try {
+          window.dispatchEvent(new CustomEvent('egs_complaint_opened', {
+            detail: { id: complaintId, ticketId: data.complaint.ticket_id }
+          }));
+        } catch (_) {}
         setAttachments(data.attachments || data.complaint.attachments || data.ticket?.attachments || []);
         setTimeline(data.timeline || data.complaint.timeline || data.ticket?.timeline || []);
         setNotifications(data.notifications || []);
@@ -601,6 +615,12 @@ export const ComplaintDetailDrawer = ({
   useEffect(() => {
     resetAllDraftInputs();
     if (isOpen && complaintId) {
+      if (typeof markTicketAsRead === 'function') {
+        markTicketAsRead(complaintId);
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('egs_complaint_opened', { detail: { id: complaintId } }));
+      } catch (_) {}
       setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
       fetchTicketDetails();
       fetchTechs();

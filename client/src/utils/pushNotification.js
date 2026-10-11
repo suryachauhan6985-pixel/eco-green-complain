@@ -158,12 +158,95 @@ export const requestPushPermission = async (currentUser = null) => {
   }
 };
 
+export const ALERTED_OS_KEY = 'egs_alerted_os_notif_ids';
+const PERMANENT_READ_KEY = 'egs_read_notification_ids';
+const OPENED_COMPLAINTS_KEY = 'egs_opened_complaint_ids';
+
+export const getAlertedOSNotificationIds = () => {
+  try {
+    const raw = localStorage.getItem(ALERTED_OS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch (_) {
+    return new Set();
+  }
+};
+
+export const markNotificationAsAlerted = (id) => {
+  if (!id) return;
+  try {
+    const set = getAlertedOSNotificationIds();
+    set.add(String(id));
+    const arr = Array.from(set).slice(-300); // keep recent 300
+    localStorage.setItem(ALERTED_OS_KEY, JSON.stringify(arr));
+  } catch (_) {}
+};
+
 /**
  * Display native OS notification with vibration pattern and ticket link (Foreground/In-App)
+ * Guaranteed: Only fires for new, unread, unopened events. Auto-closes on desktop so it never stays sticky.
  */
-export const showOSNotification = async ({ title, body, ticketId, url, tag }) => {
+export const showOSNotification = async ({ 
+  title, 
+  body, 
+  ticketId, 
+  url, 
+  tag, 
+  notificationId, 
+  createdAt, 
+  force = false 
+}) => {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
+
+  const notifIdStr = notificationId ? String(notificationId) : null;
+
+  // 1. Strict deduplication check: Do not re-send if already alerted in OS
+  if (!force && notifIdStr) {
+    const alertedSet = getAlertedOSNotificationIds();
+    if (alertedSet.has(notifIdStr)) {
+      return; // Already pushed to OS, do not re-alert
+    }
+  }
+
+  // 2. Strict read check: Do not send if already marked as read
+  if (!force && notifIdStr) {
+    try {
+      const rawReads = localStorage.getItem(PERMANENT_READ_KEY);
+      if (rawReads) {
+        const readArr = JSON.parse(rawReads);
+        if (Array.isArray(readArr) && readArr.includes(notifIdStr)) {
+          return; // Already read, strictly suppress OS alert
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. Opened Complaint Check: If complaint was already opened, suppress OS alert
+  if (!force && ticketId) {
+    try {
+      const rawOpened = localStorage.getItem(OPENED_COMPLAINTS_KEY);
+      if (rawOpened) {
+        const openedMap = JSON.parse(rawOpened);
+        const openedTime = openedMap[String(ticketId).toLowerCase()];
+        if (openedTime) {
+          const notifTime = createdAt ? new Date(createdAt).getTime() : 0;
+          if (notifTime <= openedTime) {
+            return; // Complaint was already opened after this update was created
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4. Age Check: Suppress OS-level alerts for historic notifications (> 90 seconds old)
+  if (!force && createdAt) {
+    const ageMs = Date.now() - new Date(createdAt).getTime();
+    if (!isNaN(ageMs) && ageMs > 90000) {
+      return; // Historic notification, suppress OS alert
+    }
+  }
 
   const isMobile = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
   const targetTitle = title || 'Eco Green Support';
@@ -182,15 +265,22 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
     data: {
       url: targetUrl,
       ticketId: ticketId || null,
+      notificationId: notifIdStr,
       timestamp: Date.now()
     }
   };
+
+  // Mark as alerted immediately so concurrent loops or fast polling don't double fire
+  if (notifIdStr) {
+    markNotificationAsAlerted(notifIdStr);
+  }
 
   try {
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready.catch(() => null);
       if (reg && typeof reg.showNotification === 'function') {
         await reg.showNotification(targetTitle, options);
+        // Auto-dismiss on desktop / Windows after 6 seconds so it never lingers or gets sticky
         if (!isMobile) {
           setTimeout(async () => {
             try {
@@ -203,6 +293,7 @@ export const showOSNotification = async ({ title, body, ticketId, url, tag }) =>
       }
     }
     const n = new Notification(targetTitle, options);
+    // Auto-dismiss on desktop / Windows after 6 seconds
     if (!isMobile && n && typeof n.close === 'function') {
       setTimeout(() => {
         try { n.close(); } catch (_) {}
