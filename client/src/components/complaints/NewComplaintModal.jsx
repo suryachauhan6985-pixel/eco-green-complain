@@ -4,7 +4,8 @@ import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
-import { uploadFileToSupabase } from '../../utils/storageUpload';
+import { uploadFileToSupabase, uploadMultipleFilesWithProgress } from '../../utils/storageUpload';
+import { ProcessingProgressModal } from '../common/ProcessingProgressModal';
 import { broadcastComplaintsUpdate } from '../../utils/liveSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
@@ -148,7 +149,8 @@ export const NewComplaintModal = ({
     progress: 0,
     currentFile: '',
     currentIndex: 0,
-    totalFiles: 0
+    totalFiles: 0,
+    stage: ''
   });
 
   const [fileList, setFileList] = useState([]); // [{ file, preview, id, file_url, name, size }]
@@ -985,51 +987,56 @@ export const NewComplaintModal = ({
         setUploadProgress({
           isUploading: true,
           progress: 5,
-          currentFile: fileList[0].name,
+          currentFile: fileList[0].name || 'File 1',
           currentIndex: 1,
-          totalFiles: fileList.length
+          totalFiles: fileList.length,
+          stage: 'Optimizing files'
         });
-        const uploadedAttachments = [];
-        for (let idx = 0; idx < fileList.length; idx++) {
-          const item = fileList[idx];
-          const pct = Math.round(((idx + 0.3) / fileList.length) * 100);
-          setUploadProgress({
-            isUploading: true,
-            progress: pct,
-            currentFile: item.name,
-            currentIndex: idx + 1,
-            totalFiles: fileList.length
-          });
-          if (item.file_url || item.url) {
-            uploadedAttachments.push({
-              file_url: item.file_url || item.url,
-              file_name: item.name || 'whatsapp_media',
-              file_type: item.isImage ? 'image' : (item.isVideo ? 'video' : (item.isDocument ? 'document' : 'file')),
-              attachment_type: 'whatsapp_media'
-            });
-          } else if (item.file) {
-            try {
-              const uploaded = await uploadFileToSupabase(item.file);
-              if (uploaded) uploadedAttachments.push({ ...uploaded, attachment_type: 'registration' });
-            } catch (storageErr) {
-              console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
-              if (item.file.size <= 4 * 1024 * 1024) {
-                data.append('attachments', item.file);
-              }
+
+        const preExistingAttachments = fileList
+          .filter(item => (item.file_url || item.url) && !item.file)
+          .map(item => ({
+            file_url: item.file_url || item.url,
+            file_name: item.name || 'whatsapp_media',
+            file_type: item.isImage ? 'image' : (item.isVideo ? 'video' : (item.isDocument ? 'document' : 'file')),
+            attachment_type: 'whatsapp_media'
+          }));
+
+        const itemsWithFiles = fileList.filter(item => item.file);
+
+        let uploadedFromFiles = [];
+        let fallbackFiles = [];
+
+        if (itemsWithFiles.length > 0) {
+          const batchResults = await uploadMultipleFilesWithProgress(itemsWithFiles, {
+            identifier: initialData?.ticket_id || 'registration_draft',
+            uploadType: 'complaint',
+            concurrency: 3,
+            onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
+              setUploadProgress({
+                isUploading: true,
+                progress: Math.min(94, Math.max(5, percent)),
+                currentFile,
+                currentIndex,
+                totalFiles,
+                stage
+              });
             }
-          }
-          const finishedPct = Math.round(((idx + 1) / fileList.length) * 100);
-          setUploadProgress({
-            isUploading: true,
-            progress: finishedPct,
-            currentFile: item.name,
-            currentIndex: idx + 1,
-            totalFiles: fileList.length
           });
+
+          uploadedFromFiles = batchResults
+            .filter(r => r.success && r.uploaded?.file_url)
+            .map(r => ({ ...r.uploaded, attachment_type: 'registration' }));
+          fallbackFiles = batchResults
+            .filter(r => !r.success && r.file && r.file.size <= 4 * 1024 * 1024)
+            .map(r => r.file);
         }
-        if (uploadedAttachments.length > 0) {
-          data.append('attachment_urls', JSON.stringify(uploadedAttachments));
+
+        const allUploaded = [...preExistingAttachments, ...uploadedFromFiles];
+        if (allUploaded.length > 0) {
+          data.append('attachment_urls', JSON.stringify(allUploaded));
         }
+        fallbackFiles.forEach(f => data.append('attachments', f));
         data.append('attachment_type', 'registration');
       }
 
@@ -1099,51 +1106,56 @@ export const NewComplaintModal = ({
         setUploadProgress({
           isUploading: true,
           progress: 5,
-          currentFile: fileList[0].name,
+          currentFile: fileList[0].name || 'File 1',
           currentIndex: 1,
-          totalFiles: fileList.length
+          totalFiles: fileList.length,
+          stage: 'Optimizing files'
         });
-        const uploadedAttachments = [];
-        for (let idx = 0; idx < fileList.length; idx++) {
-          const item = fileList[idx];
-          const pct = Math.round(((idx + 0.3) / fileList.length) * 100);
-          setUploadProgress({
-            isUploading: true,
-            progress: pct,
-            currentFile: item.name,
-            currentIndex: idx + 1,
-            totalFiles: fileList.length
-          });
-          if (item.file_url || item.url) {
-            uploadedAttachments.push({
-              file_url: item.file_url || item.url,
-              file_name: item.name || 'whatsapp_media',
-              file_type: item.isImage ? 'image' : (item.isVideo ? 'video' : (item.isDocument ? 'document' : 'file')),
-              attachment_type: 'whatsapp_media'
-            });
-          } else if (item.file) {
-            try {
-              const uploaded = await uploadFileToSupabase(item.file);
-              if (uploaded) uploadedAttachments.push({ ...uploaded, attachment_type: 'registration' });
-            } catch (storageErr) {
-              console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
-              if (item.file.size <= 4 * 1024 * 1024) {
-                data.append('attachments', item.file);
-              }
+
+        const preExistingAttachments = fileList
+          .filter(item => (item.file_url || item.url) && !item.file)
+          .map(item => ({
+            file_url: item.file_url || item.url,
+            file_name: item.name || 'whatsapp_media',
+            file_type: item.isImage ? 'image' : (item.isVideo ? 'video' : (item.isDocument ? 'document' : 'file')),
+            attachment_type: 'whatsapp_media'
+          }));
+
+        const itemsWithFiles = fileList.filter(item => item.file);
+
+        let uploadedFromFiles = [];
+        let fallbackFiles = [];
+
+        if (itemsWithFiles.length > 0) {
+          const batchResults = await uploadMultipleFilesWithProgress(itemsWithFiles, {
+            identifier: initialData?.ticket_id || 'registration_media',
+            uploadType: 'complaint',
+            concurrency: 3,
+            onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
+              setUploadProgress({
+                isUploading: true,
+                progress: Math.min(94, Math.max(5, percent)),
+                currentFile,
+                currentIndex,
+                totalFiles,
+                stage
+              });
             }
-          }
-          const finishedPct = Math.round(((idx + 1) / fileList.length) * 100);
-          setUploadProgress({
-            isUploading: true,
-            progress: finishedPct,
-            currentFile: item.name,
-            currentIndex: idx + 1,
-            totalFiles: fileList.length
           });
+
+          uploadedFromFiles = batchResults
+            .filter(r => r.success && r.uploaded?.file_url)
+            .map(r => ({ ...r.uploaded, attachment_type: 'registration' }));
+          fallbackFiles = batchResults
+            .filter(r => !r.success && r.file && r.file.size <= 4 * 1024 * 1024)
+            .map(r => r.file);
         }
-        if (uploadedAttachments.length > 0) {
-          data.append('attachment_urls', JSON.stringify(uploadedAttachments));
+
+        const allUploaded = [...preExistingAttachments, ...uploadedFromFiles];
+        if (allUploaded.length > 0) {
+          data.append('attachment_urls', JSON.stringify(allUploaded));
         }
+        fallbackFiles.forEach(f => data.append('attachments', f));
         data.append('attachment_type', 'registration');
       }
 
@@ -2883,6 +2895,18 @@ export const NewComplaintModal = ({
         }}
         title="Record Initial Complaint Video"
         subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
+      />
+
+      {/* Global Background-Blurred Progress Modal */}
+      <ProcessingProgressModal
+        isOpen={uploadProgress.isUploading}
+        title={isSurveyProduct ? 'Submitting Site Survey Media...' : 'Uploading Complaint Proofs & Media...'}
+        subtitle="Compressing images and uploading directly to cloud storage."
+        progress={uploadProgress.progress}
+        currentFile={uploadProgress.currentFile}
+        currentIndex={uploadProgress.currentIndex}
+        totalFiles={uploadProgress.totalFiles}
+        stage={uploadProgress.stage}
       />
     </div>
   );

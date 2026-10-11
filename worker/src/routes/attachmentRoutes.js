@@ -95,6 +95,155 @@ attachmentRoutes.post('/upload', optionalAuth, async (c) => {
   }
 });
 
+// POST /api/upload/init - Initiate Chunked / Multipart Upload to Cloudflare R2
+attachmentRoutes.post('/upload/init', optionalAuth, async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) {
+      return c.json({ error: 'Cloudflare R2 MEDIA_BUCKET binding is unavailable' }, 500);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const filename = body.filename || `file_${Date.now()}`;
+    const mimeType = body.mime_type || 'application/octet-stream';
+    const fileSize = Number(body.file_size) || 0;
+    let complaintId = body.complaint_id || 'temp';
+    const uploadType = body.type || '';
+    const contactPhone = body.phone || '';
+
+    validateFileMetadata(filename, mimeType, fileSize);
+
+    let storageKey;
+    if (uploadType === 'whatsapp' || contactPhone) {
+      const cleanPhone = String(contactPhone || 'general').replace(/\D/g, '') || 'general';
+      const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      storageKey = generateWhatsAppStorageKey(cleanPhone, uniqueId, filename);
+    } else {
+      if (complaintId && complaintId !== 'temp' && complaintId !== 'general') {
+        const compLookup = await query(
+          'SELECT ticket_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+          [complaintId],
+          c.env,
+          c.executionCtx
+        ).catch(() => ({ rows: [] }));
+        if (compLookup.rows?.[0]?.ticket_id) {
+          complaintId = compLookup.rows[0].ticket_id;
+        }
+      }
+      storageKey = generateComplaintStorageKey(complaintId, filename);
+    }
+
+    const multipartUpload = await bucket.createMultipartUpload(storageKey, {
+      httpMetadata: {
+        contentType: mimeType,
+        cacheControl: 'private, max-age=86400'
+      }
+    });
+
+    return c.json({
+      success: true,
+      upload_id: multipartUpload.uploadId,
+      storage_key: storageKey,
+      part_size: 5 * 1024 * 1024 // 5MB standard chunk size
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 400);
+  }
+});
+
+// POST /api/upload/chunk - Upload an Individual Part / Chunk
+attachmentRoutes.post('/upload/chunk', optionalAuth, async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) {
+      return c.json({ error: 'Cloudflare R2 MEDIA_BUCKET binding is unavailable' }, 500);
+    }
+
+    const uploadId = c.req.query('upload_id') || c.req.header('x-upload-id');
+    const storageKey = c.req.query('storage_key') || c.req.header('x-storage-key');
+    const partNumber = parseInt(c.req.query('part_number') || c.req.header('x-part-number') || '0', 10);
+
+    if (!uploadId || !storageKey || !partNumber || partNumber < 1) {
+      return c.json({ error: 'Missing required chunk parameters: upload_id, storage_key, and valid part_number' }, 400);
+    }
+
+    const chunkBuffer = await c.req.arrayBuffer();
+    if (!chunkBuffer || chunkBuffer.byteLength === 0) {
+      return c.json({ error: 'Empty chunk payload' }, 400);
+    }
+
+    const multipartUpload = bucket.resumeMultipartUpload(storageKey, uploadId);
+    const uploadedPart = await multipartUpload.uploadPart(partNumber, chunkBuffer);
+
+    return c.json({
+      success: true,
+      part_number: partNumber,
+      etag: uploadedPart.etag
+    });
+  } catch (err) {
+    return c.json({ error: 'Chunk upload failed: ' + err.message }, 500);
+  }
+});
+
+// POST /api/upload/complete - Finalize and Seal Chunked Upload in R2
+attachmentRoutes.post('/upload/complete', optionalAuth, async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) {
+      return c.json({ error: 'Cloudflare R2 MEDIA_BUCKET binding is unavailable' }, 500);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const { upload_id, storage_key, parts, filename, mime_type, file_size } = body;
+
+    if (!upload_id || !storage_key || !Array.isArray(parts) || parts.length === 0) {
+      return c.json({ error: 'Missing completion parameters (upload_id, storage_key, parts array)' }, 400);
+    }
+
+    // Sort parts by partNumber ascending (mandatory for S3/R2 specification)
+    const sortedParts = [...parts].sort((a, b) => (a.partNumber || a.part_number) - (b.partNumber || b.part_number)).map(p => ({
+      partNumber: p.partNumber || p.part_number,
+      etag: p.etag
+    }));
+
+    const multipartUpload = bucket.resumeMultipartUpload(storageKey, upload_id);
+    await multipartUpload.complete(sortedParts);
+
+    const publicServeUrl = `/api/attachments/r2/${storageKey}`;
+
+    return c.json({
+      success: true,
+      storage_key: storageKey,
+      file_url: publicServeUrl,
+      file_name: filename || storageKey.split('/').pop(),
+      file_type: mime_type || 'application/octet-stream',
+      file_size: file_size || 0
+    });
+  } catch (err) {
+    return c.json({ error: 'Failed to complete multipart upload: ' + err.message }, 500);
+  }
+});
+
+// POST /api/upload/abort - Abort Incomplete Multipart Upload
+attachmentRoutes.post('/upload/abort', optionalAuth, async (c) => {
+  try {
+    const bucket = c.env?.MEDIA_BUCKET;
+    if (!bucket) return c.json({ error: 'Storage unavailable' }, 500);
+
+    const body = await c.req.json().catch(() => ({}));
+    const { upload_id, storage_key } = body;
+
+    if (upload_id && storage_key) {
+      const multipartUpload = bucket.resumeMultipartUpload(storageKey, upload_id);
+      await multipartUpload.abort().catch(() => {});
+    }
+
+    return c.json({ success: true, aborted: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // POST /api/complaints/:id/attachments - Save Attachment Metadata
 attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => {
   try {

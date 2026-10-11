@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly, formatIndianTimeOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
-import { uploadFileToSupabase, compressImageFile } from '../../utils/storageUpload';
+import { uploadFileToSupabase, compressImageFile, uploadMultipleFilesWithProgress } from '../../utils/storageUpload';
+import { ProcessingProgressModal } from '../common/ProcessingProgressModal';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { NewComplaintModal } from './NewComplaintModal';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
@@ -91,7 +92,16 @@ export const ComplaintDetailDrawer = ({
     progress: 0,
     currentFile: '',
     currentIndex: 0,
-    totalFiles: 0
+    totalFiles: 0,
+    stage: ''
+  });
+  const [attachUploadProgress, setAttachUploadProgress] = useState({
+    isUploading: false,
+    progress: 0,
+    currentFile: '',
+    currentIndex: 0,
+    totalFiles: 0,
+    stage: ''
   });
 
   const [closureRemarks, setClosureRemarks] = useState('');
@@ -364,19 +374,44 @@ export const ComplaintDetailDrawer = ({
     }
     try {
       setUploadingAtt(true);
-      showToast(`Uploading ${files.length} document/photo(s) directly to cloud storage (up to 50MB)...`, 'info');
-      const uploadedAttachments = [];
-      const fallbackFiles = [];
+      setAttachUploadProgress({
+        isUploading: true,
+        progress: 5,
+        currentFile: files[0]?.name || 'File 1',
+        currentIndex: 1,
+        totalFiles: files.length,
+        stage: 'Optimizing files'
+      });
 
-      for (const f of files) {
-        try {
-          const up = await uploadFileToSupabase(f, ticket.ticket_id || ticket.id);
-          if (up) uploadedAttachments.push({ ...up, attachment_type: 'registration' });
-        } catch (upErr) {
-          console.warn('Direct upload fallback:', upErr.message);
-          if (f.size <= 4 * 1024 * 1024) fallbackFiles.push(f);
+      const batchResults = await uploadMultipleFilesWithProgress(files, {
+        identifier: ticket.ticket_id || ticket.id,
+        uploadType: 'complaint',
+        concurrency: 3,
+        onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
+          setAttachUploadProgress({
+            isUploading: true,
+            progress: Math.min(95, Math.max(5, percent)),
+            currentFile,
+            currentIndex,
+            totalFiles,
+            stage
+          });
         }
-      }
+      });
+
+      setAttachUploadProgress(prev => ({
+        ...prev,
+        progress: 96,
+        currentFile: 'Saving attachments to ticket details...',
+        stage: 'Syncing'
+      }));
+
+      const uploadedAttachments = batchResults
+        .filter(r => r.success && r.uploaded?.file_url)
+        .map(r => ({ ...r.uploaded, attachment_type: 'registration' }));
+      const fallbackFiles = batchResults
+        .filter(r => !r.success && r.file && r.file.size <= 4 * 1024 * 1024)
+        .map(r => r.file);
 
       const fd = new FormData();
       fallbackFiles.forEach(f => fd.append('attachments', f));
@@ -401,6 +436,14 @@ export const ComplaintDetailDrawer = ({
       showToast('Failed to upload attachment: ' + err.message, 'error');
     } finally {
       setUploadingAtt(false);
+      setAttachUploadProgress({
+        isUploading: false,
+        progress: 0,
+        currentFile: '',
+        currentIndex: 0,
+        totalFiles: 0,
+        stage: ''
+      });
     }
   };
 
@@ -970,6 +1013,16 @@ export const ComplaintDetailDrawer = ({
 
     try {
       setResolving(true);
+      setResolveUploadProgress({
+        isUploading: true,
+        progress: resolutionPhotos.length > 0 ? 5 : 25,
+        currentFile: resolutionPhotos.length > 0 
+          ? (resolutionPhotos[0].name || resolutionPhotos[0].file?.name || 'File 1') 
+          : 'Preparing resolution details...',
+        currentIndex: 1,
+        totalFiles: Math.max(1, resolutionPhotos.length),
+        stage: resolutionPhotos.length > 0 ? 'Optimizing media' : 'Processing'
+      });
       const data = new FormData();
       data.append('resolution_notes', resolutionNotes);
       if (spareParts) data.append('spare_parts_used', spareParts);
@@ -1010,56 +1063,31 @@ export const ComplaintDetailDrawer = ({
           progress: 5,
           currentFile: resolutionPhotos[0].name || resolutionPhotos[0].file?.name || 'File 1',
           currentIndex: 1,
-          totalFiles: resolutionPhotos.length
+          totalFiles: resolutionPhotos.length,
+          stage: 'Optimizing media'
         });
 
-        const uploadResults = [];
-        for (let idx = 0; idx < resolutionPhotos.length; idx++) {
-          const item = resolutionPhotos[idx];
-          const fileName = item.name || item.file?.name || `File ${idx + 1}`;
-          const basePct = Math.round((idx / resolutionPhotos.length) * 88) + 5;
-
-          setResolveUploadProgress({
-            isUploading: true,
-            progress: basePct,
-            currentFile: fileName,
-            currentIndex: idx + 1,
-            totalFiles: resolutionPhotos.length
-          });
-
-          const handleSingleFileProgress = (filePct) => {
-            const slicePct = Math.round(((idx + (filePct / 100)) / resolutionPhotos.length) * 88) + 5;
+        const uploadResults = await uploadMultipleFilesWithProgress(resolutionPhotos, {
+          identifier: ticket.ticket_id || ticket.id,
+          uploadType: 'complaint',
+          concurrency: 3,
+          onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
             setResolveUploadProgress({
               isUploading: true,
-              progress: Math.min(94, Math.max(basePct, slicePct)),
-              currentFile: fileName,
-              currentIndex: idx + 1,
-              totalFiles: resolutionPhotos.length
+              progress: Math.min(94, Math.max(5, percent)),
+              currentFile,
+              currentIndex,
+              totalFiles,
+              stage
             });
-          };
-
-          try {
-            const uploaded = await uploadFileToSupabase(item.file, ticket.ticket_id || ticket.id, 'complaint', handleSingleFileProgress);
-            uploadResults.push({ success: true, uploaded });
-          } catch (storageErr) {
-            console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
-            uploadResults.push({ success: false, file: item.file });
           }
-
-          const finishedPct = Math.round(((idx + 1) / resolutionPhotos.length) * 88) + 5;
-          setResolveUploadProgress({
-            isUploading: true,
-            progress: finishedPct,
-            currentFile: fileName,
-            currentIndex: idx + 1,
-            totalFiles: resolutionPhotos.length
-          });
-        }
+        });
 
         setResolveUploadProgress(prev => ({
           ...prev,
           progress: 95,
-          currentFile: 'Saving resolution details...'
+          currentFile: 'Saving resolution details...',
+          stage: 'Finalizing'
         }));
 
         const uploadedAttachments = uploadResults
@@ -1082,12 +1110,20 @@ export const ComplaintDetailDrawer = ({
           data.append('closing_photo', fallbackFiles[0]);
           data.append('attachment_type', 'resolution');
         }
+      } else {
+        setResolveUploadProgress(prev => ({
+          ...prev,
+          progress: 60,
+          currentFile: 'Saving resolution details to server...',
+          stage: 'Finalizing'
+        }));
       }
 
       setResolveUploadProgress(prev => ({
         ...prev,
-        progress: resolutionPhotos.length > 0 ? 96 : 50,
-        currentFile: 'Finalizing resolution on server...'
+        progress: resolutionPhotos.length > 0 ? 96 : 80,
+        currentFile: 'Finalizing resolution on server...',
+        stage: 'Finalizing'
       }));
 
       const res = await api.resolveComplaint(ticket.id, data);
@@ -1095,7 +1131,8 @@ export const ComplaintDetailDrawer = ({
       setResolveUploadProgress(prev => ({
         ...prev,
         progress: 100,
-        currentFile: 'Resolution complete!'
+        currentFile: 'Resolution complete!',
+        stage: 'Complete'
       }));
 
       // If multiple fallback files were needed
@@ -1148,7 +1185,8 @@ export const ComplaintDetailDrawer = ({
         progress: 0,
         currentFile: '',
         currentIndex: 0,
-        totalFiles: 0
+        totalFiles: 0,
+        stage: ''
       });
     }
   };
@@ -1263,17 +1301,44 @@ export const ComplaintDetailDrawer = ({
 
       let uploadedAtts = [];
       if (editNewFiles.length > 0) {
-        showToast(`Uploading ${editNewFiles.length} new document/photo(s)...`, 'info');
-        const fallbackFiles = [];
-        for (const item of editNewFiles) {
-          try {
-            const up = await uploadFileToSupabase(item.file, ticket.ticket_id || ticket.id);
-            if (up) uploadedAtts.push(up);
-          } catch (upErr) {
-            console.warn('Edit direct upload error:', upErr);
-            if (item.file.size <= 4 * 1024 * 1024) fallbackFiles.push(item.file);
+        setAttachUploadProgress({
+          isUploading: true,
+          progress: 5,
+          currentFile: editNewFiles[0]?.name || 'File 1',
+          currentIndex: 1,
+          totalFiles: editNewFiles.length,
+          stage: 'Optimizing files'
+        });
+
+        const batchResults = await uploadMultipleFilesWithProgress(editNewFiles, {
+          identifier: ticket.ticket_id || ticket.id,
+          uploadType: 'complaint',
+          concurrency: 3,
+          onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
+            setAttachUploadProgress({
+              isUploading: true,
+              progress: Math.min(94, Math.max(5, percent)),
+              currentFile,
+              currentIndex,
+              totalFiles,
+              stage
+            });
           }
-        }
+        });
+
+        setAttachUploadProgress(prev => ({
+          ...prev,
+          progress: 96,
+          currentFile: 'Syncing attachments to complaint...',
+          stage: 'Syncing'
+        }));
+
+        uploadedAtts = batchResults
+          .filter(r => r.success && r.uploaded?.file_url)
+          .map(r => r.uploaded);
+        const fallbackFiles = batchResults
+          .filter(r => !r.success && r.file && r.file.size <= 4 * 1024 * 1024)
+          .map(r => r.file);
 
         const fd = new FormData();
         fallbackFiles.forEach(f => fd.append('attachments', f));
@@ -1310,6 +1375,14 @@ export const ComplaintDetailDrawer = ({
       showToast('Failed to update complaint: ' + err.message, 'error');
     } finally {
       setSavingEdit(false);
+      setAttachUploadProgress({
+        isUploading: false,
+        progress: 0,
+        currentFile: '',
+        currentIndex: 0,
+        totalFiles: 0,
+        stage: ''
+      });
     }
   };
 
@@ -4546,6 +4619,29 @@ export const ComplaintDetailDrawer = ({
         onRecordingComplete={handleVideoRecorded}
         title={videoRecorderTarget === 'resolution' ? 'Record Resolution Site Video' : 'Record Initial Complaint Video'}
         subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
+      />
+
+      {/* Global Background-Blurred Progress Modals */}
+      <ProcessingProgressModal
+        isOpen={resolveUploadProgress.isUploading}
+        title={isSiteSurveyTicket ? 'Submitting Site Survey & Media...' : 'Resolving Complaint & Uploading Media...'}
+        subtitle="Compressing media and transferring files directly to cloud storage."
+        progress={resolveUploadProgress.progress}
+        currentFile={resolveUploadProgress.currentFile}
+        currentIndex={resolveUploadProgress.currentIndex}
+        totalFiles={resolveUploadProgress.totalFiles}
+        stage={resolveUploadProgress.stage}
+      />
+
+      <ProcessingProgressModal
+        isOpen={attachUploadProgress.isUploading}
+        title="Uploading Attachments & Photos..."
+        subtitle="Optimizing files and transferring directly to cloud storage."
+        progress={attachUploadProgress.progress}
+        currentFile={attachUploadProgress.currentFile}
+        currentIndex={attachUploadProgress.currentIndex}
+        totalFiles={attachUploadProgress.totalFiles}
+        stage={attachUploadProgress.stage}
       />
     </div>
   );
