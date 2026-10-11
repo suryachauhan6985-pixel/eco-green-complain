@@ -150,12 +150,16 @@ export const NewComplaintModal = ({
     totalFiles: 0
   });
 
+  const [fileList, setFileList] = useState([]); // [{ file, preview, id, file_url, name, size }]
+
   const initializedModalTicketId = useRef(null);
 
-  // Populate from initialData (supports Edit Mode, Lead Conversion, and Customer Directory Search)
+  // Populate from initialData (supports Edit Mode, Lead Conversion, Customer Directory Search, and WhatsApp Chat)
   useEffect(() => {
     if (initialData && isOpen) {
-      const currentTicketKey = initialData.id || initialData.ticket_id || (initialData.customerData ? `cust_${initialData.customerData.id || initialData.customerData.consumer_no || initialData.customerData.consumer_mobile || Date.now()}` : (initialData.customer_name ? `lead_${initialData.customer_name}_${initialData.customer_phone}` : 'new_modal'));
+      const currentTicketKey = initialData.fromWhatsApp
+        ? `wa_${initialData.customer_phone || ''}_${Date.now()}`
+        : (initialData.id || initialData.ticket_id || (initialData.customerData ? `cust_${initialData.customerData.id || initialData.customerData.consumer_no || initialData.customerData.consumer_mobile || Date.now()}` : (initialData.customer_name ? `lead_${initialData.customer_name}_${initialData.customer_phone}` : 'new_modal')));
       // Only initialize once per open modal session for this ticket so background polling never overwrites user edits!
       if (initializedModalTicketId.current === currentTicketKey) {
         return;
@@ -297,18 +301,24 @@ export const NewComplaintModal = ({
       } else {
         setFormData(prev => ({
           ...prev,
-          customer_name: initialData.customer_name || prev.customer_name,
-          customer_phone: initialData.customer_phone || prev.customer_phone,
-          issue_description: initialData.issue_description || prev.issue_description
+          customer_name: initialData.customer_name !== undefined ? initialData.customer_name : prev.customer_name,
+          customer_phone: initialData.customer_phone !== undefined ? initialData.customer_phone : prev.customer_phone,
+          customer_address: initialData.customer_address !== undefined ? initialData.customer_address : (prev.customer_address || ''),
+          location_url: initialData.location_url !== undefined ? initialData.location_url : (prev.location_url || ''),
+          // STRICT REQUIREMENT: Detailed Issue Description field must remain completely empty for WhatsApp registration
+          issue_description: initialData.fromWhatsApp ? '' : (initialData.issue_description || prev.issue_description || '')
         }));
+        if (initialData.preAttachedMedia && Array.isArray(initialData.preAttachedMedia)) {
+          setFileList(initialData.preAttachedMedia);
+        } else if (!isEditMode) {
+          setFileList([]);
+        }
         setStep('form');
       }
     } else if (!isOpen) {
       initializedModalTicketId.current = null;
     }
   }, [initialData, isOpen, isEditMode]);
-
-  const [fileList, setFileList] = useState([]); // [{ file, preview, id }]
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState(null);
   const [createdWhatsApp, setCreatedWhatsApp] = useState(null);
@@ -930,7 +940,7 @@ export const NewComplaintModal = ({
   const removeFile = (id) => {
     setFileList(prev => {
       const item = prev.find(f => f.id === id);
-      if (item && item.preview) {
+      if (item && item.preview && typeof item.preview === 'string' && item.preview.startsWith('blob:')) {
         URL.revokeObjectURL(item.preview);
       }
       return prev.filter(f => f.id !== id);
@@ -984,13 +994,22 @@ export const NewComplaintModal = ({
             currentIndex: idx + 1,
             totalFiles: fileList.length
           });
-          try {
-            const uploaded = await uploadFileToSupabase(item.file);
-            if (uploaded) uploadedAttachments.push({ ...uploaded, attachment_type: 'registration' });
-          } catch (storageErr) {
-            console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
-            if (item.file.size <= 4 * 1024 * 1024) {
-              data.append('attachments', item.file);
+          if (item.file_url || item.url) {
+            uploadedAttachments.push({
+              file_url: item.file_url || item.url,
+              file_name: item.name || 'whatsapp_media',
+              file_type: item.isImage ? 'image' : (item.isVideo ? 'video' : (item.isDocument ? 'document' : 'file')),
+              attachment_type: 'whatsapp_media'
+            });
+          } else if (item.file) {
+            try {
+              const uploaded = await uploadFileToSupabase(item.file);
+              if (uploaded) uploadedAttachments.push({ ...uploaded, attachment_type: 'registration' });
+            } catch (storageErr) {
+              console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
+              if (item.file.size <= 4 * 1024 * 1024) {
+                data.append('attachments', item.file);
+              }
             }
           }
           const finishedPct = Math.round(((idx + 1) / fileList.length) * 100);
@@ -1091,7 +1110,9 @@ export const NewComplaintModal = ({
     setDirectSent(false);
     setDirectSendError(null);
     fileList.forEach(item => {
-      if (item.preview) URL.revokeObjectURL(item.preview);
+      if (item.preview && typeof item.preview === 'string' && item.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(item.preview);
+      }
     });
     setFileList([]);
     setSelectedCustomer(null);

@@ -337,12 +337,7 @@ export const WhatsAppWebInbox = ({
   const [showStarredDrawer, setShowStarredDrawer] = useState(false);
   const [highlightedMsgId, setHighlightedMsgId] = useState(null);
 
-  // Auto-attach WhatsApp Media to Related Complaint state
-  const [attachingMsgId, setAttachingMsgId] = useState(null);
-  const [attachModalMsg, setAttachModalMsg] = useState(null);
-  const [attachSearchQuery, setAttachSearchQuery] = useState('');
-  const [isSearchingComplaints, setIsSearchingComplaints] = useState(false);
-  const [searchedComplaints, setSearchedComplaints] = useState([]);
+
 
   // Phase 3, 4, 5 State variables: Voice Recording, Quick Templates, Online/Offline, Pinned/Archived/Muted
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -1581,75 +1576,94 @@ export const WhatsAppWebInbox = ({
     }
   };
 
-  // Smart Complaint Attachment Handlers for WhatsApp Media
-  const handleAttachMediaToComplaint = async (msg, complaintId, ticketId) => {
-    if (!msg || !complaintId) return;
-    setAttachingMsgId(msg.id);
-    try {
-      const res = await api.attachWhatsAppMediaToComplaint({
-        message_id: msg.id,
-        complaint_id: complaintId
-      });
-      if (res && (res.success || res.complaint_id)) {
-        showToast(`Media attached to Complaint #${ticketId || res.ticket_id || complaintId}`, 'success');
-        // Update local message state immediately
-        setMessages(prev => prev.map(m => m.id === msg.id ? {
-          ...m,
-          attached_complaint_id: complaintId,
-          attached_ticket_id: ticketId || res.ticket_id || m.attached_ticket_id || complaintId
-        } : m));
-        setAttachModalMsg(null);
-      } else {
-        showToast(res?.error || res?.message || 'Failed to attach media to complaint', 'error');
-      }
-    } catch (err) {
-      console.error('Error attaching WhatsApp media to complaint:', err);
-      showToast(err.message || 'Failed to attach media to complaint', 'error');
-    } finally {
-      setAttachingMsgId(null);
-    }
-  };
-
-  const handleCreateNewComplaintFromMedia = (msg) => {
-    if (!msg) return;
-    const desc = msg.media_caption || (msg.message_body && !msg.message_body.startsWith('[') ? msg.message_body : '') || 'Customer sent media via WhatsApp';
-    const mediaUrl = getWhatsAppMediaUrl(msg);
-
-    if (onNewComplaintWithData) {
-      onNewComplaintWithData({
-        customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
-        customer_phone: selectedPhone ? selectedPhone.replace(/^91/, '') : '',
-        issue_description: desc,
-        initial_attachment: mediaUrl ? {
-          url: mediaUrl,
-          type: msg.media_type || msg.type || 'image',
-          name: msg.media_caption || 'WhatsApp Attachment',
-          whatsapp_message_id: msg.id
-        } : null
-      });
-    } else {
+  // Auto-attach all WhatsApp media when registering ticket from chat
+  const handleRegisterTicketFromChat = () => {
+    if (!onNewComplaintWithData) {
       showToast('Complaint registration desk opened', 'info');
-    }
-    setAttachModalMsg(null);
-  };
-
-  const handleSearchComplaintsForAttach = async (q) => {
-    setAttachSearchQuery(q);
-    if (!q.trim() || q.trim().length < 2) {
-      setSearchedComplaints([]);
       return;
     }
-    setIsSearchingComplaints(true);
-    try {
-      const res = await api.getComplaints({ search: q.trim(), limit: 10 });
-      if (res && Array.isArray(res.complaints)) {
-        setSearchedComplaints(res.complaints);
+
+    // 1. Gather all media (photos, videos, documents, audio) from this chat
+    const chatMedia = [];
+    const seenUrls = new Set();
+
+    (messages || []).forEach(msg => {
+      const isImg = isImageMessage(msg);
+      const isVid = isVideoMessage(msg);
+      const isDoc = isDocumentMessage(msg);
+      const isAud = isAudioMessage(msg);
+
+      if (isImg || isVid || isDoc || isAud) {
+        const mediaUrl = getWhatsAppMediaUrl(msg);
+        if (mediaUrl && !seenUrls.has(mediaUrl)) {
+          seenUrls.add(mediaUrl);
+          const ext = isImg ? 'jpg' : isVid ? 'mp4' : isAud ? 'mp3' : 'pdf';
+          const defaultName = isImg
+            ? `whatsapp_photo_${msg.id || Date.now()}.${ext}`
+            : isVid
+            ? `whatsapp_video_${msg.id || Date.now()}.${ext}`
+            : isAud
+            ? `whatsapp_audio_${msg.id || Date.now()}.${ext}`
+            : (msg.file_name || `whatsapp_doc_${msg.id || Date.now()}.${ext}`);
+
+          chatMedia.push({
+            id: `wa_${msg.id || Math.random().toString(36).substring(2, 9)}`,
+            name: msg.file_name || msg.media_caption || defaultName,
+            size: 'WhatsApp media',
+            isImage: isImg,
+            isVideo: isVid,
+            isDocument: isDoc,
+            isAudio: isAud,
+            preview: (isImg || isVid) ? mediaUrl : null,
+            url: mediaUrl,
+            file_url: mediaUrl,
+            file_type: isImg ? 'image' : (isVid ? 'video' : (isDoc ? 'document' : 'audio')),
+            whatsapp_message_id: msg.id
+          });
+        }
       }
-    } catch (err) {
-      console.warn('Error searching complaints:', err);
-    } finally {
-      setIsSearchingComplaints(false);
+    });
+
+    // 2. Extract location if available in the conversation
+    let locationUrl = '';
+    let locationAddress = '';
+    for (let i = (messages || []).length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.location) {
+        const lat = msg.location.latitude || msg.location.lat;
+        const lng = msg.location.longitude || msg.location.lng;
+        if (lat && lng) locationUrl = `https://maps.google.com/?q=${lat},${lng}`;
+        else if (msg.location.url) locationUrl = msg.location.url;
+        if (msg.location.address || msg.location.name) locationAddress = msg.location.address || msg.location.name;
+        if (locationUrl) break;
+      }
+      if (msg.latitude && msg.longitude) {
+        locationUrl = `https://maps.google.com/?q=${msg.latitude},${msg.longitude}`;
+        if (msg.address || msg.location_name) locationAddress = msg.address || msg.location_name;
+        break;
+      }
+      if (msg.message_body) {
+        const mapMatch = msg.message_body.match(/https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl)[^\s)]+/i);
+        if (mapMatch) {
+          locationUrl = mapMatch[0];
+          const cleanAddr = msg.message_body.replace(mapMatch[0], '').replace(/[📍\r\n]+/g, ' ').replace(/Location:?/gi, '').trim();
+          if (cleanAddr) locationAddress = cleanAddr;
+          break;
+        }
+      }
     }
+
+    // 3. Open Register Complaint form (Step 2) with pre-attached media and EMPTY description
+    onNewComplaintWithData({
+      customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
+      customer_phone: selectedPhone ? selectedPhone.replace(/^91/, '') : '',
+      customer_address: locationAddress || contactInfo?.address || '',
+      location_url: locationUrl || '',
+      issue_description: '', // STRICT REQUIREMENT: completely empty!
+      fromWhatsApp: true,
+      preAttachedMedia: chatMedia,
+      step: 'form'
+    });
   };
 
   // Filter conversations (All incoming & outgoing conversations are fully preserved and visible)
@@ -2293,128 +2307,7 @@ export const WhatsAppWebInbox = ({
                   </div>
                 )}
 
-                {/* Smart Complaint Media Action Bar (Auto-link & Agent 1-Click Action) */}
-                {isCustomer && (isImageMessage(msg) || isVideoMessage(msg) || isAudioMessage(msg) || isDocumentMessage(msg) || isLocationMessage(msg) || isContactMessage(msg)) && (
-                  (() => {
-                    const isAttached = Boolean(msg.attached_ticket_id || msg.attached_complaint_id);
-                    const activeList = contactInfo?.active_complaints || (contactInfo?.ticket_id ? [{ id: contactInfo.complaint_id || contactInfo.complaint?.id, ticket_id: contactInfo.ticket_id }] : []);
-                    const hasSingleActive = activeList.length === 1;
-                    const hasMultipleActive = activeList.length > 1;
 
-                    if (isAttached) {
-                      return (
-                        <div className="mt-2 pt-1.5 border-t border-black/10 flex items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-1.5 text-emerald-700 font-semibold truncate text-[11px]">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span className="truncate">Attached to #{msg.attached_ticket_id}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const cId = msg.attached_complaint_id || (activeList.find(c => c.ticket_id === msg.attached_ticket_id)?.id);
-                              if (onOpenComplaint && cId) {
-                                onOpenComplaint(cId);
-                              } else {
-                                showToast(`Ticket #${msg.attached_ticket_id}`, 'info');
-                              }
-                            }}
-                            className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shrink-0"
-                            title="Open Complaint Details in CMS"
-                          >
-                            <span>View Ticket</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      );
-                    }
-
-                    if (hasSingleActive) {
-                      const activeTicket = activeList[0];
-                      return (
-                        <div className="mt-2 pt-1.5 border-t border-black/10 flex items-center justify-between gap-1.5">
-                          <button
-                            type="button"
-                            disabled={attachingMsgId === msg.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAttachMediaToComplaint(msg, activeTicket.id, activeTicket.ticket_id);
-                            }}
-                            className="flex-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-md font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all disabled:opacity-50"
-                            title={`Attach directly to #${activeTicket.ticket_id}`}
-                          >
-                            {attachingMsgId === msg.id ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Paperclip className="w-3 h-3" />
-                            )}
-                            <span>Attach to #{activeTicket.ticket_id}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAttachModalMsg(msg);
-                            }}
-                            className="p-1 hover:bg-black/5 rounded text-slate-500 hover:text-slate-700 cursor-pointer shrink-0"
-                            title="More ticket options"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    }
-
-                    if (hasMultipleActive) {
-                      return (
-                        <div className="mt-2 pt-1.5 border-t border-black/10 flex items-center justify-between gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAttachModalMsg(msg);
-                            }}
-                            className="flex-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-md font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
-                            title="Customer has multiple active tickets. Choose which ticket to link."
-                          >
-                            <Paperclip className="w-3 h-3" />
-                            <span>Attach to Complaint ({activeList.length})...</span>
-                          </button>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="mt-2 pt-1.5 border-t border-black/10 flex items-center justify-between gap-1.5">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCreateNewComplaintFromMedia(msg);
-                          }}
-                          className="flex-1 px-2.5 py-1 bg-slate-700 hover:bg-slate-800 active:scale-95 text-white rounded-md font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
-                          title="Create a new complaint ticket with this media pre-filled"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Create Complaint &amp; Attach</span>
-                        </button>
-                        {contactInfo?.complaints?.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAttachModalMsg(msg);
-                            }}
-                            className="px-2 py-1 bg-black/5 hover:bg-black/10 text-slate-700 rounded-md font-medium text-[10px] cursor-pointer shrink-0"
-                            title="Attach to a previous ticket"
-                          >
-                            Past Tickets
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })()
-                )}
 
                 {/* Timestamp & Delivery Checkmarks */}
                 <div className={isMediaOnly ? 'px-1 pb-0.5' : ''}>
@@ -3227,16 +3120,7 @@ export const WhatsAppWebInbox = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (onNewComplaintWithData) {
-                      const firstCustMsg = messages.find(m => m.sender_type === 'customer');
-                      onNewComplaintWithData({
-                        customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
-                        customer_phone: selectedPhone.replace(/^91/, ''),
-                        issue_description: firstCustMsg?.message_body || 'Customer contacted via WhatsApp'
-                      });
-                    }
-                  }}
+                  onClick={handleRegisterTicketFromChat}
                   className="font-bold underline text-amber-800 hover:text-amber-950 shrink-0 cursor-pointer ml-3 flex items-center gap-1"
                 >
                   <span>+ Register Ticket</span>
@@ -4078,13 +3962,7 @@ export const WhatsAppWebInbox = ({
                     type="button"
                     onClick={() => {
                       setIsContactInfoOpen(false);
-                      if (onNewComplaintWithData) {
-                        onNewComplaintWithData({
-                          customer_name: contactInfo?.sender_name || selectedConv?.sender_name || '',
-                          customer_phone: selectedPhone?.replace(/^91/, ''),
-                          issue_description: 'Registered from WhatsApp conversation'
-                        });
-                      }
+                      handleRegisterTicketFromChat();
                     }}
                     className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold transition-all text-xs flex items-center justify-center gap-1 cursor-pointer"
                   >
@@ -4613,251 +4491,7 @@ export const WhatsAppWebInbox = ({
         subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
       />
 
-      {/* ================= MODAL: ATTACH MEDIA TO COMPLAINT ================= */}
-      {attachModalMsg && (
-        <div 
-          onClick={() => setAttachModalMsg(null)}
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]"
-          >
-            {/* Header */}
-            <div className="px-5 py-3.5 bg-gradient-to-r from-[#008069] to-[#005c4b] text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-                  <Paperclip className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm leading-tight">Attach WhatsApp Media to Complaint</h3>
-                  <p className="text-[11px] text-emerald-100">
-                    {contactInfo?.sender_name || 'Customer'} (+91 {selectedPhone?.replace(/^91/, '')})
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAttachModalMsg(null)}
-                className="p-1 hover:bg-white/10 rounded-full text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Media Preview Box */}
-            <div className="p-3.5 bg-slate-50 border-b border-slate-200 shrink-0">
-              <div className="flex items-center gap-3">
-                {(() => {
-                  const mUrl = getWhatsAppMediaUrl(attachModalMsg);
-                  if (isImageMessage(attachModalMsg) && mUrl) {
-                    return (
-                      <img 
-                        src={mUrl} 
-                        alt="Thumbnail" 
-                        className="w-12 h-12 rounded-lg object-cover border border-slate-200 bg-white shrink-0" 
-                      />
-                    );
-                  }
-                  if (isVideoMessage(attachModalMsg)) {
-                    return (
-                      <div className="w-12 h-12 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-                        <Video className="w-6 h-6" />
-                      </div>
-                    );
-                  }
-                  if (isDocumentMessage(attachModalMsg)) {
-                    return (
-                      <div className="w-12 h-12 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                        <FileText className="w-6 h-6" />
-                      </div>
-                    );
-                  }
-                  if (isLocationMessage(attachModalMsg)) {
-                    return (
-                      <div className="w-12 h-12 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                        <MapPin className="w-6 h-6" />
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="w-12 h-12 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                      <Paperclip className="w-6 h-6" />
-                    </div>
-                  );
-                })()}
-                <div className="min-w-0 flex-1">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">
-                    Selected Item: {attachModalMsg.media_type || (isLocationMessage(attachModalMsg) ? 'Location Pin' : 'Attachment')}
-                  </span>
-                  <p className="text-xs font-semibold text-slate-800 truncate">
-                    {attachModalMsg.media_caption || (attachModalMsg.message_body && !attachModalMsg.message_body.startsWith('[') ? attachModalMsg.message_body : 'Media received via WhatsApp')}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                    Received: {formatIndianDateTime(attachModalMsg.created_at) || formatWhatsAppTime(attachModalMsg.created_at)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Body: Complaint Selection */}
-            <div className="p-4 overflow-y-auto space-y-4 flex-1 text-xs">
-              {/* Active Complaints */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Active Complaints of this Customer ({contactInfo?.active_complaints?.length || 0})
-                  </span>
-                </div>
-
-                {(!contactInfo?.active_complaints || contactInfo.active_complaints.length === 0) ? (
-                  <div className="p-3 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500 text-[11px]">
-                    No active open complaints for this customer.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {contactInfo.active_complaints.map(c => (
-                      <div 
-                        key={c.id}
-                        className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50 flex items-center justify-between gap-3 transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-emerald-950 text-xs">#{c.ticket_id}</span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-200/80 text-emerald-900">
-                              {c.status || 'Active'}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-600 truncate mt-0.5">
-                            {c.complaint_type || 'Solar System'} {c.consumer_no ? `• Consumer: ${c.consumer_no}` : ''}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={attachingMsgId === attachModalMsg.id}
-                          onClick={() => handleAttachMediaToComplaint(attachModalMsg, c.id, c.ticket_id)}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-all shrink-0"
-                        >
-                          {attachingMsgId === attachModalMsg.id ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Paperclip className="w-3 h-3" />
-                          )}
-                          <span>Attach</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Search All Complaints */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5 text-xs">
-                  Or Search Any Complaint Ticket:
-                </label>
-                <div className="relative mb-2">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={attachSearchQuery}
-                    onChange={(e) => handleSearchComplaintsForAttach(e.target.value)}
-                    placeholder="Enter ticket #, consumer #, or customer name..."
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008069]"
-                  />
-                  {isSearchingComplaints && (
-                    <RefreshCw className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5 animate-spin" />
-                  )}
-                </div>
-
-                {searchedComplaints.length > 0 && (
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-1 bg-white">
-                    {searchedComplaints.map(c => (
-                      <div
-                        key={c.id}
-                        className="p-2 rounded-lg hover:bg-slate-50 flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <span className="font-bold text-slate-900">#{c.ticket_id}</span>
-                          <span className="text-slate-500 text-[11px] ml-1.5">({c.customer_name})</span>
-                          <p className="text-[10px] text-slate-500 truncate">{c.issue_description || c.complaint_type}</p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={attachingMsgId === attachModalMsg.id}
-                          onClick={() => handleAttachMediaToComplaint(attachModalMsg, c.id, c.ticket_id)}
-                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
-                        >
-                          <span>Attach</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Past Complaints of Customer */}
-              {contactInfo?.complaints?.filter(c => ['Resolved', 'Closed'].includes(c.status)).length > 0 && (
-                <div>
-                  <span className="block font-bold text-slate-600 mb-1.5 text-xs">
-                    Past / Closed Tickets of this Customer:
-                  </span>
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                    {contactInfo.complaints
-                      .filter(c => ['Resolved', 'Closed'].includes(c.status))
-                      .map(c => (
-                        <div
-                          key={c.id}
-                          className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between gap-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-800 text-xs">#{c.ticket_id}</span>
-                              <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-600 font-semibold">
-                                {c.status}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                              {c.complaint_type || 'Solar System'} • {formatIndianDateOnly(c.created_at)}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={attachingMsgId === attachModalMsg.id}
-                            onClick={() => handleAttachMediaToComplaint(attachModalMsg, c.id, c.ticket_id)}
-                            className="px-2.5 py-1 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded text-[11px] cursor-pointer shrink-0"
-                          >
-                            Attach
-                          </button>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleCreateNewComplaintFromMedia(attachModalMsg)}
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>New Complaint with Media</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAttachModalMsg(null)}
-                className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
