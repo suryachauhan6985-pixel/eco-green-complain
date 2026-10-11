@@ -248,22 +248,19 @@ export function VideoRecorderModal({
       return;
     }
 
-    // Reverse hardware orientation logic:
-    // On mobile camera sensors and browsers, the 9:16 constraint delivers widescreen feed (Landscape),
-    // and the 16:9 constraint delivers vertical feed (Portrait).
-    // Reversing this mapping ensures:
-    // - Selecting Landscape locks and records in true Landscape (full width 16:9)
-    // - Selecting Portrait locks and records in true Portrait (9:16 vertical)
-    const isPortraitConstraint = desiredOrientation === 'landscape';
+    const isLandscape = desiredOrientation === 'landscape';
 
     try {
+      // True Orientation HD Constraints (Native 720p HD @ 30fps):
+      // Landscape: true 16:9 widescreen (1280x720)
+      // Portrait: true 9:16 vertical (720x1280)
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: isPortraitConstraint ? { ideal: 720, max: 1080 } : { ideal: 1280, max: 1920 },
-          height: isPortraitConstraint ? { ideal: 1280, max: 1920 } : { ideal: 720, max: 1080 },
-          aspectRatio: { ideal: isPortraitConstraint ? (9 / 16) : (16 / 9) },
-          frameRate: { ideal: 24, max: 30 }
+          width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+          height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+          aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
+          frameRate: { ideal: 30, max: 30 }
         },
         audio: {
           echoCancellation: true,
@@ -283,10 +280,10 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: desiredFacingMode },
-              width: isPortraitConstraint ? { ideal: 720, max: 1080 } : { ideal: 1280, max: 1920 },
-              height: isPortraitConstraint ? { ideal: 1280, max: 1920 } : { ideal: 720, max: 1080 },
-              aspectRatio: { ideal: isPortraitConstraint ? (9 / 16) : (16 / 9) },
-              frameRate: { ideal: 24, max: 30 }
+              width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+              height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+              aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
+              frameRate: { ideal: 30, max: 30 }
             },
             audio: true
           });
@@ -297,7 +294,7 @@ export function VideoRecorderModal({
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
                 facingMode: { ideal: desiredFacingMode },
-                aspectRatio: { ideal: isPortraitConstraint ? (9 / 16) : (16 / 9) }
+                aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) }
               }
             });
             setHasAudio(false);
@@ -320,7 +317,7 @@ export function VideoRecorderModal({
         }
       }
 
-      // Check hardware zoom capabilities in background and strictly initialize at 1.0x
+      // Check hardware zoom capabilities without forcing any initial digital or optical zoom
       const track = newStream.getVideoTracks()[0];
       if (track) {
         let isHardwareZoomAvailable = false;
@@ -335,13 +332,6 @@ export function VideoRecorderModal({
             minZ = caps.zoom.min ?? 1;
             maxZ = caps.zoom.max ?? 5;
             stepZ = caps.zoom.step ?? 0.1;
-
-            try {
-              const defaultZoom = Math.max(1, minZ);
-              track.applyConstraints({ advanced: [{ zoom: defaultZoom }] }).catch(() => {});
-            } catch (err) {
-              console.warn('Initial hardware 1x zoom constraint error:', err);
-            }
           }
         }
 
@@ -351,7 +341,7 @@ export function VideoRecorderModal({
           max: Math.max(3, maxZ),
           step: stepZ
         });
-        setZoomLevel(1);
+        setZoomLevel(1); // strictly start at clean 1x normal view
       }
     } catch (err) {
       console.error('Camera initialization failed:', err);
@@ -944,8 +934,26 @@ export function VideoRecorderModal({
                   transformOrigin: 'center center',
                   transition: 'transform 0.15s ease-out'
                 }}
-                className="w-full h-full object-cover bg-black"
+                className="w-full h-full object-contain bg-black"
               />
+            )}
+
+            {/* Device Rotation Guidance Helpers */}
+            {!recordedBlob && !isPortrait && liveStreamMeta.width > 0 && liveStreamMeta.width < liveStreamMeta.height && (
+              <div className="absolute bottom-24 inset-x-0 flex justify-center pointer-events-none z-25 px-4 animate-in fade-in">
+                <div className="px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-teal-400/50 text-teal-300 text-xs font-semibold flex items-center gap-2 shadow-xl">
+                  <RotateCw className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                  <span>Turn phone sideways for full widescreen</span>
+                </div>
+              </div>
+            )}
+            {!recordedBlob && isPortrait && liveStreamMeta.width > liveStreamMeta.height && (
+              <div className="absolute bottom-24 inset-x-0 flex justify-center pointer-events-none z-25 px-4 animate-in fade-in">
+                <div className="px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-teal-400/50 text-teal-300 text-xs font-semibold flex items-center gap-2 shadow-xl">
+                  <RotateCw className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                  <span>Hold phone upright for vertical portrait</span>
+                </div>
+              </div>
             )}
 
             {/* Recorded Playback Review Stream */}
@@ -972,7 +980,7 @@ export function VideoRecorderModal({
                     transform: previewMeta.rotation ? `rotate(${previewMeta.rotation}deg)` : undefined,
                     transition: 'transform 0.25s ease'
                   }}
-                  className="w-full h-full object-cover bg-black"
+                  className="w-full h-full object-contain bg-black"
                 />
               </div>
             )}
