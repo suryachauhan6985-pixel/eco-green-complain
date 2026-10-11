@@ -44,6 +44,16 @@ const TabSuspenseFallback = () => (
   </div>
 );
 
+const LoadingFallback = () => (
+  <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6 animate-in fade-in duration-200">
+    <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center shadow-xs mb-3">
+      <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+    <span className="text-sm font-bold text-slate-700">Loading Service Tracking Portal...</span>
+    <span className="text-xs text-slate-400 mt-1">Eco Green Solar Support Desk</span>
+  </div>
+);
+
 import { getUrlParam, updateUrlParams } from './utils/urlSync';
 
 function getTrackingInfoFromUrl() {
