@@ -35,7 +35,7 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade flex items-center justify-center p-4 cursor-pointer"
       style={{
         paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))',
         paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
@@ -47,7 +47,7 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
       }}
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 cursor-default"
+        className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 cursor-default modal-enter-scale"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">

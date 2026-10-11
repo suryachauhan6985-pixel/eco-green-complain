@@ -225,7 +225,7 @@ export const CustomerSearchModal = ({
       }}
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200"
+        className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 modal-enter-scale"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Bar */}

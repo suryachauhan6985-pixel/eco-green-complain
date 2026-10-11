@@ -2875,7 +2875,7 @@ export const WhatsAppWebInbox = ({
           </div>
         )}
         {selectedPhone ? (
-          <>
+          <div key={selectedPhone} className="flex-1 flex flex-col h-full overflow-hidden animate-in fade-in duration-200">
             {/* Phase 5: Network Disconnected Offline Alert Banner */}
             {!isOnline && (
               <div className="bg-amber-600 text-white text-xs py-1.5 px-4 flex items-center justify-center gap-2 font-medium z-30 shrink-0 shadow-sm animate-in fade-in">
@@ -3132,7 +3132,7 @@ export const WhatsAppWebInbox = ({
             <div 
               ref={chatContainerRef}
               onScroll={handleChatScroll}
-              className="flex-1 overflow-y-auto p-4 pb-12 space-y-2 bg-[#efeae2] relative"
+              className="flex-1 overflow-y-auto p-4 pb-12 space-y-2 bg-[#efeae2] relative chat-smooth-scroll"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='140' height='140' viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='15' y='15' width='28' height='20' rx='2' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cline x1='29' y1='15' x2='29' y2='35' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cline x1='15' y1='25' x2='43' y2='25' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Ccircle cx='95' cy='25' r='7' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cpath d='M95 13v3 M95 34v3 M83 25h3 M104 25h3 M87 17l2 2 M101 31l2 2 M87 33l2-2 M101 19l2-2' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cpath d='M25 80 c0-8 8-12 15-12 c0 8-8 12-15 12z' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Ctext x='48' y='110' font-family='sans-serif' font-size='9' font-weight='800' fill='%23047857' fill-opacity='0.06' transform='rotate(-20 48 110)'%3EECO GREEN SOLAR%3C/text%3E%3C/svg%3E")`,
                 backgroundSize: '160px 160px'
@@ -3199,7 +3199,7 @@ export const WhatsAppWebInbox = ({
             {showEmojiPicker && (
               <div 
                 id="emoji-picker-container"
-                className="absolute bottom-16 left-4 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200 w-80 p-3 animate-in fade-in slide-in-from-bottom-2 duration-150"
+                className="absolute bottom-16 left-4 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200 w-80 p-3 popover-enter"
               >
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
                   <div className="flex items-center gap-2">
@@ -3246,7 +3246,7 @@ export const WhatsAppWebInbox = ({
             {showAttachMenu && (
               <div 
                 id="attach-menu-container"
-                className="absolute bottom-16 left-8 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 w-60 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150"
+                className="absolute bottom-16 left-8 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 w-60 flex flex-col gap-1.5 popover-enter"
               >
                 {/* Option 1: Document (All Files *.*) */}
                 <button
@@ -3519,7 +3519,7 @@ export const WhatsAppWebInbox = ({
                 )}
               </form>
             )}
-          </>
+          </div>
         ) : (
           /* Empty State: Eco Green Solar Communication Desk */
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#f8fafc] border-b-8 border-emerald-600 select-none">

@@ -1479,12 +1479,12 @@ export const ComplaintDetailDrawer = ({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div 
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade transition-opacity"
         onClick={handleDrawerClose}
       />
 
       <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto max-w-full flex w-full sm:w-auto">
-        <div className="w-full sm:w-screen sm:max-w-2xl bg-white shadow-2xl flex flex-col h-full overflow-hidden">
+        <div className="w-full sm:w-screen sm:max-w-2xl bg-white shadow-2xl flex flex-col h-full overflow-hidden drawer-enter-right">
           {/* Header */}
           <div 
             className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2 shrink-0"

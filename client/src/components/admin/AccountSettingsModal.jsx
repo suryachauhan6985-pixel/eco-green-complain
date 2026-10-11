@@ -162,7 +162,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 cursor-pointer"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade cursor-pointer"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -170,7 +170,7 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
       }}
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-200 cursor-default"
+        className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden modal-enter-scale cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -159,11 +159,11 @@ export function DialogProvider({ children }) {
       {/* CUSTOM IN-APP DIALOG MODAL */}
       {dialog && dialog.isOpen && (
         <div 
-          className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 backdrop-enter-fade"
           onClick={() => handleCloseDialog(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150"
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 modal-enter-scale"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header with appropriate icon & color */}

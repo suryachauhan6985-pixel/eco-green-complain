@@ -784,9 +784,9 @@ export function VideoRecorderModal({
   const availableZoomPresets = [1, 2, 3, 5].filter(z => z <= (zoomCapabilities.max || 5));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-slate-950/85 sm:backdrop-blur-md animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-slate-950/85 sm:backdrop-blur-md backdrop-enter-fade">
       {/* Full-screen on mobile, large immersive modal on tablet/desktop */}
-      <div className="relative w-full h-[100dvh] sm:h-[92vh] sm:max-w-4xl sm:rounded-2xl sm:border sm:border-slate-800 bg-black overflow-hidden flex flex-col shadow-2xl">
+      <div className="relative w-full h-[100dvh] sm:h-[92vh] sm:max-w-4xl sm:rounded-2xl sm:border sm:border-slate-800 bg-black overflow-hidden flex flex-col shadow-2xl modal-enter-scale">
         
         {/* Top Slim Progress Bar (Active only when recording) */}
         {isRecording && (

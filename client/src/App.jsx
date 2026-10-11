@@ -35,8 +35,13 @@ import { AppPageSkeleton, ComplaintGridSkeleton } from './components/common/Skel
 import { GlobalLoadingOverlay } from './components/common/GlobalLoadingOverlay';
 import { SplashScreen } from './components/common/SplashScreen';
 
-const LoadingFallback = () => (
-  <GlobalLoadingOverlay isVisible={true} />
+const TabSuspenseFallback = () => (
+  <div className="w-full flex-1 flex flex-col items-center justify-center min-h-[360px] p-8 text-emerald-700 animate-in fade-in duration-200">
+    <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center shadow-xs mb-3">
+      <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+    <span className="text-xs font-bold text-slate-500">Loading view...</span>
+  </div>
 );
 
 import { getUrlParam, updateUrlParams } from './utils/urlSync';
@@ -513,69 +518,71 @@ function AppContent() {
           ? 'overflow-hidden p-0 max-w-full flex flex-col' 
           : 'overflow-y-auto overflow-x-hidden max-w-[1780px] p-2.5 sm:p-5 lg:p-6'
       }`}>
-        <React.Suspense fallback={<LoadingFallback />}>
-          {currentTab === 'complaints' && (
-            <ComplaintList
-              key={`comp-${refreshKey}`}
-              refreshKey={refreshKey}
-              initialFilters={complaintFilters}
-              onSelectComplaint={handleSelectComplaint}
-              onOpenNewComplaint={() => handleOpenNewComplaint()}
-              onOpenCustomerSearch={handleOpenCustomerSearch}
-              onOpenWhatsAppChat={handleOpenWhatsAppChat}
-            />
-          )}
+        <React.Suspense fallback={<TabSuspenseFallback />}>
+          <div key={currentTab} className="tab-content-enter flex-1 min-h-0 w-full flex flex-col">
+            {currentTab === 'complaints' && (
+              <ComplaintList
+                key={`comp-${refreshKey}`}
+                refreshKey={refreshKey}
+                initialFilters={complaintFilters}
+                onSelectComplaint={handleSelectComplaint}
+                onOpenNewComplaint={() => handleOpenNewComplaint()}
+                onOpenCustomerSearch={handleOpenCustomerSearch}
+                onOpenWhatsAppChat={handleOpenWhatsAppChat}
+              />
+            )}
 
-          {currentTab === 'technician' && (
-            <TechnicianFieldPortal
-              key={`tech-${refreshKey}`}
-              activeSection={techSection}
-              onSectionChange={handleTechSectionChange}
-              onSelectComplaint={handleSelectComplaint}
-            />
-          )}
+            {currentTab === 'technician' && (
+              <TechnicianFieldPortal
+                key={`tech-${refreshKey}`}
+                activeSection={techSection}
+                onSectionChange={handleTechSectionChange}
+                onSelectComplaint={handleSelectComplaint}
+              />
+            )}
 
-          {currentTab === 'team' && (
-            <StaffTechnicianManager
-              key={`team-${refreshKey}`}
-            />
-          )}
+            {currentTab === 'team' && (
+              <StaffTechnicianManager
+                key={`team-${refreshKey}`}
+              />
+            )}
 
-          {currentTab === 'analytics' && (
-            <AnalyticsDashboard
-              key={`ana-${refreshKey}`}
-              onNavigateToComplaints={(filters) => {
-                setComplaintFilters(filters);
-                handleTabChange('complaints', null, true);
-              }}
-            />
-          )}
+            {currentTab === 'analytics' && (
+              <AnalyticsDashboard
+                key={`ana-${refreshKey}`}
+                onNavigateToComplaints={(filters) => {
+                  setComplaintFilters(filters);
+                  handleTabChange('complaints', null, true);
+                }}
+              />
+            )}
 
-          {(currentTab === 'settings' || currentTab === 'templates') && (
-            <AdminSettingsHub 
-              key={`settings-${refreshKey}`} 
-              initialTab={currentTab === 'templates' ? 'templates' : undefined} 
-            />
-          )}
+            {(currentTab === 'settings' || currentTab === 'templates') && (
+              <AdminSettingsHub 
+                key={`settings-${refreshKey}`} 
+                initialTab={currentTab === 'templates' ? 'templates' : undefined} 
+              />
+            )}
 
-          {currentTab === 'whatsapp-inbox' && (
-            <WhatsAppWebInbox
-              key={`wa-inbox-${refreshKey}`}
-              initialTarget={activeWhatsAppPhone}
-              onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
-              onOpenComplaint={handleSelectComplaint}
-              onNewComplaintWithData={(data) => {
-                handleOpenNewComplaint(data);
-              }}
-            />
-          )}
+            {currentTab === 'whatsapp-inbox' && (
+              <WhatsAppWebInbox
+                key={`wa-inbox-${refreshKey}`}
+                initialTarget={activeWhatsAppPhone}
+                onClearInitialTarget={() => setActiveWhatsAppPhone(null)}
+                onOpenComplaint={handleSelectComplaint}
+                onNewComplaintWithData={(data) => {
+                  handleOpenNewComplaint(data);
+                }}
+              />
+            )}
 
-          {currentTab === 'customer' && (
-            <CustomerPublicPortal
-              key={`cust-${refreshKey}`}
-              onOpenNewComplaint={() => handleOpenNewComplaint()}
-            />
-          )}
+            {currentTab === 'customer' && (
+              <CustomerPublicPortal
+                key={`cust-${refreshKey}`}
+                onOpenNewComplaint={() => handleOpenNewComplaint()}
+              />
+            )}
+          </div>
         </React.Suspense>
       </main>
 

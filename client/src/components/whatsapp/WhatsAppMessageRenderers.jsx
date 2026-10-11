@@ -697,7 +697,7 @@ export function WhatsAppReactionButtonWithPicker({
           onClick={(e) => e.stopPropagation()}
           className={`msg-reaction-picker-container absolute bottom-full mb-1.5 ${
             isOutgoing ? 'right-0' : 'left-0'
-          } z-50 flex items-center gap-1 px-2 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-xl border border-slate-200/90 animate-in fade-in zoom-in-95 duration-150 select-none ring-1 ring-black/5`}
+          } z-50 flex items-center gap-1 px-2 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-xl border border-slate-200/90 popover-enter select-none ring-1 ring-black/5`}
         >
           {quickEmojis.map((emoji) => (
             <button
@@ -759,7 +759,7 @@ export function WhatsAppMediaLightbox({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-between p-4 animate-in fade-in select-none"
+      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-between p-4 backdrop-enter-fade select-none"
     >
       {/* Lightbox Top Navigation Bar */}
       <div
@@ -829,7 +829,7 @@ export function WhatsAppMediaLightbox({
       {/* Media Canvas */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-2"
+        className="flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-2 modal-enter-scale"
       >
         {isVideo ? (
           <video

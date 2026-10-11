@@ -369,12 +369,12 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade transition-opacity"
         onClick={onClose}
       />
 
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-md md:max-w-lg bg-white shadow-2xl flex flex-col">
+        <div className="w-screen max-w-md md:max-w-lg bg-white shadow-2xl flex flex-col drawer-enter-right">
           {/* Header */}
           <div 
             className="p-4 bg-emerald-800 text-white flex items-center justify-between shadow-xs"
