@@ -39,9 +39,10 @@ import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 // Helper: Resolve relative or proxy WhatsApp media URLs
 function getWhatsAppMediaUrl(msg) {
   if (!msg) return '';
-  let url = msg.media_url;
-  if (!url && msg.media_id) {
-    url = `/api/whatsapp/media/${msg.media_id}`;
+  let url = msg.media_url || msg.url || msg.file_url || msg.attachment_url;
+  const mediaId = msg.media_id || msg.mediaId || (msg.image && msg.image.id) || (msg.video && msg.video.id) || (msg.document && msg.document.id) || (msg.audio && msg.audio.id);
+  if (!url && mediaId) {
+    url = `/api/whatsapp/media/${mediaId}`;
   }
   if (!url) return '';
   url = String(url).trim();
@@ -61,49 +62,74 @@ function getWhatsAppMediaUrl(msg) {
 
 function isImageMessage(msg) {
   if (!msg) return false;
-  if (msg.media_type === 'image' || msg.media_type?.includes('image')) return true;
-  if (msg.media_url && /\.(jpe?g|png|webp|gif)($|\?)/i.test(msg.media_url)) return true;
+  const type = msg.media_type || msg.type || msg.mime_type;
+  if (type === 'image' || type?.includes('image')) return true;
+  const url = msg.media_url || msg.url || msg.file_url || msg.attachment_url;
+  if (url && /\.(jpe?g|png|webp|gif)($|\?)/i.test(url)) return true;
   return false;
 }
 
 function isVideoMessage(msg) {
   if (!msg) return false;
-  if (msg.media_type === 'video' || msg.media_type?.includes('video')) return true;
-  if (msg.media_url && /\.(mp4|webm|mov|m4v)($|\?)/i.test(msg.media_url)) return true;
+  const type = msg.media_type || msg.type || msg.mime_type;
+  if (type === 'video' || type?.includes('video')) return true;
+  const url = msg.media_url || msg.url || msg.file_url || msg.attachment_url;
+  if (url && /\.(mp4|webm|mov|m4v)($|\?)/i.test(url)) return true;
   return false;
 }
 
 function isAudioMessage(msg) {
   if (!msg) return false;
-  if (msg.media_type === 'audio' || msg.media_type === 'voice' || msg.media_type?.includes('audio') || msg.media_type?.includes('voice') || msg.media_type?.includes('ogg')) return true;
-  if (msg.media_url && /\.(mp3|ogg|wav|m4a|aac|opus)($|\?)/i.test(msg.media_url)) return true;
+  const type = msg.media_type || msg.type || msg.mime_type;
+  if (type === 'audio' || type === 'voice' || type?.includes('audio') || type?.includes('voice') || type?.includes('ogg')) return true;
+  const url = msg.media_url || msg.url || msg.file_url || msg.attachment_url;
+  if (url && /\.(mp3|ogg|wav|m4a|aac|opus)($|\?)/i.test(url)) return true;
   return false;
 }
 
 function isDocumentMessage(msg) {
   if (!msg) return false;
-  if (msg.media_type === 'document' || msg.media_type?.includes('document') || msg.media_type?.includes('pdf')) return true;
-  if (msg.media_url && /\.(pdf|docx?|xlsx?|csv|zip|rar|txt)($|\?)/i.test(msg.media_url)) return true;
+  const type = msg.media_type || msg.type || msg.mime_type;
+  if (type === 'document' || type?.includes('document') || type?.includes('pdf')) return true;
+  const url = msg.media_url || msg.url || msg.file_url || msg.attachment_url;
+  if (url && /\.(pdf|docx?|xlsx?|csv|zip|rar|txt)($|\?)/i.test(url)) return true;
   return false;
 }
 
 function isStickerMessage(msg) {
   if (!msg) return false;
-  return msg.media_type === 'sticker';
+  const type = msg.media_type || msg.type;
+  return type === 'sticker';
 }
 
 function isLocationMessage(msg) {
   if (!msg) return false;
-  if (msg.media_type === 'location') return true;
+  const type = msg.media_type || msg.type;
+  if (type === 'location') return true;
   if (msg.message_body && (msg.message_body.includes('maps.google.com') || msg.message_body.includes('goo.gl/maps') || msg.message_body.startsWith('📍'))) return true;
   return false;
 }
 
 function isContactMessage(msg) {
   if (!msg) return false;
-  if (msg.media_type === 'contacts') return true;
+  const type = msg.media_type || msg.type;
+  if (type === 'contacts' || type === 'contact') return true;
   if (msg.message_body && msg.message_body.startsWith('👤 Contact Card:')) return true;
   return false;
+}
+
+function isUnsupportedOrInteractiveMessage(msg) {
+  if (!msg) return false;
+  const type = (msg.media_type || msg.type || '').toLowerCase();
+  const body = (msg.message_body || '').toLowerCase();
+  return (
+    type === 'unsupported' ||
+    type === 'interactive' ||
+    body.includes('unsupported') ||
+    body.includes('view-once') ||
+    body.includes('interactive item') ||
+    body.includes('interactive reply')
+  );
 }
 
 const EMOJI_CATEGORIES = {
@@ -263,6 +289,7 @@ export const WhatsAppWebInbox = ({
   });
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [failedImageIds, setFailedImageIds] = useState(new Set());
+  const [loadedImageIds, setLoadedImageIds] = useState(new Set());
   const [selectedPhone, setSelectedPhone] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -1728,22 +1755,54 @@ export const WhatsAppWebInbox = ({
                   />
                 )}
 
-                {/* Media: Image Photo preview with download button & graceful failure card */}
+                {/* Media: Image Photo preview with loading shimmer, download button & graceful failure card */}
                 {isImageMessage(msg) && (
                   (() => {
                     const mediaUrl = getWhatsAppMediaUrl(msg);
-                    if (!mediaUrl) return null;
                     const isFailed = failedImageIds.has(msg.id);
+                    const isLoaded = loadedImageIds.has(msg.id);
 
-                    if (isFailed) {
+                    if (!mediaUrl) {
                       return (
-                        <div className="mb-2 p-3 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0">
+                        <div className="mb-2 p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0">
                               <Camera className="w-4 h-4" />
                             </div>
                             <div className="min-w-0">
                               <p className="font-semibold text-slate-800">Photo</p>
+                              <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                                {msg.media_caption || 'WhatsApp Photo (Media pending)'}
+                              </p>
+                            </div>
+                          </div>
+                          {msg.media_id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const retryUrl = `/api/whatsapp/media/${msg.media_id}`;
+                                handleDownloadFile(retryUrl, `whatsapp_${msg.id || 'photo'}.jpg`);
+                              }}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded text-emerald-700 font-semibold flex items-center gap-1 cursor-pointer"
+                              title="Download Photo"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    if (isFailed) {
+                      return (
+                        <div className="mb-2 p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-full bg-rose-100 flex items-center justify-center text-rose-500 shrink-0">
+                              <AlertCircle className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800">Failed to load media</p>
                               <p className="text-[11px] text-slate-500 truncate max-w-[180px]">
                                 {msg.media_caption || 'WhatsApp Photo'}
                               </p>
@@ -1758,8 +1817,13 @@ export const WhatsAppWebInbox = ({
                                   next.delete(msg.id);
                                   return next;
                                 });
+                                setLoadedImageIds(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(msg.id);
+                                  return next;
+                                });
                               }}
-                              className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded text-emerald-700 font-semibold flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded text-emerald-700 font-semibold flex items-center gap-1 cursor-pointer"
                               title="Retry Loading"
                             >
                               <RotateCcw className="w-3 h-3" />
@@ -1779,18 +1843,29 @@ export const WhatsAppWebInbox = ({
                     }
 
                     return (
-                      <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-black/5 shadow-2xs">
+                      <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-slate-100 shadow-2xs min-h-[160px] flex items-center justify-center">
+                        {!isLoaded && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-100/95 animate-pulse text-slate-400 gap-2 z-1">
+                            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                              <Camera className="w-5 h-5 text-slate-400 animate-pulse" />
+                            </div>
+                            <span className="text-[11px] font-medium text-slate-500">Loading photo...</span>
+                          </div>
+                        )}
                         <img
                           src={mediaUrl}
                           alt="WhatsApp photo"
-                          loading="lazy"
+                          loading="eager"
+                          onLoad={() => {
+                            setLoadedImageIds(prev => new Set(prev).add(msg.id));
+                          }}
                           onError={() => {
                             setFailedImageIds(prev => new Set(prev).add(msg.id));
                           }}
-                          className="w-full max-h-72 object-cover rounded-xl cursor-pointer hover:opacity-95 transition-opacity"
+                          className={`w-full max-h-72 object-cover rounded-xl cursor-pointer hover:opacity-95 transition-opacity ${!isLoaded ? 'opacity-0' : 'opacity-100'}`}
                           onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
                         />
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-2">
                           <button
                             type="button"
                             onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
@@ -1817,7 +1892,23 @@ export const WhatsAppWebInbox = ({
                 {isVideoMessage(msg) && (
                   (() => {
                     const videoUrl = getWhatsAppMediaUrl(msg);
-                    if (!videoUrl) return null;
+                    if (!videoUrl) {
+                      return (
+                        <div className="mb-2 p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0">
+                              <Video className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800">Video</p>
+                              <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                                {msg.media_caption || 'WhatsApp Video (Pending)'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-black shadow-xs">
                         <video
@@ -1860,7 +1951,14 @@ export const WhatsAppWebInbox = ({
                 {isAudioMessage(msg) && (
                   (() => {
                     const audioUrl = getWhatsAppMediaUrl(msg);
-                    if (!audioUrl) return null;
+                    if (!audioUrl) {
+                      return (
+                        <div className="mb-2 p-3 rounded-xl bg-black/5 border border-black/10 flex items-center gap-2.5 text-xs text-slate-600">
+                          <Mic className="w-4 h-4 text-slate-400" />
+                          <span>Voice Note (Loading...)</span>
+                        </div>
+                      );
+                    }
                     return (
                       <WhatsAppVoiceNotePlayer
                         audioUrl={audioUrl}
@@ -1875,14 +1973,13 @@ export const WhatsAppWebInbox = ({
                 {isDocumentMessage(msg) && (
                   (() => {
                     const docUrl = getWhatsAppMediaUrl(msg);
-                    if (!docUrl) return null;
-                    const docName = msg.media_caption || msg.message_body || 'Document.pdf';
+                    const docName = msg.media_caption || (msg.message_body && !msg.message_body.startsWith('[') ? msg.message_body : '') || 'Document.pdf';
                     return (
                       <WhatsAppDocumentCard
                         docUrl={docUrl}
                         docName={docName}
-                        onOpenPdf={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
-                        onDownload={() => handleDownloadFile(docUrl, docName)}
+                        onOpenPdf={() => docUrl && setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
+                        onDownload={() => docUrl && handleDownloadFile(docUrl, docName)}
                       />
                     );
                   })()
@@ -1962,18 +2059,18 @@ export const WhatsAppWebInbox = ({
                   );
                 })()}
 
-                {/* View-Once / Interactive WhatsApp Item Card */}
-                {(msg.message_body?.toLowerCase().includes('unsupported') || msg.message_body?.includes('View-Once') || msg.message_body?.includes('Interactive Item')) ? (
+                {/* View-Once / Unsupported / Interactive WhatsApp Item Card */}
+                {isUnsupportedOrInteractiveMessage(msg) ? (
                   <div className="mb-1.5 p-2.5 rounded-xl bg-black/5 border border-black/10 flex items-start gap-2.5 max-w-sm">
                     <div className="w-8 h-8 rounded-full bg-[#00a884]/20 text-[#008069] flex items-center justify-center shrink-0 mt-0.5">
                       <Camera className="w-4 h-4" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-xs text-[#111b21] flex items-center gap-1.5">
-                        <span>WhatsApp View-Once / Interactive Media</span>
+                        <span>WhatsApp Media / Protected Item</span>
                       </p>
                       <p className="text-[11px] text-[#54656f] mt-0.5 leading-snug">
-                        Customer sent a protected view-once media or interactive item from WhatsApp mobile.
+                        Customer sent a view-once media, interactive item, or unsupported WhatsApp format ({msg.media_type || msg.type || 'view-once'}).
                       </p>
                       <button
                         type="button"
@@ -2032,6 +2129,57 @@ export const WhatsAppWebInbox = ({
                           {footer}
                         </div>
                       );
+                    })()}
+
+                    {/* Universal Fallback Guard: NEVER show blank empty box! */}
+                    {(() => {
+                      const hasText = Boolean(
+                        msg.message_body &&
+                        msg.message_body.trim() &&
+                        !msg.message_body.startsWith('📍 Location Pin:') &&
+                        !msg.message_body.startsWith('👤 Contact Card:')
+                      );
+                      const hasMedia = (
+                        isImageMessage(msg) ||
+                        isVideoMessage(msg) ||
+                        isAudioMessage(msg) ||
+                        isDocumentMessage(msg) ||
+                        isContactMessage(msg) ||
+                        isLocationMessage(msg) ||
+                        isUnsupportedOrInteractiveMessage(msg)
+                      );
+
+                      if (!hasText && !hasMedia) {
+                        // Debug & Logging: Log the full message object as requested
+                        console.warn('[WhatsAppWebInbox] Blank message detected, rendering fallback card:', msg);
+
+                        const rawType = msg.media_type || msg.type || 'unknown';
+                        return (
+                          <div className="mb-1 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 flex items-start gap-2.5 max-w-sm">
+                            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-[12px] text-slate-800">
+                                Unsupported message type: {rawType}
+                              </p>
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                                {msg.media_caption || 'Message content could not be displayed directly.'}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenInWhatsAppWeb(msg);
+                                }}
+                                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Open in WhatsApp Web</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
                     })()}
                   </div>
                 )}

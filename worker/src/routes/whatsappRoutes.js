@@ -173,6 +173,10 @@ export async function handleWebhookPost(c) {
               const cPhone = firstContact.phones?.[0]?.phone || '';
               textBody = cPhone;
               mediaCaption = cName;
+            } else if (msg.type === 'unsupported') {
+              mediaType = 'unsupported';
+              textBody = '📷 [WhatsApp Media / View-Once Item Received]';
+              mediaCaption = 'WhatsApp Media / View-Once Item';
             } else if (msg.type === 'reaction') {
               const targetWamid = msg.reaction?.message_id;
               const emoji = msg.reaction?.emoji || '';
@@ -207,6 +211,9 @@ export async function handleWebhookPost(c) {
                 } catch (_) {}
               }
               continue; // Skip creating a new bubble for reaction events
+            } else {
+              mediaType = msg.type || 'unknown';
+              textBody = msg.text?.body || (msg.type ? `[${msg.type} message received]` : '[Message received]');
             }
 
             // Extract Quoted Message Context from Webhook
@@ -226,8 +233,8 @@ export async function handleWebhookPost(c) {
               } catch (_) {}
             }
 
-            if (!textBody && !mediaId && !mediaType) {
-              textBody = msg.text?.body || '';
+            if (!textBody && !mediaId && !mediaUrl) {
+              textBody = msg.text?.body || (msg.type ? `[${msg.type} message received]` : '[Message received]');
             }
 
             // Raw Event Audit Log
