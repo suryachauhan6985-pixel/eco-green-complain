@@ -86,6 +86,13 @@ export const ComplaintDetailDrawer = ({
   const [resolutionPhotos, setResolutionPhotos] = useState([]);
   const [resolving, setResolving] = useState(false);
   const [resolvedByTechId, setResolvedByTechId] = useState('');
+  const [resolveUploadProgress, setResolveUploadProgress] = useState({
+    isUploading: false,
+    progress: 0,
+    currentFile: '',
+    currentIndex: 0,
+    totalFiles: 0
+  });
 
   const [closureRemarks, setClosureRemarks] = useState('');
   const [closing, setClosing] = useState(false);
@@ -998,17 +1005,63 @@ export const ComplaintDetailDrawer = ({
 
       let fallbackFiles = [];
       if (resolutionPhotos.length > 0) {
-        showToast(`Uploading ${resolutionPhotos.length} resolution file(s) to cloud storage...`, 'info');
-        const uploadPromises = resolutionPhotos.map(async (item) => {
+        setResolveUploadProgress({
+          isUploading: true,
+          progress: 5,
+          currentFile: resolutionPhotos[0].name || resolutionPhotos[0].file?.name || 'File 1',
+          currentIndex: 1,
+          totalFiles: resolutionPhotos.length
+        });
+
+        const uploadResults = [];
+        for (let idx = 0; idx < resolutionPhotos.length; idx++) {
+          const item = resolutionPhotos[idx];
+          const fileName = item.name || item.file?.name || `File ${idx + 1}`;
+          const basePct = Math.round((idx / resolutionPhotos.length) * 88) + 5;
+
+          setResolveUploadProgress({
+            isUploading: true,
+            progress: basePct,
+            currentFile: fileName,
+            currentIndex: idx + 1,
+            totalFiles: resolutionPhotos.length
+          });
+
+          const handleSingleFileProgress = (filePct) => {
+            const slicePct = Math.round(((idx + (filePct / 100)) / resolutionPhotos.length) * 88) + 5;
+            setResolveUploadProgress({
+              isUploading: true,
+              progress: Math.min(94, Math.max(basePct, slicePct)),
+              currentFile: fileName,
+              currentIndex: idx + 1,
+              totalFiles: resolutionPhotos.length
+            });
+          };
+
           try {
-            const uploaded = await uploadFileToSupabase(item.file, ticket.ticket_id || ticket.id);
-            return { success: true, uploaded };
+            const uploaded = await uploadFileToSupabase(item.file, ticket.ticket_id || ticket.id, 'complaint', handleSingleFileProgress);
+            uploadResults.push({ success: true, uploaded });
           } catch (storageErr) {
             console.warn('Direct upload warning, falling back to multipart:', storageErr.message);
-            return { success: false, file: item.file };
+            uploadResults.push({ success: false, file: item.file });
           }
-        });
-        const uploadResults = await Promise.all(uploadPromises);
+
+          const finishedPct = Math.round(((idx + 1) / resolutionPhotos.length) * 88) + 5;
+          setResolveUploadProgress({
+            isUploading: true,
+            progress: finishedPct,
+            currentFile: fileName,
+            currentIndex: idx + 1,
+            totalFiles: resolutionPhotos.length
+          });
+        }
+
+        setResolveUploadProgress(prev => ({
+          ...prev,
+          progress: 95,
+          currentFile: 'Saving resolution details...'
+        }));
+
         const uploadedAttachments = uploadResults
           .filter(r => r.success && r.uploaded?.file_url)
           .map(r => ({
@@ -1031,7 +1084,19 @@ export const ComplaintDetailDrawer = ({
         }
       }
 
+      setResolveUploadProgress(prev => ({
+        ...prev,
+        progress: resolutionPhotos.length > 0 ? 96 : 50,
+        currentFile: 'Finalizing resolution on server...'
+      }));
+
       const res = await api.resolveComplaint(ticket.id, data);
+
+      setResolveUploadProgress(prev => ({
+        ...prev,
+        progress: 100,
+        currentFile: 'Resolution complete!'
+      }));
 
       // If multiple fallback files were needed
       if (fallbackFiles.length > 1) {
@@ -1078,6 +1143,13 @@ export const ComplaintDetailDrawer = ({
       showToast('Failed to resolve complaint: ' + err.message, 'error');
     } finally {
       setResolving(false);
+      setResolveUploadProgress({
+        isUploading: false,
+        progress: 0,
+        currentFile: '',
+        currentIndex: 0,
+        totalFiles: 0
+      });
     }
   };
 
@@ -3034,6 +3106,7 @@ export const ComplaintDetailDrawer = ({
                             <textarea
                               rows={2}
                               required
+                              disabled={resolving}
                               placeholder={
                                 isSiteSurveyTicket
                                   ? 'e.g., Rooftop measurement: 550 sq.ft South-facing RCC roof, zero shading. Feasible for 6 kW on-grid solar plant. Structural integrity verified.'
@@ -3041,7 +3114,7 @@ export const ComplaintDetailDrawer = ({
                               }
                               value={resolutionNotes}
                               onChange={(e) => setResolutionNotes(e.target.value)}
-                              className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                             />
                           </div>
 
@@ -3052,10 +3125,11 @@ export const ComplaintDetailDrawer = ({
                               </label>
                               <input
                                 type="text"
+                                disabled={resolving}
                                 placeholder={isSiteSurveyTicket ? 'e.g., 6 kW DCR Panels, 6 kW Inverter, Elevated Structure' : 'e.g., 2x MC4 Connectors, 1x 32A MCB'}
                                 value={spareParts}
                                 onChange={(e) => setSpareParts(e.target.value)}
-                                className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                className="w-full text-xs px-3 py-2 bg-white border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                               />
                             </div>
 
@@ -3142,11 +3216,12 @@ export const ComplaintDetailDrawer = ({
                                       <span>Attached Proofs ({resolutionPhotos.length}):</span>
                                       <button
                                         type="button"
+                                        disabled={resolving}
                                         onClick={() => {
                                           resolutionPhotos.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
                                           setResolutionPhotos([]);
                                         }}
-                                        className="text-[10px] text-red-600 hover:text-red-700 hover:underline cursor-pointer"
+                                        className="text-[10px] text-red-600 hover:text-red-700 hover:underline cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                       >
                                         Remove All
                                       </button>
@@ -3182,8 +3257,9 @@ export const ComplaintDetailDrawer = ({
                                             </button>
                                             <button
                                               type="button"
+                                              disabled={resolving}
                                               onClick={() => removeResolutionPhoto(item.id)}
-                                              className="text-red-500 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100/60 text-xs font-bold shrink-0 transition-colors cursor-pointer"
+                                              className="text-red-500 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100/60 text-xs font-bold shrink-0 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                               title="Remove this document"
                                             >
                                               <Trash2 className="w-3.5 h-3.5" />
@@ -3197,12 +3273,49 @@ export const ComplaintDetailDrawer = ({
                               </div>
                             </div>
 
+                          {/* Upload Progress Animation */}
+                          {resolveUploadProgress.isUploading && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-semibold text-emerald-900 flex items-center gap-1.5 truncate">
+                                  <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin shrink-0" />
+                                  <span className="truncate">
+                                    Uploading attachment {resolveUploadProgress.currentIndex} of {resolveUploadProgress.totalFiles}: <strong className="font-mono">{resolveUploadProgress.currentFile}</strong>
+                                  </span>
+                                </span>
+                                <span className="font-bold text-emerald-700 font-mono ml-2 shrink-0">{resolveUploadProgress.progress}%</span>
+                              </div>
+                              <div className="w-full bg-emerald-200/60 rounded-full h-2 overflow-hidden">
+                                <div 
+                                  className="bg-emerald-600 h-full rounded-full transition-all duration-300 ease-out" 
+                                  style={{ width: `${resolveUploadProgress.progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
                           <button
                             type="submit"
                             disabled={resolving || !resolutionNotes.trim()}
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-md shadow-emerald-700/20 transition-all disabled:opacity-50 cursor-pointer"
+                            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-md shadow-emerald-700/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                           >
-                            {resolving ? 'Submitting Resolution...' : (isSiteSurveyTicket ? 'Complete Site Survey & Submit Report' : 'Mark Complaint as Resolved')}
+                            {resolving ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin text-white shrink-0" />
+                                <span>
+                                  {resolveUploadProgress.isUploading
+                                    ? `Uploading Media (${resolveUploadProgress.progress}%)...`
+                                    : 'Submitting Resolution...'}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                                <span>
+                                  {isSiteSurveyTicket ? 'Complete Site Survey & Submit Report' : 'Mark Complaint as Resolved'}
+                                </span>
+                              </>
+                            )}
                           </button>
                         </form>
                         )}

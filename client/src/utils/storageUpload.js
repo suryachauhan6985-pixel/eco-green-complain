@@ -80,7 +80,7 @@ export async function compressImageFile(file, maxWidth = 1920, maxHeight = 1920,
   });
 }
 
-export async function uploadFileToSupabase(file, identifier = 'temp', uploadType = 'complaint') {
+export async function uploadFileToSupabase(file, identifier = 'temp', uploadType = 'complaint', onProgress = null) {
   if (!file) return null;
   
   if (file.size > 50 * 1024 * 1024) {
@@ -107,6 +107,48 @@ export async function uploadFileToSupabase(file, identifier = 'temp', uploadType
 
     const headers = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    if (onProgress) {
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload');
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            onProgress(percent);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data && data.success) {
+                resolve({
+                  file_name: data.file_name || optimizedFile.name,
+                  file_type: data.file_type || optimizedFile.type || 'application/octet-stream',
+                  file_size: data.file_size || optimizedFile.size,
+                  file_url: data.file_url,
+                  storage_key: data.storage_key
+                });
+              } else {
+                reject(new Error(data?.message || 'Upload failed'));
+              }
+            } catch (err) {
+              reject(err);
+            }
+          } else {
+            reject(new Error(`Server returned ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.send(formData);
+      });
+      return result;
+    }
 
     const r2Res = await fetch('/api/upload', {
       method: 'POST',
@@ -138,21 +180,49 @@ export async function uploadFileToSupabase(file, identifier = 'temp', uploadType
     .slice(0, 30);
   const uniqueName = `egs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${cleanBase}.${ext}`;
 
-  const res = await fetch(`${SUPABASE_STORAGE_URL}/${uniqueName}`, {
-    method: 'POST',
-    headers: {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': optimizedFile.type || 'application/octet-stream',
-      'x-upsert': 'true'
-    },
-    body: optimizedFile
-  });
+  if (onProgress) {
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${SUPABASE_STORAGE_URL}/${uniqueName}`);
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON_KEY}`);
+      xhr.setRequestHeader('Content-Type', optimizedFile.type || 'application/octet-stream');
+      xhr.setRequestHeader('x-upsert', 'true');
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error('[Supabase Storage Upload Error]', res.status, errText);
-    throw new Error(`Cloud storage upload failed: ${errText || res.statusText}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          onProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Supabase storage error: ${xhr.statusText}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error during Supabase upload'));
+      xhr.send(optimizedFile);
+    });
+  } else {
+    const res = await fetch(`${SUPABASE_STORAGE_URL}/${uniqueName}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': optimizedFile.type || 'application/octet-stream',
+        'x-upsert': 'true'
+      },
+      body: optimizedFile
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('[Supabase Storage Upload Error]', res.status, errText);
+      throw new Error(`Cloud storage upload failed: ${errText || res.statusText}`);
+    }
   }
 
   const publicUrl = `${SUPABASE_PUBLIC_URL}/${uniqueName}`;
