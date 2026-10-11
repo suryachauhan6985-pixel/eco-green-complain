@@ -8,14 +8,18 @@ const SYNC_KEYS = {
   COMPLAINTS: 'egs_live_complaints_sync',
   LEDGER: 'egs_live_ledger_sync',
   TECHS: 'egs_live_techs_sync',
-  CATALOG: 'egs_live_catalog_sync'
+  CATALOG: 'egs_live_catalog_sync',
+  WHATSAPP: 'egs_live_whatsapp_sync',
+  NOTIFICATIONS: 'egs_live_notifications_sync'
 };
 
 const SYNC_EVENTS = {
   COMPLAINTS: 'complaints-updated',
   LEDGER: 'tour-ledger-updated',
   TECHS: 'technicians-updated',
-  CATALOG: 'catalog-updated'
+  CATALOG: 'catalog-updated',
+  WHATSAPP: 'whatsapp-updated',
+  NOTIFICATIONS: 'notifications-updated'
 };
 
 // Create a BroadcastChannel instance if supported by the browser
@@ -77,9 +81,17 @@ export function broadcastCatalogUpdate(detail = {}) {
   emitSync(SYNC_KEYS.CATALOG, SYNC_EVENTS.CATALOG, detail);
 }
 
+export function broadcastWhatsAppUpdate(detail = {}) {
+  emitSync(SYNC_KEYS.WHATSAPP, SYNC_EVENTS.WHATSAPP, detail);
+}
+
+export function broadcastNotificationsUpdate(detail = {}) {
+  emitSync(SYNC_KEYS.NOTIFICATIONS, SYNC_EVENTS.NOTIFICATIONS, detail);
+}
+
 /**
  * Subscribe a component to live synchronization events
- * @param {string|string[]} types - 'complaints' | 'ledger' | 'techs' | 'catalog' or array of types
+ * @param {string|string[]} types - 'complaints' | 'ledger' | 'techs' | 'catalog' | 'whatsapp' | 'notifications' or array of types
  * @param {Function} callback - Function called with payload when sync event occurs
  * @param {Object} options - { onFocus: boolean (default true), onVisible: boolean (default true) }
  * @returns {Function} unsubscribe cleanup function
@@ -110,6 +122,14 @@ export function subscribeLiveSync(types, callback, options = { onFocus: true, on
     if (norm.includes('catalog') || norm.includes('product') || norm.includes('category')) {
       targetKeys.add(SYNC_KEYS.CATALOG);
       targetEvents.add(SYNC_EVENTS.CATALOG);
+    }
+    if (norm.includes('whatsapp') || norm.includes('chat') || norm.includes('wa')) {
+      targetKeys.add(SYNC_KEYS.WHATSAPP);
+      targetEvents.add(SYNC_EVENTS.WHATSAPP);
+    }
+    if (norm.includes('notif')) {
+      targetKeys.add(SYNC_KEYS.NOTIFICATIONS);
+      targetEvents.add(SYNC_EVENTS.NOTIFICATIONS);
     }
   });
 

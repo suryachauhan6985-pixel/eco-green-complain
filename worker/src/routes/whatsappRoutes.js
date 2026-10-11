@@ -363,14 +363,44 @@ whatsappRoutes.get('/webhook', handleWebhookGet);
 whatsappRoutes.post('/', handleWebhookPost);
 whatsappRoutes.post('/webhook', handleWebhookPost);
 
+let cachedTechMap = null;
+let cachedUserMap = null;
+let cachedDirExpiry = 0;
+
 async function resolveContactIdentities(activeLast10, env, executionCtx) {
   if (!activeLast10 || activeLast10.length === 0) {
     return { techMap: new Map(), userMap: new Map(), custMap: new Map(), regMap: new Map() };
   }
 
-  const [techRes, userRes, custRes, regRes] = await Promise.all([
-    query('SELECT id, name, phone FROM technicians', [], env, executionCtx).catch(() => ({ rows: [] })),
-    query('SELECT id, name, phone, role FROM users WHERE phone IS NOT NULL', [], env, executionCtx).catch(() => ({ rows: [] })),
+  const now = Date.now();
+  let techMap = cachedTechMap;
+  let userMap = cachedUserMap;
+
+  // Cache technician & user directories in Worker isolate memory for 90 seconds
+  if (!techMap || !userMap || now > cachedDirExpiry) {
+    const [techRes, userRes] = await Promise.all([
+      query('SELECT id, name, phone FROM technicians', [], env, executionCtx).catch(() => ({ rows: [] })),
+      query('SELECT id, name, phone, role FROM users WHERE phone IS NOT NULL', [], env, executionCtx).catch(() => ({ rows: [] }))
+    ]);
+
+    techMap = new Map();
+    (techRes.rows || []).forEach(t => {
+      const clean = (t.phone || '').replace(/\D/g, '').slice(-10);
+      if (clean) techMap.set(clean, t);
+    });
+
+    userMap = new Map();
+    (userRes.rows || []).forEach(u => {
+      const clean = (u.phone || '').replace(/\D/g, '').slice(-10);
+      if (clean) userMap.set(clean, u);
+    });
+
+    cachedTechMap = techMap;
+    cachedUserMap = userMap;
+    cachedDirExpiry = now + 90000;
+  }
+
+  const [custRes, regRes] = await Promise.all([
     query(
       `SELECT customer_name, consumer_mobile 
        FROM installed_customers 
@@ -390,18 +420,6 @@ async function resolveContactIdentities(activeLast10, env, executionCtx) {
     ).catch(() => ({ rows: [] }))
   ]);
 
-  const techMap = new Map();
-  (techRes.rows || []).forEach(t => {
-    const clean = (t.phone || '').replace(/\D/g, '').slice(-10);
-    if (clean) techMap.set(clean, t);
-  });
-
-  const userMap = new Map();
-  (userRes.rows || []).forEach(u => {
-    const clean = (u.phone || '').replace(/\D/g, '').slice(-10);
-    if (clean) userMap.set(clean, u);
-  });
-
   const custMap = new Map();
   (custRes.rows || []).forEach(c => {
     const clean = (c.consumer_mobile || '').replace(/\D/g, '').slice(-10);
@@ -417,7 +435,9 @@ async function resolveContactIdentities(activeLast10, env, executionCtx) {
   return { techMap, userMap, custMap, regMap };
 }
 
+let readsTableEnsured = true; // Table and index already verified in production Supabase PostgreSQL
 export async function ensureReadsTable(env, ctx) {
+  if (readsTableEnsured) return;
   try {
     await query(
       `CREATE TABLE IF NOT EXISTS whatsapp_conversation_reads (
@@ -434,6 +454,7 @@ export async function ensureReadsTable(env, ctx) {
       env,
       ctx
     );
+    readsTableEnsured = true;
   } catch (_) {}
 }
 
@@ -649,6 +670,26 @@ whatsappRoutes.get('/chats/:phone', authenticateToken, async (c) => {
     const phone = c.req.param('phone');
     const cleanDigits = (phone || '').replace(/\D/g, '');
     const last10 = cleanDigits.slice(-10);
+    const sinceId = Number(c.req.query('since_id') || 0);
+
+    // Fast-path incremental check: if client has already loaded chat and is just checking for new messages
+    if (sinceId > 0) {
+      const newMsgRes = await query(
+        `SELECT * FROM whatsapp_messages 
+         WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
+           AND id > $2
+         ORDER BY created_at ASC LIMIT 100`,
+        [last10, sinceId],
+        c.env,
+        c.executionCtx
+      );
+      const newMessages = newMsgRes.rows || [];
+      // If no new messages, return immediately with 0 identity queries
+      if (newMessages.length === 0) {
+        return c.json({ success: true, messages: [], contact: null });
+      }
+      return c.json({ success: true, messages: newMessages, contact: null });
+    }
 
     const [msgRes, identities] = await Promise.all([
       query(

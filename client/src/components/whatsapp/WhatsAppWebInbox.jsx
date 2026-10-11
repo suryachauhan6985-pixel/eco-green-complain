@@ -7,6 +7,7 @@ import { useDialog } from '../../context/DialogContext';
 import { playNotificationChime as playLoudChime } from '../../utils/sound';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { showOSNotification, requestPushPermission } from '../../utils/pushNotification';
+import { subscribeLiveSync, broadcastWhatsAppUpdate } from '../../utils/liveSync';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import {
   WhatsAppTextRenderer,
@@ -542,8 +543,17 @@ export const WhatsAppWebInbox = ({
     };
   }, []);
 
+  const isFetchingConvsRef = useRef(false);
+  const isFetchingMsgsRef = useRef(false);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // Load conversation list from server with real-time incoming notification dispatch
   const loadConversations = async (silent = false) => {
+    if (isFetchingConvsRef.current) return;
+    isFetchingConvsRef.current = true;
     if (!silent) setLoadingConversations(true);
     try {
       const res = await api.getWhatsAppConversations();
@@ -602,11 +612,12 @@ export const WhatsAppWebInbox = ({
     } catch (err) {
       console.warn('Error loading conversations:', err);
     } finally {
+      isFetchingConvsRef.current = false;
       if (!silent) setLoadingConversations(false);
     }
   };
 
-  // Load messages for the selected phone
+  // Load messages for the selected phone with incremental delta support
   const loadMessages = async (phone, silent = false) => {
     if (!phone) {
       setMessages([]);
@@ -624,11 +635,59 @@ export const WhatsAppWebInbox = ({
       previousMessageCountRef.current = 0;
     }
 
+    if (isFetchingMsgsRef.current) return;
+    isFetchingMsgsRef.current = true;
     if (!silent) setLoadingMessages(true);
     try {
-      const res = await api.getWhatsAppChatHistory(phone);
+      // If silently polling an already open chat that has messages, pass since_id cursor for lightweight delta
+      let sinceId = 0;
+      if (silent && !isChatSwitchOrOpen && messagesRef.current && messagesRef.current.length > 0) {
+        sinceId = Math.max(...messagesRef.current.map(m => Number(m.id || 0)));
+        if (!isFinite(sinceId) || sinceId <= 0) sinceId = 0;
+      }
+
+      const res = await api.getWhatsAppChatHistory(phone, sinceId);
       if (res && Array.isArray(res.messages)) {
-        // Play notification chime ONLY for real-time new incoming messages while user is already in this open chat
+        if (sinceId > 0) {
+          // Delta check: if no new messages arrived, nothing more to do
+          if (res.messages.length === 0) return;
+
+          // Append only new delta messages
+          const newMsgs = res.messages.filter(m => !activeChatMsgIdsRef.current.has(Number(m.id)));
+          if (newMsgs.length === 0) return;
+
+          newMsgs.forEach(m => {
+            const mId = Number(m.id || 0);
+            if (mId) {
+              activeChatMsgIdsRef.current.add(mId);
+              knownMsgIdsRef.current.add(mId);
+            }
+          });
+
+          const newCustomerMessages = newMsgs.filter(m => m.sender_type === 'customer');
+          if (newCustomerMessages.length > 0) {
+            const latest = newCustomerMessages[newCustomerMessages.length - 1];
+            playLoudChime();
+            if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
+              showOSNotification({
+                title: `💬 WhatsApp: ${contactInfo?.sender_name || phone}`,
+                body: latest.message_body || 'New message received',
+                tag: `wa-${phone}`,
+                url: `/whatsapp-inbox?phone=${phone}`
+              });
+            }
+          }
+
+          setMessages(prev => {
+            const merged = [...prev, ...newMsgs];
+            previousMessageCountRef.current = merged.length;
+            saveWhatsAppMessagesPermanently(merged);
+            return merged;
+          });
+          return;
+        }
+
+        // Full chat history load (initial load or explicit refresh)
         if (!isChatSwitchOrOpen && silent) {
           const newCustomerMessages = res.messages.filter(m => {
             const mId = Number(m.id || 0);
@@ -640,8 +699,7 @@ export const WhatsAppWebInbox = ({
 
           if (newCustomerMessages.length > 0) {
             const latest = newCustomerMessages[newCustomerMessages.length - 1];
-            playNotificationChime();
-            // Trigger OS Notification if window/tab is in background or blurred
+            playLoudChime();
             if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
               showOSNotification({
                 title: `💬 WhatsApp: ${contactInfo?.sender_name || phone}`,
@@ -653,7 +711,6 @@ export const WhatsAppWebInbox = ({
           }
         }
 
-        // Register loaded message IDs so we never alert for historic or existing messages
         res.messages.forEach(m => {
           if (m.id) {
             const idNum = Number(m.id);
@@ -669,13 +726,16 @@ export const WhatsAppWebInbox = ({
         }
         // Save to browser persistent backup so history survives container sleep/restart
         saveWhatsAppMessagesPermanently(res.messages);
-      } else {
+      } else if (!sinceId) {
         setMessages([]);
       }
     } catch (err) {
       console.warn('Error loading chat history:', err);
-      setMessages([]);
+      if (isChatSwitchOrOpen) {
+        setMessages([]);
+      }
     } finally {
+      isFetchingMsgsRef.current = false;
       if (!silent) setLoadingMessages(false);
     }
   };
@@ -785,15 +845,47 @@ export const WhatsAppWebInbox = ({
     }
   }, [selectedPhone]);
 
-  // Polling every 4 seconds for incoming WhatsApp messages
+  // Resilient multi-tab live sync & visibility-gated background polling for WhatsApp
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Multi-tab real-time sync via BroadcastChannel / CustomEvent / storage
+    const unsubscribeLiveSync = subscribeLiveSync(['whatsapp'], () => {
       loadConversations(true);
       if (selectedPhone) {
         loadMessages(selectedPhone, true);
       }
-    }, 4000);
-    return () => clearInterval(interval);
+    });
+
+    // Refresh conversation list every 25 seconds when visible
+    const convInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadConversations(true);
+      }
+    }, 25000);
+
+    // Check active chat messages every 8 seconds when visible
+    const msgInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && selectedPhone) {
+        loadMessages(selectedPhone, true);
+      }
+    }, 8000);
+
+    // Immediate refresh when tab becomes visible after being backgrounded
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadConversations(true);
+        if (selectedPhone) {
+          loadMessages(selectedPhone, true);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      unsubscribeLiveSync();
+      clearInterval(convInterval);
+      clearInterval(msgInterval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [selectedPhone]);
 
   // Smart Scroll: ONLY scroll down if opening new chat, user sent a message, or user is ALREADY near the bottom.
@@ -1034,6 +1126,7 @@ export const WhatsAppWebInbox = ({
       await api.sendWhatsAppDirectReply(selectedPhone, currentText, mediaData ? null : currentFile, mediaData, targetQuotedMsg);
       setTimeout(() => loadMessages(selectedPhone, true), 800);
       loadConversations(true);
+      broadcastWhatsAppUpdate({ phone: selectedPhone });
     } catch (err) {
       showToast('Error sending message: ' + err.message, 'error');
     } finally {

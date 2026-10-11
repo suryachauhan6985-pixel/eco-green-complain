@@ -241,13 +241,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     fetchTechniciansList();
     fetchProductsList();
 
-    // Resilient background interval (polls every 5s when tab is active)
+    // Resilient background heartbeat sync every 30s when tab is active (products/techs sync via liveSync)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchMyJobs(true);
-        fetchProductsList();
       }
-    }, 5000);
+    }, 30000);
 
     const handleSync = () => {
       fetchMyJobs(true);

@@ -889,7 +889,7 @@ commonRoutes.post('/customers/sync', authenticateToken, requireRole('admin', 'st
 // GET /api/reports/metrics
 commonRoutes.get('/reports/metrics', authenticateToken, async (c) => {
   try {
-    const [compStats, techStats, chargesStats] = await Promise.all([
+    const [compCombined, techStats] = await Promise.all([
       query(`
         SELECT 
           COUNT(*) as total_tickets,
@@ -899,22 +899,31 @@ commonRoutes.get('/reports/metrics', authenticateToken, async (c) => {
           COUNT(CASE WHEN status = 'On Hold' THEN 1 END) as on_hold_count,
           COUNT(CASE WHEN status = 'Resolved' THEN 1 END) as resolved_count,
           COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_count,
-          COUNT(CASE WHEN status = 'Reopened' THEN 1 END) as reopened_count
-        FROM complaints
-      `, [], c.env, c.executionCtx),
-      query('SELECT COUNT(*) as total_technicians, COUNT(CASE WHEN is_available = 1 THEN 1 END) as active_technicians FROM technicians', [], c.env, c.executionCtx),
-      query(`
-        SELECT 
+          COUNT(CASE WHEN status = 'Reopened' THEN 1 END) as reopened_count,
           COALESCE(SUM(estimated_charges), 0) as total_estimated,
           COALESCE(SUM(payment_collected), 0) as total_collected
         FROM complaints
-      `, [], c.env, c.executionCtx)
+      `, [], c.env, c.executionCtx),
+      query('SELECT COUNT(*) as total_technicians, COUNT(CASE WHEN is_available = 1 THEN 1 END) as active_technicians FROM technicians', [], c.env, c.executionCtx)
     ]);
 
+    const compRow = compCombined.rows[0] || {};
     return c.json({
-      complaints: compStats.rows[0],
-      technicians: techStats.rows[0],
-      finances: chargesStats.rows[0]
+      complaints: {
+        total_tickets: compRow.total_tickets,
+        unassigned_count: compRow.unassigned_count,
+        assigned_count: compRow.assigned_count,
+        in_progress_count: compRow.in_progress_count,
+        on_hold_count: compRow.on_hold_count,
+        resolved_count: compRow.resolved_count,
+        closed_count: compRow.closed_count,
+        reopened_count: compRow.reopened_count
+      },
+      technicians: techStats.rows[0] || {},
+      finances: {
+        total_estimated: compRow.total_estimated,
+        total_collected: compRow.total_collected
+      }
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);
@@ -926,9 +935,11 @@ commonRoutes.get('/products', async (c) => {
   try {
     const res = await query('SELECT id, name, icon, description, is_custom FROM products ORDER BY id ASC', [], c.env, c.executionCtx);
     if (res.rows.length > 0) {
+      c.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
       return c.json({ products: res.rows });
     }
   } catch (_) {}
+  c.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
   return c.json({
     products: [
       { id: 1, name: 'Solar Rooftop Systems', category: 'Solar' },

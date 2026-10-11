@@ -37,8 +37,12 @@ export const WhatsAppGatewayModal = ({ isOpen, onClose, onStatusChange }) => {
     if (!isOpen) return;
     fetchStatus();
 
-    // Poll every 3 seconds while modal is open
-    const interval = setInterval(fetchStatus, 3000);
+    // Poll every 6 seconds while modal is open and visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchStatus();
+      }
+    }, 6000);
     return () => clearInterval(interval);
   }, [isOpen]);
 

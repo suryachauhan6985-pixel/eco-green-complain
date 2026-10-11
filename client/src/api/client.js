@@ -2107,19 +2107,52 @@ export const api = {
     body: JSON.stringify(data)
   }),
 
-  // Dynamic Product Catalog
-  getProducts: () => request('/products'),
-  addProduct: (data) => request('/products', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  updateProduct: (id, data) => request(`/products/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  deleteProduct: (id) => request(`/products/${id}`, {
-    method: 'DELETE'
-  }),
+  // Dynamic Product Catalog with In-Memory Deduplication & Cache (120s TTL)
+  getProducts: (() => {
+    let cachedProducts = null;
+    let cacheTime = 0;
+    return async (force = false) => {
+      const now = Date.now();
+      if (!force && cachedProducts && (now - cacheTime < 120000)) {
+        return cachedProducts;
+      }
+      try {
+        const res = await request('/products');
+        if (res && res.products) {
+          cachedProducts = res;
+          cacheTime = now;
+        }
+        return res;
+      } catch (e) {
+        if (cachedProducts) return cachedProducts;
+        throw e;
+      }
+    };
+  })(),
+  addProduct: async (data) => {
+    const res = await request('/products', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    // Invalidate product cache
+    if (api.getProducts?.clearCache) api.getProducts.clearCache();
+    return res;
+  },
+  updateProduct: async (id, data) => {
+    const res = await request(`/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+    if (api.getProducts?.clearCache) api.getProducts.clearCache();
+    return res;
+  },
+  deleteProduct: async (id) => {
+    const res = await request(`/products/${id}`, {
+      method: 'DELETE'
+    });
+    if (api.getProducts?.clearCache) api.getProducts.clearCache();
+    return res;
+  },
 
   // Dynamic Issue Categories
   getCategories: (params = {}) => {
@@ -2166,9 +2199,10 @@ export const api = {
     body: JSON.stringify({ phone })
   }).catch(() => ({ success: false })),
 
-  getWhatsAppChatHistory: async (phone) => {
+  getWhatsAppChatHistory: async (phone, sinceId = 0) => {
     try {
-      const res = await request(`/whatsapp/chats/${encodeURIComponent(phone)}`);
+      const queryStr = sinceId ? `?since_id=${encodeURIComponent(sinceId)}` : '';
+      const res = await request(`/whatsapp/chats/${encodeURIComponent(phone)}${queryStr}`);
       return res || { success: true, messages: [] };
     } catch (e) {
       console.warn('Error fetching chat history from server:', e.message);

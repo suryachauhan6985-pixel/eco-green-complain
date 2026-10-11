@@ -101,13 +101,12 @@ export const StaffTechnicianManager = () => {
       loadCatalog();
     });
 
-    // Resilient background heartbeat sync every 6 seconds when visible
+    // Resilient background heartbeat sync every 30 seconds when visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         loadData(true);
-        loadCatalog();
       }
-    }, 6000);
+    }, 30000);
 
     return () => {
       unsubscribe();

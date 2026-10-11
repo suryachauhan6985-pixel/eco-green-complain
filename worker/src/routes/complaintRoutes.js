@@ -67,8 +67,8 @@ export async function resolveUserTechnicianId(user, env, ctx) {
   return null;
 }
 
-// Self-healing check for retention schema
-let retentionSchemaEnsured = false;
+// Self-healing check for retention schema (columns already verified in production Supabase)
+let retentionSchemaEnsured = true;
 async function ensureRetentionSchema(env, ctx) {
   if (retentionSchemaEnsured) return;
   try {
@@ -102,7 +102,6 @@ async function ensureRetentionSchema(env, ctx) {
  */
 export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
   if (!complaint) return false;
-  await ensureRetentionSchema(env, ctx);
 
   const isClosed = ['Closed', 'closed'].includes(complaint.status);
   const closedDate = complaint.closed_at ? new Date(complaint.closed_at) : null;
@@ -114,6 +113,8 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
 
   // Already purged
   if (Number(complaint.documents_purged) === 1) return true;
+
+  await ensureRetentionSchema(env, ctx);
 
   try {
     const bucket = env?.MEDIA_BUCKET;
@@ -507,8 +508,7 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
       return c.json({ error: 'Access denied: Draft complaints cannot be accessed by technicians' }, 403);
     }
 
-    // Check and auto-purge documents from R2 if complaint closed > 30 days
-    await purgeComplaintDocumentsIfExpired(complaint, c.env, c.executionCtx);
+    // Documents auto-purge is handled safely by the daily cron batch (runBatchExpiredDocumentsPurge)
 
     const atts = await query(
       'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(attachment_type, \'registration\') as attachment_type, COALESCE(is_purged, 0) as is_purged, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY created_at ASC',
@@ -562,6 +562,40 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
       attachments: atts.rows,
       timeline: timeline.rows
     });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/complaints/:id/whatsapp-messages - WhatsApp history for a specific complaint
+complaintRoutes.get('/:id/whatsapp-messages', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const compRes = await query(
+      'SELECT id, ticket_id, customer_phone FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+      [id],
+      c.env,
+      c.executionCtx
+    );
+    if (compRes.rows.length === 0) {
+      return c.json({ error: 'Complaint not found' }, 404);
+    }
+
+    const comp = compRes.rows[0];
+    const cleanPhone = (comp.customer_phone || '').replace(/\D/g, '');
+    const last10 = cleanPhone.slice(-10);
+
+    const msgRes = await query(
+      `SELECT * FROM whatsapp_messages
+       WHERE complaint_id = $1
+          OR (LENGTH($2) >= 10 AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $2)
+       ORDER BY created_at ASC`,
+      [comp.id, last10],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ success: true, messages: msgRes.rows || [] });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

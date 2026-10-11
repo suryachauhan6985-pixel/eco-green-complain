@@ -11,6 +11,7 @@ import {
   getAlertedOSNotificationIds,
   markNotificationAsAlerted
 } from '../utils/pushNotification';
+import { subscribeLiveSync } from '../utils/liveSync';
 
 const NotificationContext = createContext();
 
@@ -341,11 +342,18 @@ export const NotificationProvider = ({ children }) => {
     }
   }, []);
 
+  const isFetchingBackendRef = useRef(false);
+  const isCheckingWARef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+
   // Sync with backend
   const fetchFromBackend = useCallback(async () => {
+    if (isFetchingBackendRef.current) return;
+    isFetchingBackendRef.current = true;
     try {
       if (api.getInAppNotifications) {
         const data = await api.getInAppNotifications();
+        lastFetchTimeRef.current = Date.now();
         if (data && Array.isArray(data.notifications)) {
           const cleanRemote = data.notifications.filter(n => 
             !n.id?.startsWith('notif_init_') && 
@@ -425,14 +433,18 @@ export const NotificationProvider = ({ children }) => {
           });
         }
       }
-    } catch (_) {}
+    } catch (_) {} finally {
+      isFetchingBackendRef.current = false;
+    }
   }, [currentUser, isNotificationForUser, isUnread]);
 
   // Real-time WhatsApp incoming customer message monitor for OS-level alerts across the whole app
   const lastKnownWAMsgIdRef = useRef(null);
 
   const checkWhatsAppIncoming = useCallback(async () => {
-    if (!currentUser) return;
+    // Only check when user is logged in, tab is visible, and no request is currently in-flight
+    if (!currentUser || typeof document === 'undefined' || document.visibilityState !== 'visible' || isCheckingWARef.current) return;
+    isCheckingWARef.current = true;
     try {
       if (api.getWhatsAppConversations) {
         const res = await api.getWhatsAppConversations();
@@ -464,12 +476,17 @@ export const NotificationProvider = ({ children }) => {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {} finally {
+      isCheckingWARef.current = false;
+    }
   }, [currentUser]);
 
   // Periodic poll and multi-tab / window sync
   useEffect(() => {
     fetchFromBackend();
+    if (document.visibilityState === 'visible') {
+      checkWhatsAppIncoming();
+    }
 
     const handleStorageChange = (e) => {
       if (e.key === CLEARED_TIMESTAMP_KEY || (e.key === STORAGE_KEY && (e.newValue === '[]' || !e.newValue))) {
@@ -502,11 +519,22 @@ export const NotificationProvider = ({ children }) => {
       setActivePopup(null);
     };
 
+    // When returning to tab, sync if more than 15s elapsed
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        fetchFromBackend();
+        const elapsed = Date.now() - lastFetchTimeRef.current;
+        if (elapsed > 15000) {
+          fetchFromBackend();
+          checkWhatsAppIncoming();
+        }
       }
     };
+
+    // Multi-tab Live Sync listener for instant notification/whatsapp updates
+    const unsubscribeLiveSync = subscribeLiveSync(['notifications', 'whatsapp'], () => {
+      fetchFromBackend();
+      checkWhatsAppIncoming();
+    });
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('egs_in_app_notifications_cleared', handleClearedEvent);
@@ -514,14 +542,16 @@ export const NotificationProvider = ({ children }) => {
     window.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
 
+    // Optimized resilient heartbeat polling: 30 seconds interval when document is visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchFromBackend();
+        checkWhatsAppIncoming();
       }
-      checkWhatsAppIncoming();
-    }, 5000);
+    }, 30000);
 
     return () => {
+      unsubscribeLiveSync();
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('egs_in_app_notifications_cleared', handleClearedEvent);
       window.removeEventListener('egs_in_app_notification_created', handleCustomNotify);

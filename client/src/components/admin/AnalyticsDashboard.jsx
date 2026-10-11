@@ -593,12 +593,12 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       fetchMetrics(true);
     });
 
-    // Resilient background heartbeat sync every 8 seconds when visible
+    // Resilient background heartbeat sync every 45 seconds when visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchMetrics(true);
       }
-    }, 8000);
+    }, 45000);
 
     return () => {
       unsubscribe();

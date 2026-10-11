@@ -128,7 +128,11 @@ export const ComplaintList = ({
     }
   }, [initialFilters]);
 
+  const isFetchingComplaintsRef = useRef(false);
+
   const fetchComplaints = async (silent = false) => {
+    if (isFetchingComplaintsRef.current) return;
+    isFetchingComplaintsRef.current = true;
     try {
       if (!silent && allComplaints.length === 0) setLoading(true);
       const data = await api.getComplaints({});
@@ -139,6 +143,7 @@ export const ComplaintList = ({
     } catch (err) {
       if (!silent) console.error('Failed to load complaints:', err);
     } finally {
+      isFetchingComplaintsRef.current = false;
       if (!silent) setLoading(false);
     }
   };
@@ -154,7 +159,7 @@ export const ComplaintList = ({
 
   const fetchProducts = async (silent = false) => {
     try {
-      const res = await api.getProducts();
+      const res = await api.getProducts(silent ? false : true);
       if (res && Array.isArray(res.products) && res.products.length > 0) {
         setProducts(res.products);
         try {
@@ -196,20 +201,23 @@ export const ComplaintList = ({
     fetchProducts();
 
     // Real-Time Live Sync across tabs, windows, and roles without browser refresh
-    const unsubscribe = subscribeLiveSync(['complaints', 'techs', 'catalog'], () => {
-      fetchComplaints(true);
-      fetchTechnicians(true);
-      fetchProducts(true);
+    const unsubscribe = subscribeLiveSync(['complaints', 'techs', 'catalog'], (meta) => {
+      const evt = String(meta?.event || '');
+      if (evt.includes('tech')) {
+        fetchTechnicians(true);
+      } else if (evt.includes('catalog')) {
+        fetchProducts(true);
+      } else {
+        fetchComplaints(true);
+      }
     });
 
-    // Resilient background heartbeat sync every 5 seconds when visible
+    // Resilient background heartbeat sync every 30 seconds when visible (only for active complaints list)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchComplaints(true);
-        fetchTechnicians(true);
-        fetchProducts(true);
       }
-    }, 5000);
+    }, 30000);
 
     return () => {
       unsubscribe();

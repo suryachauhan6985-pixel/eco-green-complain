@@ -538,9 +538,11 @@ export const ComplaintDetailDrawer = ({
   const [waChatMessages, setWaChatMessages] = useState([]);
   const [waReplyText, setWaReplyText] = useState('');
   const [sendingWaReply, setSendingWaReply] = useState(false);
+  const isFetchingWAChatRef = useRef(false);
 
   const fetchWhatsAppChat = async () => {
-    if (!complaintId) return;
+    if (!complaintId || isFetchingWAChatRef.current) return;
+    isFetchingWAChatRef.current = true;
     try {
       if (api.getComplaintWhatsAppMessages) {
         const waData = await api.getComplaintWhatsAppMessages(complaintId);
@@ -548,6 +550,8 @@ export const ComplaintDetailDrawer = ({
       }
     } catch (e) {
       console.warn('Failed to load WhatsApp messages:', e);
+    } finally {
+      isFetchingWAChatRef.current = false;
     }
   };
 
@@ -607,8 +611,11 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
+  const isFetchingTicketSilentRef = useRef(false);
+
   const fetchTicketDetailsSilent = async () => {
-    if (!complaintId) return;
+    if (!complaintId || isFetchingTicketSilentRef.current) return;
+    isFetchingTicketSilentRef.current = true;
     try {
       const data = await api.getComplaint(complaintId);
       if (data && data.complaint) {
@@ -617,7 +624,10 @@ export const ComplaintDetailDrawer = ({
         setTimeline(data.timeline || data.complaint.timeline || data.ticket?.timeline || []);
         setNotifications(data.notifications || []);
       }
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+      isFetchingTicketSilentRef.current = false;
+    }
   };
 
   const resetAllDraftInputs = () => {
@@ -663,7 +673,7 @@ export const ComplaintDetailDrawer = ({
       fetchTechs();
 
       // Real-Time Live Sync across tabs, windows, and roles without browser refresh
-      const unsubscribe = subscribeLiveSync(['complaints', 'techs'], () => {
+      const unsubscribe = subscribeLiveSync(['complaints', 'techs', 'whatsapp'], () => {
         if (!isEditingRef.current) {
           fetchTicketDetailsSilent();
           fetchWhatsAppChat();
@@ -671,12 +681,13 @@ export const ComplaintDetailDrawer = ({
         }
       });
 
+      // Resilient background heartbeat sync every 30 seconds when visible
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible' && !isEditingRef.current) {
           fetchWhatsAppChat();
           fetchTicketDetailsSilent();
         }
-      }, 5000);
+      }, 30000);
       return () => {
         unsubscribe();
         clearInterval(interval);

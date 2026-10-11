@@ -1005,12 +1005,12 @@ export const TourLedgerSection = ({
   useEffect(() => {
     fetchLedger();
 
-    // Live sync polling: auto-refresh silently every 5s when document is visible
+    // Live sync polling: resilient heartbeat refresh silently every 30s when document is visible
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchLedger(true);
       }
-    }, 5000);
+    }, 30000);
 
     const handleSync = () => {
       fetchLedger(true);
