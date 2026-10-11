@@ -1778,22 +1778,27 @@ export const api = {
   }),
 
   // In-App Notification Center
-  getInAppNotifications: () => request('/in-app-notifications'),
+  getInAppNotifications: () => request('/in-app-notifications', { noOverlay: true }),
   createInAppNotification: (notifData) => request('/in-app-notifications', {
     method: 'POST',
-    body: JSON.stringify(notifData)
+    body: JSON.stringify(notifData),
+    noOverlay: true
   }),
   markInAppNotificationRead: (id) => request(`/in-app-notifications/${id}/read`, {
-    method: 'PUT'
+    method: 'PUT',
+    noOverlay: true
   }),
   markTicketInAppNotificationsRead: (ticketId) => request(`/in-app-notifications/ticket/${ticketId}/read`, {
-    method: 'PUT'
+    method: 'PUT',
+    noOverlay: true
   }),
   markAllInAppNotificationsRead: () => request('/in-app-notifications/read-all', {
-    method: 'PUT'
+    method: 'PUT',
+    noOverlay: true
   }),
   clearInAppNotifications: () => request('/in-app-notifications', {
-    method: 'DELETE'
+    method: 'DELETE',
+    noOverlay: true
   }),
 
   // Reports

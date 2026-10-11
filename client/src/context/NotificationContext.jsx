@@ -158,6 +158,7 @@ export const NotificationProvider = ({ children }) => {
 
   const [activePopup, setActivePopup] = useState(null);
   const [dismissedPopupIds, setDismissedPopupIds] = useState(new Set());
+  const syncedTicketsRef = useRef(new Set());
 
   const [soundEnabled, setSoundEnabled] = useState(() => {
     try {
@@ -713,14 +714,17 @@ export const NotificationProvider = ({ children }) => {
       return (prevTicket === targetKey || prevComp === targetKey) ? null : prev;
     });
 
-    // 4. Sync to backend database
-    try {
-      if (api.markTicketInAppNotificationsRead) {
-        api.markTicketInAppNotificationsRead(ticketOrComplaintId).catch(() => {});
-      } else if (api.markInAppNotificationRead) {
-        api.markInAppNotificationRead(ticketOrComplaintId).catch(() => {});
-      }
-    } catch (_) {}
+    // 4. Sync to backend database (deduplicate within session to avoid multiple rapid PUT calls)
+    if (!syncedTicketsRef.current.has(targetKey)) {
+      syncedTicketsRef.current.add(targetKey);
+      try {
+        if (api.markTicketInAppNotificationsRead) {
+          api.markTicketInAppNotificationsRead(ticketOrComplaintId).catch(() => {});
+        } else if (api.markInAppNotificationRead) {
+          api.markInAppNotificationRead(ticketOrComplaintId).catch(() => {});
+        }
+      } catch (_) {}
+    }
 
     // 5. Broadcast to all open tabs / windows
     try {

@@ -1778,7 +1778,7 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 <div
-                  className={`max-w-[85%] sm:max-w-[72%] ${
+                  className={`max-w-[85%] sm:max-w-[75%] md:max-w-[70%] lg:max-w-[65%] ${
                     isMediaOnly ? 'p-1' : 'px-3 py-2'
                   } shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] transition-all duration-300 ${
                     highlightedMsgId === msg.id ? 'ring-2 ring-emerald-500 bg-emerald-50 scale-[1.01]' : ''
@@ -2392,7 +2392,7 @@ export const WhatsAppWebInbox = ({
   return (
     <div className="w-full flex-1 h-full flex overflow-hidden bg-[#efeae2] select-none">
       {/* ================= ECO GREEN SOLAR INBOX PANE ================= */}
-      <div className={`w-full md:w-[380px] lg:w-[410px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full md:w-[320px] lg:w-[340px] xl:w-[360px] 2xl:w-[380px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {/* Header: Eco Green Solar Brand & Action Buttons */}
         <div className="bg-[#f0f2f5] px-4 py-3 border-b border-[#d1d7db] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
@@ -2862,7 +2862,7 @@ export const WhatsAppWebInbox = ({
             processWhatsAppFile(e.dataTransfer.files[0]);
           }
         }}
-        className={`flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden md:flex' : 'flex'}`}
+        className={`flex-1 min-w-0 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden md:flex' : 'flex'}`}
         onPaste={handlePaste}
       >
         {isChatDragging && (
@@ -2875,7 +2875,7 @@ export const WhatsAppWebInbox = ({
           </div>
         )}
         {selectedPhone ? (
-          <div key={selectedPhone} className="flex-1 flex flex-col h-full overflow-hidden animate-in fade-in duration-200">
+          <div key={selectedPhone} className="flex-1 min-w-0 flex flex-col h-full overflow-hidden animate-in fade-in duration-200">
             {/* Phase 5: Network Disconnected Offline Alert Banner */}
             {!isOnline && (
               <div className="bg-amber-600 text-white text-xs py-1.5 px-4 flex items-center justify-center gap-2 font-medium z-30 shrink-0 shadow-sm animate-in fade-in">
@@ -2885,7 +2885,7 @@ export const WhatsAppWebInbox = ({
             )}
 
             {/* Top WhatsApp Conversation Header */}
-            <div className="bg-[#f0f2f5] px-2.5 sm:px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0 gap-2">
+            <div className="bg-[#f0f2f5] px-3 sm:px-6 py-2.5 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0 gap-2">
               <div 
                 onClick={() => setIsContactInfoOpen(true)}
                 className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 cursor-pointer group"
@@ -3132,7 +3132,7 @@ export const WhatsAppWebInbox = ({
             <div 
               ref={chatContainerRef}
               onScroll={handleChatScroll}
-              className="flex-1 overflow-y-auto p-4 pb-12 space-y-2 bg-[#efeae2] relative chat-smooth-scroll"
+              className="flex-1 min-w-0 overflow-y-auto p-2 sm:p-4 md:p-6 pb-12 space-y-2 bg-[#efeae2] relative chat-smooth-scroll"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='140' height='140' viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='15' y='15' width='28' height='20' rx='2' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cline x1='29' y1='15' x2='29' y2='35' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cline x1='15' y1='25' x2='43' y2='25' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Ccircle cx='95' cy='25' r='7' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Cpath d='M95 13v3 M95 34v3 M83 25h3 M104 25h3 M87 17l2 2 M101 31l2 2 M87 33l2-2 M101 19l2-2' stroke='%23047857' stroke-width='1' stroke-opacity='0.08'/%3E%3Cpath d='M25 80 c0-8 8-12 15-12 c0 8-8 12-15 12z' fill='none' stroke='%23047857' stroke-width='1.2' stroke-opacity='0.08'/%3E%3Ctext x='48' y='110' font-family='sans-serif' font-size='9' font-weight='800' fill='%23047857' fill-opacity='0.06' transform='rotate(-20 48 110)'%3EECO GREEN SOLAR%3C/text%3E%3C/svg%3E")`,
                 backgroundSize: '160px 160px'
@@ -3143,7 +3143,7 @@ export const WhatsAppWebInbox = ({
                 <img src="/company-logo.png" alt="" className="w-72 sm:w-96 h-auto object-contain" />
               </div>
 
-              <div className="relative z-1">
+              <div className="relative z-1 w-full max-w-[1300px] xl:max-w-[1440px] 2xl:max-w-[1600px] mx-auto px-1 sm:px-4 md:px-6">
                 {renderMessageGroups()}
                 <div ref={messagesEndRef} />
               </div>
@@ -3402,7 +3402,8 @@ export const WhatsAppWebInbox = ({
               />
             ) : (
               /* Bottom Message Input Bar */
-              <form onSubmit={handleSendReply} className="px-2 py-2 sm:px-3 sm:py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <form onSubmit={handleSendReply} className="px-2 py-2 sm:px-4 sm:py-2.5 bg-[#f0f2f5] border-t border-[#d1d7db] shrink-0">
+                <div className="w-full max-w-[1300px] xl:max-w-[1440px] 2xl:max-w-[1600px] mx-auto flex items-center gap-1 sm:gap-2">
                 {/* Document Input (NO accept attribute so Windows File Dialog defaults to All Files *.*) */}
                 <input
                   ref={docInputRef}
@@ -3517,6 +3518,7 @@ export const WhatsAppWebInbox = ({
                     <Mic className="w-5 h-5" />
                   </button>
                 )}
+                </div>
               </form>
             )}
           </div>
