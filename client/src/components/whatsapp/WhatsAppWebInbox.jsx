@@ -21,6 +21,8 @@ import {
   WhatsAppReactionPill,
   WhatsAppQuickReactionHover
 } from './WhatsAppMessageRenderers';
+import { WhatsAppVoiceRecorderBar } from './WhatsAppVoiceRecorderBar';
+import { WhatsAppQuickTemplatesModal, DEFAULT_WHATSAPP_TEMPLATES } from './WhatsAppQuickTemplatesModal';
 import { 
   Search, Send, FileText, Paperclip, Bell, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -30,7 +32,7 @@ import {
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
   Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera,
-  Share2, Reply, MapPin, Star
+  Share2, Reply, MapPin, Star, Archive, WifiOff, Zap, Upload
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
@@ -307,6 +309,33 @@ export const WhatsAppWebInbox = ({
   const [showStarredDrawer, setShowStarredDrawer] = useState(false);
   const [highlightedMsgId, setHighlightedMsgId] = useState(null);
 
+  // Phase 3, 4, 5 State variables: Voice Recording, Quick Templates, Online/Offline, Pinned/Archived/Muted
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [isQuickTemplatesOpen, setIsQuickTemplatesOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [contactGalleryTab, setContactGalleryTab] = useState('media'); // 'media' | 'docs' | 'links'
+
+  const [pinnedPhones, setPinnedPhones] = useState(() => {
+    try {
+      const saved = localStorage.getItem('egs_wa_pinned_phones');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (_) { return new Set(); }
+  });
+
+  const [archivedPhones, setArchivedPhones] = useState(() => {
+    try {
+      const saved = localStorage.getItem('egs_wa_archived_phones');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (_) { return new Set(); }
+  });
+
+  const [mutedPhones, setMutedPhones] = useState(() => {
+    try {
+      const saved = localStorage.getItem('egs_wa_muted_phones');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (_) { return new Set(); }
+  });
+
   // Chat conversation context menu & mobile touch states
   const [chatContextMenu, setChatContextMenu] = useState(null); // { x, y, conv }
   const longPressTimerRef = useRef(null);
@@ -354,8 +383,9 @@ export const WhatsAppWebInbox = ({
     return true;
   }, Boolean(showEmojiPicker || actionMessageMenuId || showHeaderMenu || showSidebarMenu || chatContextMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-  // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info, Starred Drawer, Forward Modal)
+  // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info, Starred Drawer, Forward Modal, Quick Templates)
   useEscapeHandler(() => {
+    if (isQuickTemplatesOpen) { setIsQuickTemplatesOpen(false); return true; }
     if (showStarredDrawer) { setShowStarredDrawer(false); return true; }
     if (forwardModalMsg) { setForwardModalMsg(null); return true; }
     if (isSettingsModalOpen) { setIsSettingsModalOpen(false); return true; }
@@ -363,7 +393,7 @@ export const WhatsAppWebInbox = ({
     if (isEditNameModalOpen) { setIsEditNameModalOpen(false); return true; }
     if (isContactInfoOpen) { setIsContactInfoOpen(false); return true; }
     return false;
-  }, Boolean(showStarredDrawer || forwardModalMsg || isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+  }, Boolean(isQuickTemplatesOpen || showStarredDrawer || forwardModalMsg || isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   // Stage 5: Active Chat Thread -> Return to Conversation List
   useEscapeHandler(() => {
@@ -772,10 +802,91 @@ export const WhatsAppWebInbox = ({
       reader.onload = () => setFilePreview(reader.result);
       reader.readAsDataURL(file);
     } else if (file.type.startsWith('video/')) {
+    } else if (file.type.startsWith('audio/')) {
       setFilePreview(URL.createObjectURL(file));
     } else {
       setFilePreview(null);
     }
+  };
+
+  // Phase 4: Handle Clipboard Paste (Ctrl+V) for Screenshots & Images
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1 || (item.kind === 'file' && item.type)) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          processWhatsAppFile(file);
+          showToast(`Attached copied screenshot (${file.name || 'image.png'})`, 'success');
+          return;
+        }
+      }
+    }
+  };
+
+  // Phase 5: Online / Offline network status listener
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Internet connection restored', 'success');
+      loadConversations(true);
+      if (selectedPhone) loadMessages(selectedPhone, true);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Internet connection lost. You are offline.', 'warning');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [selectedPhone]);
+
+  // Phase 3: Pin / Unpin Conversation
+  const handleTogglePinConversation = (conv) => {
+    if (!conv?.phone) return;
+    setPinnedPhones(prev => {
+      const next = new Set(prev);
+      if (next.has(conv.phone)) next.delete(conv.phone);
+      else next.add(conv.phone);
+      localStorage.setItem('egs_wa_pinned_phones', JSON.stringify([...next]));
+      return next;
+    });
+    setChatContextMenu(null);
+    showToast(pinnedPhones.has(conv.phone) ? 'Chat unpinned' : 'Chat pinned to top', 'info');
+  };
+
+  // Phase 3: Archive / Unarchive Conversation
+  const handleToggleArchiveConversation = (conv) => {
+    if (!conv?.phone) return;
+    setArchivedPhones(prev => {
+      const next = new Set(prev);
+      if (next.has(conv.phone)) next.delete(conv.phone);
+      else next.add(conv.phone);
+      localStorage.setItem('egs_wa_archived_phones', JSON.stringify([...next]));
+      return next;
+    });
+    setChatContextMenu(null);
+    showToast(archivedPhones.has(conv.phone) ? 'Chat unarchived' : 'Chat moved to archive', 'info');
+  };
+
+  // Phase 3: Mute / Unmute Conversation Notifications
+  const handleToggleMuteConversation = (conv) => {
+    if (!conv?.phone) return;
+    setMutedPhones(prev => {
+      const next = new Set(prev);
+      if (next.has(conv.phone)) next.delete(conv.phone);
+      else next.add(conv.phone);
+      localStorage.setItem('egs_wa_muted_phones', JSON.stringify([...next]));
+      return next;
+    });
+    setChatContextMenu(null);
+    showToast(mutedPhones.has(conv.phone) ? 'Notifications unmuted' : 'Notifications muted', 'info');
   };
 
   const handleFileSelect = (e) => {
@@ -1425,21 +1536,35 @@ export const WhatsAppWebInbox = ({
   };
 
   // Filter conversations (All incoming & outgoing conversations are fully preserved and visible)
-  const filteredConversations = conversations.filter(conv => {
-    const isUnread = Number(conv.unread_count) > 0 || Boolean(conv.is_manual_unread);
-    if (activeFilter === 'unread' && !isUnread) return false;
-    if (activeFilter === 'customers' && conv.is_technician) return false;
-    if (activeFilter === 'technicians' && !conv.is_technician) return false;
+  const filteredConversations = conversations
+    .filter(conv => {
+      const isUnread = Number(conv.unread_count) > 0 || Boolean(conv.is_manual_unread);
+      const isArchived = archivedPhones.has(conv.phone);
 
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (conv.sender_name && conv.sender_name.toLowerCase().includes(q)) ||
-      (conv.phone && conv.phone.includes(q)) ||
-      (conv.last_message && conv.last_message.toLowerCase().includes(q)) ||
-      (conv.ticket_id && conv.ticket_id.toLowerCase().includes(q))
-    );
-  });
+      if (activeFilter === 'archived') {
+        if (!isArchived) return false;
+      } else {
+        if (isArchived && !searchQuery.trim()) return false;
+        if (activeFilter === 'unread' && !isUnread) return false;
+        if (activeFilter === 'customers' && conv.is_technician) return false;
+        if (activeFilter === 'technicians' && !conv.is_technician) return false;
+      }
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        (conv.sender_name && conv.sender_name.toLowerCase().includes(q)) ||
+        (conv.phone && conv.phone.includes(q)) ||
+        (conv.last_message && conv.last_message.toLowerCase().includes(q)) ||
+        (conv.ticket_id && conv.ticket_id.toLowerCase().includes(q))
+      );
+    })
+    .sort((a, b) => {
+      const aPinned = (a.is_pinned || pinnedPhones.has(a.phone)) ? 1 : 0;
+      const bPinned = (b.is_pinned || pinnedPhones.has(b.phone)) ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+      return 0;
+    });
 
   const selectedConv = conversations.find(c => c.phone === selectedPhone);
 
@@ -2183,6 +2308,24 @@ export const WhatsAppWebInbox = ({
               </span>
             )}
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter('archived')}
+            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+              activeFilter === 'archived'
+                ? 'bg-[#d9fdd3] text-[#008069]'
+                : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5" />
+            <span>Archived</span>
+            {archivedPhones.size > 0 && (
+              <span className="font-mono text-[10px] ml-0.5 bg-slate-500 text-white px-1.5 py-0.2 rounded-full">
+                {archivedPhones.size}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* WhatsApp Desktop Notification Enable Banner */}
@@ -2302,10 +2445,16 @@ export const WhatsAppWebInbox = ({
                         </span>
                       </p>
 
-                      {/* Right indicators: Pinned icon OR Unread count badge OR Unread dot */}
+                      {/* Right indicators: Muted icon, Pinned icon, Archived icon, Unread badge */}
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {conv.is_pinned && (
-                          <Pin className="w-3.5 h-3.5 text-[#8696a0] rotate-45" />
+                        {mutedPhones.has(conv.phone) && (
+                          <VolumeX className="w-3.5 h-3.5 text-[#8696a0]" title="Notifications Muted" />
+                        )}
+                        {(conv.is_pinned || pinnedPhones.has(conv.phone)) && (
+                          <Pin className="w-3.5 h-3.5 text-[#8696a0] rotate-45" title="Pinned Chat" />
+                        )}
+                        {archivedPhones.has(conv.phone) && activeFilter === 'archived' && (
+                          <Archive className="w-3.5 h-3.5 text-[#8696a0]" title="Archived" />
                         )}
                         {hasUnreadCount ? (
                           <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#25d366] text-white font-bold text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
@@ -2335,8 +2484,44 @@ export const WhatsAppWebInbox = ({
               left: `${chatContextMenu.x}px`,
               top: `${chatContextMenu.y}px`
             }}
-            className="w-52 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-100 text-xs font-semibold text-[#111b21] animate-in fade-in zoom-in-95 duration-100"
+            className="w-56 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-100 text-xs font-semibold text-[#111b21] animate-in fade-in zoom-in-95 duration-100"
           >
+            {/* Pin / Unpin */}
+            <button
+              type="button"
+              onClick={() => handleTogglePinConversation(chatContextMenu.conv)}
+              className="w-full px-4 py-2.5 text-left hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+            >
+              <Pin className="w-4 h-4 text-slate-600 rotate-45" />
+              <span>{pinnedPhones.has(chatContextMenu.conv?.phone) ? 'Unpin chat' : 'Pin chat to top'}</span>
+            </button>
+
+            {/* Archive / Unarchive */}
+            <button
+              type="button"
+              onClick={() => handleToggleArchiveConversation(chatContextMenu.conv)}
+              className="w-full px-4 py-2.5 text-left hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+            >
+              <Archive className="w-4 h-4 text-slate-600" />
+              <span>{archivedPhones.has(chatContextMenu.conv?.phone) ? 'Unarchive chat' : 'Archive chat'}</span>
+            </button>
+
+            {/* Mute / Unmute */}
+            <button
+              type="button"
+              onClick={() => handleToggleMuteConversation(chatContextMenu.conv)}
+              className="w-full px-4 py-2.5 text-left hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer text-[#111b21]"
+            >
+              {mutedPhones.has(chatContextMenu.conv?.phone) ? (
+                <Volume2 className="w-4 h-4 text-slate-600" />
+              ) : (
+                <VolumeX className="w-4 h-4 text-slate-600" />
+              )}
+              <span>{mutedPhones.has(chatContextMenu.conv?.phone) ? 'Unmute notifications' : 'Mute notifications'}</span>
+            </button>
+
+            <div className="my-1 border-t border-slate-100" />
+
             {Number(chatContextMenu.conv?.unread_count) > 0 || chatContextMenu.conv?.is_manual_unread ? (
               <button
                 type="button"
@@ -2389,6 +2574,7 @@ export const WhatsAppWebInbox = ({
           }
         }}
         className={`flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden ${!selectedPhone ? 'hidden md:flex' : 'flex'}`}
+        onPaste={handlePaste}
       >
         {isChatDragging && (
           <div className="absolute inset-0 bg-[#008069]/90 z-50 flex flex-col items-center justify-center text-white space-y-3 pointer-events-none animate-in fade-in backdrop-blur-2xs">
@@ -2401,6 +2587,14 @@ export const WhatsAppWebInbox = ({
         )}
         {selectedPhone ? (
           <>
+            {/* Phase 5: Network Disconnected Offline Alert Banner */}
+            {!isOnline && (
+              <div className="bg-amber-600 text-white text-xs py-1.5 px-4 flex items-center justify-center gap-2 font-medium z-30 shrink-0 shadow-sm animate-in fade-in">
+                <WifiOff className="w-3.5 h-3.5 animate-pulse" />
+                <span>Computer is offline. Reconnecting to WhatsApp gateway...</span>
+              </div>
+            )}
+
             {/* Top WhatsApp Conversation Header */}
             <div className="bg-[#f0f2f5] px-2.5 sm:px-4 py-2 border-b border-[#d1d7db] flex items-center justify-between z-10 shrink-0 gap-2">
               <div 
@@ -2876,112 +3070,175 @@ export const WhatsAppWebInbox = ({
               </div>
             )}
 
-            {/* Bottom Message Input Bar */}
-            <form onSubmit={handleSendReply} className="px-2 py-2 sm:px-3 sm:py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-1 sm:gap-2 shrink-0">
-              {/* Document Input (NO accept attribute so Windows File Dialog defaults to All Files *.*) */}
-              <input
-                ref={docInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                className="hidden"
+            {/* Slash Command Autocomplete Popover */}
+            {replyText.startsWith('/') && (
+              <div className="absolute bottom-16 left-6 right-6 z-40 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="px-3 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 mb-1">
+                  <span className="flex items-center gap-1.5 text-[#008069]">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    Quick Response Templates
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-normal">Click or tap to insert</span>
+                </div>
+                {DEFAULT_WHATSAPP_TEMPLATES
+                  .filter(t => t.command.toLowerCase().includes(replyText.toLowerCase()) || t.title.toLowerCase().includes(replyText.slice(1).toLowerCase()))
+                  .map(tmpl => (
+                    <button
+                      key={tmpl.id}
+                      type="button"
+                      onClick={() => {
+                        setReplyText(tmpl.text);
+                        setTimeout(() => messageInputRef.current?.focus(), 50);
+                      }}
+                      className="w-full text-left p-2.5 hover:bg-emerald-50/70 rounded-xl flex items-center justify-between transition-colors group cursor-pointer"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-[#008069] font-mono">{tmpl.command}</span>
+                          <span className="font-semibold text-xs text-slate-800">{tmpl.title}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate mt-0.5">{tmpl.text}</p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full shrink-0 group-hover:bg-[#d9fdd3] group-hover:text-[#008069] transition-colors">
+                        {tmpl.category}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {/* Phase 4: WhatsApp Audio Voice Note Recorder Bar or Standard Composer */}
+            {isRecordingAudio ? (
+              <WhatsAppVoiceRecorderBar
+                onCancel={() => setIsRecordingAudio(false)}
+                onSendAudio={(audioFile) => {
+                  setIsRecordingAudio(false);
+                  processWhatsAppFile(audioFile);
+                }}
+                onError={(err) => {
+                  setIsRecordingAudio(false);
+                  showToast(err || 'Microphone error', 'error');
+                }}
               />
+            ) : (
+              /* Bottom Message Input Bar */
+              <form onSubmit={handleSendReply} className="px-2 py-2 sm:px-3 sm:py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center gap-1 sm:gap-1.5 shrink-0">
+                {/* Document Input (NO accept attribute so Windows File Dialog defaults to All Files *.*) */}
+                <input
+                  ref={docInputRef}
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
 
-              {/* Photo & Video Input */}
-              <input
-                ref={mediaInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                accept="image/*,video/*"
-                className="hidden"
-              />
+                {/* Photo & Video Input */}
+                <input
+                  ref={mediaInputRef}
+                  type="file"
+                  onChange={handleFileSelect}
+                  accept="image/*,video/*"
+                  className="hidden"
+                />
 
-              {/* Live Camera Photo Input */}
-              <input
-                ref={cameraPhotoInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
+                {/* Live Camera Photo Input */}
+                <input
+                  ref={cameraPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
 
-              {/* Live Camera Video Input */}
-              <input
-                ref={cameraVideoInputRef}
-                type="file"
-                accept="video/*"
-                capture="environment"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
+                {/* Live Camera Video Input */}
+                <input
+                  ref={cameraVideoInputRef}
+                  type="file"
+                  accept="video/*"
+                  capture="environment"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
 
-              {/* Legacy File Input fallback */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
+                {/* Legacy File Input fallback */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
 
-              {/* Emoji Smiley Button */}
-              <button
-                id="emoji-picker-button"
-                type="button"
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className={`p-2 rounded-full transition-colors cursor-pointer shrink-0 ${
-                  showEmojiPicker ? 'bg-[#d9fdd3] text-[#008069]' : 'text-[#54656f] hover:text-[#111b21]'
-                }`}
-                title="Emojis & Symbols"
-              >
-                <Smile className="w-5 h-5" />
-              </button>
-
-              {/* WhatsApp Attachment Button (Opens Document / Photo-Video Action Menu) */}
-              <button
-                id="attach-menu-button"
-                type="button"
-                onClick={() => setShowAttachMenu(!showAttachMenu)}
-                disabled={sendingReply}
-                className={`p-2 rounded-full transition-all cursor-pointer shrink-0 disabled:opacity-50 ${
-                  showAttachMenu ? 'bg-[#d9fdd3] text-[#008069] rotate-45' : 'text-[#54656f] hover:text-[#111b21]'
-                }`}
-                title="Attach Document or Photo / Video"
-              >
-                <Paperclip className="w-5 h-5" />
-              </button>
-
-              {/* Text Input Box */}
-              <input
-                ref={messageInputRef}
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                placeholder={selectedFile ? `Add a caption or send ${selectedFile.name}...` : "Type a message"}
-                className="flex-1 text-sm px-4 py-2 bg-white rounded-lg text-[#111b21] placeholder-[#8696a0] border-none outline-none focus:ring-0 shadow-2xs font-normal"
-                disabled={sendingReply}
-              />
-
-              {/* Send Button */}
-              {replyText.trim() || selectedFile ? (
+                {/* Emoji Smiley Button */}
                 <button
-                  type="submit"
-                  disabled={sendingReply}
-                  className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#008f72] disabled:opacity-50 text-white flex items-center justify-center shrink-0 shadow-2xs transition-all cursor-pointer"
-                  title="Send message"
+                  id="emoji-picker-button"
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className={`p-2 rounded-full transition-colors cursor-pointer shrink-0 ${
+                    showEmojiPicker ? 'bg-[#d9fdd3] text-[#008069]' : 'text-[#54656f] hover:text-[#111b21]'
+                  }`}
+                  title="Emojis & Symbols"
                 >
-                  <Send className="w-4 h-4" />
+                  <Smile className="w-5 h-5" />
                 </button>
-              ) : (
+
+                {/* WhatsApp Attachment Button (Opens Document / Photo-Video Action Menu) */}
+                <button
+                  id="attach-menu-button"
+                  type="button"
+                  onClick={() => setShowAttachMenu(!showAttachMenu)}
+                  disabled={sendingReply}
+                  className={`p-2 rounded-full transition-all cursor-pointer shrink-0 disabled:opacity-50 ${
+                    showAttachMenu ? 'bg-[#d9fdd3] text-[#008069] rotate-45' : 'text-[#54656f] hover:text-[#111b21]'
+                  }`}
+                  title="Attach Document or Photo / Video"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+
+                {/* Quick Templates Trigger Button */}
                 <button
                   type="button"
-                  onClick={() => showToast('Voice note recording ready via browser microphone', 'info')}
-                  className="p-2 text-[#54656f] hover:text-[#111b21] rounded-full transition-colors cursor-pointer shrink-0"
-                  title="Voice Message"
+                  onClick={() => setIsQuickTemplatesOpen(true)}
+                  className="p-2 text-[#54656f] hover:text-[#008069] rounded-full transition-colors cursor-pointer shrink-0"
+                  title="Quick Response Templates (/)"
                 >
-                  <Mic className="w-5 h-5" />
+                  <Zap className="w-5 h-5" />
                 </button>
-              )}
-            </form>
+
+                {/* Text Input Box */}
+                <input
+                  ref={messageInputRef}
+                  type="text"
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onPaste={handlePaste}
+                  placeholder={selectedFile ? `Add a caption or send ${selectedFile.name}...` : "Type a message (or '/' for templates)"}
+                  className="flex-1 text-sm px-4 py-2 bg-white rounded-lg text-[#111b21] placeholder-[#8696a0] border-none outline-none focus:ring-0 shadow-2xs font-normal"
+                  disabled={sendingReply}
+                />
+
+                {/* Send Button */}
+                {replyText.trim() || selectedFile ? (
+                  <button
+                    type="submit"
+                    disabled={sendingReply}
+                    className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#008f72] disabled:opacity-50 text-white flex items-center justify-center shrink-0 shadow-2xs transition-all cursor-pointer"
+                    title="Send message"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsRecordingAudio(true)}
+                    className="p-2 text-[#54656f] hover:text-[#008069] rounded-full transition-colors cursor-pointer shrink-0 hover:bg-slate-200/50"
+                    title="Record Voice Note"
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                )}
+              </form>
+            )}
           </>
         ) : (
           /* Empty State: Eco Green Solar Communication Desk */
@@ -3459,6 +3716,166 @@ export const WhatsAppWebInbox = ({
                 </a>
               </div>
 
+              {/* Phase 3 & 4: Shared Media, Documents & Links Gallery */}
+              {(() => {
+                const sharedMediaItems = messages.filter(m => isImageMessage(m) || isVideoMessage(m));
+                const sharedDocItems = messages.filter(m => isDocumentMessage(m) || isAudioMessage(m));
+                const sharedLinkItems = messages.filter(m => {
+                  const urlRegex = /(https?:\/\/[^\s]+)/;
+                  return m.message_body && urlRegex.test(m.message_body);
+                });
+
+                return (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                    <div className="p-2.5 bg-white border-b border-slate-200 flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800">Media, Links and Docs</span>
+                      <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {sharedMediaItems.length + sharedDocItems.length + sharedLinkItems.length} items
+                      </span>
+                    </div>
+
+                    {/* Tab Navigation */}
+                    <div className="flex border-b border-slate-200 bg-white">
+                      <button
+                        type="button"
+                        onClick={() => setContactGalleryTab('media')}
+                        className={`flex-1 py-1.5 text-[11px] font-bold text-center transition-colors cursor-pointer ${
+                          contactGalleryTab === 'media'
+                            ? 'text-[#008069] border-b-2 border-[#008069]'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Media ({sharedMediaItems.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContactGalleryTab('docs')}
+                        className={`flex-1 py-1.5 text-[11px] font-bold text-center transition-colors cursor-pointer ${
+                          contactGalleryTab === 'docs'
+                            ? 'text-[#008069] border-b-2 border-[#008069]'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Docs ({sharedDocItems.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContactGalleryTab('links')}
+                        className={`flex-1 py-1.5 text-[11px] font-bold text-center transition-colors cursor-pointer ${
+                          contactGalleryTab === 'links'
+                            ? 'text-[#008069] border-b-2 border-[#008069]'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Links ({sharedLinkItems.length})
+                      </button>
+                    </div>
+
+                    {/* Tab Panels */}
+                    <div className="p-2.5 max-h-48 overflow-y-auto">
+                      {contactGalleryTab === 'media' && (
+                        sharedMediaItems.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 text-center py-4">No photos or videos shared in this chat yet</p>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {sharedMediaItems.map(m => {
+                              const url = getWhatsAppMediaUrl(m);
+                              const isVid = isVideoMessage(m);
+                              return (
+                                <div
+                                  key={m.id}
+                                  onClick={() => {
+                                    setIsContactInfoOpen(false);
+                                    setPreviewMedia({
+                                      url,
+                                      type: isVid ? 'video' : 'image',
+                                      caption: m.media_caption || m.message_body || '',
+                                      timestamp: m.created_at,
+                                      senderName: m.sender_type === 'customer' ? (contactInfo?.sender_name || 'Customer') : 'You'
+                                    });
+                                  }}
+                                  className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative cursor-pointer group hover:opacity-90"
+                                  title="Click to view full size"
+                                >
+                                  {isVid ? (
+                                    <div className="w-full h-full bg-slate-800 flex items-center justify-center text-white">
+                                      <Video className="w-5 h-5" />
+                                    </div>
+                                  ) : (
+                                    <img src={url} alt="" className="w-full h-full object-cover" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
+
+                      {contactGalleryTab === 'docs' && (
+                        sharedDocItems.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 text-center py-4">No documents shared in this chat yet</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {sharedDocItems.map(m => {
+                              const url = getWhatsAppMediaUrl(m);
+                              const fileName = m.media_caption || m.message_body || 'Document';
+                              return (
+                                <div
+                                  key={m.id}
+                                  className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span className="text-xs text-slate-800 font-medium truncate">{fileName}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadFile(url, fileName)}
+                                    className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded cursor-pointer shrink-0"
+                                    title="Download Document"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
+
+                      {contactGalleryTab === 'links' && (
+                        sharedLinkItems.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 text-center py-4">No links shared in this chat yet</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {sharedLinkItems.map(m => {
+                              const urlMatch = m.message_body ? m.message_body.match(/(https?:\/\/[^\s]+)/) : null;
+                              const linkUrl = urlMatch ? urlMatch[0] : '';
+                              return (
+                                <div
+                                  key={m.id}
+                                  className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs"
+                                >
+                                  <a
+                                    href={linkUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-[#027eb5] hover:underline font-mono truncate flex-1"
+                                  >
+                                    {linkUrl}
+                                  </a>
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Edit Contact Name Button */}
               <button
                 type="button"
@@ -3769,6 +4186,19 @@ export const WhatsAppWebInbox = ({
           </div>
         </div>
       )}
+      {/* Quick Reply Canned Response Templates Modal */}
+      <WhatsAppQuickTemplatesModal
+        isOpen={isQuickTemplatesOpen}
+        onClose={() => setIsQuickTemplatesOpen(false)}
+        onSelectTemplate={(text) => {
+          setReplyText(text);
+          setIsQuickTemplatesOpen(false);
+          setTimeout(() => {
+            messageInputRef.current?.focus();
+          }, 50);
+        }}
+      />
+
       {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard with Auto-Split) */}
       <VideoRecorderModal
         isOpen={isVideoRecorderOpen}
