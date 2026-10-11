@@ -6,7 +6,7 @@ import {
   Search, Filter, Plus, Download, RefreshCw, Sun, Droplets, Wind, 
   User, Calendar, Clock, ChevronRight, AlertCircle, CheckCircle2, Wrench,
   MessageCircle, MapPin, LayoutList, LayoutGrid, ShieldCheck, ShieldAlert, IndianRupee,
-  AlertTriangle, Gauge, Layers, Trash2, ClipboardCheck
+  AlertTriangle, Gauge, Layers, Trash2, ClipboardCheck, FileText
 } from 'lucide-react';
 import { TicketAgeBadge, getTicketAgeInfo, formatIndianDateTime, formatIndianDateOnly } from '../common/TicketAgeBadge';
 import { ComplaintGridSkeleton, ComplaintTableSkeleton } from '../common/SkeletonLoader';
@@ -327,7 +327,8 @@ export const ComplaintList = ({
     return <Layers className="w-4 h-4 text-slate-500" />;
   };
 
-  const statusPills = ['Draft', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
+  // Standard status pills restored to original order and items
+  const statusPills = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
 
   // Dynamically compute tickets matching all non-status filters (Product, Priority, Technician, Search)
   // so that status tab badges update dynamically whenever any filter is applied!
@@ -375,8 +376,12 @@ export const ComplaintList = ({
     });
   }, [allComplaints, complaints, productFilter, priorityFilter, technicianFilter, search, technicians]);
 
+  const draftCount = React.useMemo(() => {
+    return nonStatusFilteredComplaints.filter(c => c.status === 'Draft').length;
+  }, [nonStatusFilteredComplaints]);
+
   const getStatusCount = (st) => {
-    if (st === 'all') return nonStatusFilteredComplaints.length;
+    if (st === 'all') return nonStatusFilteredComplaints.filter(c => c.status !== 'Draft').length;
     if (st === 'Draft') {
       return nonStatusFilteredComplaints.filter(c => c.status === 'Draft').length;
     }
@@ -563,6 +568,32 @@ export const ComplaintList = ({
                   <span className="xs:hidden">CSV</span>
                 </button>
               )}
+
+              {/* Dedicated Drafts Button (Separate from standard status filter pills) */}
+              {['admin', 'staff'].includes(currentUser?.role) && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusFilterChange(statusFilter === 'Draft' ? 'Unassigned' : 'Draft')}
+                  className={`px-3 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    statusFilter === 'Draft'
+                      ? 'bg-amber-600 text-white border-amber-700 shadow-2xs ring-2 ring-amber-400/30'
+                      : 'border-slate-200 hover:bg-amber-50/70 hover:border-amber-300 text-slate-700'
+                  }`}
+                  title={statusFilter === 'Draft' ? 'Exit Drafts view' : 'View saved draft complaints'}
+                >
+                  <FileText className={`w-3.5 h-3.5 ${statusFilter === 'Draft' ? 'text-white' : 'text-amber-600'}`} />
+                  <span className="hidden xs:inline">Drafts</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                    statusFilter === 'Draft'
+                      ? 'bg-white/20 text-white'
+                      : draftCount > 0
+                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}>
+                    {draftCount}
+                  </span>
+                </button>
+              )}
             </div>
 
             {/* Primary Action Button: Full-width modern CTA on mobile, compact on desktop */}
@@ -654,18 +685,38 @@ export const ComplaintList = ({
 
       {/* Complaints Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden w-full max-w-full min-w-0">
+        {/* Draft Mode Notice Banner */}
+        {statusFilter === 'Draft' && (
+          <div className="bg-amber-50/90 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-amber-950">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-amber-700 shrink-0" />
+              <div>
+                <span className="font-bold">Viewing Draft Complaints ({draftCount})</span>
+                <span className="text-amber-800 ml-1.5 hidden sm:inline">— Draft tickets are saved internally and are not dispatched to technicians or customers.</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleStatusFilterChange('Unassigned')}
+              className="text-amber-900 hover:text-amber-950 font-bold underline cursor-pointer shrink-0"
+            >
+              Back to Active Tickets
+            </button>
+          </div>
+        )}
+
         {(() => {
           const displayedComplaints = nonStatusFilteredComplaints.filter(c => {
             // Status Filter
-            if (statusFilter !== 'all') {
-              if (statusFilter.toLowerCase() === 'draft') {
-                if (c.status !== 'Draft') return false;
-              } else if (statusFilter.toLowerCase() === 'unassigned') {
-                const isUnassigned = (c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id) && c.status !== 'Draft';
-                if (!isUnassigned) return false;
-              } else if (c.status !== statusFilter) {
-                return false;
-              }
+            if (statusFilter === 'all') {
+              if (c.status === 'Draft') return false;
+            } else if (statusFilter.toLowerCase() === 'draft') {
+              if (c.status !== 'Draft') return false;
+            } else if (statusFilter.toLowerCase() === 'unassigned') {
+              const isUnassigned = (c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id) && c.status !== 'Draft';
+              if (!isUnassigned) return false;
+            } else if (c.status !== statusFilter) {
+              return false;
             }
             return true;
           });
@@ -684,6 +735,24 @@ export const ComplaintList = ({
                 <ComplaintTableSkeleton rows={8} />
               ) : (
                 <ComplaintGridSkeleton count={8} />
+              );
+            }
+            if (statusFilter === 'Draft') {
+              return (
+                <div className="py-16 text-center text-slate-500">
+                  <FileText className="w-9 h-9 mx-auto text-amber-500/80 mb-2" />
+                  <h4 className="text-sm font-bold text-slate-700">No draft complaints</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                    When you save a complaint as draft from "Register Ticket", it will appear here for later editing and finalization.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleStatusFilterChange('Unassigned')}
+                    className="mt-4 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    Return to Active Tickets
+                  </button>
+                </div>
               );
             }
             return (
