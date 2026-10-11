@@ -19,7 +19,7 @@ import {
   WhatsAppMessageStatusTick,
   WhatsAppMediaLightbox,
   WhatsAppReactionPill,
-  WhatsAppQuickReactionHover
+  WhatsAppReactionButtonWithPicker
 } from './WhatsAppMessageRenderers';
 import { WhatsAppVoiceRecorderBar } from './WhatsAppVoiceRecorderBar';
 import { WhatsAppQuickTemplatesModal, DEFAULT_WHATSAPP_TEMPLATES } from './WhatsAppQuickTemplatesModal';
@@ -325,6 +325,7 @@ export const WhatsAppWebInbox = ({
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [actionMessageMenuId, setActionMessageMenuId] = useState(null);
+  const [activeReactionPickerMsgId, setActiveReactionPickerMsgId] = useState(null);
   const [savingEditMessage, setSavingEditMessage] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState(null);
   const [replyQuotedMsg, setReplyQuotedMsg] = useState(null);
@@ -400,15 +401,16 @@ export const WhatsAppWebInbox = ({
     return true;
   }, Boolean(filePreview), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-  // Stage 3: Emoji picker / action menu / chat context menu
+  // Stage 3: Emoji picker / action menu / reaction picker / chat context menu
   useEscapeHandler(() => {
     setShowEmojiPicker(false);
     setActionMessageMenuId(null);
+    setActiveReactionPickerMsgId(null);
     setShowHeaderMenu(false);
     setShowSidebarMenu(false);
     setChatContextMenu(null);
     return true;
-  }, Boolean(showEmojiPicker || actionMessageMenuId || showHeaderMenu || showSidebarMenu || chatContextMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+  }, Boolean(showEmojiPicker || actionMessageMenuId || activeReactionPickerMsgId || showHeaderMenu || showSidebarMenu || chatContextMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info, Starred Drawer, Forward Modal, Quick Templates)
   useEscapeHandler(() => {
@@ -519,12 +521,16 @@ export const WhatsAppWebInbox = ({
       if (!e.target.closest('.msg-action-menu-container') && !e.target.closest('.msg-action-trigger')) {
         setActionMessageMenuId(null);
       }
+      if (!e.target.closest('.msg-reaction-picker-container') && !e.target.closest('.msg-reaction-trigger')) {
+        setActiveReactionPickerMsgId(null);
+      }
       if (!e.target.closest('#chat-context-menu-container') && !e.target.closest('.chat-menu-trigger')) {
         setChatContextMenu(null);
       }
     };
     const handleScrollOrResize = () => {
       setChatContextMenu(null);
+      setActiveReactionPickerMsgId(null);
     };
     document.addEventListener('click', handleClickOutside);
     window.addEventListener('resize', handleScrollOrResize);
@@ -728,6 +734,12 @@ export const WhatsAppWebInbox = ({
   const handleChatScroll = () => {
     const container = chatContainerRef.current;
     if (!container) return;
+    if (activeReactionPickerMsgId) {
+      setActiveReactionPickerMsgId(null);
+    }
+    if (actionMessageMenuId) {
+      setActionMessageMenuId(null);
+    }
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     const isAtBottom = distanceFromBottom <= 120;
     isNearBottomRef.current = isAtBottom;
@@ -1630,6 +1642,17 @@ export const WhatsAppWebInbox = ({
           const isNewDay = idx === 0 || currentDateKey !== prevDateKey;
           const dateBadgeText = formatChatDateBadge(msg.created_at);
 
+          const hasCaptionOrText = Boolean(
+            (msg.media_caption && msg.media_caption.trim()) ||
+            (msg.message_body && 
+             msg.message_body.trim() && 
+             !['[IMAGE file]', '[VIDEO file]', '[DOCUMENT file]', '[AUDIO file]', '[WhatsApp message]', '🔘 [Interactive reply]', '🔘 [Button reply]', '🎤 Voice Note'].includes(msg.message_body.trim()) &&
+             !msg.message_body.startsWith('📍 Location Pin:') &&
+             !msg.message_body.startsWith('👤 Contact Card:') &&
+             msg.message_body.trim() !== msg.media_caption?.trim())
+          );
+          const isMediaOnly = (isImageMessage(msg) || isVideoMessage(msg)) && !hasCaptionOrText;
+
           return (
             <React.Fragment key={msg.id || idx}>
               {/* WhatsApp Authentic Centered Date Badge Separator */}
@@ -1646,18 +1669,26 @@ export const WhatsAppWebInbox = ({
                 data-wamid={msg.whatsapp_message_id || ''}
                 onMouseEnter={() => setHoveredMessageId(msg.id)}
                 onMouseLeave={() => setHoveredMessageId(prev => prev === msg.id ? null : prev)}
-                className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group ${actionMessageMenuId === msg.id ? 'z-30' : 'z-1'}`}
+                className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} items-end my-1 relative px-2 group ${actionMessageMenuId === msg.id || activeReactionPickerMsgId === msg.id ? 'z-30' : 'z-1'}`}
               >
-                {/* Floating Quick Reaction Hover Bar */}
-                {hoveredMessageId === msg.id && !editingMessageId && (
-                  <WhatsAppQuickReactionHover
-                    isOutgoing={!isCustomer}
-                    onReact={(emoji) => handleToggleReaction(msg, emoji)}
+                {/* Outgoing Reaction Trigger Button (Left side of outgoing message bubble) */}
+                {!isCustomer && !editingMessageId && (
+                  <WhatsAppReactionButtonWithPicker
+                    msgId={msg.id}
+                    isOutgoing={true}
+                    isOpen={activeReactionPickerMsgId === msg.id}
+                    onToggleOpen={() => setActiveReactionPickerMsgId(prev => prev === msg.id ? null : msg.id)}
+                    onReact={(emoji) => {
+                      handleToggleReaction(msg, emoji);
+                      setActiveReactionPickerMsgId(null);
+                    }}
                   />
                 )}
 
                 <div
-                  className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] transition-all duration-300 ${
+                  className={`max-w-[85%] sm:max-w-[72%] ${
+                    isMediaOnly ? 'p-1' : 'px-3 py-2'
+                  } shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] transition-all duration-300 ${
                     highlightedMsgId === msg.id ? 'ring-2 ring-emerald-500 bg-emerald-50 scale-[1.01]' : ''
                   } ${
                     isCustomer
@@ -1843,15 +1874,7 @@ export const WhatsAppWebInbox = ({
                     }
 
                     return (
-                      <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-slate-100 shadow-2xs min-h-[160px] flex items-center justify-center">
-                        {!isLoaded && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-100/95 animate-pulse text-slate-400 gap-2 z-1">
-                            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
-                              <Camera className="w-5 h-5 text-slate-400 animate-pulse" />
-                            </div>
-                            <span className="text-[11px] font-medium text-slate-500">Loading photo...</span>
-                          </div>
-                        )}
+                      <div className={`rounded-lg overflow-hidden relative group max-w-md bg-black/5 shadow-2xs flex items-center justify-center ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}>
                         <img
                           src={mediaUrl}
                           alt="WhatsApp photo"
@@ -1862,7 +1885,7 @@ export const WhatsAppWebInbox = ({
                           onError={() => {
                             setFailedImageIds(prev => new Set(prev).add(msg.id));
                           }}
-                          className={`w-full max-h-72 object-cover rounded-xl cursor-pointer hover:opacity-95 transition-opacity ${!isLoaded ? 'opacity-0' : 'opacity-100'}`}
+                          className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
                           onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
                         />
                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-2">
@@ -1910,13 +1933,13 @@ export const WhatsAppWebInbox = ({
                       );
                     }
                     return (
-                      <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-black shadow-xs">
+                      <div className={`rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}>
                         <video
                           src={videoUrl}
                           controls
                           playsInline
                           preload="metadata"
-                          className="w-full max-h-72 rounded-t-xl object-contain bg-black"
+                          className="w-full max-h-72 rounded-t-lg object-contain bg-black"
                         />
                         <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
                           <span className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300">
@@ -2115,10 +2138,18 @@ export const WhatsAppWebInbox = ({
                   </div>
                 ) : (
                   <div>
-                    {/* Standard Text Body (if not purely a location card or contact card without extra text) */}
-                    {msg.message_body && !msg.message_body.startsWith('📍 Location Pin:') && !msg.message_body.startsWith('👤 Contact Card:') && (
-                      <WhatsAppTextRenderer text={msg.message_body} />
-                    )}
+                    {/* Standard Text Body (or Caption if body was raw token) */}
+                    {(() => {
+                      const textToShow = (
+                        msg.message_body && 
+                        !['[IMAGE file]', '[VIDEO file]', '[DOCUMENT file]', '[AUDIO file]', '[WhatsApp message]', '🔘 [Interactive reply]', '🔘 [Button reply]', '🎤 Voice Note'].includes(msg.message_body.trim()) && 
+                        !msg.message_body.startsWith('📍 Location Pin:') && 
+                        !msg.message_body.startsWith('👤 Contact Card:')
+                      ) ? msg.message_body : (msg.media_caption && msg.media_caption.trim() ? msg.media_caption : null);
+
+                      if (!textToShow) return null;
+                      return <WhatsAppTextRenderer text={textToShow} className={isMediaOnly ? 'px-1 pt-0.5' : ''} />;
+                    })()}
 
                     {/* WhatsApp Template Official Footer */}
                     {(() => {
@@ -2185,15 +2216,17 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* Timestamp & Delivery Checkmarks */}
-                <WhatsAppMessageStatusTick
-                  status={msg.status || 'sent'}
-                  isEdited={Boolean(msg.is_edited === true || msg.is_edited === 1)}
-                  isStarred={Boolean(msg.is_starred)}
-                  timeStr={timeStr}
-                  fullDateTimeStr={fullDateTimeStr}
-                  isCustomer={isCustomer}
-                  onRetry={() => handleRetryMessage(msg)}
-                />
+                <div className={isMediaOnly ? 'px-1 pb-0.5' : ''}>
+                  <WhatsAppMessageStatusTick
+                    status={msg.status || 'sent'}
+                    isEdited={Boolean(msg.is_edited === true || msg.is_edited === 1)}
+                    isStarred={Boolean(msg.is_starred)}
+                    timeStr={timeStr}
+                    fullDateTimeStr={fullDateTimeStr}
+                    isCustomer={isCustomer}
+                    onRetry={() => handleRetryMessage(msg)}
+                  />
+                </div>
 
                 {/* 1-Click WhatsApp Web / App Dispatch & Retry Action Bar for Failed Messages */}
                 {msg.status === 'failed' && !isCustomer && (
@@ -2240,6 +2273,20 @@ export const WhatsAppWebInbox = ({
                   onReactionClick={(emoji) => handleToggleReaction(msg, emoji)}
                 />
               </div>
+
+              {/* Incoming Reaction Trigger Button (Right side of incoming message bubble) */}
+              {isCustomer && !editingMessageId && (
+                <WhatsAppReactionButtonWithPicker
+                  msgId={msg.id}
+                  isOutgoing={false}
+                  isOpen={activeReactionPickerMsgId === msg.id}
+                  onToggleOpen={() => setActiveReactionPickerMsgId(prev => prev === msg.id ? null : msg.id)}
+                  onReact={(emoji) => {
+                    handleToggleReaction(msg, emoji);
+                    setActiveReactionPickerMsgId(null);
+                  }}
+                />
+              )}
             </div>
           </React.Fragment>
         );

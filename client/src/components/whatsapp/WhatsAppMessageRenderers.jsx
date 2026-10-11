@@ -660,43 +660,70 @@ export function WhatsAppReactionPill({
 }
 
 /**
- * Authentic WhatsApp Quick Hover Reaction Bar
+ * Authentic WhatsApp Web Hover Reaction Button & Click Popup Picker
+ * - On hover only: displays a single subtle reaction button beside the bubble
+ * - On click: opens the full reaction picker (👍 ❤️ 😂 😮 😢 🙏) in a clean popup
+ * - Never overlaps or pushes the message above it
  */
-export function WhatsAppQuickReactionHover({
-  onReact,
-  onOpenMore,
-  isOutgoing = false
+export function WhatsAppReactionButtonWithPicker({
+  msgId,
+  isOutgoing = false,
+  isOpen = false,
+  onToggleOpen,
+  onReact
 }) {
   const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
   return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      className={`absolute -top-9 ${isOutgoing ? 'right-0' : 'left-0'} z-30 flex items-center gap-0.5 px-2 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 animate-in fade-in zoom-in-95 duration-150 select-none`}
-    >
-      {quickEmojis.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          onClick={() => onReact(emoji)}
-          className="w-7 h-7 flex items-center justify-center text-base hover:scale-125 transition-transform cursor-pointer rounded-full hover:bg-slate-100 active:scale-95"
-          title={`React with ${emoji}`}
+    <div className={`relative flex items-center shrink-0 self-center transition-opacity duration-150 ${
+      isOutgoing ? 'mr-1.5' : 'ml-1.5'
+    } ${isOpen ? 'opacity-100 z-40' : 'opacity-0 group-hover:opacity-100 z-10'}`}>
+      {/* Small Single Reaction Trigger Button */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleOpen && onToggleOpen();
+        }}
+        className="msg-reaction-trigger w-6 h-6 rounded-full bg-white/95 hover:bg-white text-slate-500 hover:text-slate-800 shadow-xs border border-slate-200/90 flex items-center justify-center cursor-pointer transition-transform hover:scale-110 active:scale-95"
+        title="React to message"
+      >
+        <span className="text-[12px] leading-none select-none">👍</span>
+      </button>
+
+      {/* Floating Reaction Picker Popup on Click */}
+      {isOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className={`msg-reaction-picker-container absolute bottom-full mb-1.5 ${
+            isOutgoing ? 'right-0' : 'left-0'
+          } z-50 flex items-center gap-1 px-2 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-xl border border-slate-200/90 animate-in fade-in zoom-in-95 duration-150 select-none ring-1 ring-black/5`}
         >
-          {emoji}
-        </button>
-      ))}
-      {onOpenMore && (
-        <button
-          type="button"
-          onClick={onOpenMore}
-          className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full cursor-pointer ml-0.5 transition-colors"
-          title="More emojis"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+          {quickEmojis.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReact && onReact(emoji);
+              }}
+              className="w-7 h-7 flex items-center justify-center text-base hover:scale-130 transition-transform cursor-pointer rounded-full hover:bg-slate-100 active:scale-95"
+              title={`React ${emoji}`}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
+}
+
+/**
+ * Backward compatibility export
+ */
+export function WhatsAppQuickReactionHover() {
+  return null;
 }
 
 /**
