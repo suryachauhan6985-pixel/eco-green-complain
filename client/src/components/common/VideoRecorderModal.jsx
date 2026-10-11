@@ -248,18 +248,21 @@ export function VideoRecorderModal({
       return;
     }
 
-    const isLandscape = desiredOrientation === 'landscape';
+    // Hardware Camera Orientation Mapping for Real Mobile Devices:
+    // On mobile devices (Android / iOS), camera sensors and display coordinates are rotated 90 degrees.
+    // - Selecting Landscape (widescreen 16:9): Mobile camera requires vertical constraint (9:16 / 720x1280)
+    //   to produce a true 16:9 widescreen horizontal stream.
+    // - Selecting Portrait (vertical 9:16): Mobile camera requires widescreen constraint (16:9 / 1280x720)
+    //   to produce a true 9:16 vertical stream without black bars.
+    const isHardwarePortraitConstraint = desiredOrientation === 'landscape';
 
     try {
-      // True Orientation HD Constraints (Native 720p HD @ 30fps):
-      // Landscape: true 16:9 widescreen (1280x720)
-      // Portrait: true 9:16 vertical (720x1280)
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-          height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-          aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
+          width: isHardwarePortraitConstraint ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+          height: isHardwarePortraitConstraint ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+          aspectRatio: { ideal: isHardwarePortraitConstraint ? (9 / 16) : (16 / 9) },
           frameRate: { ideal: 30, max: 30 }
         },
         audio: {
@@ -280,9 +283,9 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: desiredFacingMode },
-              width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-              height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-              aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
+              width: isHardwarePortraitConstraint ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+              height: isHardwarePortraitConstraint ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+              aspectRatio: { ideal: isHardwarePortraitConstraint ? (9 / 16) : (16 / 9) },
               frameRate: { ideal: 30, max: 30 }
             },
             audio: true
@@ -294,7 +297,7 @@ export function VideoRecorderModal({
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
                 facingMode: { ideal: desiredFacingMode },
-                aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) }
+                aspectRatio: { ideal: isHardwarePortraitConstraint ? (9 / 16) : (16 / 9) }
               }
             });
             setHasAudio(false);
