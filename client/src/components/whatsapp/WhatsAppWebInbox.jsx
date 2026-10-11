@@ -1004,6 +1004,20 @@ export const WhatsAppWebInbox = ({
     handleClearSelectedFile();
     setShowEmojiPicker(false);
     userSentMessageRef.current = true;
+    setConversations(prev => prev.map(c => {
+      const c10 = (c.phone || '').replace(/[^0-9]/g, '').slice(-10);
+      const sel10 = (selectedPhone || '').replace(/[^0-9]/g, '').slice(-10);
+      if (c10 === sel10) {
+        return {
+          ...c,
+          last_message: currentText || (currentFile ? `📷 ${currentFile.name}` : 'Media attachment'),
+          last_sender_type: 'company',
+          last_status: 'sent',
+          last_activity: new Date().toISOString()
+        };
+      }
+      return c;
+    }));
     setTimeout(() => scrollToBottom('smooth'), 20);
 
     try {
@@ -2392,7 +2406,7 @@ export const WhatsAppWebInbox = ({
   return (
     <div className="w-full flex-1 h-full flex overflow-hidden bg-[#efeae2] select-none">
       {/* ================= ECO GREEN SOLAR INBOX PANE ================= */}
-      <div className={`w-full md:w-[320px] lg:w-[340px] xl:w-[360px] 2xl:w-[380px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full md:w-[380px] lg:w-[420px] xl:w-[450px] 2xl:w-[480px] bg-white border-r border-[#d1d7db] flex flex-col h-full shrink-0 z-10 ${selectedPhone ? 'hidden md:flex' : 'flex'}`}>
         {/* Header: Eco Green Solar Brand & Action Buttons */}
         <div className="bg-[#f0f2f5] px-4 py-3 border-b border-[#d1d7db] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
@@ -2724,9 +2738,23 @@ export const WhatsAppWebInbox = ({
                       <p className={`text-xs truncate flex items-center gap-1 ${
                         isUnread ? 'text-[#111b21] font-semibold' : 'text-[#667781] font-normal'
                       }`}>
-                        {conv.last_sender_type === 'company' && (
-                          <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0 inline" />
-                        )}
+                        {conv.last_sender_type === 'company' && (() => {
+                          const status = (conv.last_status || '').toLowerCase();
+                          if (status === 'read') {
+                            return <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0 inline" title="Read" />;
+                          }
+                          if (status === 'sent') {
+                            return <Check className="w-3.5 h-3.5 text-[#8696a0] shrink-0 inline" title="Sent" />;
+                          }
+                          if (status === 'failed') {
+                            return <AlertCircle className="w-3 h-3 text-rose-500 shrink-0 inline" title="Failed to deliver" />;
+                          }
+                          if (status === 'pending') {
+                            return <Clock className="w-3.5 h-3.5 text-[#8696a0] shrink-0 inline" title="Sending..." />;
+                          }
+                          // Delivered / unread by customer
+                          return <CheckCheck className="w-3.5 h-3.5 text-[#8696a0] shrink-0 inline" title="Delivered" />;
+                        })()}
                         <span className="truncate">
                           {conv.last_message?.toLowerCase().includes('unsupported')
                             ? '📷 [Media / View-Once Item]'
