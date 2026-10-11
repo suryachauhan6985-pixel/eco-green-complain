@@ -17,7 +17,9 @@ import {
   WhatsAppInteractiveButtons,
   WhatsAppQuotedPreview,
   WhatsAppMessageStatusTick,
-  WhatsAppMediaLightbox
+  WhatsAppMediaLightbox,
+  WhatsAppReactionPill,
+  WhatsAppQuickReactionHover
 } from './WhatsAppMessageRenderers';
 import { 
   Search, Send, FileText, Paperclip, Bell, 
@@ -28,7 +30,7 @@ import {
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
   Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera,
-  Share2, Reply, MapPin
+  Share2, Reply, MapPin, Star
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
@@ -299,7 +301,11 @@ export const WhatsAppWebInbox = ({
   const [replyQuotedMsg, setReplyQuotedMsg] = useState(null);
   const [forwardModalMsg, setForwardModalMsg] = useState(null);
   const [forwardTargetPhone, setForwardTargetPhone] = useState('');
+  const [forwardSearch, setForwardSearch] = useState('');
   const [sendingForward, setSendingForward] = useState(false);
+  const [hoveredMessageId, setHoveredMessageId] = useState(null);
+  const [showStarredDrawer, setShowStarredDrawer] = useState(false);
+  const [highlightedMsgId, setHighlightedMsgId] = useState(null);
 
   // Chat conversation context menu & mobile touch states
   const [chatContextMenu, setChatContextMenu] = useState(null); // { x, y, conv }
@@ -348,14 +354,16 @@ export const WhatsAppWebInbox = ({
     return true;
   }, Boolean(showEmojiPicker || actionMessageMenuId || showHeaderMenu || showSidebarMenu || chatContextMenu), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-  // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info)
+  // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info, Starred Drawer, Forward Modal)
   useEscapeHandler(() => {
+    if (showStarredDrawer) { setShowStarredDrawer(false); return true; }
+    if (forwardModalMsg) { setForwardModalMsg(null); return true; }
     if (isSettingsModalOpen) { setIsSettingsModalOpen(false); return true; }
     if (isNewChatModalOpen) { setIsNewChatModalOpen(false); return true; }
     if (isEditNameModalOpen) { setIsEditNameModalOpen(false); return true; }
     if (isContactInfoOpen) { setIsContactInfoOpen(false); return true; }
     return false;
-  }, Boolean(isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+  }, Boolean(showStarredDrawer || forwardModalMsg || isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   // Stage 5: Active Chat Thread -> Return to Conversation List
   useEscapeHandler(() => {
@@ -822,6 +830,7 @@ export const WhatsAppWebInbox = ({
     const currentFile = selectedFile;
     const optimisticId = 'opt_' + Date.now();
 
+    const targetQuotedMsg = replyQuotedMsg;
     const optimisticMsg = {
       id: optimisticId,
       phone: selectedPhone,
@@ -831,12 +840,15 @@ export const WhatsAppWebInbox = ({
       media_url: filePreview || null,
       media_type: currentFile ? (currentFile.type.startsWith('image/') ? 'image' : (currentFile.type.startsWith('video/') ? 'video' : 'document')) : null,
       media_caption: currentFile ? currentFile.name : null,
+      quoted_text: targetQuotedMsg?.message_body || targetQuotedMsg?.media_caption || null,
+      quoted_msg_id: targetQuotedMsg?.whatsapp_message_id || targetQuotedMsg?.id || null,
       created_at: new Date().toISOString(),
       status: 'sent'
     };
 
     setMessages(prev => [...prev, optimisticMsg]);
     setReplyText('');
+    setReplyQuotedMsg(null);
     handleClearSelectedFile();
     setShowEmojiPicker(false);
     userSentMessageRef.current = true;
@@ -853,7 +865,7 @@ export const WhatsAppWebInbox = ({
           console.warn('Direct upload warning, falling back:', storageErr.message);
         }
       }
-      await api.sendWhatsAppDirectReply(selectedPhone, currentText, mediaData ? null : currentFile, mediaData);
+      await api.sendWhatsAppDirectReply(selectedPhone, currentText, mediaData ? null : currentFile, mediaData, targetQuotedMsg);
       setTimeout(() => loadMessages(selectedPhone, true), 800);
       loadConversations(true);
     } catch (err) {
@@ -1177,6 +1189,64 @@ export const WhatsAppWebInbox = ({
     }
   };
 
+  // Jump to message in chat log and highlight briefly
+  const handleJumpToMessage = (targetMsgId) => {
+    if (!targetMsgId) return;
+    const el = document.getElementById(`msg-${targetMsgId}`) || document.querySelector(`[data-wamid="${targetMsgId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMsgId(targetMsgId);
+      setTimeout(() => {
+        setHighlightedMsgId(null);
+      }, 2500);
+    } else {
+      showToast('Message not found in currently loaded view', 'info');
+    }
+  };
+
+  // Toggle star / bookmark on message
+  const handleToggleStarMessage = async (msg) => {
+    setActionMessageMenuId(null);
+    const nextStarred = !msg.is_starred;
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, is_starred: nextStarred } : m));
+    showToast(nextStarred ? 'Message starred' : 'Message unstarred', 'success');
+    try {
+      await api.starWhatsAppMessage(msg.id, nextStarred);
+    } catch (err) {
+      console.error('Failed to update star state:', err);
+    }
+  };
+
+  // Toggle reaction on message
+  const handleToggleReaction = async (msg, emoji) => {
+    const currentUserId = currentUser?.id || 'staff';
+    const userName = currentUser?.name || 'Eco Green Staff';
+
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msg.id) return m;
+      let list = [];
+      try {
+        list = typeof m.reactions === 'string' ? JSON.parse(m.reactions) : (Array.isArray(m.reactions) ? [...m.reactions] : []);
+      } catch (_) {
+        list = [];
+      }
+      const existingIdx = list.findIndex(r => (r.user_id === currentUserId || r.sender_type === 'company') && r.emoji === emoji);
+      if (existingIdx >= 0) {
+        list.splice(existingIdx, 1);
+      } else {
+        list = list.filter(r => !(r.user_id === currentUserId || r.sender_type === 'company'));
+        list.push({ emoji, sender_type: 'company', user_id: currentUserId, user_name: userName, created_at: new Date().toISOString() });
+      }
+      return { ...m, reactions: list };
+    }));
+
+    try {
+      await api.reactToWhatsAppMessage(msg.id, emoji);
+    } catch (err) {
+      console.error('Failed to react to message:', err);
+    }
+  };
+
   // Quote reply to message
   const handleQuoteReply = (msg) => {
     setActionMessageMenuId(null);
@@ -1192,6 +1262,7 @@ export const WhatsAppWebInbox = ({
     setActionMessageMenuId(null);
     setForwardModalMsg(msg);
     setForwardTargetPhone('');
+    setForwardSearch('');
   };
 
   // Execute forwarding message to selected phone
@@ -1203,11 +1274,20 @@ export const WhatsAppWebInbox = ({
       setSendingForward(true);
       showToast(`Forwarding message to +${fullPhone}...`, 'info');
       const text = forwardModalMsg.message_body || forwardModalMsg.media_caption || '';
-      const res = await api.sendWhatsAppDirectReply(fullPhone, text);
+      let directMedia = null;
+      if (forwardModalMsg.media_url) {
+        directMedia = {
+          file_url: forwardModalMsg.media_url,
+          file_name: forwardModalMsg.media_caption || 'forwarded_media',
+          file_type: forwardModalMsg.media_type === 'image' ? 'image/jpeg' : (forwardModalMsg.media_type === 'video' ? 'video/mp4' : 'application/pdf')
+        };
+      }
+      const res = await api.sendWhatsAppDirectReply(fullPhone, text, null, directMedia);
       if (res && (res.success || res.status === 'sent')) {
         showToast('Message forwarded successfully!', 'success');
         setForwardModalMsg(null);
         setForwardTargetPhone('');
+        setForwardSearch('');
         loadConversations(true);
       } else {
         showToast('Forward failed: ' + (res?.error || 'Rejected by Meta'), 'error');
@@ -1410,10 +1490,24 @@ export const WhatsAppWebInbox = ({
               )}
 
               <div
+                id={`msg-${msg.id}`}
+                data-wamid={msg.whatsapp_message_id || ''}
+                onMouseEnter={() => setHoveredMessageId(msg.id)}
+                onMouseLeave={() => setHoveredMessageId(prev => prev === msg.id ? null : prev)}
                 className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} my-1 relative px-2 group ${actionMessageMenuId === msg.id ? 'z-30' : 'z-1'}`}
               >
+                {/* Floating Quick Reaction Hover Bar */}
+                {hoveredMessageId === msg.id && !editingMessageId && (
+                  <WhatsAppQuickReactionHover
+                    isOutgoing={!isCustomer}
+                    onReact={(emoji) => handleToggleReaction(msg, emoji)}
+                  />
+                )}
+
                 <div
-                  className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] ${
+                  className={`max-w-[85%] sm:max-w-[72%] px-3 py-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] transition-all duration-300 ${
+                    highlightedMsgId === msg.id ? 'ring-2 ring-emerald-500 bg-emerald-50 scale-[1.01]' : ''
+                  } ${
                     isCustomer
                       ? 'bg-white text-[#111b21] rounded-tl-none'
                       : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
@@ -1436,7 +1530,7 @@ export const WhatsAppWebInbox = ({
 
                     {/* Popover Action Menu */}
                     {actionMessageMenuId === msg.id && (
-                      <div className={`msg-action-menu-container absolute top-6 w-40 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-40 text-xs text-[#111b21] animate-in fade-in zoom-in-95 duration-100 font-medium select-none ring-1 ring-black/5 ${
+                      <div className={`msg-action-menu-container absolute top-6 w-44 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-40 text-xs text-[#111b21] animate-in fade-in zoom-in-95 duration-100 font-medium select-none ring-1 ring-black/5 ${
                         isCustomer ? 'left-0' : 'right-0'
                       }`}>
                         <button
@@ -1446,6 +1540,14 @@ export const WhatsAppWebInbox = ({
                         >
                           <Reply className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                           <span>Reply</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStarMessage(msg)}
+                          className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-2.5 cursor-pointer text-[#111b21] transition-colors"
+                        >
+                          <Star className={`w-3.5 h-3.5 ${msg.is_starred ? 'text-amber-500 fill-amber-400' : 'text-slate-500'} shrink-0`} />
+                          <span>{msg.is_starred ? 'Unstar message' : 'Star message'}</span>
                         </button>
                         <button
                           type="button"
@@ -1496,7 +1598,8 @@ export const WhatsAppWebInbox = ({
                 {msg.quoted_text && (
                   <WhatsAppQuotedPreview
                     quotedText={msg.quoted_text}
-                    senderName="You"
+                    senderName={msg.sender_type === 'customer' ? 'Customer' : 'You'}
+                    onClick={() => handleJumpToMessage(msg.quoted_msg_id)}
                   />
                 )}
 
@@ -1812,6 +1915,7 @@ export const WhatsAppWebInbox = ({
                 <WhatsAppMessageStatusTick
                   status={msg.status || 'sent'}
                   isEdited={Boolean(msg.is_edited === true || msg.is_edited === 1)}
+                  isStarred={Boolean(msg.is_starred)}
                   timeStr={timeStr}
                   fullDateTimeStr={fullDateTimeStr}
                   isCustomer={isCustomer}
@@ -1855,6 +1959,13 @@ export const WhatsAppWebInbox = ({
                     </div>
                   </div>
                 )}
+
+                {/* Reaction Pill Badge at bottom of bubble */}
+                <WhatsAppReactionPill
+                  reactions={msg.reactions}
+                  currentUserId={currentUser?.id || 'staff'}
+                  onReactionClick={(emoji) => handleToggleReaction(msg, emoji)}
+                />
               </div>
             </div>
           </React.Fragment>
@@ -2412,6 +2523,18 @@ export const WhatsAppWebInbox = ({
                   <Copy className="w-4 h-4" />
                 </button>
 
+                {/* Starred Messages Header Quick Action */}
+                <button
+                  type="button"
+                  onClick={() => setShowStarredDrawer(true)}
+                  className={`hidden sm:inline-flex p-1.5 hover:bg-[#e9edef] rounded-full transition-colors cursor-pointer ${
+                    messages.some(m => Boolean(m.is_starred)) ? 'text-amber-500' : 'text-[#54656f] hover:text-[#111b21]'
+                  }`}
+                  title={`Starred Messages (${messages.filter(m => Boolean(m.is_starred)).length})`}
+                >
+                  <Star className={`w-4 h-4 ${messages.some(m => Boolean(m.is_starred)) ? 'fill-amber-400 text-amber-500' : ''}`} />
+                </button>
+
                 {/* Header 3-Dots Button (Accessible on Mobile & Desktop) */}
                 <button
                   id="header-menu-button"
@@ -2436,6 +2559,14 @@ export const WhatsAppWebInbox = ({
                     >
                       <User className="w-4 h-4 text-slate-600" />
                       <span>Contact Info</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); setShowStarredDrawer(true); }}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#111b21] hover:bg-[#f5f6f6] flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                      <span>Starred Messages ({messages.filter(m => Boolean(m.is_starred)).length})</span>
                     </button>
                     <button
                       type="button"
@@ -2720,7 +2851,11 @@ export const WhatsAppWebInbox = ({
             {/* Quoted Message Active Reply Preview Banner */}
             {replyQuotedMsg && (
               <div className="px-3 py-2 bg-[#f0f2f5] border-t border-[#d1d7db] flex items-center justify-between text-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
-                <div className="flex items-center gap-2.5 min-w-0 border-l-4 border-[#00a884] pl-2.5 py-0.5">
+                <div 
+                  onClick={() => handleJumpToMessage(replyQuotedMsg.whatsapp_message_id || replyQuotedMsg.id)}
+                  className="flex items-center gap-2.5 min-w-0 border-l-4 border-[#00a884] pl-2.5 py-0.5 cursor-pointer hover:opacity-80 transition-opacity"
+                  title="Click to jump to quoted message in chat"
+                >
                   <div className="min-w-0">
                     <p className="font-bold text-[11px] text-[#00a884]">
                       Replying to {replyQuotedMsg.sender_type === 'customer' ? (contactInfo?.sender_name || 'Customer') : 'You'}
@@ -3485,24 +3620,41 @@ export const WhatsAppWebInbox = ({
               {/* Destination Contact List */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">Select Contact to Forward:</label>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={forwardSearch}
+                    onChange={(e) => setForwardSearch(e.target.value)}
+                    placeholder="Search contact name or phone..."
+                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
                 <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white shadow-2xs">
-                  {conversations.slice(0, 8).map(c => (
-                    <button
-                      key={c.phone}
-                      type="button"
-                      onClick={() => handleExecuteForward(c.phone)}
-                      disabled={sendingForward}
-                      className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <p className="font-semibold text-xs text-slate-900 truncate">{c.sender_name || `+${c.phone}`}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">+{c.phone}</p>
-                      </div>
-                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold text-[10px] rounded-full border border-emerald-200 shrink-0">
-                        Forward
-                      </span>
-                    </button>
-                  ))}
+                  {conversations
+                    .filter(c => {
+                      if (!forwardSearch.trim()) return true;
+                      const q = forwardSearch.toLowerCase();
+                      return (c.sender_name && c.sender_name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q));
+                    })
+                    .slice(0, 15)
+                    .map(c => (
+                      <button
+                        key={c.phone}
+                        type="button"
+                        onClick={() => handleExecuteForward(c.phone)}
+                        disabled={sendingForward}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-semibold text-xs text-slate-900 truncate">{c.sender_name || `+${c.phone}`}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">+{c.phone}</p>
+                        </div>
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold text-[10px] rounded-full border border-emerald-200 shrink-0">
+                          Forward
+                        </span>
+                      </button>
+                    ))}
                 </div>
               </div>
 
@@ -3527,6 +3679,92 @@ export const WhatsAppWebInbox = ({
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Starred Messages Slide-Over Drawer */}
+      {showStarredDrawer && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-end animate-in fade-in"
+          onClick={() => setShowStarredDrawer(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white h-full w-full max-w-md shadow-2xl border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-200"
+          >
+            <div className="px-5 py-4 bg-[#008069] text-white flex items-center justify-between shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <Star className="w-5 h-5 fill-amber-300 text-amber-300" />
+                <div>
+                  <h3 className="font-bold text-sm">Starred Messages</h3>
+                  <p className="text-[11px] text-white/80">
+                    {messages.filter(m => Boolean(m.is_starred)).length} saved in this chat
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStarredDrawer(false)}
+                className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer text-white"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#f0f2f5]">
+              {messages.filter(m => Boolean(m.is_starred)).length === 0 ? (
+                <div className="py-20 text-center text-slate-500 space-y-3">
+                  <div className="w-14 h-14 rounded-full bg-amber-50 text-amber-500 mx-auto flex items-center justify-center shadow-xs">
+                    <Star className="w-7 h-7 fill-amber-400 text-amber-400" />
+                  </div>
+                  <p className="font-bold text-slate-800 text-sm">No starred messages</p>
+                  <p className="text-xs text-slate-500 max-w-xs mx-auto">
+                    Star important messages to easily find them later. Hover over any message and click "Star message" in the menu.
+                  </p>
+                </div>
+              ) : (
+                messages.filter(m => Boolean(m.is_starred)).map((msg) => {
+                  const isCust = msg.sender_type === 'customer';
+                  const senderLabel = isCust ? (contactInfo?.sender_name || 'Customer') : 'You';
+                  return (
+                    <div
+                      key={msg.id}
+                      className="p-3 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-emerald-300 transition-all group"
+                    >
+                      <div className="flex items-center justify-between mb-1 text-[11px] text-slate-500">
+                        <span className="font-bold text-[#008069]">{senderLabel}</span>
+                        <span>{formatIndianDateTime(msg.created_at) || formatWhatsAppTime(msg.created_at)}</span>
+                      </div>
+                      <div className="text-xs text-slate-800 line-clamp-3 mb-2 font-normal">
+                        {msg.message_body || msg.media_caption || `[${(msg.media_type || 'Media').toUpperCase()} file]`}
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowStarredDrawer(false);
+                            handleJumpToMessage(msg.id);
+                          }}
+                          className="text-[#008069] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Jump to message</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStarMessage(msg)}
+                          className="text-slate-400 hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span>Unstar</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

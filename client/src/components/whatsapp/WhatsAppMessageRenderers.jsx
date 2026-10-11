@@ -3,7 +3,7 @@ import {
   Play, Pause, Download, Maximize2, RotateCw, ZoomIn, ZoomOut,
   FileText, ExternalLink, MapPin, Copy, Phone, User, Check,
   CheckCheck, Clock, AlertCircle, Eye, RefreshCw, X, Mic,
-  FileSpreadsheet, Archive, File
+  FileSpreadsheet, Archive, File, Star, Smile, Plus
 } from 'lucide-react';
 
 /**
@@ -551,11 +551,12 @@ export function WhatsAppQuotedPreview({
 }
 
 /**
- * Authentic WhatsApp Message Status Indicator (Ticks + Time)
+ * Authentic WhatsApp Message Status Indicator (Ticks + Time + Star)
  */
 export function WhatsAppMessageStatusTick({
   status = 'sent',
   isEdited = false,
+  isStarred = false,
   timeStr = '',
   fullDateTimeStr = '',
   isCustomer = false,
@@ -563,6 +564,9 @@ export function WhatsAppMessageStatusTick({
 }) {
   return (
     <div className="flex items-center justify-end gap-1 text-[10px] text-[#667781] mt-1 ml-3 select-none float-right">
+      {isStarred && (
+        <Star className="w-3 h-3 fill-amber-400 text-amber-400 mr-0.5 inline-block shrink-0" title="Starred message" />
+      )}
       {isEdited && (
         <span className="italic text-[9px] text-[#8696a0] mr-0.5 font-sans">(edited)</span>
       )}
@@ -584,11 +588,112 @@ export function WhatsAppMessageStatusTick({
               <span>Retry</span>
             </span>
           ) : status === 'pending' ? (
-            <Clock className="w-3 h-3 text-[#8696a0]" title="Sending..." />
+            <Clock className="w-3.5 h-3.5 text-[#8696a0]" title="Sending..." />
           ) : (
             <Check className="w-3.5 h-3.5 text-[#8696a0]" title="Sent" />
           )}
         </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Authentic WhatsApp Reaction Pill (Rendered at bottom edge of message bubble)
+ */
+export function WhatsAppReactionPill({
+  reactions = [],
+  currentUserId = 'staff',
+  onReactionClick
+}) {
+  let list = [];
+  try {
+    list = typeof reactions === 'string' ? JSON.parse(reactions) : (Array.isArray(reactions) ? reactions : []);
+  } catch (_) {
+    list = [];
+  }
+
+  if (!list || list.length === 0) return null;
+
+  // Group by emoji
+  const grouped = {};
+  list.forEach((r) => {
+    if (!r || !r.emoji) return;
+    if (!grouped[r.emoji]) {
+      grouped[r.emoji] = { count: 0, users: [], hasUserReacted: false };
+    }
+    grouped[r.emoji].count += 1;
+    grouped[r.emoji].users.push(r.user_name || (r.user_id === 'customer' ? 'Customer' : 'Staff'));
+    if (r.user_id === currentUserId) {
+      grouped[r.emoji].hasUserReacted = true;
+    }
+  });
+
+  const entries = Object.entries(grouped);
+  if (entries.length === 0) return null;
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="absolute -bottom-2.5 right-3 flex items-center gap-1 z-10 select-none animate-in fade-in zoom-in-75 duration-150"
+    >
+      {entries.map(([emoji, data]) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => onReactionClick && onReactionClick(emoji)}
+          className={`px-1.5 py-0.5 rounded-full bg-white border text-xs shadow-2xs flex items-center gap-1 hover:scale-110 active:scale-95 transition-all cursor-pointer ${
+            data.hasUserReacted
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-400/30'
+              : 'border-slate-200 text-slate-700'
+          }`}
+          title={`${data.users.join(', ')} (${data.hasUserReacted ? 'Click to remove' : 'Click to react'})`}
+        >
+          <span className="text-[13px] leading-none">{emoji}</span>
+          {data.count > 1 && (
+            <span className="text-[10px] font-bold text-slate-600">{data.count}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Authentic WhatsApp Quick Hover Reaction Bar
+ */
+export function WhatsAppQuickReactionHover({
+  onReact,
+  onOpenMore,
+  isOutgoing = false
+}) {
+  const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className={`absolute -top-9 ${isOutgoing ? 'right-0' : 'left-0'} z-30 flex items-center gap-0.5 px-2 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 animate-in fade-in zoom-in-95 duration-150 select-none`}
+    >
+      {quickEmojis.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => onReact(emoji)}
+          className="w-7 h-7 flex items-center justify-center text-base hover:scale-125 transition-transform cursor-pointer rounded-full hover:bg-slate-100 active:scale-95"
+          title={`React with ${emoji}`}
+        >
+          {emoji}
+        </button>
+      ))}
+      {onOpenMore && (
+        <button
+          type="button"
+          onClick={onOpenMore}
+          className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full cursor-pointer ml-0.5 transition-colors"
+          title="More emojis"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
       )}
     </div>
   );

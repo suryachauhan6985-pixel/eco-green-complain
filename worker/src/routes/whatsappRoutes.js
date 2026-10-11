@@ -173,6 +173,57 @@ export async function handleWebhookPost(c) {
               const cPhone = firstContact.phones?.[0]?.phone || '';
               textBody = cPhone;
               mediaCaption = cName;
+            } else if (msg.type === 'reaction') {
+              const targetWamid = msg.reaction?.message_id;
+              const emoji = msg.reaction?.emoji || '';
+              if (targetWamid) {
+                try {
+                  const targetRes = await query(
+                    'SELECT id, reactions FROM whatsapp_messages WHERE wam_id = $1 LIMIT 1',
+                    [targetWamid],
+                    c.env,
+                    c.executionCtx
+                  );
+                  if (targetRes.rows && targetRes.rows.length > 0) {
+                    const row = targetRes.rows[0];
+                    let rList = [];
+                    try {
+                      rList = typeof row.reactions === 'string' ? JSON.parse(row.reactions) : (Array.isArray(row.reactions) ? row.reactions : []);
+                    } catch (_) { rList = []; }
+                    const custIdx = rList.findIndex(r => r.user_id === 'customer' || r.phone === cleanPhone);
+                    if (custIdx >= 0) {
+                      if (!emoji) rList.splice(custIdx, 1);
+                      else rList[custIdx] = { emoji, user_id: 'customer', user_name: 'Customer', phone: cleanPhone, created_at: new Date().toISOString() };
+                    } else if (emoji) {
+                      rList.push({ emoji, user_id: 'customer', user_name: 'Customer', phone: cleanPhone, created_at: new Date().toISOString() });
+                    }
+                    await query(
+                      'UPDATE whatsapp_messages SET reactions = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                      [JSON.stringify(rList), row.id],
+                      c.env,
+                      c.executionCtx
+                    );
+                  }
+                } catch (_) {}
+              }
+              continue; // Skip creating a new bubble for reaction events
+            }
+
+            // Extract Quoted Message Context from Webhook
+            let quotedText = null;
+            let quotedMsgId = msg.context?.id || null;
+            if (quotedMsgId) {
+              try {
+                const parentRes = await query(
+                  'SELECT message_body, media_caption FROM whatsapp_messages WHERE wam_id = $1 LIMIT 1',
+                  [quotedMsgId],
+                  c.env,
+                  c.executionCtx
+                );
+                if (parentRes.rows && parentRes.rows.length > 0) {
+                  quotedText = parentRes.rows[0].message_body || parentRes.rows[0].media_caption || '[Quoted message]';
+                }
+              } catch (_) {}
             }
 
             if (!textBody && !mediaId && !mediaType) {
@@ -269,23 +320,22 @@ export async function handleWebhookPost(c) {
               } catch (_) {}
             }
 
-            // Insert into whatsapp_messages (with media_caption support)
+            // Insert into whatsapp_messages (with media_caption, quoted_text, quoted_msg_id support)
             try {
+              await query(
+                `INSERT INTO whatsapp_messages (
+                  complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, media_caption, quoted_text, quoted_msg_id, wam_id, status, created_at, updated_at
+                ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, $9, $10, $11, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, mediaCaption, quotedText, quotedMsgId, wamid],
+                c.env,
+                c.executionCtx
+              );
+            } catch (insertErr) {
               await query(
                 `INSERT INTO whatsapp_messages (
                   complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, media_caption, wam_id, status, created_at, updated_at
                 ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, $9, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
                 [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, mediaCaption, wamid],
-                c.env,
-                c.executionCtx
-              );
-            } catch (insertErr) {
-              // Fallback if media_caption column is missing
-              await query(
-                `INSERT INTO whatsapp_messages (
-                  complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, wam_id, status, created_at, updated_at
-                ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, wamid],
                 c.env,
                 c.executionCtx
               ).catch(() => {});
@@ -778,7 +828,7 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
 whatsappRoutes.post('/direct-reply', authenticateToken, async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
-    const { phone, message, complaint_id, media_url, media_type, media_caption, template_name, variables } = body;
+    const { phone, message, complaint_id, media_url, media_type, media_caption, template_name, variables, quoted_text, quoted_msg_id } = body;
     const user = c.get('user');
 
     if (!phone || (!message && !media_url && !template_name)) {
@@ -794,6 +844,8 @@ whatsappRoutes.post('/direct-reply', authenticateToken, async (c) => {
       mediaType: media_type || null,
       mediaFileName: media_caption || null,
       senderName: user?.name || 'Eco Green Staff',
+      quotedText: quoted_text || null,
+      quotedMsgId: quoted_msg_id || null,
       env: c.env
     });
 
@@ -1038,6 +1090,113 @@ whatsappRoutes.delete('/messages/:id', authenticateToken, async (c) => {
     // 2. Delete message from database
     await query('DELETE FROM whatsapp_messages WHERE id::text = $1 OR wam_id = $1', [String(id)], c.env, c.executionCtx);
     return c.json({ success: true, message: 'Message and media deleted successfully' });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/whatsapp/messages/:id/star - Star / Unstar Message
+whatsappRoutes.post('/messages/:id/star', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const current = await query(
+      'SELECT id, is_starred FROM whatsapp_messages WHERE id::text = $1 OR wam_id = $1 LIMIT 1',
+      [String(id)],
+      c.env,
+      c.executionCtx
+    );
+    if (!current.rows || !current.rows.length) {
+      return c.json({ error: 'Message not found' }, 404);
+    }
+    const newStarred = body.is_starred !== undefined ? Boolean(body.is_starred) : !current.rows[0].is_starred;
+    await query(
+      'UPDATE whatsapp_messages SET is_starred = $1, updated_at = CURRENT_TIMESTAMP WHERE id::text = $2 OR wam_id = $2',
+      [newStarred, String(id)],
+      c.env,
+      c.executionCtx
+    );
+    return c.json({ success: true, is_starred: newStarred });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/whatsapp/messages/:id/react - Emoji Reaction Toggle & Meta Dispatch
+whatsappRoutes.post('/messages/:id/react', authenticateToken, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const user = c.get('user');
+    const emoji = body.emoji || '';
+
+    const msgRes = await query(
+      'SELECT id, phone, wam_id, reactions FROM whatsapp_messages WHERE id::text = $1 OR wam_id = $1 LIMIT 1',
+      [String(id)],
+      c.env,
+      c.executionCtx
+    );
+    if (!msgRes.rows || !msgRes.rows.length) {
+      return c.json({ error: 'Message not found' }, 404);
+    }
+    const msg = msgRes.rows[0];
+
+    let list = [];
+    try {
+      list = typeof msg.reactions === 'string' ? JSON.parse(msg.reactions) : (Array.isArray(msg.reactions) ? msg.reactions : []);
+    } catch (_) { list = []; }
+
+    const userId = user?.id || 'staff';
+    const userName = user?.name || 'Staff';
+    const existingIdx = list.findIndex(r => r.user_id === userId);
+
+    if (existingIdx >= 0) {
+      if (list[existingIdx].emoji === emoji || !emoji) {
+        list.splice(existingIdx, 1);
+      } else {
+        list[existingIdx] = { emoji, user_id: userId, user_name: userName, created_at: new Date().toISOString() };
+      }
+    } else if (emoji) {
+      list.push({ emoji, user_id: userId, user_name: userName, created_at: new Date().toISOString() });
+    }
+
+    await query(
+      'UPDATE whatsapp_messages SET reactions = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [JSON.stringify(list), msg.id],
+      c.env,
+      c.executionCtx
+    );
+
+    // If message has wam_id, dispatch reaction to Meta Cloud API in background
+    if (msg.wam_id) {
+      try {
+        const phoneId = c.env?.META_PHONE_NUMBER_ID || '1046485925206307';
+        const token = c.env?.META_ACCESS_TOKEN;
+        if (token && phoneId) {
+          const cleanDigits = (msg.phone || '').replace(/\D/g, '');
+          const formattedPhone = cleanDigits.startsWith('91') ? cleanDigits : `91${cleanDigits.slice(-10)}`;
+          fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: formattedPhone,
+              type: 'reaction',
+              reaction: {
+                message_id: msg.wam_id,
+                emoji: emoji || ''
+              }
+            })
+          }).catch(() => {});
+        }
+      } catch (_) {}
+    }
+
+    return c.json({ success: true, reactions: list });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

@@ -16,6 +16,8 @@ export async function sendWhatsApp({
   mediaFileName,
   senderName,
   existingMessageId,
+  quotedText,
+  quotedMsgId,
   env
 }) {
   const cleanDigits = (to || '').replace(/[^0-9]/g, '');
@@ -726,6 +728,10 @@ export async function sendWhatsApp({
       payload.text = { body: message };
     }
 
+    if (quotedMsgId && typeof quotedMsgId === 'string' && quotedMsgId.startsWith('wamid.')) {
+      payload.context = { message_id: quotedMsgId };
+    }
+
     const resp = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: 'POST',
       headers: {
@@ -791,11 +797,13 @@ export async function sendWhatsApp({
       } else {
         await query(
           `INSERT INTO whatsapp_messages (
-            complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, wam_id, status, failure_reason, template_name, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            complaint_id, phone, sender_type, sender_name, message_body, media_url, media_type, media_caption, wam_id, status, failure_reason, template_name, quoted_text, quoted_msg_id, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           ON CONFLICT (wam_id) DO UPDATE SET
             status = EXCLUDED.status,
             failure_reason = EXCLUDED.failure_reason,
+            quoted_text = COALESCE(EXCLUDED.quoted_text, whatsapp_messages.quoted_text),
+            quoted_msg_id = COALESCE(EXCLUDED.quoted_msg_id, whatsapp_messages.quoted_msg_id),
             updated_at = CURRENT_TIMESTAMP`,
           [
             variables.db_complaint_id || null,
@@ -809,7 +817,9 @@ export async function sendWhatsApp({
             wamid,
             isSuccess ? 'sent' : 'failed',
             errorMsg,
-            templateName || null
+            templateName || null,
+            quotedText || null,
+            quotedMsgId || null
           ],
           env
         );

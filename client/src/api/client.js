@@ -2132,8 +2132,11 @@ export const api = {
   },
   getWhatsAppRawEvents: (phone) => request(`/whatsapp/raw-events/${encodeURIComponent(phone)}`),
   syncBackupWhatsApp: () => Promise.resolve({ success: true }),
-  sendWhatsAppDirectReply: async (phone, message, attachment = null, directMedia = null) => {
+  sendWhatsAppDirectReply: async (phone, message, attachment = null, directMedia = null, quotedMsg = null) => {
     let res;
+    const quotedText = quotedMsg ? (quotedMsg.message_body || quotedMsg.media_caption || '[Quoted message]') : null;
+    const quotedMsgId = quotedMsg ? (quotedMsg.wam_id || String(quotedMsg.id)) : null;
+
     if (directMedia && directMedia.file_url) {
       res = await request('/whatsapp/direct-reply', {
         method: 'POST',
@@ -2142,13 +2145,17 @@ export const api = {
           message,
           media_url: directMedia.file_url,
           media_type: directMedia.file_type?.startsWith('image/') ? 'image' : (directMedia.file_type?.startsWith('video/') ? 'video' : 'document'),
-          media_caption: directMedia.file_name
+          media_caption: directMedia.file_name,
+          quoted_text: quotedText,
+          quoted_msg_id: quotedMsgId
         })
       });
     } else if (attachment) {
       const formData = new FormData();
       formData.append('phone', phone);
       if (message) formData.append('message', message);
+      if (quotedText) formData.append('quoted_text', quotedText);
+      if (quotedMsgId) formData.append('quoted_msg_id', quotedMsgId);
       formData.append('attachment', attachment);
       res = await request('/whatsapp/direct-reply', {
         method: 'POST',
@@ -2157,7 +2164,12 @@ export const api = {
     } else {
       res = await request('/whatsapp/direct-reply', {
         method: 'POST',
-        body: JSON.stringify({ phone, message })
+        body: JSON.stringify({
+          phone,
+          message,
+          quoted_text: quotedText,
+          quoted_msg_id: quotedMsgId
+        })
       });
     }
 
@@ -2171,12 +2183,22 @@ export const api = {
         media_url: res.mediaUrl || directMedia?.file_url || null,
         media_type: attachment ? (attachment.type?.startsWith('image/') ? 'image' : (attachment.type?.startsWith('video/') ? 'video' : 'document')) : (directMedia ? (directMedia.file_type?.startsWith('image/') ? 'image' : (directMedia.file_type?.startsWith('video/') ? 'video' : 'document')) : null),
         media_caption: attachment?.name || directMedia?.file_name || null,
+        quoted_text: quotedText,
+        quoted_msg_id: quotedMsgId,
         created_at: new Date().toISOString()
       }]);
     }
 
     return res;
   },
+  starWhatsAppMessage: (id, is_starred) => request(`/whatsapp/messages/${encodeURIComponent(id)}/star`, {
+    method: 'POST',
+    body: JSON.stringify({ is_starred })
+  }),
+  reactToWhatsAppMessage: (id, emoji) => request(`/whatsapp/messages/${encodeURIComponent(id)}/react`, {
+    method: 'POST',
+    body: JSON.stringify({ emoji })
+  }),
   verifyWhatsAppNumber: (phone) => request(`/whatsapp/verify-number/${encodeURIComponent(phone)}`),
   setWhatsAppNumberStatus: (data) => request('/whatsapp/set-number-status', {
     method: 'POST',
