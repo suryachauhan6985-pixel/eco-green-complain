@@ -117,17 +117,26 @@ export function VideoRecorderModal({
   const touchStartDistanceRef = useRef(null);
   const touchStartZoomRef = useRef(1);
 
-  // Monitor screen resize
+  // Monitor screen resize & auto device orientation
   useEffect(() => {
-    const handleResize = () => {
-      const portrait = window.innerHeight >= window.innerWidth;
+    const handleOrientationChange = () => {
+      const portrait = typeof window !== 'undefined' ? window.innerHeight >= window.innerWidth : true;
       setIsDevicePortrait(portrait);
+      setRecordingOrientation(portrait ? 'portrait' : 'landscape');
     };
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
+
+    handleOrientationChange();
+    window.addEventListener('resize', handleOrientationChange);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    if (typeof screen !== 'undefined' && screen.orientation && typeof screen.orientation.addEventListener === 'function') {
+      screen.orientation.addEventListener('change', handleOrientationChange);
+    }
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
+      window.removeEventListener('resize', handleOrientationChange);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      if (typeof screen !== 'undefined' && screen.orientation && typeof screen.orientation.removeEventListener === 'function') {
+        screen.orientation.removeEventListener('change', handleOrientationChange);
+      }
     };
   }, []);
 
@@ -232,11 +241,8 @@ export function VideoRecorderModal({
     }
   }, [stream, zoomCapabilities]);
 
-  // Start hardware camera stream with chosen orientation and 1x zoom
-  const initializeCamera = useCallback(async (
-    desiredFacingMode = facingMode,
-    desiredOrientation = recordingOrientation
-  ) => {
+  // Start hardware camera stream with auto-orienting HD constraints and 1x zoom
+  const initializeCamera = useCallback(async (desiredFacingMode = facingMode) => {
     if (!isOpen) return;
     setIsInitializing(true);
     setCameraError(null);
@@ -257,42 +263,13 @@ export function VideoRecorderModal({
     }
 
     try {
-      const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      const isScreenPortrait = typeof window !== 'undefined' ? window.innerHeight >= window.innerWidth : true;
-
-      // On mobile devices held in portrait mode, the browser rotates the native landscape camera sensor by 90°.
-      // Constrain strictly to 720p HD (1280x720) with max 1280 constraint and 24-30 fps cap
-      // This prevents high-end phone sensors from pumping raw 4K 60fps streams that inflate video sizes!
-      let idealWidth, idealHeight, idealAspectRatio;
-      if (desiredOrientation === 'portrait') {
-        if (isMobileDevice && isScreenPortrait) {
-          idealWidth = 1280;
-          idealHeight = 720;
-          idealAspectRatio = 16 / 9;
-        } else {
-          idealWidth = 720;
-          idealHeight = 1280;
-          idealAspectRatio = 9 / 16;
-        }
-      } else {
-        // desiredOrientation === 'landscape'
-        if (isMobileDevice && isScreenPortrait) {
-          idealWidth = 720;
-          idealHeight = 1280;
-          idealAspectRatio = 9 / 16;
-        } else {
-          idealWidth = 1280;
-          idealHeight = 720;
-          idealAspectRatio = 16 / 9;
-        }
-      }
-
+      // Natural 720p HD constraints without rigid forced aspect ratios,
+      // allowing phone hardware to adapt smoothly between portrait (9:16) and landscape (16:9).
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: { ideal: idealWidth, max: 1280 },
-          height: { ideal: idealHeight, max: 1280 },
-          aspectRatio: { ideal: idealAspectRatio },
+          width: { ideal: 1280, max: 1280 },
+          height: { ideal: 720, max: 1280 },
           frameRate: { ideal: 24, max: 30 }
         },
         audio: {
@@ -308,13 +285,12 @@ export function VideoRecorderModal({
         newStream = await navigator.mediaDevices.getUserMedia(constraints);
         setHasAudio(true);
       } catch (audioOrModeErr) {
-        console.warn('Audio or specific orientation mode failed, trying basic video:', audioOrModeErr);
+        console.warn('Audio or specific video constraint failed, trying basic video:', audioOrModeErr);
         try {
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: desiredFacingMode,
-              width: { ideal: idealWidth, max: 1280 },
-              height: { ideal: idealHeight, max: 1280 },
+              width: { ideal: 1280, max: 1280 },
               frameRate: { ideal: 24, max: 30 }
             }
           });
@@ -325,29 +301,8 @@ export function VideoRecorderModal({
         }
       }
 
-      // Check actual track settings to verify whether delivered stream matches requested orientation
-      const track = newStream.getVideoTracks()[0];
-      if (track && typeof track.getSettings === 'function') {
-        const settings = track.getSettings();
-        if (settings.width && settings.height) {
-          const isActualLandscape = settings.width > settings.height;
-          const wantsLandscape = desiredOrientation === 'landscape';
-          if (isActualLandscape !== wantsLandscape && typeof track.applyConstraints === 'function') {
-            console.warn(`[Camera] Orientation mismatch: requested ${desiredOrientation}, delivered ${settings.width}x${settings.height}. Correcting constraints...`);
-            try {
-              await track.applyConstraints({
-                width: { ideal: settings.height, max: 1280 },
-                height: { ideal: settings.width, max: 1280 },
-                aspectRatio: { ideal: settings.height / settings.width }
-              });
-            } catch (flipErr) {
-              console.warn('[Camera] Failed to auto-flip constraints:', flipErr);
-            }
-          }
-        }
-      }
-
       // Check hardware zoom capabilities and strictly initialize at 1.0x
+      const track = newStream.getVideoTracks()[0];
       if (track) {
         let isHardwareZoomAvailable = false;
         let minZ = 1;
@@ -400,44 +355,14 @@ export function VideoRecorderModal({
     } finally {
       setIsInitializing(false);
     }
-  }, [isOpen, facingMode, recordingOrientation, stream]);
-
-  // Switch between Portrait and Landscape
-  const handleChangeOrientation = async (targetOrientation) => {
-    if (isRecording || isInitializing) return;
-    setRecordingOrientation(targetOrientation);
-    await initializeCamera(facingMode, targetOrientation);
-  };
-
-  // Initialize camera when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      resetRecording();
-      initializeCamera();
-    } else {
-      stopStream();
-      resetRecording();
-    }
-    return () => {
-      stopStream();
-      resetRecording();
-    };
-  }, [isOpen]);
-
-  // Keep video preview linked to stream
-  useEffect(() => {
-    if (stream && videoPreviewRef.current && !recordedBlob) {
-      videoPreviewRef.current.srcObject = stream;
-      videoPreviewRef.current.play().catch(() => {});
-    }
-  }, [stream, recordedBlob]);
+  }, [isOpen, facingMode, stream]);
 
   // Flip camera between environment (back) and user (front)
   const handleToggleFacingMode = async () => {
     if (isRecording) return;
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
-    await initializeCamera(nextMode, recordingOrientation);
+    await initializeCamera(nextMode);
   };
 
   // Touch pinch-to-zoom event handlers
@@ -822,18 +747,21 @@ export function VideoRecorderModal({
                   isLandscape: w > h
                 });
               }}
+              onResize={(e) => {
+                const w = e.target.videoWidth || 0;
+                const h = e.target.videoHeight || 0;
+                setLiveStreamMeta({
+                  width: w,
+                  height: h,
+                  isLandscape: w > h
+                });
+              }}
               style={{
                 transform: (!zoomCapabilities.supported && zoomLevel > 1) ? `scale(${zoomLevel})` : undefined,
                 transformOrigin: 'center center',
                 transition: 'transform 0.15s ease-out'
               }}
-              className={`object-contain bg-black transition-all duration-300 ${
-                recordingOrientation === 'portrait'
-                  ? 'w-full h-full max-h-full max-w-full'
-                  : isDevicePortrait
-                    ? 'w-full aspect-video max-h-full'
-                    : 'w-full h-full max-h-full max-w-full'
-              }`}
+              className="w-full h-full max-h-full max-w-full object-contain bg-black transition-all duration-300"
             />
           )}
 
@@ -861,13 +789,7 @@ export function VideoRecorderModal({
                   transform: previewMeta.rotation ? `rotate(${previewMeta.rotation}deg)` : undefined,
                   transition: 'transform 0.25s ease'
                 }}
-                className={`max-h-full max-w-full object-contain ${
-                  recordingOrientation === 'portrait'
-                    ? 'w-full h-full'
-                    : isDevicePortrait
-                      ? 'w-full aspect-video'
-                      : 'w-full h-full'
-                }`}
+                className="max-h-full max-w-full w-full h-full object-contain"
               />
             </div>
           )}
@@ -911,22 +833,12 @@ export function VideoRecorderModal({
             </div>
           )}
 
-          {/* Landscape mode hint when phone is held vertically */}
-          {recordingOrientation === 'landscape' && isDevicePortrait && !isRecording && !recordedBlob && !cameraError && (
-            <div className="absolute top-16 inset-x-0 flex justify-center pointer-events-none z-10 px-4">
-              <div className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-teal-500/30 text-teal-300 text-[11px] font-mono flex items-center gap-1.5 shadow-md">
-                <RotateCw className="w-3 h-3 animate-pulse" />
-                <span>Rotate phone sideways for full-screen landscape view</span>
-              </div>
-            </div>
-          )}
-
           {/* Camera Loading Spinner */}
           {isInitializing && (
             <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center gap-3 text-slate-200 z-10">
               <RefreshCw className="w-9 h-9 text-teal-400 animate-spin" />
               <p className="text-xs font-semibold tracking-wide">
-                Starting {recordingOrientation} HD camera...
+                Starting HD camera...
               </p>
             </div>
           )}
@@ -966,7 +878,7 @@ export function VideoRecorderModal({
           )}
 
           {/* FLOATING TOP BAR: Sleek, non-intrusive HUD Over Viewfinder */}
-          <div className="absolute top-0 inset-x-0 p-3 sm:p-4 bg-gradient-to-b from-black/85 via-black/30 to-transparent flex items-center justify-between z-20 pointer-events-none gap-2 flex-wrap sm:flex-nowrap">
+          <div className="absolute top-0 inset-x-0 p-3 sm:p-4 bg-gradient-to-b from-black/85 via-black/30 to-transparent flex items-center justify-between z-20 pointer-events-none gap-2">
             {/* Status / Policy Badge */}
             <div className="pointer-events-auto flex items-center gap-2">
               {isRecording ? (
@@ -982,7 +894,7 @@ export function VideoRecorderModal({
                   <span className="text-[11px] text-teal-300 font-mono font-bold border-l border-white/20 pl-2">
                     Part {activePartNumber} ({formatSizeMB(activePartSizeBytes)} MB)
                   </span>
-                  <span className="text-[10px] text-slate-300 font-mono border-l border-white/20 pl-2">
+                  <span className="text-[10px] text-slate-300 font-mono border-l border-white/20 pl-2 hidden xs:inline">
                     Total: {formatSizeMB(currentSizeBytes)} MB
                   </span>
                   <span className="text-[10px] text-teal-300 font-mono border-l border-white/20 pl-2 hidden sm:inline">
@@ -1007,48 +919,24 @@ export function VideoRecorderModal({
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white text-xs shadow-md">
                   <span className="w-2 h-2 rounded-full bg-teal-400"></span>
                   <span className="font-semibold text-[11px]">HD Auto-Split</span>
-                  <span className="text-[10px] text-teal-300 font-mono">• Max 50 MB / Part</span>
+                  <span className="text-[10px] text-teal-300 font-mono hidden xs:inline">• Max 50 MB / Part</span>
                 </div>
               )}
             </div>
 
-            {/* Dedicated Landscape / Portrait Selector Option */}
+            {/* Auto-Orientation Dynamic Indicator Badge */}
             {!recordedBlob && (
-              <div className="pointer-events-auto flex items-center p-0.5 rounded-full bg-black/65 backdrop-blur-md border border-white/20 shadow-lg">
-                {!isRecording ? (
+              <div className="pointer-events-auto hidden xs:flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/20 text-white shadow-lg text-[11px] font-mono">
+                {isDevicePortrait ? (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => handleChangeOrientation('portrait')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold font-mono transition-all cursor-pointer ${
-                        recordingOrientation === 'portrait'
-                          ? 'bg-teal-500 text-slate-950 shadow-md scale-102'
-                          : 'text-slate-300 hover:text-white hover:bg-white/10'
-                      }`}
-                      title="Set recording orientation to Portrait (9:16 vertical)"
-                    >
-                      <Smartphone className="w-3 h-3" />
-                      <span>Portrait</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleChangeOrientation('landscape')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold font-mono transition-all cursor-pointer ${
-                        recordingOrientation === 'landscape'
-                          ? 'bg-teal-500 text-slate-950 shadow-md scale-102'
-                          : 'text-slate-300 hover:text-white hover:bg-white/10'
-                      }`}
-                      title="Set recording orientation to Landscape (16:9 widescreen)"
-                    >
-                      <Monitor className="w-3 h-3" />
-                      <span>Landscape</span>
-                    </button>
+                    <Smartphone className="w-3.5 h-3.5 text-teal-400" />
+                    <span className="font-semibold">Auto • Portrait</span>
                   </>
                 ) : (
-                  <div className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold font-mono text-teal-300">
-                    {recordingOrientation === 'portrait' ? <Smartphone className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
-                    <span className="capitalize">{recordingOrientation} (Locked)</span>
-                  </div>
+                  <>
+                    <Monitor className="w-3.5 h-3.5 text-teal-400" />
+                    <span className="font-semibold">Auto • Landscape</span>
+                  </>
                 )}
               </div>
             )}
@@ -1101,19 +989,22 @@ export function VideoRecorderModal({
             </div>
           )}
 
-          {/* FLOATING ZOOM PRESET CONTROLS (Positioned right above the bottom shutter bar) */}
+          {/* FLOATING ZOOM PRESET CONTROLS (Positioned vertically on the Right Side - Safe Distance from Shutter) */}
           {!recordedBlob && !cameraError && (
-            <div className="absolute bottom-24 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
-              <div className="pointer-events-auto flex items-center gap-1.5 p-1 rounded-full bg-black/65 backdrop-blur-md border border-white/20 shadow-2xl">
+            <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-30 pointer-events-none">
+              <div className="pointer-events-auto flex flex-col items-center gap-2 p-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 shadow-2xl">
                 {availableZoomPresets.map((preset) => (
                   <button
                     key={preset}
                     type="button"
-                    onClick={() => applyZoom(preset)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold font-mono transition-all cursor-pointer ${
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyZoom(preset);
+                    }}
+                    className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full text-xs font-bold font-mono flex items-center justify-center transition-all cursor-pointer ${
                       Math.abs(zoomLevel - preset) < 0.2
-                        ? 'bg-teal-500 text-slate-950 shadow-md scale-105'
-                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                        ? 'bg-teal-500 text-slate-950 shadow-md scale-105 ring-2 ring-teal-300'
+                        : 'text-white/80 hover:text-white hover:bg-white/15'
                     }`}
                     title={`Set zoom to ${preset}x`}
                   >
@@ -1123,7 +1014,7 @@ export function VideoRecorderModal({
 
                 {/* Show custom decimal zoom level if pinched between presets */}
                 {!availableZoomPresets.some(p => Math.abs(zoomLevel - p) < 0.2) && (
-                  <span className="px-2.5 py-0.5 text-xs font-mono font-bold text-teal-400 bg-teal-950/80 rounded-full border border-teal-500/40">
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold text-teal-400 bg-teal-950/80 rounded-full border border-teal-500/40">
                     {zoomLevel.toFixed(1)}x
                   </span>
                 )}
@@ -1147,7 +1038,7 @@ export function VideoRecorderModal({
               )}
             </div>
 
-            {/* Center Slot: Primary Shutter Control */}
+            {/* Center Slot: Primary Shutter Control (Big, Unobstructed, Safe from Zoom Buttons) */}
             <div className="flex items-center justify-center">
               {recordedBlob ? (
                 /* Post-Recording Action Buttons */
@@ -1197,34 +1088,17 @@ export function VideoRecorderModal({
               )}
             </div>
 
-            {/* Right Slot: Quick Orientation Switch Button */}
+            {/* Right Slot: Quick Flip Camera (Rear ↔ Front) */}
             <div className="w-20 flex justify-end">
-              {!isRecording && !recordedBlob ? (
+              {!isRecording && !recordedBlob && (
                 <button
                   type="button"
-                  onClick={() => handleChangeOrientation(recordingOrientation === 'portrait' ? 'landscape' : 'portrait')}
-                  className="p-2.5 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md flex items-center gap-1 text-[11px] font-mono font-bold"
-                  title={`Switch to ${recordingOrientation === 'portrait' ? 'Landscape' : 'Portrait'}`}
+                  onClick={handleToggleFacingMode}
+                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md flex items-center justify-center"
+                  title={`Flip camera (${facingMode === 'environment' ? 'Switch to Front' : 'Switch to Rear'})`}
                 >
-                  {recordingOrientation === 'portrait' ? (
-                    <>
-                      <Smartphone className="w-4 h-4 text-teal-400" />
-                      <span className="hidden sm:inline">Port</span>
-                    </>
-                  ) : (
-                    <>
-                      <Monitor className="w-4 h-4 text-teal-400" />
-                      <span className="hidden sm:inline">Land</span>
-                    </>
-                  )}
+                  <FlipHorizontal className="w-5 h-5 text-teal-400" />
                 </button>
-              ) : (
-                <div
-                  className="px-2 py-1 rounded-full bg-black/40 backdrop-blur-md text-[10px] font-mono text-teal-300 border border-white/10 capitalize"
-                  title="Active recording format"
-                >
-                  {recordingOrientation}
-                </div>
               )}
             </div>
           </div>
