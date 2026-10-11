@@ -419,10 +419,11 @@ class LocalMockStore {
     });
     const nextNum = maxNumber + 1;
     const ticket_id = `EGS-2026-${String(nextNum).padStart(6, '0')}`;
+    const isDraft = ((data.get ? data.get('status') : data.status) === 'Draft') || Boolean(data.get ? data.get('is_draft') : data.is_draft);
     const newComplaint = {
       id: Date.now(),
       ticket_id,
-      customer_name: data.get ? data.get('customer_name') : data.customer_name,
+      customer_name: (data.get ? data.get('customer_name') : data.customer_name) || (isDraft ? 'Draft Customer' : ''),
       customer_phone: data.get ? data.get('customer_phone') : data.customer_phone,
       customer_email: data.get ? data.get('customer_email') : data.customer_email,
       customer_address: data.get ? data.get('customer_address') : data.customer_address,
@@ -435,38 +436,40 @@ class LocalMockStore {
       notify_charges: ((data.get ? data.get('notify_charges') : data.notify_charges) === 1 || (data.get ? data.get('notify_charges') : data.notify_charges) === '1' || (data.get ? data.get('notify_charges') : data.notify_charges) === true || (data.get ? data.get('notify_charges') : data.notify_charges) === 'true') ? 1 : 0,
       payment_collected: 0,
       payment_status: Number((data.get ? data.get('estimated_charges') : data.estimated_charges) || 0) > 0 ? 'Unpaid' : 'Not Applicable',
-      product_type: data.get ? data.get('product_type') : data.product_type,
+      product_type: (data.get ? data.get('product_type') : data.product_type) || 'Solar Rooftop Systems',
       product_serial: data.get ? data.get('product_serial') : data.product_serial,
       installation_id: data.get ? data.get('installation_id') : data.installation_id,
-      issue_category: data.get ? data.get('issue_category') : data.issue_category,
-      issue_description: data.get ? data.get('issue_description') : data.issue_description,
+      issue_category: (data.get ? data.get('issue_category') : data.issue_category) || (isDraft ? 'General Inquiry' : 'Service Request'),
+      issue_description: (data.get ? data.get('issue_description') : data.issue_description) || (isDraft ? 'Draft complaint record' : ''),
       priority: (data.get ? data.get('priority') : data.priority) || 'Medium',
-      status: 'Unassigned',
+      status: isDraft ? 'Draft' : 'Unassigned',
       status_updated_at: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
     list.unshift(newComplaint);
     localStorage.setItem('egs_mock_complaints', JSON.stringify(list));
 
-    // Also add simulated notification
-    const notifs = JSON.parse(localStorage.getItem('egs_mock_notifications') || '[]');
-    let chargesText = '';
-    if (newComplaint.notify_charges === 1 && newComplaint.estimated_charges > 0) {
-      chargesText = `\nEstimated Service Charges: ₹${newComplaint.estimated_charges}`;
+    // Only add simulated customer notification if NOT a draft
+    if (!isDraft) {
+      const notifs = JSON.parse(localStorage.getItem('egs_mock_notifications') || '[]');
+      let chargesText = '';
+      if (newComplaint.notify_charges === 1 && newComplaint.estimated_charges > 0) {
+        chargesText = `\nEstimated Service Charges: ₹${newComplaint.estimated_charges}`;
+      }
+      notifs.unshift({
+        id: Date.now(),
+        complaint_id: newComplaint.id,
+        ticket_id: newComplaint.ticket_id,
+        channel: 'whatsapp',
+        recipient: newComplaint.customer_phone,
+        template_key: 'complaint_registered',
+        rendered_content: `☀️ *Eco Green Solar Support*\n\nDear ${newComplaint.customer_name}, your complaint ${newComplaint.ticket_id} for ${newComplaint.product_type} has been registered.${chargesText}\nTrack status: http://localhost:5173/track/${newComplaint.ticket_id}`,
+        status: 'sent',
+        provider: 'SIMULATED',
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem('egs_mock_notifications', JSON.stringify(notifs));
     }
-    notifs.unshift({
-      id: Date.now(),
-      complaint_id: newComplaint.id,
-      ticket_id: newComplaint.ticket_id,
-      channel: 'whatsapp',
-      recipient: newComplaint.customer_phone,
-      template_key: 'complaint_registered',
-      rendered_content: `☀️ *Eco Green Solar Support*\n\nDear ${newComplaint.customer_name}, your complaint ${newComplaint.ticket_id} for ${newComplaint.product_type} has been registered.${chargesText}\nTrack status: http://localhost:5173/track/${newComplaint.ticket_id}`,
-      status: 'sent',
-      provider: 'SIMULATED',
-      created_at: new Date().toISOString()
-    });
-    localStorage.setItem('egs_mock_notifications', JSON.stringify(notifs));
 
     return newComplaint;
   }
@@ -476,6 +479,7 @@ class LocalMockStore {
     const comp = list.find(c => String(c.id) === String(id));
     if (comp) {
       const getVal = (k) => data.get ? data.get(k) : data[k];
+      const isFinalizing = Boolean(getVal('finalize') || (comp.status === 'Draft' && getVal('status') && getVal('status') !== 'Draft'));
       const fields = [
         'customer_name', 'customer_phone', 'customer_email', 'customer_address',
         'city', 'consumer_no', 'order_no', 'location_url',
@@ -486,6 +490,9 @@ class LocalMockStore {
         const v = getVal(f);
         if (v !== undefined) comp[f] = v;
       });
+      if (isFinalizing) {
+        comp.status = comp.assigned_technician_id ? 'Assigned' : 'Unassigned';
+      }
       if (getVal('is_in_warranty') !== undefined) {
         comp.is_in_warranty = Number(getVal('is_in_warranty'));
       }

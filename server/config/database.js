@@ -83,7 +83,7 @@ function initializeSchema() {
       issue_category TEXT NOT NULL,
       issue_description TEXT NOT NULL,
       priority TEXT NOT NULL CHECK(priority IN ('Low', 'Medium', 'High', 'Urgent')) DEFAULT 'Medium',
-      status TEXT NOT NULL CHECK(status IN ('Registered', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened')) DEFAULT 'Unassigned',
+      status TEXT NOT NULL CHECK(status IN ('Draft', 'Registered', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened')) DEFAULT 'Unassigned',
       assigned_technician_id INTEGER,
       expected_visit_date DATE,
       resolution_notes TEXT,
@@ -371,11 +371,11 @@ function migrateComplaintsTable() {
     const tableSqlRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='complaints'").get();
     if (!tableSqlRow) return;
 
-    // Check if table needs recreation (missing Unassigned status or has restrictive product_type check)
-    if (!tableSqlRow.sql.includes('Unassigned') || tableSqlRow.sql.includes("CHECK(product_type IN")) {
-      console.log('Migrating complaints table schema to support dynamic products and company settlement fields...');
+    // Check if table needs recreation (missing Unassigned or Draft status, or has restrictive product_type check)
+    if (!tableSqlRow.sql.includes('Unassigned') || !tableSqlRow.sql.includes("'Draft'") || tableSqlRow.sql.includes("CHECK(product_type IN")) {
+      console.log('Migrating complaints table schema to support Draft status and dynamic products...');
       db.pragma('foreign_keys = OFF');
-      db.transaction(() => {
+      (() => {
         // 1. Ensure existing table has the extra columns before copying
         const columns = db.pragma('table_info(complaints)');
         const columnNames = columns.map(c => c.name);
@@ -383,27 +383,50 @@ function migrateComplaintsTable() {
           { name: 'city', type: 'TEXT' },
           { name: 'consumer_no', type: 'TEXT' },
           { name: 'order_no', type: 'TEXT' },
+          { name: 'invoice_no', type: 'TEXT' },
+          { name: 'invoice_date', type: 'TEXT' },
           { name: 'location_url', type: 'TEXT' },
           { name: 'is_in_warranty', type: 'INTEGER DEFAULT 1' },
           { name: 'estimated_charges', type: 'REAL DEFAULT 0' },
           { name: 'notify_charges', type: 'INTEGER DEFAULT 0' },
           { name: 'payment_collected', type: 'REAL DEFAULT 0' },
+          { name: 'payment_collected_at', type: 'DATETIME' },
+          { name: 'payment_mode', type: "TEXT DEFAULT 'Cash'" },
           { name: 'payment_status', type: "TEXT DEFAULT 'Unpaid'" },
+          { name: 'collection_reason', type: 'TEXT' },
           { name: 'company_settlement_status', type: "TEXT DEFAULT 'Pending Settlement'" },
           { name: 'company_settled_at', type: 'DATETIME' },
           { name: 'company_settled_by', type: 'TEXT' },
-          { name: 'status_updated_at', type: 'DATETIME' }
+          { name: 'status_updated_at', type: 'DATETIME' },
+          { name: 'secondary_technician_id', type: 'INTEGER' },
+          { name: 'resolved_by_technician_id', type: 'TEXT' },
+          { name: 'resolved_by_technician_name', type: 'TEXT' },
+          { name: 'pv_capacity', type: 'TEXT' },
+          { name: 'panel_make', type: 'TEXT' },
+          { name: 'inverter_make', type: 'TEXT' },
+          { name: 'scheme', type: 'TEXT' },
+          { name: 'payment_notes', type: 'TEXT' },
+          { name: 'dealer_name', type: 'TEXT' },
+          { name: 'pincode', type: 'TEXT' },
+          { name: 'district', type: 'TEXT' },
+          { name: 'state', type: 'TEXT' },
+          { name: 'post_office', type: 'TEXT' },
+          { name: 'previous_resolution_history', type: 'TEXT' },
+          { name: 'previous_technician_id', type: 'INTEGER' },
+          { name: 'previous_technician_name', type: 'TEXT' },
+          { name: 'documents_purged', type: 'INTEGER DEFAULT 0' },
+          { name: 'documents_purged_at', type: 'DATETIME' }
         ];
         for (const col of colDefs) {
           if (!columnNames.includes(col.name)) {
-            db.exec(`ALTER TABLE complaints ADD COLUMN ${col.name} ${col.type}`);
+            try { db.exec(`ALTER TABLE complaints ADD COLUMN ${col.name} ${col.type}`); } catch (_) {}
           }
         }
 
         // 2. Rename old table
         db.exec(`ALTER TABLE complaints RENAME TO complaints_old`);
 
-        // 3. Create new complaints table with dynamic product_type and company settlement fields
+        // 3. Create new complaints table with 'Draft' allowed in status check constraint
         db.exec(`
           CREATE TABLE complaints (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -411,7 +434,7 @@ function migrateComplaintsTable() {
             customer_name TEXT NOT NULL,
             customer_phone TEXT NOT NULL,
             customer_email TEXT,
-            customer_address TEXT NOT NULL,
+            customer_address TEXT DEFAULT '',
             city TEXT,
             consumer_no TEXT,
             order_no TEXT,
@@ -424,13 +447,13 @@ function migrateComplaintsTable() {
             company_settlement_status TEXT DEFAULT 'Pending Settlement',
             company_settled_at DATETIME,
             company_settled_by TEXT,
-            product_type TEXT NOT NULL,
+            product_type TEXT DEFAULT 'Solar Rooftop Systems',
             product_serial TEXT,
             installation_id TEXT,
-            issue_category TEXT NOT NULL,
-            issue_description TEXT NOT NULL,
+            issue_category TEXT DEFAULT 'General',
+            issue_description TEXT DEFAULT '',
             priority TEXT NOT NULL CHECK(priority IN ('Low', 'Medium', 'High', 'Urgent')) DEFAULT 'Medium',
-            status TEXT NOT NULL CHECK(status IN ('Registered', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened')) DEFAULT 'Unassigned',
+            status TEXT NOT NULL CHECK(status IN ('Draft', 'Registered', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened')) DEFAULT 'Unassigned',
             assigned_technician_id INTEGER,
             expected_visit_date DATE,
             resolution_notes TEXT,
@@ -445,36 +468,41 @@ function migrateComplaintsTable() {
             resolved_at DATETIME,
             closed_at DATETIME,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            invoice_no TEXT,
+            invoice_date TEXT,
+            payment_collected_at DATETIME,
+            payment_mode TEXT DEFAULT 'Cash',
+            collection_reason TEXT,
+            secondary_technician_id INTEGER,
+            resolved_by_technician_id TEXT,
+            resolved_by_technician_name TEXT,
+            pv_capacity TEXT,
+            panel_make TEXT,
+            inverter_make TEXT,
+            scheme TEXT,
+            payment_notes TEXT,
+            dealer_name TEXT,
+            pincode TEXT,
+            district TEXT,
+            state TEXT,
+            post_office TEXT,
+            previous_resolution_history TEXT,
+            previous_technician_id INTEGER,
+            previous_technician_name TEXT,
+            documents_purged INTEGER DEFAULT 0,
+            documents_purged_at DATETIME,
             FOREIGN KEY (assigned_technician_id) REFERENCES technicians(id) ON DELETE SET NULL,
             FOREIGN KEY (registered_by_user_id) REFERENCES users(id) ON DELETE SET NULL
           )
         `);
 
-        // 4. Copy data over, mapping 'Registered' -> 'Unassigned'
-        db.exec(`
-          INSERT INTO complaints (
-            id, ticket_id, customer_name, customer_phone, customer_email, customer_address,
-            city, consumer_no, order_no, location_url, is_in_warranty, estimated_charges,
-            notify_charges, payment_collected, payment_status,
-            company_settlement_status, company_settled_at, company_settled_by,
-            product_type, product_serial, installation_id, issue_category, issue_description,
-            priority, status, assigned_technician_id, expected_visit_date, resolution_notes,
-            spare_parts_used, closing_photo_url, rating, feedback_comments, registered_by_user_id,
-            created_at, status_updated_at, assigned_at, resolved_at, closed_at, updated_at
-          )
-          SELECT 
-            id, ticket_id, customer_name, customer_phone, customer_email, customer_address,
-            city, consumer_no, order_no, location_url, COALESCE(is_in_warranty, 1), COALESCE(estimated_charges, 0),
-            COALESCE(notify_charges, 0), COALESCE(payment_collected, 0), COALESCE(payment_status, 'Unpaid'),
-            COALESCE(company_settlement_status, 'Pending Settlement'), company_settled_at, company_settled_by,
-            product_type, product_serial, installation_id, issue_category, issue_description,
-            priority, 
-            CASE WHEN status = 'Registered' THEN 'Unassigned' ELSE status END,
-            assigned_technician_id, expected_visit_date, resolution_notes,
-            spare_parts_used, closing_photo_url, rating, feedback_comments, registered_by_user_id,
-            created_at, COALESCE(status_updated_at, created_at), assigned_at, resolved_at, closed_at, updated_at
-          FROM complaints_old
-        `);
+        // 4. Dynamically copy all matching columns from complaints_old
+        const oldCols = db.pragma('table_info(complaints_old)').map(c => c.name);
+        const newCols = db.pragma('table_info(complaints)').map(c => c.name);
+        const commonCols = newCols.filter(c => oldCols.includes(c));
+        const colsJoined = commonCols.join(', ');
+
+        db.exec(`INSERT INTO complaints (${colsJoined}) SELECT ${colsJoined} FROM complaints_old`);
 
         // 5. Drop old table
         db.exec(`DROP TABLE complaints_old`);

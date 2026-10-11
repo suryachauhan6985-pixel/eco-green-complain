@@ -253,7 +253,7 @@ complaintRoutes.get('/', authenticateToken, async (c) => {
       const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
       if (techId) {
         params.push(String(techId));
-        sql += ` AND (c.assigned_technician_id::text = $${params.length} OR c.secondary_technician_id = $${params.length})`;
+        sql += ` AND (c.assigned_technician_id::text = $${params.length} OR c.secondary_technician_id = $${params.length}) AND c.status != 'Draft'`;
       } else {
         return c.json({ complaints: [] });
       }
@@ -261,12 +261,18 @@ complaintRoutes.get('/', authenticateToken, async (c) => {
       const cleanPhone = (user.phone || '').replace(/\D/g, '');
       const last10 = cleanPhone.slice(-10);
       params.push(last10);
-      sql += ` AND (c.customer_phone LIKE '%' || $${params.length})`;
+      sql += ` AND (c.customer_phone LIKE '%' || $${params.length}) AND c.status != 'Draft'`;
     }
 
-    if (status && status !== 'All Statuses') {
-      params.push(status);
-      sql += ` AND c.status = $${params.length}`;
+    if (status && status !== 'All Statuses' && status !== 'all') {
+      if (status.toLowerCase() === 'draft') {
+        sql += ` AND c.status = 'Draft'`;
+      } else if (status.toLowerCase() === 'unassigned') {
+        sql += ` AND (c.status = 'Unassigned' OR c.status = 'Registered') AND c.status != 'Draft'`;
+      } else {
+        params.push(status);
+        sql += ` AND c.status = $${params.length}`;
+      }
     }
 
     if (priority && priority !== 'All Priorities') {
@@ -351,7 +357,7 @@ complaintRoutes.get('/check-active', optionalAuth, async (c) => {
         OR ($2 != '' AND LOWER(TRIM(customer_name)) = LOWER(TRIM($2)))
       )
       AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
-      AND LOWER(status) NOT IN ('closed', 'cancelled')
+      AND LOWER(status) NOT IN ('closed', 'cancelled', 'draft')
       ORDER BY id DESC
       LIMIT 1
     `;
@@ -472,6 +478,7 @@ complaintRoutes.get('/purge-expired-documents', optionalAuth, async (c) => {
 // GET /api/complaints/:id - Detail
 complaintRoutes.get('/:id', authenticateToken, async (c) => {
   try {
+    const user = c.get('user');
     const id = c.req.param('id');
     const compRes = await query(
       `SELECT 
@@ -491,6 +498,11 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
     if (compRes.rows.length === 0) return c.json({ error: 'Complaint not found' }, 404);
 
     const complaint = compRes.rows[0];
+
+    // Role check: Technicians cannot view Draft complaints
+    if (user?.role === 'technician' && complaint.status === 'Draft') {
+      return c.json({ error: 'Access denied: Draft complaints cannot be accessed by technicians' }, 403);
+    }
 
     // Check and auto-purge documents from R2 if complaint closed > 30 days
     await purgeComplaintDocumentsIfExpired(complaint, c.env, c.executionCtx);
@@ -562,41 +574,51 @@ async function handleCreateComplaint(c, isPublic = false) {
     body = await c.req.json().catch(() => ({}));
   }
 
-  const customer_name = (body.customer_name || '').trim();
+  const isDraft = Boolean(
+    body.status === 'Draft' ||
+    body.is_draft === '1' ||
+    body.is_draft === 1 ||
+    body.is_draft === true ||
+    body.is_draft === 'true'
+  );
+
+  const customer_name = (body.customer_name || (isDraft ? 'Draft Customer' : '')).trim();
   const raw_phone = (body.customer_phone || '').trim();
   const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
   const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
-  const product_type = (body.product_type || '').trim();
+  const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
   const dealer_name = (body.dealer_name || '').trim();
 
-  if (!customer_name || !last10) {
-    return c.json({ error: 'Customer name and a valid 10-digit mobile number are required' }, 400);
+  if (!isDraft) {
+    if (!customer_name || !last10) {
+      return c.json({ error: 'Customer name and a valid 10-digit mobile number are required' }, 400);
+    }
+
+    // Duplicate Check
+    const activeCheckSql = `
+      SELECT id, ticket_id, customer_name, customer_phone, product_type, status, created_at
+      FROM complaints
+      WHERE (
+        (RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 AND LENGTH($1) >= 10)
+        OR (LOWER(TRIM(customer_name)) = LOWER(TRIM($2)) AND LENGTH(TRIM($2)) >= 3)
+      )
+      AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
+      AND LOWER(status) NOT IN ('closed', 'cancelled', 'draft')
+      ORDER BY id DESC
+      LIMIT 1
+    `;
+    const activeRes = await query(activeCheckSql, [last10, customer_name, product_type], c.env, c.executionCtx);
+    if (activeRes.rows.length > 0) {
+      const activeTicket = activeRes.rows[0];
+      return c.json({
+        error: `Active complaint #${activeTicket.ticket_id} is already open for this customer for "${activeTicket.product_type || product_type}" (${activeTicket.customer_name}, Phone: ${activeTicket.customer_phone}, Status: ${activeTicket.status}). Duplicate complaints for the same product cannot be registered until the existing ticket is Closed.`,
+        duplicate: true,
+        existingTicket: activeTicket
+      }, 400);
+    }
   }
 
-  // Duplicate Check
-  const activeCheckSql = `
-    SELECT id, ticket_id, customer_name, customer_phone, product_type, status, created_at
-    FROM complaints
-    WHERE (
-      (RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 AND LENGTH($1) >= 10)
-      OR (LOWER(TRIM(customer_name)) = LOWER(TRIM($2)) AND LENGTH(TRIM($2)) >= 3)
-    )
-    AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
-    AND LOWER(status) NOT IN ('closed', 'cancelled')
-    ORDER BY id DESC
-    LIMIT 1
-  `;
-  const activeRes = await query(activeCheckSql, [last10, customer_name, product_type], c.env, c.executionCtx);
-  if (activeRes.rows.length > 0) {
-    const activeTicket = activeRes.rows[0];
-    return c.json({
-      error: `Active complaint #${activeTicket.ticket_id} is already open for this customer for "${activeTicket.product_type || product_type}" (${activeTicket.customer_name}, Phone: ${activeTicket.customer_phone}, Status: ${activeTicket.status}). Duplicate complaints for the same product cannot be registered until the existing ticket is Closed.`,
-      duplicate: true,
-      existingTicket: activeTicket
-    }, 400);
-  }
-
-  const canonicalPhone = `+91${last10}`;
+  const canonicalPhone = last10 ? `+91${last10}` : (raw_phone || '');
   const ticket_id = await generateNextTicketId(c.env, c.executionCtx);
   const user = c.get('user');
 
@@ -606,6 +628,7 @@ async function handleCreateComplaint(c, isPublic = false) {
   const cleanDist = (body.district || '').trim();
   const cleanState = (body.state || '').trim();
   const cleanPostOffice = (body.post_office || '').trim();
+  const targetStatus = isDraft ? 'Draft' : (body.assigned_technician_id ? 'Assigned' : 'Unassigned');
 
   const insertSql = `
     INSERT INTO complaints (
@@ -651,8 +674,8 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.product_type || 'Solar Rooftop Systems',
     body.product_serial || '',
     body.installation_id || '',
-    body.issue_category || 'Service Request',
-    body.issue_description || body.description || '',
+    body.issue_category || (isDraft ? 'General Inquiry' : 'Service Request'),
+    body.issue_description || body.description || (isDraft ? 'Draft complaint record' : ''),
     (() => {
       const raw = (body.priority || 'Medium').toString().trim().toLowerCase();
       if (raw === 'urgent') return 'Urgent';
@@ -660,9 +683,9 @@ async function handleCreateComplaint(c, isPublic = false) {
       if (raw === 'low') return 'Low';
       return 'Medium';
     })(),
-    body.assigned_technician_id ? 'Assigned' : 'Unassigned',
-    body.assigned_technician_id || null,
-    body.expected_visit_date || null,
+    targetStatus,
+    isDraft ? null : (body.assigned_technician_id || null),
+    isDraft ? null : (body.expected_visit_date || null),
     user?.id || null,
     dealer_name,
     body.pv_capacity ? String(body.pv_capacity).trim() : '',
@@ -714,6 +737,22 @@ async function handleCreateComplaint(c, isPublic = false) {
         user?.name || 'Helpdesk'
       ], c.env, c.executionCtx).catch(() => {});
     }
+  }
+
+  // Handle Draft vs Normal Registration
+  if (isDraft) {
+    await query(
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+      [newComp.id, 'Draft', 'Complaint saved as Draft.', user?.name || (isPublic ? 'Customer' : 'Helpdesk'), user?.role || (isPublic ? 'customer' : 'staff')],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({
+      message: 'Complaint saved as Draft',
+      complaint: newComp,
+      ticket: newComp
+    }, 201);
   }
 
   // Initial Timeline Log
@@ -1931,6 +1970,26 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       b = await c.req.json().catch(() => ({}));
     }
 
+    const isFinalizing = Boolean(
+      (b.finalize === 'true' || b.finalize === true || b.finalize === 1 || b.finalize === '1') ||
+      (current.status === 'Draft' && b.status && b.status !== 'Draft')
+    );
+
+    if (isFinalizing) {
+      const finalName = b.customer_name !== undefined ? b.customer_name.trim() : current.customer_name;
+      const finalPhone = b.customer_phone !== undefined ? b.customer_phone.trim() : current.customer_phone;
+      const finalAddress = b.customer_address !== undefined ? b.customer_address.trim() : current.customer_address;
+      const finalDesc = b.issue_description !== undefined ? b.issue_description.trim() : (current.issue_description || current.description);
+
+      if (!finalName || !finalPhone || !finalAddress || !finalDesc) {
+        return c.json({ error: 'Customer name, phone number, address, and issue description are required to finalize and register the complaint.' }, 400);
+      }
+    }
+
+    const targetStatus = isFinalizing
+      ? (current.assigned_technician_id ? 'Assigned' : 'Unassigned')
+      : (current.status === 'Draft' ? 'Draft' : (b.status !== undefined ? (b.status ? b.status.trim() : null) : null));
+
     const cleanIsInWarranty = b.is_in_warranty !== undefined
       ? ((b.is_in_warranty === 'true' || b.is_in_warranty === 1 || b.is_in_warranty === true || b.is_in_warranty === '1') ? 1 : 0)
       : current.is_in_warranty;
@@ -2009,7 +2068,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       b.issue_category !== undefined ? (b.issue_category ? b.issue_category.trim() : null) : null,
       b.issue_description !== undefined ? (b.issue_description ? b.issue_description.trim() : null) : null,
       b.priority !== undefined ? (b.priority ? b.priority.trim() : null) : null,
-      b.status !== undefined ? (b.status ? b.status.trim() : null) : null,
+      targetStatus,
       cleanIsInWarranty,
       cleanEstimatedCharges,
       cleanNotifyCharges,
@@ -2072,25 +2131,88 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       }
     }
 
-    // Trigger WhatsApp notification if service charges were added, updated, or removed
+    const targetPhone = b.customer_phone ? b.customer_phone.trim() : current.customer_phone;
+    const custName = b.customer_name ? b.customer_name.trim() : current.customer_name;
+    const prodType = b.product_type ? b.product_type.trim() : current.product_type;
+    const issueCat = b.issue_category ? b.issue_category.trim() : current.issue_category;
+
+    // Handle Draft finalization notification workflow
+    if (isFinalizing) {
+      const user = c.get('user');
+      const actorName = user?.name || user?.username || 'Helpdesk';
+      const actorRole = user?.role || 'staff';
+
+      await query(`
+        INSERT INTO complaint_timelines (
+          complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at
+        ) VALUES ($1, 'Registered', 'Draft complaint finalized and registered. Service ticket active.', $2, $3, 1, CURRENT_TIMESTAMP)
+      `, [current.id, actorName, actorRole], c.env, c.executionCtx).catch(() => {});
+
+      await query(`
+        INSERT INTO in_app_notifications (
+          id, type, ticket_id, complaint_id, title, message, customer_name,
+          target_role, performed_by_name, performed_by_role
+        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'admin', $7, $8)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        current.ticket_id,
+        current.id,
+        `New Ticket Registered: ${current.ticket_id}`,
+        `Complaint #${current.ticket_id} finalized for ${custName} (${prodType} - ${issueCat}).`,
+        custName,
+        actorName,
+        actorRole
+      ], c.env, c.executionCtx).catch(() => {});
+
+      c.executionCtx?.waitUntil?.(
+        dispatchPushToRoles(['admin', 'staff'], {
+          title: `☀️ New Ticket: ${current.ticket_id}`,
+          body: `${custName} • ${prodType} (${issueCat})`,
+          ticketId: current.ticket_id,
+          url: `/complaints?ticket=${current.ticket_id}`,
+          tag: `ticket-${current.ticket_id}`
+        }, c.env, c.executionCtx).catch(() => {})
+      );
+
+      const isSurvey = isSurveyTicket(prodType, issueCat);
+      const regTemplate = isSurvey ? 'site_survey_registered' : 'complaint_registered';
+      c.executionCtx?.waitUntil?.(
+        sendWhatsApp({
+          to: targetPhone,
+          templateName: regTemplate,
+          variables: {
+            customer_name: custName,
+            ticket_id: current.ticket_id,
+            product_type: prodType,
+            issue_category: issueCat,
+            estimated_charges: cleanEstimatedCharges,
+            notify_charges: cleanNotifyCharges,
+            db_complaint_id: current.id
+          },
+          env: c.env
+        }).catch((waErr) => {
+          console.warn('[WhatsApp Finalize Notify Note]', waErr.message);
+        })
+      );
+    }
+
+    // Trigger WhatsApp notification if service charges were added, updated, or removed (ONLY if not currently in draft or if finalizing)
     const prevCharges = parseFloat(current.estimated_charges) || 0;
     const prevNotify = Boolean(current.notify_charges === 1 || current.notify_charges === '1' || current.notify_charges === true);
     const newCharges = cleanEstimatedCharges;
     const newNotify = cleanNotifyCharges === 1;
 
     let chargeAction = null;
-    if (newCharges > 0 && newNotify) {
-      if (prevCharges === 0 || Math.abs(prevCharges - newCharges) >= 0.01) {
-        chargeAction = 'charges_added';
+    if (!isFinalizing && current.status !== 'Draft') {
+      if (newCharges > 0 && newNotify) {
+        if (prevCharges === 0 || Math.abs(prevCharges - newCharges) >= 0.01) {
+          chargeAction = 'charges_added';
+        }
+      } else if (prevCharges > 0 && (newCharges === 0 || !newNotify)) {
+        chargeAction = 'charges_removed';
       }
-    } else if (prevCharges > 0 && (newCharges === 0 || !newNotify)) {
-      chargeAction = 'charges_removed';
     }
-
-    const targetPhone = b.customer_phone ? b.customer_phone.trim() : current.customer_phone;
-    const custName = b.customer_name ? b.customer_name.trim() : current.customer_name;
-    const prodType = b.product_type ? b.product_type.trim() : current.product_type;
-    const issueCat = b.issue_category ? b.issue_category.trim() : current.issue_category;
 
     let waNotified = false;
     let waResult = null;

@@ -327,7 +327,7 @@ export const ComplaintList = ({
     return <Layers className="w-4 h-4 text-slate-500" />;
   };
 
-  const statusPills = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
+  const statusPills = ['Draft', 'Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
 
   // Dynamically compute tickets matching all non-status filters (Product, Priority, Technician, Search)
   // so that status tab badges update dynamically whenever any filter is applied!
@@ -377,14 +377,19 @@ export const ComplaintList = ({
 
   const getStatusCount = (st) => {
     if (st === 'all') return nonStatusFilteredComplaints.length;
+    if (st === 'Draft') {
+      return nonStatusFilteredComplaints.filter(c => c.status === 'Draft').length;
+    }
     if (st === 'Unassigned') {
-      return nonStatusFilteredComplaints.filter(c => c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id).length;
+      return nonStatusFilteredComplaints.filter(c => (c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id) && c.status !== 'Draft').length;
     }
     return nonStatusFilteredComplaints.filter(c => c.status === st).length;
   };
 
   const getStatusBadgeStyle = (status) => {
     switch (status) {
+      case 'Draft':
+        return 'bg-slate-100 text-slate-800 border-slate-300';
       case 'Resolved':
         return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       case 'Closed':
@@ -411,6 +416,7 @@ export const ComplaintList = ({
 
   const getStageBorderClass = (status) => {
     switch (status) {
+      case 'Draft': return 'border-t-slate-400 sm:border-t-transparent sm:border-l-slate-400';
       case 'Resolved': return 'border-t-emerald-500 sm:border-t-transparent sm:border-l-emerald-500';
       case 'Closed': return 'border-t-slate-400 sm:border-t-transparent sm:border-l-slate-400';
       case 'In Progress': return 'border-t-indigo-600 sm:border-t-transparent sm:border-l-indigo-600';
@@ -425,6 +431,8 @@ export const ComplaintList = ({
 
   const getStageBadgeConfig = (status) => {
     switch (status) {
+      case 'Draft':
+        return { dot: 'bg-slate-500', text: 'text-slate-800', bg: 'bg-slate-100', border: 'border-slate-300', label: 'Draft' };
       case 'Resolved':
         return { dot: 'bg-emerald-500', text: 'text-emerald-800', bg: 'bg-emerald-50', border: 'border-emerald-200/80', label: 'Resolved' };
       case 'Closed':
@@ -650,8 +658,10 @@ export const ComplaintList = ({
           const displayedComplaints = nonStatusFilteredComplaints.filter(c => {
             // Status Filter
             if (statusFilter !== 'all') {
-              const isUnassigned = c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id;
-              if (statusFilter.toLowerCase() === 'unassigned') {
+              if (statusFilter.toLowerCase() === 'draft') {
+                if (c.status !== 'Draft') return false;
+              } else if (statusFilter.toLowerCase() === 'unassigned') {
+                const isUnassigned = (c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id) && c.status !== 'Draft';
                 if (!isUnassigned) return false;
               } else if (c.status !== statusFilter) {
                 return false;
@@ -816,6 +826,14 @@ export const ComplaintList = ({
                       {/* Assigned Tech */}
                       <td className="py-3 px-4 hidden sm:table-cell">
                         {(() => {
+                          if (c.status === 'Draft') {
+                            return (
+                              <div className="flex items-center gap-1.5 text-slate-500">
+                                <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span className="text-[11px] font-semibold text-slate-600">Draft Ticket</span>
+                              </div>
+                            );
+                          }
                           const techName = getAssignedTechName(c);
                           return techName ? (
                             <div>
@@ -1053,6 +1071,18 @@ export const ComplaintList = ({
                               : 'text-slate-600 bg-white border border-slate-200'
                           }`}>
                             {c.secondary_technician_name || c.secondary_technician_id ? '👥 2 Techs' : 'Assigned'}
+                          </span>
+                        </div>
+                      ) : c.status === 'Draft' ? (
+                        <div className="mt-2.5 p-2 bg-slate-100/80 border border-slate-200 rounded-lg flex items-center justify-between text-xs group/draft">
+                          <div className="flex items-center gap-1.5 truncate text-slate-700">
+                            <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="font-semibold text-[11px] truncate">
+                              Draft Ticket • Not Dispatched
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-700 group-hover/draft:text-emerald-800 underline underline-offset-2 shrink-0">
+                            Finalize →
                           </span>
                         </div>
                       ) : (

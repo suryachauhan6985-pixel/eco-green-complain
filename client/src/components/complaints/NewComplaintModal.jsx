@@ -947,6 +947,107 @@ export const NewComplaintModal = ({
     });
   };
 
+  const handleSaveDraft = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+
+    try {
+      setSubmitting(true);
+      const data = new FormData();
+      Object.keys(formData).forEach((key) => {
+        if (key === 'notify_charges') {
+          data.append('notify_charges', formData.notify_charges ? '1' : '0');
+        } else if (key === 'is_in_warranty') {
+          data.append('is_in_warranty', (formData.is_in_warranty === 1 || formData.is_in_warranty === '1' || formData.is_in_warranty === true) ? '1' : '0');
+        } else if (key === 'estimated_charges') {
+          data.append('estimated_charges', (formData.estimated_charges !== undefined && formData.estimated_charges !== null && formData.estimated_charges !== '') ? String(formData.estimated_charges) : '0');
+        } else if (formData[key] !== undefined && formData[key] !== null && formData[key] !== '') {
+          data.append(key, formData[key]);
+        }
+      });
+
+      // Force Draft status and flag
+      data.set('status', 'Draft');
+      data.set('is_draft', '1');
+
+      // Direct Cloud Storage Upload
+      if (fileList.length > 0) {
+        setUploadProgress({
+          isUploading: true,
+          progress: 5,
+          currentFile: fileList[0].name,
+          currentIndex: 1,
+          totalFiles: fileList.length
+        });
+        const uploadedAttachments = [];
+        for (let idx = 0; idx < fileList.length; idx++) {
+          const item = fileList[idx];
+          const pct = Math.round(((idx + 0.3) / fileList.length) * 100);
+          setUploadProgress({
+            isUploading: true,
+            progress: pct,
+            currentFile: item.name,
+            currentIndex: idx + 1,
+            totalFiles: fileList.length
+          });
+          if (item.file_url || item.url) {
+            uploadedAttachments.push({
+              file_url: item.file_url || item.url,
+              file_name: item.name || 'whatsapp_media',
+              file_type: item.isImage ? 'image' : (item.isVideo ? 'video' : (item.isDocument ? 'document' : 'file')),
+              attachment_type: 'whatsapp_media'
+            });
+          } else if (item.file) {
+            try {
+              const uploaded = await uploadFileToSupabase(item.file);
+              if (uploaded) uploadedAttachments.push({ ...uploaded, attachment_type: 'registration' });
+            } catch (storageErr) {
+              console.warn('Direct storage upload error, fallback to multipart:', storageErr.message);
+              if (item.file.size <= 4 * 1024 * 1024) {
+                data.append('attachments', item.file);
+              }
+            }
+          }
+          const finishedPct = Math.round(((idx + 1) / fileList.length) * 100);
+          setUploadProgress({
+            isUploading: true,
+            progress: finishedPct,
+            currentFile: item.name,
+            currentIndex: idx + 1,
+            totalFiles: fileList.length
+          });
+        }
+        if (uploadedAttachments.length > 0) {
+          data.append('attachment_urls', JSON.stringify(uploadedAttachments));
+        }
+        data.append('attachment_type', 'registration');
+      }
+
+      if (isEditMode) {
+        const updateId = initialData.id || initialData.ticket_id;
+        const res = await api.updateComplaint(updateId, data);
+        const updatedTicket = res.complaint || res.ticket || res;
+        broadcastComplaintsUpdate({ ticketId: initialData.ticket_id, action: 'edited', status: 'Draft' });
+        if (onComplaintUpdated) {
+          onComplaintUpdated(updatedTicket);
+        }
+        showToast('Complaint saved as Draft', 'success');
+        resetAndClose();
+        return;
+      }
+
+      const res = await api.createComplaint(data);
+      broadcastComplaintsUpdate({ ticketId: res.complaint?.ticket_id, action: 'created', status: 'Draft' });
+      if (onComplaintCreated) onComplaintCreated(res.complaint);
+      showToast('Complaint saved as Draft', 'success');
+      resetAndClose();
+    } catch (err) {
+      showToast('Failed to save draft: ' + err.message, 'error');
+    } finally {
+      setSubmitting(false);
+      setUploadProgress({ isUploading: false, progress: 0, currentFile: '', currentIndex: 0, totalFiles: 0 });
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.customer_name || !formData.customer_phone || !formData.customer_address || !formData.issue_description) {
@@ -1029,16 +1130,23 @@ export const NewComplaintModal = ({
 
       if (isEditMode) {
         const updateId = initialData.id || initialData.ticket_id;
+        const isDraftTicket = initialData?.status === 'Draft';
+        if (isDraftTicket) {
+          data.append('finalize', '1');
+          data.set('status', 'Unassigned');
+        }
         const res = await api.updateComplaint(updateId, data);
         const updatedTicket = res.complaint || res.ticket || res;
-        broadcastComplaintsUpdate({ ticketId: initialData.ticket_id, action: 'edited' });
+        broadcastComplaintsUpdate({ ticketId: initialData.ticket_id, action: isDraftTicket ? 'registered' : 'edited' });
         if (onComplaintUpdated) {
           onComplaintUpdated(updatedTicket);
         }
         showToast(
-          res?.whatsapp_notified 
-            ? 'Ticket updated & customer notified via WhatsApp! 📲' 
-            : 'Complaint ticket updated successfully!', 
+          isDraftTicket
+            ? 'Draft complaint finalized & registered! Customer notified. 📲'
+            : (res?.whatsapp_notified 
+                ? 'Ticket updated & customer notified via WhatsApp! 📲' 
+                : 'Complaint ticket updated successfully!'), 
           'success'
         );
         resetAndClose();
@@ -2586,7 +2694,7 @@ export const NewComplaintModal = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5 flex-wrap">
                 <button
                   type="button"
                   onClick={resetAndClose}
@@ -2594,6 +2702,23 @@ export const NewComplaintModal = ({
                 >
                   Cancel
                 </button>
+
+                {(!isEditMode || initialData?.status === 'Draft') && (
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={submitting}
+                    className="px-4 py-2 border-2 border-emerald-600 bg-white hover:bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
+                    Save as Draft
+                  </button>
+                )}
+
                 <button
                   type="submit"
                   disabled={submitting || !!activeComplaintWarning}
@@ -2606,16 +2731,18 @@ export const NewComplaintModal = ({
                 >
                   {submitting ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : isEditMode && initialData?.status === 'Draft' ? (
+                    <Send className="w-3.5 h-3.5" />
                   ) : isEditMode ? (
                     <Check className="w-3.5 h-3.5" />
                   ) : (
                     <Send className="w-3.5 h-3.5" />
                   )}
                   {submitting
-                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : (isEditMode ? 'Saving Changes...' : (isSurveyProduct ? 'Scheduling Survey...' : 'Registering & Dispatching...')))
+                    ? (uploadProgress.isUploading ? `Uploading Media (${uploadProgress.progress}%)...` : (isEditMode ? (initialData?.status === 'Draft' ? 'Finalizing & Dispatching...' : 'Saving Changes...') : 'Registering & Dispatching...'))
                     : activeComplaintWarning
                     ? `Cannot Proceed: Open Ticket for ${activeComplaintWarning.product_type || formData.product_type}`
-                    : (isEditMode ? (isSurveyProduct ? 'Save & Update Survey Ticket' : 'Save & Update Ticket') : (isSurveyProduct ? 'Schedule Site Survey & Dispatch' : 'Register Complaint & Send Alerts'))}
+                    : (isEditMode ? (initialData?.status === 'Draft' ? 'Finalize & Notify Customer' : (isSurveyProduct ? 'Save & Update Survey Ticket' : 'Save & Update Ticket')) : 'Register & Notify Customer')}
                 </button>
               </div>
             </form>
