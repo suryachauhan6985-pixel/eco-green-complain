@@ -2230,6 +2230,10 @@ export const api = {
   retryWhatsAppMessage: (id) => request(`/whatsapp/retry-message/${encodeURIComponent(id)}`, {
     method: 'POST'
   }),
+  attachWhatsAppMediaToComplaint: (data) => request('/whatsapp/attach-to-complaint', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
   resendTechnicianWorkOrder: (id) => request(`/complaints/${encodeURIComponent(id)}/resend-technician`, {
     method: 'POST'
   }),

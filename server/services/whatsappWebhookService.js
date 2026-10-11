@@ -212,14 +212,28 @@ async function processSingleMessage(msg, contact) {
   const canonicalPhone = normalizePhone(rawFrom);
   const last10 = getLast10Digits(rawFrom);
 
-  // Find matching complaint by customer_phone (match last 10 digits)
-  const complaint = db.prepare(`
+  // Smart Complaint Matching (Prioritizes Active Complaints)
+  const activeComplaints = db.prepare(`
     SELECT * FROM complaints 
     WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
-    ORDER BY id DESC LIMIT 1
-  `).get(`%${last10}%`);
+      AND status NOT IN ('Resolved', 'Closed')
+    ORDER BY id DESC
+  `).all(`%${last10}%`);
 
-  const complaintId = complaint ? complaint.id : null;
+  const allComplaints = db.prepare(`
+    SELECT * FROM complaints 
+    WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+    ORDER BY id DESC
+  `).all(`%${last10}%`);
+
+  // Auto-linking logic:
+  // - Exactly 1 active complaint -> auto-attach media directly
+  // - Multiple active complaints -> do not attach blindly, agent confirms in chat
+  // - 0 active complaints -> do not auto-attach to closed tickets
+  const hasSingleActiveComplaint = activeComplaints.length === 1;
+  const autoAttachComplaint = hasSingleActiveComplaint ? activeComplaints[0] : null;
+  const complaint = activeComplaints.length > 0 ? activeComplaints[0] : (allComplaints[0] || null);
+  const complaintId = autoAttachComplaint ? autoAttachComplaint.id : null;
 
   // Store Meta profile name in registry if present
   if (contact?.profile?.name && !/^[0-9+ ]+$/.test(contact.profile.name)) {
@@ -394,26 +408,70 @@ async function processSingleMessage(msg, contact) {
     created_at: new Date().toISOString()
   };
 
-  // If media was downloaded and complaint exists, save to complaint_attachments
-  if (downloadedAttachment && complaintId) {
-    try {
-      db.prepare(`
-        INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, uploaded_by)
-        VALUES (?, ?, ?, ?, 'Customer via WhatsApp')
-      `).run(
-        complaintId,
-        downloadedAttachment.fileName,
-        downloadedAttachment.fileUrl,
-        downloadedAttachment.fileType
-      );
-      console.log(`[WhatsApp Webhook] Saved incoming media into attachments for Complaint #${complaint.ticket_id}`);
-    } catch (attErr) {
-      console.error('[WhatsApp Webhook] Error attaching file to complaint:', attErr);
+  // Auto-Attach Logic when a single active complaint exists
+  if (autoAttachComplaint) {
+    // 1. Files / Media (Images, Videos, Documents, Audio)
+    if (downloadedAttachment) {
+      try {
+        db.prepare(`
+          INSERT INTO complaint_attachments (complaint_id, whatsapp_message_id, file_name, file_url, file_type, uploaded_by, attachment_type)
+          VALUES (?, ?, ?, ?, ?, 'Customer via WhatsApp', 'whatsapp_media')
+        `).run(
+          autoAttachComplaint.id,
+          res.lastInsertRowid,
+          downloadedAttachment.fileName,
+          downloadedAttachment.fileUrl,
+          downloadedAttachment.fileType
+        );
+        console.log(`[WhatsApp Webhook] Auto-attached incoming media into attachments for Complaint #${autoAttachComplaint.ticket_id}`);
+      } catch (attErr) {
+        console.error('[WhatsApp Webhook] Error attaching file to complaint:', attErr);
+      }
     }
-  }
 
-  // If complaint exists, record a timeline event
-  if (complaintId) {
+    // 2. Location Pin -> Fill location_url on complaint and record timeline
+    if (msgType === 'location') {
+      try {
+        const loc = msg.location || {};
+        const mapsUrl = `https://maps.google.com/?q=${loc.latitude},${loc.longitude}`;
+        db.prepare(`
+          UPDATE complaints 
+          SET location_url = COALESCE(location_url, ?),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(mapsUrl, autoAttachComplaint.id);
+
+        db.prepare(`
+          INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+          VALUES (?, 'Customer WhatsApp Location', ?, ?, 'Customer', 0)
+        `).run(
+          autoAttachComplaint.id,
+          `Customer shared GPS site location pin: ${mapsUrl}${loc.name || loc.address ? ' (' + (loc.name || loc.address) + ')' : ''}`,
+          senderName
+        );
+        console.log(`[WhatsApp Webhook] Auto-attached location pin to Complaint #${autoAttachComplaint.ticket_id}`);
+      } catch (locErr) {
+        console.error('[WhatsApp Webhook] Error attaching location to complaint:', locErr);
+      }
+    }
+
+    // 3. Contact Card -> Record timeline
+    if (msgType === 'contacts') {
+      try {
+        db.prepare(`
+          INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+          VALUES (?, 'Customer WhatsApp Contact', ?, ?, 'Customer', 0)
+        `).run(
+          autoAttachComplaint.id,
+          `Customer shared contact details: ${messageBody.replace(/^👤\s*/, '')}`,
+          senderName
+        );
+      } catch (contactErr) {
+        console.error('[WhatsApp Webhook] Error recording contact to complaint:', contactErr);
+      }
+    }
+
+    // Record general media / reply timeline event
     try {
       const summaryText = mediaType 
         ? `Customer sent ${mediaType}${mediaCaption ? ': ' + mediaCaption : ''}` 
@@ -423,7 +481,7 @@ async function processSingleMessage(msg, contact) {
         INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
         VALUES (?, 'Customer WhatsApp Reply', ?, ?, 'Customer', 0)
       `).run(
-        complaintId,
+        autoAttachComplaint.id,
         summaryText,
         senderName
       );

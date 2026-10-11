@@ -105,6 +105,7 @@ function initializeSchema() {
     CREATE TABLE IF NOT EXISTS complaint_attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       complaint_id INTEGER NOT NULL,
+      whatsapp_message_id INTEGER,
       file_name TEXT NOT NULL,
       file_url TEXT NOT NULL,
       file_type TEXT,
@@ -1102,6 +1103,10 @@ function migrateAttachmentsTable() {
     if (!columnNames.includes('purged_at')) {
       db.exec('ALTER TABLE complaint_attachments ADD COLUMN purged_at DATETIME');
       console.log('✅ Added purged_at column to local complaint_attachments');
+    }
+    if (!columnNames.includes('whatsapp_message_id')) {
+      db.exec('ALTER TABLE complaint_attachments ADD COLUMN whatsapp_message_id INTEGER');
+      console.log('✅ Added whatsapp_message_id column to local complaint_attachments');
     }
   } catch (err) {
     console.warn('[Database] Attachments migration note:', err.message);

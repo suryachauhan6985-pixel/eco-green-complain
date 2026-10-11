@@ -2293,9 +2293,16 @@ export const ComplaintDetailDrawer = ({
                                   )}
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1 mb-0.5">
-                                      <span className="text-[9px] font-semibold text-slate-600 bg-slate-200/70 border border-slate-300/60 px-1 py-0.5 rounded leading-none">
-                                        Uploaded with Complaint
-                                      </span>
+                                      {att.uploaded_by?.includes('WhatsApp') || att.attachment_type === 'whatsapp_media' ? (
+                                        <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded leading-none flex items-center gap-1">
+                                          <MessageSquare className="w-2.5 h-2.5 text-emerald-600" />
+                                          <span>Received via WhatsApp</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] font-semibold text-slate-600 bg-slate-200/70 border border-slate-300/60 px-1 py-0.5 rounded leading-none">
+                                          Uploaded with Complaint
+                                        </span>
+                                      )}
                                     </div>
                                     <p className="text-[11px] font-bold text-slate-800 truncate" title={att.file_name}>
                                       {att.file_name}

@@ -1575,26 +1575,52 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
       ORDER BY created_at ASC
     `).all(`%${last10}%`);
 
-    const messages = (rawMessages || []).map(m => ({
-      ...m,
-      created_at: formatIsoUtc(m.created_at)
-    }));
+    // Check which messages are attached to complaints via complaint_attachments
+    let attachmentMap = new Map();
+    try {
+      const attachments = db.prepare(`
+        SELECT id as attachment_id, complaint_id, whatsapp_message_id, file_name, file_url, created_at as attached_at
+        FROM complaint_attachments
+        WHERE whatsapp_message_id IS NOT NULL
+      `).all();
+      attachments.forEach(att => {
+        if (att.whatsapp_message_id) {
+          attachmentMap.set(Number(att.whatsapp_message_id), att);
+        }
+      });
+    } catch (_) {}
 
     // Check if phone belongs to a Technician
     const tech = db.prepare("SELECT id, name, phone, area_zone FROM technicians WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE ? LIMIT 1").get(`%${last10}%`);
     let contactName = null;
     let complaint = null;
+    let activeComplaints = [];
+    let allComplaints = [];
 
     if (tech?.name) {
       contactName = `${tech.name} (Technician)`;
     } else {
-      // Find linked complaint (Priority 1)
-      complaint = db.prepare(`
-        SELECT id, ticket_id, customer_name, customer_phone, product_type, status 
-        FROM complaints 
-        WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
-        ORDER BY id DESC LIMIT 1
-      `).get(`%${last10}%`);
+      // Find all complaints for this customer, active ones first
+      try {
+        activeComplaints = db.prepare(`
+          SELECT id, ticket_id, customer_name, customer_phone, product_type, status, priority, issue_category, customer_address, location_url, created_at 
+          FROM complaints 
+          WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+            AND status NOT IN ('Resolved', 'Closed')
+          ORDER BY id DESC
+        `).all(`%${last10}%`);
+
+        allComplaints = db.prepare(`
+          SELECT id, ticket_id, customer_name, customer_phone, product_type, status, priority, issue_category, customer_address, location_url, created_at 
+          FROM complaints 
+          WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? 
+          ORDER BY id DESC
+        `).all(`%${last10}%`);
+
+        complaint = activeComplaints.length > 0 ? activeComplaints[0] : (allComplaints[0] || null);
+      } catch (e) {
+        console.warn('Error fetching complaints for contact:', e.message);
+      }
 
       if (complaint?.customer_name && complaint.customer_name !== 'Customer') {
         contactName = complaint.customer_name;
@@ -1612,11 +1638,27 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
           }
         } catch (e) {}
       }
-      if (!contactName && messages.length > 0) {
-        const custMsg = messages.find(m => m.sender_type === 'customer' && m.sender_name && m.sender_name !== 'Customer' && !/^[0-9+ ]+$/.test(m.sender_name));
+      if (!contactName && rawMessages.length > 0) {
+        const custMsg = rawMessages.find(m => m.sender_type === 'customer' && m.sender_name && m.sender_name !== 'Customer' && !/^[0-9+ ]+$/.test(m.sender_name));
         if (custMsg) contactName = custMsg.sender_name;
       }
     }
+
+    const ticketIdMap = new Map();
+    allComplaints.forEach(c => ticketIdMap.set(c.id, c.ticket_id));
+
+    const messages = (rawMessages || []).map(m => {
+      const att = attachmentMap.get(Number(m.id));
+      const linkedComplaintId = m.complaint_id || att?.complaint_id || null;
+      const linkedTicketId = linkedComplaintId ? ticketIdMap.get(linkedComplaintId) : null;
+      return {
+        ...m,
+        created_at: formatIsoUtc(m.created_at),
+        attachment_id: att?.attachment_id || null,
+        attached_complaint_id: linkedComplaintId,
+        attached_ticket_id: linkedTicketId
+      };
+    });
 
     const displayPhone = formatDisplayPhone(canonicalPhone);
 
@@ -1629,12 +1671,135 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
         is_technician: !!tech,
         ticket_id: complaint?.ticket_id || null,
         complaint_id: complaint?.id || null,
-        complaint: complaint || null
+        complaint: complaint || null,
+        active_complaints: activeComplaints || [],
+        complaints: allComplaints || []
       }
     });
   } catch (err) {
     console.error('Error fetching chat history:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 6b. Attach WhatsApp Media / Location / Contact to Complaint API Endpoint
+app.post('/api/whatsapp/attach-to-complaint', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { message_id, complaint_id, custom_notes } = req.body;
+    if (!message_id || !complaint_id) {
+      return res.status(400).json({ error: 'message_id and complaint_id are required' });
+    }
+
+    const msg = db.prepare('SELECT * FROM whatsapp_messages WHERE id = ?').get(message_id);
+    if (!msg) {
+      return res.status(404).json({ error: 'WhatsApp message not found' });
+    }
+
+    const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(complaint_id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Target complaint not found' });
+    }
+
+    const staffName = req.user?.name || req.user?.username || 'Staff';
+    let attachmentId = null;
+    let actionSummary = '';
+
+    const isImage = msg.media_type === 'image' || (msg.media_url && /\.(jpe?g|png|webp|gif)/i.test(msg.media_url));
+    const isVideo = msg.media_type === 'video' || (msg.media_url && /\.(mp4|webm|mov)/i.test(msg.media_url));
+    const isDoc = msg.media_type === 'document' || (msg.media_url && /\.(pdf|docx?|xlsx?|txt)/i.test(msg.media_url));
+    const isAudio = msg.media_type === 'audio' || (msg.media_url && /\.(ogg|mp3|m4a|wav)/i.test(msg.media_url));
+    const isLocation = msg.media_type === 'location' || (msg.message_body && msg.message_body.includes('maps.google.com'));
+    const isContact = msg.media_type === 'contacts' || (msg.message_body && msg.message_body.startsWith('👤 Shared Contact:'));
+
+    if (isImage || isVideo || isDoc || isAudio || msg.media_url) {
+      // Determine file name and MIME type
+      let fileName = msg.media_caption || `WhatsApp_${msg.media_type || 'Media'}_${msg.id}`;
+      if (isImage && !fileName.match(/\.(jpe?g|png|webp|gif)$/i)) fileName += '.jpg';
+      if (isVideo && !fileName.match(/\.(mp4|webm|mov)$/i)) fileName += '.mp4';
+      if (isDoc && !fileName.match(/\.[a-z0-9]+$/i)) fileName += '.pdf';
+      if (isAudio && !fileName.match(/\.(ogg|mp3|m4a)$/i)) fileName += '.ogg';
+
+      const fileType = isImage ? 'image/jpeg' : isVideo ? 'video/mp4' : isDoc ? 'application/pdf' : isAudio ? 'audio/ogg' : 'application/octet-stream';
+      const fileUrl = msg.media_url || (msg.media_id ? `/api/whatsapp/media/${msg.media_id}` : '');
+
+      const attStmt = db.prepare(`
+        INSERT INTO complaint_attachments (
+          complaint_id, whatsapp_message_id, file_name, file_url, file_type, uploaded_by, attachment_type
+        ) VALUES (?, ?, ?, ?, ?, ?, 'whatsapp_media')
+      `);
+      const attRes = attStmt.run(
+        complaint.id,
+        msg.id,
+        fileName,
+        fileUrl,
+        fileType,
+        `Customer via WhatsApp (Attached by ${staffName})`
+      );
+      attachmentId = attRes.lastInsertRowid;
+      actionSummary = `Attached WhatsApp ${msg.media_type || 'file'} "${fileName}"`;
+
+      // Log to complaint timeline
+      db.prepare(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+        VALUES (?, 'WhatsApp Media Attached', ?, ?, 'Staff', 0)
+      `).run(
+        complaint.id,
+        `${actionSummary}${custom_notes ? ': ' + custom_notes : ''}`,
+        staffName
+      );
+    } else if (isLocation) {
+      // Extract Google Maps URL
+      const mapsMatch = (msg.message_body || '').match(/(https?:\/\/[^\s]+)/);
+      const mapsUrl = mapsMatch ? mapsMatch[1] : '';
+      if (mapsUrl) {
+        db.prepare('UPDATE complaints SET location_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(mapsUrl, complaint.id);
+      }
+      actionSummary = `Attached customer GPS site location pin: ${mapsUrl || msg.message_body}`;
+      db.prepare(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+        VALUES (?, 'WhatsApp Location Attached', ?, ?, 'Staff', 0)
+      `).run(
+        complaint.id,
+        actionSummary,
+        staffName
+      );
+    } else if (isContact) {
+      actionSummary = `Recorded customer shared contact details: ${msg.message_body.replace(/^👤\s*/, '')}`;
+      db.prepare(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+        VALUES (?, 'WhatsApp Contact Attached', ?, ?, 'Staff', 0)
+      `).run(
+        complaint.id,
+        actionSummary,
+        staffName
+      );
+    } else {
+      // Text fault note
+      actionSummary = `Attached customer WhatsApp chat notes: "${msg.message_body}"`;
+      db.prepare(`
+        INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+        VALUES (?, 'WhatsApp Note Attached', ?, ?, 'Staff', 0)
+      `).run(
+        complaint.id,
+        actionSummary,
+        staffName
+      );
+    }
+
+    // Update whatsapp_messages to link to complaint
+    db.prepare('UPDATE whatsapp_messages SET complaint_id = ? WHERE id = ?').run(complaint.id, msg.id);
+
+    return res.json({
+      success: true,
+      message: `Successfully attached to Complaint #${complaint.ticket_id}`,
+      complaint_id: complaint.id,
+      ticket_id: complaint.ticket_id,
+      attachment_id: attachmentId,
+      action: actionSummary
+    });
+  } catch (err) {
+    console.error('Error attaching media to complaint:', err);
+    res.status(500).json({ error: err.message || 'Failed to attach media to complaint' });
   }
 });
 
