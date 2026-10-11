@@ -871,7 +871,7 @@ export const NewComplaintModal = ({
     if (!selected || selected.length === 0) return;
     const oversized = selected.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Please record via In-App HD Camera for automatic multi-part split under 50MB.`, 'error');
     }
     const validFiles = selected.filter(f => f.size <= 50 * 1024 * 1024);
     if (validFiles.length === 0) return;
@@ -894,7 +894,7 @@ export const NewComplaintModal = ({
         };
       })
     );
-    setFileList(prev => [...prev, ...newItems].slice(0, 5));
+    setFileList(prev => [...prev, ...newItems].slice(0, 10));
   };
 
   const handleFileChange = (e) => {
@@ -2693,16 +2693,17 @@ export const NewComplaintModal = ({
           </div>
         </div>
       )}
-      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard) */}
+      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard with Auto-Split) */}
       <VideoRecorderModal
         isOpen={isVideoRecorderOpen}
         onClose={() => setIsVideoRecorderOpen(false)}
-        onRecordingComplete={(file) => {
-          processFiles([file]);
+        onRecordingComplete={(result) => {
+          const files = Array.isArray(result) ? result : [result];
+          processFiles(files);
           setIsVideoRecorderOpen(false);
         }}
         title="Record Initial Complaint Video"
-        subtitle="50 MB limit active • 720p HD auto-compressed recording"
+        subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
       />
     </div>
   );

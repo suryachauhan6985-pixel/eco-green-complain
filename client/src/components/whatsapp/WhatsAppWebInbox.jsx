@@ -702,7 +702,7 @@ export const WhatsAppWebInbox = ({
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      showToast('File size exceeds 50MB limit', 'error');
+      showToast('File size exceeds 50MB limit. Use In-App HD Camera for automatic split under 50MB.', 'error');
       return;
     }
 
@@ -3585,16 +3585,22 @@ export const WhatsAppWebInbox = ({
           </div>
         </div>
       )}
-      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard) */}
+      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard with Auto-Split) */}
       <VideoRecorderModal
         isOpen={isVideoRecorderOpen}
         onClose={() => setIsVideoRecorderOpen(false)}
-        onRecordingComplete={(file) => {
-          processWhatsAppFile(file);
+        onRecordingComplete={(result) => {
+          const files = Array.isArray(result) ? result : [result];
+          if (files && files.length > 0) {
+            processWhatsAppFile(files[0]);
+            if (files.length > 1) {
+              showToast(`Recorded ${files.length} parts (under 50 MB each). Part 1 is attached and ready to send.`, 'info');
+            }
+          }
           setIsVideoRecorderOpen(false);
         }}
         title="Record WhatsApp Video Message"
-        subtitle="50 MB limit active • 720p HD auto-compressed recording"
+        subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
       />
     </div>
   );

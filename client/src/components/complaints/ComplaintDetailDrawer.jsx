@@ -126,12 +126,13 @@ export const ComplaintDetailDrawer = ({
   // Live In-App Compressed Video Recorder Modal State (50 MB limit guard)
   const [videoRecorderTarget, setVideoRecorderTarget] = useState(null); // 'registration' | 'resolution' | null
 
-  const handleVideoRecorded = (file) => {
-    if (!file) return;
+  const handleVideoRecorded = (result) => {
+    if (!result) return;
+    const files = Array.isArray(result) ? result : [result];
     if (videoRecorderTarget === 'registration') {
-      uploadFilesList([file]);
+      uploadFilesList(files);
     } else if (videoRecorderTarget === 'resolution') {
-      processResolutionFiles([file]);
+      processResolutionFiles(files);
     }
     setVideoRecorderTarget(null);
   };
@@ -351,7 +352,7 @@ export const ComplaintDetailDrawer = ({
     }
     const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Please record via In-App HD Camera for automatic multi-part split under 50MB.`, 'error');
       return;
     }
     try {
@@ -440,7 +441,7 @@ export const ComplaintDetailDrawer = ({
 
     const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Please record via In-App HD Camera for automatic multi-part split under 50MB.`, 'error');
     }
 
     const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
@@ -4360,13 +4361,13 @@ export const ComplaintDetailDrawer = ({
           </div>
         </div>
       )}
-      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard) */}
+      {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard with Auto-Split) */}
       <VideoRecorderModal
         isOpen={Boolean(videoRecorderTarget)}
         onClose={() => setVideoRecorderTarget(null)}
         onRecordingComplete={handleVideoRecorded}
         title={videoRecorderTarget === 'resolution' ? 'Record Resolution Site Video' : 'Record Initial Complaint Video'}
-        subtitle="50 MB limit active • 720p HD auto-compressed recording"
+        subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
       />
     </div>
   );
