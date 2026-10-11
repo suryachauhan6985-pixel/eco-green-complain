@@ -119,53 +119,64 @@ export async function handleWebhookPost(c) {
             let mediaUrl = null;
             let mediaType = msg.type || 'text';
             let mediaId = null;
+            let mediaCaption = null;
 
             if (msg.type === 'text') {
               textBody = msg.text?.body || '';
             } else if (msg.type === 'image') {
-              textBody = msg.image?.caption || '[IMAGE file]';
+              mediaCaption = msg.image?.caption || null;
+              textBody = msg.image?.caption || '';
               mediaId = msg.image?.id || null;
               mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'video') {
-              textBody = msg.video?.caption || '[VIDEO file]';
+              mediaCaption = msg.video?.caption || null;
+              textBody = msg.video?.caption || '';
               mediaId = msg.video?.id || null;
               mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'document') {
-              const docName = msg.document?.filename || 'document.pdf';
-              textBody = msg.document?.caption || docName || '[DOCUMENT file]';
+              const docName = msg.document?.filename || 'Document.pdf';
+              mediaCaption = docName;
+              textBody = msg.document?.caption || '';
               mediaId = msg.document?.id || null;
               mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}&filename=${encodeURIComponent(docName)}` : null;
             } else if (msg.type === 'audio' || msg.type === 'voice') {
               mediaType = 'audio';
-              textBody = msg.audio?.caption || (msg.type === 'voice' ? '🎤 Voice Note' : '[AUDIO file]');
+              textBody = '';
+              mediaCaption = msg.type === 'voice' ? 'Voice Note' : 'Audio';
               mediaId = msg.audio?.id || msg.voice?.id || null;
               mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'sticker') {
-              mediaType = 'image';
-              textBody = '🎨 Sticker';
+              mediaType = 'sticker';
+              textBody = '';
               mediaId = msg.sticker?.id || null;
               mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}?phone=${cleanPhone}` : null;
             } else if (msg.type === 'location') {
               mediaType = 'location';
               const loc = msg.location || {};
-              const locDesc = loc.name || loc.address || 'Shared Location';
+              const locDesc = loc.name ? `${loc.name}${loc.address ? ` - ${loc.address}` : ''}` : (loc.address || 'Shared Location Pin');
               const mapsUrl = `https://maps.google.com/?q=${loc.latitude},${loc.longitude}`;
-              textBody = loc.name ? `📍 ${loc.name}${loc.address ? `\n${loc.address}` : ''}\n${mapsUrl}` : `📍 Location Pin: ${mapsUrl}`;
+              textBody = mapsUrl;
+              mediaCaption = locDesc;
             } else if (msg.type === 'interactive') {
+              mediaType = 'interactive';
               const inter = msg.interactive || {};
-              const title = inter.button_reply?.title || inter.list_reply?.title || '';
-              textBody = title ? `🔘 ${title}` : '🔘 [Interactive reply]';
+              const title = inter.button_reply?.title || inter.list_reply?.title || inter.button_reply?.id || '';
+              textBody = title || 'Interactive Response';
+              mediaCaption = inter.button_reply?.id || inter.list_reply?.id || null;
             } else if (msg.type === 'button') {
-              textBody = msg.button?.text ? `🔘 ${msg.button.text}` : '🔘 [Button reply]';
+              mediaType = 'interactive';
+              textBody = msg.button?.text || '';
             } else if (msg.type === 'contacts') {
+              mediaType = 'contacts';
               const firstContact = msg.contacts?.[0] || {};
               const cName = firstContact.name?.formatted_name || 'Contact';
               const cPhone = firstContact.phones?.[0]?.phone || '';
-              textBody = `👤 Contact Card: ${cName}${cPhone ? ` (${cPhone})` : ''}`;
+              textBody = cPhone;
+              mediaCaption = cName;
             }
 
-            if (!textBody && !mediaId) {
-              textBody = msg.text?.body || (mediaType === 'location' ? '📍 Shared Location Pin' : '[WhatsApp message]');
+            if (!textBody && !mediaId && !mediaType) {
+              textBody = msg.text?.body || '';
             }
 
             // Raw Event Audit Log
@@ -258,15 +269,27 @@ export async function handleWebhookPost(c) {
               } catch (_) {}
             }
 
-            // Insert into whatsapp_messages
-            await query(
-              `INSERT INTO whatsapp_messages (
-                complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, wam_id, status, created_at, updated_at
-              ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-              [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, wamid],
-              c.env,
-              c.executionCtx
-            ).catch(() => {});
+            // Insert into whatsapp_messages (with media_caption support)
+            try {
+              await query(
+                `INSERT INTO whatsapp_messages (
+                  complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, media_caption, wam_id, status, created_at, updated_at
+                ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, $9, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, mediaCaption, wamid],
+                c.env,
+                c.executionCtx
+              );
+            } catch (insertErr) {
+              // Fallback if media_caption column is missing
+              await query(
+                `INSERT INTO whatsapp_messages (
+                  complaint_id, phone, sender_type, sender_name, message_body, media_id, media_url, media_type, wam_id, status, created_at, updated_at
+                ) VALUES ($1, $2, 'customer', $3, $4, $5, $6, $7, $8, 'delivered', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [complaintId, senderPhone, senderName, textBody, mediaId, mediaUrl, mediaType, wamid],
+                c.env,
+                c.executionCtx
+              ).catch(() => {});
+            }
           }
         }
       }

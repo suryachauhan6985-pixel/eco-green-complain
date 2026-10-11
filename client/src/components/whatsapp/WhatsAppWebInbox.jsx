@@ -8,6 +8,17 @@ import { playNotificationChime as playLoudChime } from '../../utils/sound';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { showOSNotification, requestPushPermission } from '../../utils/pushNotification';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
+import {
+  WhatsAppTextRenderer,
+  WhatsAppVoiceNotePlayer,
+  WhatsAppDocumentCard,
+  WhatsAppLocationCard,
+  WhatsAppContactCard,
+  WhatsAppInteractiveButtons,
+  WhatsAppQuotedPreview,
+  WhatsAppMessageStatusTick,
+  WhatsAppMediaLightbox
+} from './WhatsAppMessageRenderers';
 import { 
   Search, Send, FileText, Paperclip, Bell, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -48,7 +59,46 @@ function isImageMessage(msg) {
   if (!msg) return false;
   if (msg.media_type === 'image' || msg.media_type?.includes('image')) return true;
   if (msg.media_url && /\.(jpe?g|png|webp|gif)($|\?)/i.test(msg.media_url)) return true;
-  if (msg.media_id && (msg.message_body?.toLowerCase().includes('image') || msg.message_body?.toLowerCase().includes('photo') || msg.message_body?.includes('📷'))) return true;
+  return false;
+}
+
+function isVideoMessage(msg) {
+  if (!msg) return false;
+  if (msg.media_type === 'video' || msg.media_type?.includes('video')) return true;
+  if (msg.media_url && /\.(mp4|webm|mov|m4v)($|\?)/i.test(msg.media_url)) return true;
+  return false;
+}
+
+function isAudioMessage(msg) {
+  if (!msg) return false;
+  if (msg.media_type === 'audio' || msg.media_type === 'voice' || msg.media_type?.includes('audio') || msg.media_type?.includes('voice') || msg.media_type?.includes('ogg')) return true;
+  if (msg.media_url && /\.(mp3|ogg|wav|m4a|aac|opus)($|\?)/i.test(msg.media_url)) return true;
+  return false;
+}
+
+function isDocumentMessage(msg) {
+  if (!msg) return false;
+  if (msg.media_type === 'document' || msg.media_type?.includes('document') || msg.media_type?.includes('pdf')) return true;
+  if (msg.media_url && /\.(pdf|docx?|xlsx?|csv|zip|rar|txt)($|\?)/i.test(msg.media_url)) return true;
+  return false;
+}
+
+function isStickerMessage(msg) {
+  if (!msg) return false;
+  return msg.media_type === 'sticker';
+}
+
+function isLocationMessage(msg) {
+  if (!msg) return false;
+  if (msg.media_type === 'location') return true;
+  if (msg.message_body && (msg.message_body.includes('maps.google.com') || msg.message_body.includes('goo.gl/maps') || msg.message_body.startsWith('📍'))) return true;
+  return false;
+}
+
+function isContactMessage(msg) {
+  if (!msg) return false;
+  if (msg.media_type === 'contacts') return true;
+  if (msg.message_body && msg.message_body.startsWith('👤 Contact Card:')) return true;
   return false;
 }
 
@@ -1444,15 +1494,12 @@ export const WhatsAppWebInbox = ({
 
                 {/* Quoted Reply Preview block if present */}
                 {msg.quoted_text && (
-                  <div className="mb-2 p-2 rounded bg-black/5 border-l-4 border-[#25d366] text-xs">
-                    <p className="font-bold text-[#00a884] text-[11px] mb-0.5">You</p>
-                    <p className="text-[#54656f] font-mono text-[10px] truncate max-w-sm">
-                      {msg.quoted_text}
-                    </p>
-                  </div>
+                  <WhatsAppQuotedPreview
+                    quotedText={msg.quoted_text}
+                    senderName="You"
+                  />
                 )}
 
-                {/* Media: Image Photo preview with download button */}
                 {/* Media: Image Photo preview with download button & graceful failure card */}
                 {isImageMessage(msg) && (
                   (() => {
@@ -1504,7 +1551,7 @@ export const WhatsAppWebInbox = ({
                     }
 
                     return (
-                      <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black/5">
+                      <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-black/5 shadow-2xs">
                         <img
                           src={mediaUrl}
                           alt="WhatsApp photo"
@@ -1512,13 +1559,13 @@ export const WhatsAppWebInbox = ({
                           onError={() => {
                             setFailedImageIds(prev => new Set(prev).add(msg.id));
                           }}
-                          className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
-                          onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image' })}
+                          className="w-full max-h-72 object-cover rounded-xl cursor-pointer hover:opacity-95 transition-opacity"
+                          onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
                         />
                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image' })}
+                            onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
                             className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
                             title="View Full Size"
                           >
@@ -1539,18 +1586,18 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* Media: Video Player with Full View & Download */}
-                {(msg.media_type === 'video' || msg.media_type?.includes('video')) && (
+                {isVideoMessage(msg) && (
                   (() => {
                     const videoUrl = getWhatsAppMediaUrl(msg);
                     if (!videoUrl) return null;
                     return (
-                      <div className="mb-2 rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs">
+                      <div className="mb-2 rounded-xl overflow-hidden relative group max-w-md bg-black shadow-xs">
                         <video
                           src={videoUrl}
                           controls
                           playsInline
                           preload="metadata"
-                          className="w-full max-h-72 rounded-t-lg object-contain bg-black"
+                          className="w-full max-h-72 rounded-t-xl object-contain bg-black"
                         />
                         <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
                           <span className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300">
@@ -1560,7 +1607,7 @@ export const WhatsAppWebInbox = ({
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video' })}
+                              onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption })}
                               className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
                               title="Open Full Player"
                             >
@@ -1582,67 +1629,95 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* Media: Audio / Voice Note */}
-                {(msg.media_type === 'audio' || msg.media_type?.includes('audio')) && (
+                {isAudioMessage(msg) && (
                   (() => {
                     const audioUrl = getWhatsAppMediaUrl(msg);
                     if (!audioUrl) return null;
                     return (
-                      <div className="mb-2 p-2.5 rounded-lg bg-black/5 border border-black/5 max-w-sm">
-                        <div className="flex items-center gap-2 mb-1 text-xs text-[#008069] font-semibold">
-                          <Mic className="w-3.5 h-3.5" />
-                          <span>Voice Note</span>
-                        </div>
-                        <audio src={audioUrl} controls className="w-full h-8" />
-                      </div>
+                      <WhatsAppVoiceNotePlayer
+                        audioUrl={audioUrl}
+                        isOutgoing={!isCustomer}
+                        onDownload={() => handleDownloadFile(audioUrl, `whatsapp_voice_${msg.id || 'note'}.ogg`)}
+                      />
                     );
                   })()
                 )}
 
                 {/* Media: PDF / Document Card with In-App View & Download */}
-                {/* Media: PDF / Document Card with In-App View & Download */}
-                {(msg.media_type === 'document' || msg.media_type?.includes('pdf') || msg.media_type?.includes('document')) && (
+                {isDocumentMessage(msg) && (
                   (() => {
                     const docUrl = getWhatsAppMediaUrl(msg);
                     if (!docUrl) return null;
                     const docName = msg.media_caption || msg.message_body || 'Document.pdf';
                     return (
-                      <div 
-                        onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
-                        className="mb-2 p-3 bg-black/5 hover:bg-emerald-50/80 rounded-lg flex items-center justify-between gap-3 border border-black/5 hover:border-emerald-300 transition-all cursor-pointer group"
-                        title="Click to view PDF in app"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-10 h-10 rounded-lg bg-[#d9fdd3] text-[#008069] group-hover:bg-[#008069] group-hover:text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs transition-colors">
-                            <FileText className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-semibold text-xs text-[#111b21] group-hover:text-[#008069] truncate max-w-[220px] transition-colors">
-                              {docName}
-                            </p>
-                            <span className="text-[10px] text-[#667781] uppercase font-mono flex items-center gap-1">
-                              <Eye className="w-3 h-3 text-emerald-600" /> Click to read inside app
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
-                            className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer"
-                            title="View PDF In App"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadFile(docUrl, docName)}
-                            className="p-1.5 text-[#54656f] hover:text-[#111b21] hover:bg-white/80 rounded-full transition-colors cursor-pointer"
-                            title="Download PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
+                      <WhatsAppDocumentCard
+                        docUrl={docUrl}
+                        docName={docName}
+                        onOpenPdf={() => setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
+                        onDownload={() => handleDownloadFile(docUrl, docName)}
+                      />
+                    );
+                  })()
+                )}
+
+                {/* Media: Contact Card (vCard) */}
+                {isContactMessage(msg) && (
+                  (() => {
+                    const body = msg.message_body || '';
+                    const nameMatch = body.match(/Name:\s*([^\n\r]+)/i);
+                    const phoneMatch = body.match(/Phone:\s*([^\n\r]+)/i);
+                    const contactName = nameMatch ? nameMatch[1].trim() : (msg.media_caption || 'Contact');
+                    const contactPhone = phoneMatch ? phoneMatch[1].trim() : '';
+
+                    return (
+                      <WhatsAppContactCard
+                        contactName={contactName}
+                        phone={contactPhone}
+                        onMessage={() => {
+                          if (contactPhone) {
+                            const clean = contactPhone.replace(/\D/g, '');
+                            if (clean) setSelectedPhone(clean);
+                          }
+                        }}
+                        onSaveContact={() => {
+                          if (contactPhone) {
+                            const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL:${contactPhone}\nEND:VCARD`;
+                            const blob = new Blob([vcard], { type: 'text/vcard' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `${contactName.replace(/\s+/g, '_')}.vcf`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }
+                        }}
+                      />
+                    );
+                  })()
+                )}
+
+                {/* Media: Location Pin Card */}
+                {isLocationMessage(msg) && (
+                  (() => {
+                    const mapsMatch = (msg.message_body || '').match(/(https?:\/\/[^\s]+)/);
+                    const mapsUrl = mapsMatch ? mapsMatch[1] : '';
+                    const rawDesc = (msg.message_body || '')
+                      .replace(/(https?:\/\/[^\s]+)/g, '')
+                      .replace(/^📍\s*(Location Pin:)?/i, '')
+                      .trim();
+                    const locTitle = rawDesc || 'Shared Location Pin';
+
+                    return (
+                      <WhatsAppLocationCard
+                        mapsUrl={mapsUrl}
+                        title={locTitle}
+                        onCopy={() => {
+                          if (mapsUrl && navigator.clipboard?.writeText) {
+                            navigator.clipboard.writeText(mapsUrl);
+                            showToast('Location link copied to clipboard', 'success');
+                          }
+                        }}
+                      />
                     );
                   })()
                 )}
@@ -1715,72 +1790,9 @@ export const WhatsAppWebInbox = ({
                   </div>
                 ) : (
                   <div>
-                    {/* Dedicated WhatsApp Location Pin Card */}
-                    {(msg.media_type === 'location' || (msg.message_body && (msg.message_body.includes('maps.google.com') || msg.message_body.includes('goo.gl/maps')))) && (() => {
-                      const mapsMatch = (msg.message_body || '').match(/(https?:\/\/[^\s]+)/);
-                      const mapsUrl = mapsMatch ? mapsMatch[1] : '';
-                      const rawDesc = (msg.message_body || '').replace(/(https?:\/\/[^\s]+)/g, '').replace(/^📍\s*/, '').trim();
-                      const locTitle = rawDesc || 'Shared Location Pin';
-
-                      return (
-                        <div className="mb-2 p-2.5 rounded-xl bg-emerald-50/90 border border-emerald-200/90 flex flex-col gap-2 max-w-sm shadow-2xs">
-                          <div className="flex items-start gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-[#008069] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                              <MapPin className="w-4 h-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="font-bold text-xs text-[#111b21] flex items-center gap-1">
-                                <span>{locTitle}</span>
-                              </p>
-                              <p className="text-[11px] text-[#54656f] mt-0.5 truncate font-mono">
-                                {mapsUrl || 'Coordinates pinned by customer'}
-                              </p>
-                            </div>
-                          </div>
-                          {mapsUrl && (
-                            <div className="flex items-center gap-2 pt-1 border-t border-emerald-200/70">
-                              <a
-                                href={mapsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="px-2.5 py-1 bg-[#008069] hover:bg-[#00705b] text-white text-[11px] font-bold rounded-md flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span>Open in Google Maps</span>
-                              </a>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (navigator.clipboard?.writeText) {
-                                    navigator.clipboard.writeText(mapsUrl);
-                                  }
-                                  showToast('Location link copied to clipboard', 'success');
-                                }}
-                                className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-semibold rounded-md border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
-                              >
-                                <Copy className="w-3 h-3 text-slate-500" />
-                                <span>Copy Link</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Standard Text Body (if not purely a location card or if has additional text) */}
-                    {msg.message_body && !msg.message_body.startsWith('📍 Location Pin:') && (
-                      <div className="whitespace-pre-wrap break-words leading-relaxed select-text font-normal text-[13px] pr-2 text-[#111b21]">
-                        {renderFormattedWhatsAppText(msg.message_body)}
-                      </div>
-                    )}
-
-                    {/* Fallback for empty message body (Prevents empty white space box) */}
-                    {!msg.message_body && !msg.media_url && !isImageMessage(msg) && !isVideoMessage(msg) && !isDocumentMessage(msg) && msg.media_type !== 'location' && (
-                      <div className="text-xs text-slate-400 italic py-0.5">
-                        [No text content]
-                      </div>
+                    {/* Standard Text Body (if not purely a location card or contact card without extra text) */}
+                    {msg.message_body && !msg.message_body.startsWith('📍 Location Pin:') && !msg.message_body.startsWith('👤 Contact Card:') && (
+                      <WhatsAppTextRenderer text={msg.message_body} />
                     )}
 
                     {/* WhatsApp Template Official Footer */}
@@ -1797,30 +1809,14 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* Timestamp & Delivery Checkmarks */}
-                <div className="flex items-center justify-end gap-1 text-[10px] text-[#667781] mt-1 ml-3 select-none float-right">
-                  {(msg.is_edited || (msg.updated_at && msg.updated_at !== msg.created_at)) && (
-                    <span className="italic text-[9px] text-[#8696a0] mr-0.5 font-sans">(edited)</span>
-                  )}
-                  <span title={fullDateTimeStr}>{timeStr}</span>
-                  {!isCustomer && (
-                    <span className="inline-flex items-center ml-0.5" title={`Status: ${msg.status || 'sent'}${msg.failure_reason ? ' (' + msg.failure_reason + ')' : ''}`}>
-                      {msg.status === 'read' ? (
-                        <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
-                      ) : msg.status === 'delivered' ? (
-                        <CheckCheck className="w-3.5 h-3.5 text-[#8696a0]" />
-                      ) : msg.status === 'failed' ? (
-                        <span className="inline-flex items-center gap-0.5 text-rose-600 font-bold text-[9px] bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
-                          <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                          <span>Failed</span>
-                        </span>
-                      ) : msg.status === 'pending' ? (
-                        <Clock className="w-3 h-3 text-[#8696a0]" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5 text-[#8696a0]" />
-                      )}
-                    </span>
-                  )}
-                </div>
+                <WhatsAppMessageStatusTick
+                  status={msg.status || 'sent'}
+                  isEdited={Boolean(msg.is_edited === true || msg.is_edited === 1)}
+                  timeStr={timeStr}
+                  fullDateTimeStr={fullDateTimeStr}
+                  isCustomer={isCustomer}
+                  onRetry={() => handleRetryMessage(msg)}
+                />
 
                 {/* 1-Click WhatsApp Web / App Dispatch & Retry Action Bar for Failed Messages */}
                 {msg.status === 'failed' && !isCustomer && (
@@ -3356,78 +3352,28 @@ export const WhatsAppWebInbox = ({
 
       {/* ================= MEDIA & DOCUMENT PREVIEW MODAL ================= */}
       {previewMedia && (
-        <div 
-          onClick={() => setPreviewMedia(null)}
-          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
-        >
-          {previewMedia.type === 'pdf' ? (
+        previewMedia.type === 'pdf' ? (
+          <div 
+            onClick={() => setPreviewMedia(null)}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+          >
             <PdfViewerModal
               url={previewMedia.url}
               title={previewMedia.title || 'Document.pdf'}
               onClose={() => setPreviewMedia(null)}
               onDownload={(url, filename) => handleDownloadFile(url, filename)}
             />
-          ) : previewMedia.type === 'video' ? (
-            <div 
-              className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center" 
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="w-full flex items-center justify-between pb-3 text-white">
-                <span className="font-semibold text-sm truncate max-w-md">
-                  {previewMedia.title || 'WhatsApp Video'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleDownloadFile(previewMedia.url, 'whatsapp_video.mp4')}
-                    className="px-3 py-1.5 bg-white/20 hover:bg-white/40 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Download</span>
-                  </button>
-                  <button
-                    onClick={() => setPreviewMedia(null)}
-                    className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <video
-                src={previewMedia.url}
-                controls
-                autoPlay
-                playsInline
-                className="max-h-[80vh] max-w-full rounded-xl bg-black shadow-2xl border border-white/10"
-              />
-            </div>
-          ) : (
-            <div 
-              className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center" 
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute -top-10 right-0 flex items-center gap-2">
-                <button
-                  onClick={() => handleDownloadFile(previewMedia.url, 'whatsapp_photo.jpg')}
-                  className="px-3 py-1 bg-white/20 hover:bg-white/40 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download</span>
-                </button>
-                <button
-                  onClick={() => setPreviewMedia(null)}
-                  className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors cursor-pointer"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <img
-                src={previewMedia.url}
-                alt="Zoomed attachment"
-                className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl border border-white/10"
-              />
-            </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <WhatsAppMediaLightbox
+            media={previewMedia}
+            onClose={() => setPreviewMedia(null)}
+            onDownload={() => handleDownloadFile(
+              previewMedia.url,
+              previewMedia.type === 'video' ? 'whatsapp_video.mp4' : 'whatsapp_photo.jpg'
+            )}
+          />
+        )
       )}
       {/* ================= MODAL: EDIT CONTACT NAME ================= */}
       {isEditNameModalOpen && (
