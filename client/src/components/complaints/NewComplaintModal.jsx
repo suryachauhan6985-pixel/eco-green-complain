@@ -972,9 +972,10 @@ export const NewComplaintModal = ({
         }
       });
 
-      // Force Draft status and flag
+      // Force Draft status and flags
       data.set('status', 'Draft');
       data.set('is_draft', '1');
+      data.set('save_as_draft', 'true');
 
       // Direct Cloud Storage Upload
       if (fileList.length > 0) {
@@ -1081,6 +1082,13 @@ export const NewComplaintModal = ({
           data.append(key, formData[key]);
         }
       });
+
+      // Ensure no draft flags are passed during final registration & notification
+      data.delete('is_draft');
+      data.delete('save_as_draft');
+      if (!isEditMode) {
+        data.delete('status');
+      }
 
       // Direct Cloud Storage Upload (bypasses Vercel 4.5MB limit, supports up to 50MB files!)
       if (fileList.length > 0) {

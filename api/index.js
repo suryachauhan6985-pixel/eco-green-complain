@@ -2670,40 +2670,52 @@ app.get('/api/complaints/check-active', authenticateToken, async (req, res) => {
 app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), async (req, res) => {
   try {
     const body = req.body;
-    const customer_name = (body.customer_name || '').trim();
+    const isDraft = Boolean(
+      body.status === 'Draft' ||
+      body.is_draft === '1' ||
+      body.is_draft === 1 ||
+      body.is_draft === true ||
+      body.is_draft === 'true' ||
+      body.save_as_draft === 'true' ||
+      body.save_as_draft === true
+    );
+
+    const customer_name = (body.customer_name || (isDraft ? 'Draft Customer' : '')).trim();
     const raw_phone = (body.customer_phone || '').trim();
     const cleanDigits = raw_phone.replace(/[^0-9]/g, '');
     const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
-    const product_type = (body.product_type || '').trim();
+    const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
 
-    if (!customer_name || !last10) {
-      return res.status(400).json({ error: 'Customer name and a valid 10-digit mobile number are required' });
+    if (!isDraft) {
+      if (!customer_name || !last10) {
+        return res.status(400).json({ error: 'Customer name and a valid 10-digit mobile number are required' });
+      }
+
+      // Duplicate Prevention: Check if an active/open complaint already exists for this customer FOR THE SAME PRODUCT
+      const activeCheckSql = `
+        SELECT id, ticket_id, customer_name, customer_phone, product_type, status, created_at
+        FROM complaints
+        WHERE (
+          (RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 AND LENGTH($1) >= 10)
+          OR (LOWER(TRIM(customer_name)) = LOWER(TRIM($2)) AND LENGTH(TRIM($2)) >= 3)
+        )
+        AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
+        AND LOWER(status) NOT IN ('closed', 'cancelled', 'draft')
+        ORDER BY id DESC
+        LIMIT 1
+      `;
+      const activeRes = await query(activeCheckSql, [last10, customer_name, product_type]);
+      if (activeRes.rows.length > 0) {
+        const activeTicket = activeRes.rows[0];
+        return res.status(400).json({
+          error: `Active complaint #${activeTicket.ticket_id} is already open for this customer for "${activeTicket.product_type || product_type}" (${activeTicket.customer_name}, Phone: ${activeTicket.customer_phone}, Status: ${activeTicket.status}). Duplicate complaints for the same product cannot be registered until the existing ticket is Closed.`,
+          duplicate: true,
+          existingTicket: activeTicket
+        });
+      }
     }
 
-    // Duplicate Prevention: Check if an active/open complaint already exists for this customer FOR THE SAME PRODUCT
-    const activeCheckSql = `
-      SELECT id, ticket_id, customer_name, customer_phone, product_type, status, created_at
-      FROM complaints
-      WHERE (
-        (RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 AND LENGTH($1) >= 10)
-        OR (LOWER(TRIM(customer_name)) = LOWER(TRIM($2)) AND LENGTH(TRIM($2)) >= 3)
-      )
-      AND ($3 = '' OR LOWER(TRIM(product_type)) = LOWER(TRIM($3)))
-      AND LOWER(status) NOT IN ('closed', 'cancelled')
-      ORDER BY id DESC
-      LIMIT 1
-    `;
-    const activeRes = await query(activeCheckSql, [last10, customer_name, product_type]);
-    if (activeRes.rows.length > 0) {
-      const activeTicket = activeRes.rows[0];
-      return res.status(400).json({
-        error: `Active complaint #${activeTicket.ticket_id} is already open for this customer for "${activeTicket.product_type || product_type}" (${activeTicket.customer_name}, Phone: ${activeTicket.customer_phone}, Status: ${activeTicket.status}). Duplicate complaints for the same product cannot be registered until the existing ticket is Closed.`,
-        duplicate: true,
-        existingTicket: activeTicket
-      });
-    }
-
-    const canonicalPhone = `+91${last10}`;
+    const canonicalPhone = last10 ? `+91${last10}` : (raw_phone || '');
 
     // Generate Ticket ID EGS-2026-XXXXXX
     const maxRes = await query("SELECT ticket_id FROM complaints WHERE ticket_id LIKE 'EGS-2026-%' ORDER BY id DESC LIMIT 1");
@@ -2716,6 +2728,7 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
       }
     }
     const ticket_id = `EGS-2026-${String(nextNum).padStart(6, '0')}`;
+    const targetStatus = isDraft ? 'Draft' : (body.assigned_technician_id ? 'Assigned' : 'Unassigned');
 
     const insertSql = `
       INSERT INTO complaints (
@@ -2755,12 +2768,12 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
       body.product_type || 'Solar Rooftop Systems',
       body.product_serial || '',
       body.installation_id || '',
-      body.issue_category || 'Service Request',
-      body.issue_description || '',
+      body.issue_category || (isDraft ? 'General Inquiry' : 'Service Request'),
+      body.issue_description || (isDraft ? 'Draft complaint record' : ''),
       body.priority || 'Medium',
-      body.assigned_technician_id ? 'Assigned' : 'Unassigned',
-      body.assigned_technician_id || null,
-      body.expected_visit_date || null,
+      targetStatus,
+      isDraft ? null : (body.assigned_technician_id || null),
+      isDraft ? null : (body.expected_visit_date || null),
       req.user?.id || null,
       (body.dealer_name || '').trim()
     ];
@@ -2818,6 +2831,20 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 10), 
           console.warn('[Complaint Attachment Upload Note]', attErr.message);
         }
       }
+    }
+
+    // Handle Draft vs Normal Registration
+    if (isDraft) {
+      await query(
+        'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+        [newComp.id, 'Draft', 'Complaint saved as Draft.', req.user?.name || 'Helpdesk', req.user?.role || 'staff']
+      );
+
+      return res.status(201).json({
+        message: 'Complaint saved as Draft',
+        complaint: newComp,
+        ticket: newComp
+      });
     }
 
     // Initial timeline note
@@ -3294,6 +3321,15 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
       ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
       : (cleanEstimatedCharges > 0 ? 1 : (current.notify_charges ? 1 : 0));
 
+    const isFinalizing = Boolean(
+      (b.finalize === 'true' || b.finalize === true || b.finalize === 1 || b.finalize === '1') ||
+      (current.status === 'Draft' && b.status && b.status !== 'Draft')
+    );
+
+    const targetStatus = isFinalizing
+      ? (current.assigned_technician_id ? 'Assigned' : 'Unassigned')
+      : (current.status === 'Draft' ? 'Draft' : (b.status !== undefined ? (b.status ? b.status.trim() : null) : null));
+
     let newPaymentStatus = current.payment_status;
     if (cleanEstimatedCharges > 0 && (!current.payment_status || current.payment_status === 'Not Applicable')) {
       newPaymentStatus = 'Unpaid';
@@ -3339,7 +3375,7 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
       b.issue_category !== undefined ? (b.issue_category ? b.issue_category.trim() : null) : null,
       b.issue_description !== undefined ? (b.issue_description ? b.issue_description.trim() : null) : null,
       b.priority !== undefined ? (b.priority ? b.priority.trim() : null) : null,
-      b.status !== undefined ? (b.status ? b.status.trim() : null) : null,
+      targetStatus,
       cleanIsInWarranty,
       cleanEstimatedCharges,
       cleanNotifyCharges,
@@ -3355,28 +3391,20 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
     const updatedRes = await query('SELECT * FROM complaints WHERE id = $1', [current.id]);
     const updatedComp = updatedRes.rows[0];
 
-    // Check if service charges were added, updated, or removed
     const prevCharges = parseFloat(current.estimated_charges) || 0;
     const prevNotify = Boolean(current.notify_charges === 1 || current.notify_charges === '1' || current.notify_charges === true);
     const newCharges = cleanEstimatedCharges;
     const newNotify = cleanNotifyCharges === 1;
 
-    let chargeAction = null;
-    if (newCharges > 0 && newNotify) {
-      if (prevCharges === 0 || Math.abs(prevCharges - newCharges) >= 0.01) {
-        chargeAction = 'charges_added';
-      }
-    } else if (prevCharges > 0 && (newCharges === 0 || !newNotify)) {
-      chargeAction = 'charges_removed';
-    }
-
     let waResult = null;
-    let waNotified = false;
-    if (chargeAction && updatedComp?.customer_phone) {
+
+    if (isFinalizing) {
+      const isSurvey = updatedComp.product_type && (String(updatedComp.product_type).toUpperCase().includes('SURVEY') || String(updatedComp.issue_category).toUpperCase().includes('SURVEY'));
+      const regTemplate = isSurvey ? 'site_survey_registered' : 'complaint_registered';
       try {
         waResult = await sendWhatsApp({
           to: updatedComp.customer_phone,
-          templateName: chargeAction,
+          templateName: regTemplate,
           variables: {
             customer_name: updatedComp.customer_name,
             ticket_id: updatedComp.ticket_id,
@@ -3388,21 +3416,68 @@ app.put('/api/complaints/:id', authenticateToken, async (req, res) => {
             db_complaint_id: updatedComp.id
           }
         });
-        waNotified = true;
-
-        const performerName = req.user?.name || 'Supervisor';
-        const performerRole = req.user?.role || 'staff';
-        const tlNotes = chargeAction === 'charges_added'
-          ? `Estimated service charges updated to ₹${newCharges}. Customer notified via WhatsApp.`
-          : `Service charges waived / removed (₹0). Customer notified via WhatsApp.`;
-        const tlAction = chargeAction === 'charges_added' ? 'Charges Updated' : 'Charges Waived';
-
-        await query(
-          'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-          [updatedComp.id, tlAction, tlNotes, performerName, performerRole]
-        ).catch(() => {});
       } catch (waErr) {
-        console.warn('[Edit Complaint WhatsApp Error]', waErr.message);
+        console.warn('[WhatsApp Finalize Notify Note]', waErr.message);
+      }
+
+      const performerName = req.user?.name || 'Supervisor';
+      const performerRole = req.user?.role || 'staff';
+      await query(
+        'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+        [updatedComp.id, 'Registered', 'Draft finalized and complaint registered. Live workflow activated.', performerName, performerRole]
+      ).catch(() => {});
+    } else if (current.status === 'Draft') {
+      const performerName = req.user?.name || 'Supervisor';
+      const performerRole = req.user?.role || 'staff';
+      await query(
+        'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 0)',
+        [updatedComp.id, 'Draft', 'Draft complaint details updated', performerName, performerRole]
+      ).catch(() => {});
+      return res.json({
+        message: 'Complaint saved as Draft',
+        complaint: updatedComp
+      });
+    } else {
+      let chargeAction = null;
+      if (newCharges > 0 && newNotify) {
+        if (prevCharges === 0 || Math.abs(prevCharges - newCharges) >= 0.01) {
+          chargeAction = 'charges_added';
+        }
+      } else if (prevCharges > 0 && (newCharges === 0 || !newNotify)) {
+        chargeAction = 'charges_removed';
+      }
+
+      if (chargeAction && updatedComp?.customer_phone) {
+        try {
+          waResult = await sendWhatsApp({
+            to: updatedComp.customer_phone,
+            templateName: chargeAction,
+            variables: {
+              customer_name: updatedComp.customer_name,
+              ticket_id: updatedComp.ticket_id,
+              complaint_id: updatedComp.ticket_id,
+              product_type: updatedComp.product_type,
+              issue_category: updatedComp.issue_category,
+              estimated_charges: newCharges,
+              notify_charges: cleanNotifyCharges,
+              db_complaint_id: updatedComp.id
+            }
+          });
+
+          const performerName = req.user?.name || 'Supervisor';
+          const performerRole = req.user?.role || 'staff';
+          const tlNotes = chargeAction === 'charges_added'
+            ? `Estimated service charges updated to ₹${newCharges}. Customer notified via WhatsApp.`
+            : `Service charges waived / removed (₹0). Customer notified via WhatsApp.`;
+          const tlAction = chargeAction === 'charges_added' ? 'Charges Updated' : 'Charges Waived';
+
+          await query(
+            'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+            [updatedComp.id, tlAction, tlNotes, performerName, performerRole]
+          ).catch(() => {});
+        } catch (waErr) {
+          console.warn('[Edit Complaint WhatsApp Error]', waErr.message);
+        }
       }
     }
 

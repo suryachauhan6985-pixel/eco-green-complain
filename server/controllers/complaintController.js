@@ -350,7 +350,15 @@ async function createComplaint(req, res) {
       scheme
     } = req.body;
 
-    const isDraft = req.body.status === 'Draft' || req.body.is_draft === '1' || req.body.is_draft === true || req.body.is_draft === 1;
+    const isDraft = Boolean(
+      req.body.status === 'Draft' ||
+      req.body.is_draft === '1' ||
+      req.body.is_draft === true ||
+      req.body.is_draft === 1 ||
+      req.body.is_draft === 'true' ||
+      req.body.save_as_draft === 'true' ||
+      req.body.save_as_draft === true
+    );
 
     if (!isDraft) {
       if (!customer_name || !customer_phone || !customer_address || !product_type || !issue_category || !issue_description) {

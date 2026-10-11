@@ -579,7 +579,9 @@ async function handleCreateComplaint(c, isPublic = false) {
     body.is_draft === '1' ||
     body.is_draft === 1 ||
     body.is_draft === true ||
-    body.is_draft === 'true'
+    body.is_draft === 'true' ||
+    body.save_as_draft === 'true' ||
+    body.save_as_draft === true
   );
 
   const customer_name = (body.customer_name || (isDraft ? 'Draft Customer' : '')).trim();
