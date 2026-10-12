@@ -4506,7 +4506,7 @@ export const WhatsAppWebInbox = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white h-full w-full max-w-md shadow-2xl border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-200"
+            className="bg-white h-full w-full max-w-md shadow-2xl shadow-slate-950/40 border-l border-slate-200/80 rounded-l-2xl sm:rounded-l-3xl overflow-hidden flex flex-col drawer-enter-right"
           >
             <div className="px-5 py-4 bg-[#008069] text-white flex items-center justify-between shadow-xs">
               <div className="flex items-center gap-2.5">

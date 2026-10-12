@@ -489,16 +489,16 @@ export const Navbar = ({
       </div>
 
       {/* Mobile Slide-out Navigation Drawer & Backdrop */}
-      {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-300 md:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      <div 
+        className={`fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden ${
+          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
+      />
 
       <aside 
-        className={`fixed top-0 bottom-0 left-0 z-50 w-[84vw] max-w-[320px] bg-white shadow-2xl flex flex-col md:hidden transform transition-transform duration-300 ease-in-out border-r border-slate-200 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-[84vw] max-w-[325px] bg-white shadow-2xl shadow-slate-950/40 flex flex-col md:hidden transform transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-slate-200/90 rounded-r-2xl sm:rounded-r-3xl overflow-hidden will-change-transform ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
         }`}
         role="dialog"

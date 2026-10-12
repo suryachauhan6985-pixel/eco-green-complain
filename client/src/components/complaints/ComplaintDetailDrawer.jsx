@@ -210,7 +210,7 @@ export const ComplaintDetailDrawer = ({
     if (previewDocModal || isEditing || isRecordingPayment || assignSuccessModal || isReassignOpen) {
       return false;
     }
-    onClose();
+    handleDrawerClose();
     return true;
   }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
@@ -657,10 +657,23 @@ export const ComplaintDetailDrawer = ({
     });
   };
 
+  const [isClosing, setIsClosing] = useState(false);
+
   const handleDrawerClose = () => {
-    resetAllDraftInputs();
-    if (onClose) onClose();
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      resetAllDraftInputs();
+      if (onClose) onClose();
+    }, 260);
   };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsClosing(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     resetAllDraftInputs();
@@ -1620,17 +1633,21 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isClosing) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div 
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade transition-opacity"
+        className={`absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity ${
+          isClosing ? 'backdrop-exit-fade' : 'backdrop-enter-fade'
+        }`}
         onClick={handleDrawerClose}
       />
 
       <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto max-w-full flex w-full sm:w-auto">
-        <div className="w-full sm:w-screen sm:max-w-2xl bg-white shadow-2xl flex flex-col h-full overflow-hidden drawer-enter-right">
+        <div className={`w-full sm:w-screen sm:max-w-2xl bg-white shadow-2xl shadow-slate-950/40 flex flex-col h-full overflow-hidden rounded-l-2xl sm:rounded-l-3xl border-l border-slate-200/80 ${
+          isClosing ? 'drawer-exit-right' : 'drawer-enter-right'
+        }`}>
           {/* Header */}
           <div 
             className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2 shrink-0"

@@ -152,6 +152,22 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
   const [dispatchFilter, setDispatchFilter] = useState('all'); // all | whatsapp | email
   const [loading, setLoading] = useState(false);
   const [resendingId, setResendingId] = useState(null);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const handleDrawerClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      if (onClose) onClose();
+    }, 260);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsClosing(false);
+    }
+  }, [isOpen]);
 
   const fetchDispatches = async () => {
     try {
@@ -363,18 +379,22 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isClosing) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade transition-opacity"
-        onClick={onClose}
+        className={`absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity ${
+          isClosing ? 'backdrop-exit-fade' : 'backdrop-enter-fade'
+        }`}
+        onClick={handleDrawerClose}
       />
 
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-md md:max-w-lg bg-white shadow-2xl flex flex-col drawer-enter-right">
+        <div className={`w-screen max-w-md md:max-w-lg bg-white shadow-2xl shadow-slate-950/40 flex flex-col rounded-l-2xl sm:rounded-l-3xl overflow-hidden border-l border-slate-200/80 ${
+          isClosing ? 'drawer-exit-right' : 'drawer-enter-right'
+        }`}>
           {/* Header */}
           <div 
             className="p-4 bg-emerald-800 text-white flex items-center justify-between shadow-xs"
@@ -422,7 +442,7 @@ export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
                 <span className="hidden sm:inline">{soundEnabled ? 'Sound ON' : 'Muted'}</span>
               </button>
               <button 
-                onClick={onClose}
+                onClick={handleDrawerClose}
                 className="p-1.5 hover:bg-emerald-700 rounded-xl text-emerald-200 hover:text-white transition-colors"
                 title="Close Drawer"
               >
