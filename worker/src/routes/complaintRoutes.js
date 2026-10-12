@@ -1450,20 +1450,6 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
-    // Technician assignment check
-    if (user.role === 'technician') {
-      const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
-      const isPrimary = techId && String(complaint.assigned_technician_id) === String(techId);
-      const isSecondary = techId && String(complaint.secondary_technician_id) === String(techId);
-
-      if (!isPrimary && !isSecondary) {
-        return c.json({ error: 'Access denied: You are not assigned to this complaint.' }, 403);
-      }
-      if (normalizedStatus && normalizedStatus !== complaint.status && !isPrimary) {
-        return c.json({ error: 'Co-partner technician is restricted to view-only access. Stage updates must be submitted by the primary technician.' }, 403);
-      }
-    }
-
     let normalizedStatus = null;
     if (status) {
       const s = status.toString().trim().toLowerCase().replace(/_/g, ' ');
@@ -1476,6 +1462,20 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
       else if (s === 'closed') normalizedStatus = 'Closed';
       else if (s === 'reopened') normalizedStatus = 'Reopened';
       else normalizedStatus = status;
+    }
+
+    // Technician assignment check
+    if (user.role === 'technician') {
+      const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
+      const isPrimary = techId && String(complaint.assigned_technician_id) === String(techId);
+      const isSecondary = techId && String(complaint.secondary_technician_id) === String(techId);
+
+      if (!isPrimary && !isSecondary) {
+        return c.json({ error: 'Access denied: You are not assigned to this complaint.' }, 403);
+      }
+      if (normalizedStatus && normalizedStatus !== complaint.status && !isPrimary) {
+        return c.json({ error: 'Co-partner technician is restricted to view-only access. Stage updates must be submitted by the primary technician.' }, 403);
+      }
     }
 
     if (normalizedStatus && normalizedStatus !== complaint.status) {
