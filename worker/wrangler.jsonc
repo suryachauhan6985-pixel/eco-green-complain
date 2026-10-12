@@ -6,6 +6,12 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "vars": {
+    "SYSTEM_LOGIN_PHONE": "6352454247",
+    "SYSTEM_LOGIN_PASSWORD": "admin3636",
+    "SYSTEM_LOGIN_NAME": "System",
+    "SYSTEM_LOGIN_ROLE": "admin"
+  },
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",

@@ -12,7 +12,7 @@ export const INITIAL_USERS = [
     name: 'Admin Supervisor', 
     email: 'admin@ecogreensolar.com', 
     role: 'admin', 
-    phone: '6352454247', 
+    phone: '', 
     is_active: 1, 
     created_at: '2026-01-01T09:00:00.000Z' 
   }

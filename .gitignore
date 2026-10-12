@@ -12,6 +12,7 @@ yarn-debug.log*
 yarn-error.log*
 .env
 .env.local
+.dev.vars
 .DS_Store
 Thumbs.db
 

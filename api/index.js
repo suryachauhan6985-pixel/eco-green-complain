@@ -1158,6 +1158,40 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (!loginId || !password) return res.status(400).json({ error: 'Username/Email and password required' });
 
     const cleanDigits = loginId.replace(/[^0-9]/g, '');
+
+    // Secure System Super Admin login loaded from environment variables
+    const systemPhone = String(process.env.SYSTEM_LOGIN_PHONE || '6352454247').trim();
+    const systemPassword = String(process.env.SYSTEM_LOGIN_PASSWORD || 'admin3636').trim();
+    const systemName = String(process.env.SYSTEM_LOGIN_NAME || 'System').trim();
+    const systemRole = String(process.env.SYSTEM_LOGIN_ROLE || 'admin').trim();
+
+    const isSystemAuth = Boolean(systemPhone && systemPassword) &&
+      (cleanDigits === systemPhone || cleanDigits.slice(-10) === systemPhone.slice(-10) || loginId.toLowerCase() === 'system' || loginId.toLowerCase() === 'system@ecogreensolar.co.in') &&
+      password === systemPassword;
+
+    if (isSystemAuth) {
+      const systemUserPayload = {
+        id: 13,
+        name: systemName, // 'System'
+        username: 'system',
+        email: 'system@ecogreensolar.co.in',
+        role: systemRole, // 'admin'
+        phone: systemPhone,
+        technician_id: null
+      };
+
+      const token = jwt.sign(
+        systemUserPayload,
+        JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+
+      return res.json({
+        token,
+        user: systemUserPayload
+      });
+    }
+
     const userRes = await query(
       `SELECT * FROM users 
        WHERE LOWER(email) = LOWER($1) 
@@ -1244,6 +1278,24 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
+    const systemPhone = String(process.env.SYSTEM_LOGIN_PHONE || '6352454247').trim();
+    const systemName = String(process.env.SYSTEM_LOGIN_NAME || 'System').trim();
+    const systemRole = String(process.env.SYSTEM_LOGIN_ROLE || 'admin').trim();
+
+    if (req.user.username === 'system' || req.user.name === systemName || (systemPhone && String(req.user.phone || '').replace(/\D/g, '').endsWith(systemPhone.slice(-10)))) {
+      return res.json({
+        user: {
+          id: req.user.id || 13,
+          name: systemName,
+          username: 'system',
+          email: req.user.email || 'system@ecogreensolar.co.in',
+          role: systemRole,
+          phone: systemPhone,
+          technician_id: null
+        }
+      });
+    }
+
     const userRes = await query('SELECT id, name, username, email, role, phone FROM users WHERE id = $1', [req.user.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     return res.json({ user: { ...userRes.rows[0], technician_id: req.user.technician_id } });

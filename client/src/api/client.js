@@ -1398,29 +1398,25 @@ function fallbackHandler(endpoint, options) {
     const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
     const identifier = String(body.identifier || body.email || '').trim();
     const password = String(body.password || '').trim();
-    const savedAdminPass = localStorage.getItem('egs_admin_password') || 'admin3636';
+    const savedAdminPass = localStorage.getItem('egs_admin_password');
     const savedAdminProfile = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null');
-    const adminPhone = savedAdminProfile?.phone || '6352454247';
-    const adminUser = savedAdminProfile?.username || 'admin';
-    const adminEmail = savedAdminProfile?.email || 'admin@ecogreensolar.com';
 
-    if ((identifier === adminPhone || identifier === adminUser || identifier === adminEmail || identifier === '6352454247' || identifier === 'admin') && 
-        (password === savedAdminPass || password === 'admin3636')) {
+    if (savedAdminPass && password === savedAdminPass) {
       return {
         token: 'admin-live-session-token',
         user: savedAdminProfile || {
           id: 1,
-          name: 'Admin Supervisor',
-          username: 'admin',
-          email: 'admin@ecogreensolar.com',
+          name: 'System',
+          username: 'system',
+          email: 'system@ecogreensolar.co.in',
           role: 'admin',
-          phone: '6352454247'
+          phone: identifier
         }
       };
     }
     const users = mockStore.getUsers();
     const matchingUsers = users.filter(u => (u.phone === identifier || u.email === identifier || u.name === identifier || u.username === identifier));
-    const foundWithPass = matchingUsers.find(u => (password === u.password || (u.role === 'admin' && password === savedAdminPass)));
+    const foundWithPass = matchingUsers.find(u => (password === u.password || (u.role === 'admin' && savedAdminPass && password === savedAdminPass)));
     if (foundWithPass) {
       return {
         token: `session-token-${foundWithPass.id}`,
@@ -1444,11 +1440,11 @@ function fallbackHandler(endpoint, options) {
     const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
     const existing = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null') || {
       id: 1,
-      name: 'Admin Supervisor',
-      username: 'admin',
-      email: 'admin@ecogreensolar.com',
+      name: 'System',
+      username: 'system',
+      email: 'system@ecogreensolar.co.in',
       role: 'admin',
-      phone: '6352454247'
+      phone: ''
     };
     const updated = { ...existing, ...body };
     localStorage.setItem('egs_admin_profile', JSON.stringify(updated));
@@ -1457,7 +1453,7 @@ function fallbackHandler(endpoint, options) {
 
   if (endpoint.startsWith('/auth/me')) {
     const saved = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null');
-    return { user: saved || { id: 1, name: 'Admin Supervisor', username: 'admin', email: 'admin@ecogreensolar.com', role: 'admin', phone: '6352454247' } };
+    return { user: saved || { id: 1, name: 'System', username: 'system', email: 'system@ecogreensolar.co.in', role: 'admin', phone: '' } };
   }
 
   if (endpoint.startsWith('/customers/search')) {
