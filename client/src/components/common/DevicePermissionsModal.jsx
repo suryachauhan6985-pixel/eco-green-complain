@@ -1,7 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, MapPin, Camera, CheckCircle2, AlertCircle, Shield, X, Sparkles, ChevronRight, Check } from 'lucide-react';
+import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
-const PERMISSIONS_STORAGE_KEY = 'egs_device_permissions_prompted_at';
+const PERMISSIONS_STORAGE_KEY = 'egs_device_permissions_dismissed';
+const LEGACY_STORAGE_KEY = 'egs_device_permissions_prompted_at';
+
+const markPermissionsHandled = () => {
+  try {
+    localStorage.setItem(PERMISSIONS_STORAGE_KEY, 'true');
+    localStorage.setItem(LEGACY_STORAGE_KEY, Date.now().toString());
+  } catch (_) {}
+};
+
+const isPermissionsAlreadyHandled = () => {
+  try {
+    return (
+      localStorage.getItem(PERMISSIONS_STORAGE_KEY) === 'true' ||
+      Boolean(localStorage.getItem(LEGACY_STORAGE_KEY))
+    );
+  } catch (_) {
+    return false;
+  }
+};
 
 export const DevicePermissionsModal = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -13,6 +33,12 @@ export const DevicePermissionsModal = () => {
     camera: 'prompt'
   });
   const [gpsLocation, setGpsLocation] = useState(null);
+
+  // Stage: Escape handling
+  useEscapeHandler(() => {
+    handleDismiss();
+    return true;
+  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
 
   const checkCurrentPermissions = async () => {
     let notif = 'default';
@@ -46,33 +72,25 @@ export const DevicePermissionsModal = () => {
 
   useEffect(() => {
     const initCheck = async () => {
+      // 1. Strict One-Time Device Check:
+      // If already prompted or handled on this browser, NEVER prompt again
+      // until browser data & cache are explicitly cleared by the user.
+      if (isPermissionsAlreadyHandled()) {
+        markPermissionsHandled();
+        return;
+      }
+
       const states = await checkCurrentPermissions();
-      // If all 3 are already granted, no need to prompt
+      // If all 3 are already granted, mark completed and never prompt
       if (states.notif === 'granted' && states.geo === 'granted' && states.cam === 'granted') {
+        markPermissionsHandled();
         return;
       }
 
-      // Check if user dismissed it recently in this browser session
-      const lastPrompted = localStorage.getItem(PERMISSIONS_STORAGE_KEY);
-      const twelveHoursMs = 12 * 60 * 60 * 1000;
-      if (lastPrompted && Date.now() - parseInt(lastPrompted, 10) < twelveHoursMs) {
-        return;
-      }
-
-      // Proactively trigger native browser location prompt on first load if supported
-      if ('geolocation' in navigator && states.geo === 'prompt') {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            setPermissionStates(prev => ({ ...prev, geolocation: 'granted' }));
-            setGpsLocation({ lat: pos.coords.latitude.toFixed(4), lng: pos.coords.longitude.toFixed(4) });
-          },
-          () => {},
-          { timeout: 8000 }
-        );
-      }
-
-      // Show the permission setup dialog after short delay
+      // Show the permission setup dialog after short delay (only once per device)
       const timer = setTimeout(() => {
+        // Record immediately so that even on refresh/close, it never prompts again
+        markPermissionsHandled();
         setIsOpen(true);
       }, 1000);
 
@@ -86,6 +104,7 @@ export const DevicePermissionsModal = () => {
   const requestNotificationPermission = async () => {
     try {
       setActivePrompt('notification');
+      markPermissionsHandled();
       if ('Notification' in window) {
         const res = await Notification.requestPermission();
         setPermissionStates(prev => ({ ...prev, notification: res }));
@@ -114,6 +133,7 @@ export const DevicePermissionsModal = () => {
   const requestLocationPermission = async () => {
     try {
       setActivePrompt('geolocation');
+      markPermissionsHandled();
       if ('geolocation' in navigator) {
         return await new Promise((resolve) => {
           navigator.geolocation.getCurrentPosition(
@@ -141,6 +161,7 @@ export const DevicePermissionsModal = () => {
   const requestCameraPermission = async () => {
     try {
       setActivePrompt('camera');
+      markPermissionsHandled();
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
@@ -164,6 +185,7 @@ export const DevicePermissionsModal = () => {
   // Request missing permissions sequentially without colliding browser prompts
   const handleRequestAllPermissions = async () => {
     setRequesting(true);
+    markPermissionsHandled();
 
     try {
       if (permissionStates.notification !== 'granted') {
@@ -179,7 +201,7 @@ export const DevicePermissionsModal = () => {
       console.warn('Batch permission request notice:', err);
     } finally {
       setRequesting(false);
-      localStorage.setItem(PERMISSIONS_STORAGE_KEY, Date.now().toString());
+      markPermissionsHandled();
     }
 
     // Auto-close smoothly after 1.5 seconds so user sees the green checkmark
@@ -189,7 +211,7 @@ export const DevicePermissionsModal = () => {
   };
 
   const handleDismiss = () => {
-    localStorage.setItem(PERMISSIONS_STORAGE_KEY, Date.now().toString());
+    markPermissionsHandled();
     setIsOpen(false);
   };
 
@@ -207,12 +229,14 @@ export const DevicePermissionsModal = () => {
         paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem))',
         paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))'
       }}
+      onClick={handleDismiss}
     >
       <div 
         className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden modal-enter-scale text-left"
         role="dialog"
         aria-modal="true"
         aria-labelledby="permission-dialog-title"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header with brand gradient */}
         <div className="relative bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-6 text-white text-left">
