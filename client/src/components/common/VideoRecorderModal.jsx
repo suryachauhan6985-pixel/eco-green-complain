@@ -26,15 +26,15 @@ import {
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 // High Quality HD Compression & Multi-Part Auto-Splitting (50 MB limit compliance)
-// 1. Bitrate: 1.20 Mbps video + 64 kbps audio = ~1.26 Mbps (~158 KB/s)
-//    Yields ~9.5 MB per minute of clear 720p HD footage (solar panel serials, meter readings, wiring).
-// 2. Auto-Split Threshold: 42 MB (Comfortably under the 50 MB server upload limit).
-//    When a recording nears 42 MB, it auto-seals Part 1 and seamlessly continues recording into Part 2
+// 1. Bitrate: 850 kbps video + 48 kbps audio = ~898 kbps (~112 KB/s)
+//    Yields ~6.5 MB per minute of clear 720p HD footage (solar panel serials, meter readings, wiring).
+// 2. Auto-Split Threshold: 35 MB (Comfortably under the 50 MB server upload limit, fast mobile uplink).
+//    When a recording nears 35 MB, it auto-seals Part 1 and seamlessly continues recording into Part 2
 //    without interrupting camera feed or requiring any manual action from the user.
 const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // Strict 50 MB server limit
-const SPLIT_THRESHOLD_BYTES = 42 * 1024 * 1024; // 42 MB auto-split boundary per part
-const TARGET_VIDEO_BITRATE = 1_200_000; // 1.2 Mbps video bitrate for high clarity + low file size (~9 MB per minute)
-const TARGET_AUDIO_BITRATE = 64_000; // 64 kbps mono audio
+const SPLIT_THRESHOLD_BYTES = 35 * 1024 * 1024; // 35 MB auto-split boundary per part
+const TARGET_VIDEO_BITRATE = 850_000; // 850 kbps video bitrate for high clarity + lightweight mobile upload (~6.5 MB per minute)
+const TARGET_AUDIO_BITRATE = 48_000; // 48 kbps clear mono voice audio
 const MAX_RECORDING_SECONDS = 600; // 10 minutes max total duration across parts
 
 export function VideoRecorderModal({
@@ -492,7 +492,7 @@ export function VideoRecorderModal({
         setActivePartNumber(nextPartNum);
 
         const lastPartFile = completedPartsRef.current[completedPartsRef.current.length - 1];
-        const lastPartMB = lastPartFile ? (lastPartFile.size / (1024 * 1024)).toFixed(1) : '42.0';
+        const lastPartMB = lastPartFile ? (lastPartFile.size / (1024 * 1024)).toFixed(1) : '35.0';
         setSplitNotification(`Part ${currentPartNum} saved (${lastPartMB} MB) • Seamlessly recording Part ${nextPartNum}...`);
 
         setTimeout(() => {
@@ -595,8 +595,8 @@ export function VideoRecorderModal({
       const mimeType = getOptimalMimeType();
       setRecordedMimeType(mimeType || 'video/webm');
 
-      // Optimized High-Quality Compression (~1.20 Mbps Video + 64 kbps Audio):
-      // Results in ~9.5 MB per minute of clear 720p HD recording.
+      // Optimized High-Quality Compression (~850 kbps Video + 48 kbps Audio):
+      // Results in ~6.5 MB per minute of clear 720p HD recording.
       // Solar inverter serial numbers, meter readings, panel barcodes, and wire connections remain razor sharp.
       const recorderOptions = {
         videoBitsPerSecond: TARGET_VIDEO_BITRATE,
@@ -1204,11 +1204,11 @@ export function VideoRecorderModal({
           </div>
 
           {/* Near-Limit Live Hint (Shows that Part N will auto-split seamlessly into next part) */}
-          {isRecording && activePartSizeBytes > 36 * 1024 * 1024 && !splitNotification && (
+          {isRecording && activePartSizeBytes > 30 * 1024 * 1024 && !splitNotification && (
             <div className="absolute top-16 inset-x-4 max-w-sm mx-auto p-2.5 rounded-xl bg-teal-950/90 backdrop-blur-md border border-teal-400 text-white text-xs shadow-2xl flex items-center gap-2 z-20 pointer-events-none">
               <Sparkles className="w-4 h-4 text-teal-300 shrink-0 animate-spin" />
               <span>
-                <strong>Part {activePartNumber} nearing 42 MB.</strong> Will auto-split seamlessly into Part {activePartNumber + 1}. Keep recording!
+                <strong>Part {activePartNumber} nearing 35 MB.</strong> Will auto-split seamlessly into Part {activePartNumber + 1}. Keep recording!
               </span>
             </div>
           )}

@@ -97,40 +97,73 @@ function getAuthToken() {
   return sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
 }
 
+function isMobileOrSlowNetwork() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  try {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+      if (conn.saveData) return true;
+      if (['slow-2g', '2g', '3g', '4g'].includes(conn.effectiveType)) return true;
+    }
+    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '')) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 /**
- * Upload an individual chunk with exponential backoff retry
+ * Upload an individual chunk via XMLHttpRequest with real-time byte progress and exponential backoff retry
  */
-async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob, maxRetries = 4) {
+async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob, onChunkProgress = null, maxRetries = 4) {
   const token = getAuthToken();
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const chunkUrl = `/api/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&storage_key=${encodeURIComponent(storageKey)}&part_number=${partNumber}`;
 
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const chunkUrl = `/api/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&storage_key=${encodeURIComponent(storageKey)}&part_number=${partNumber}`;
-      const res = await fetch(chunkUrl, {
-        method: 'POST',
-        headers,
-        body: chunkBlob
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', chunkUrl);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && onChunkProgress) {
+            onChunkProgress(e.loaded);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data && data.success && data.etag) {
+                if (onChunkProgress) onChunkProgress(chunkBlob.size);
+                resolve({
+                  partNumber,
+                  etag: data.etag
+                });
+              } else {
+                reject(new Error(data?.error || 'Missing ETag in chunk response'));
+              }
+            } catch (parseErr) {
+              reject(parseErr);
+            }
+          } else {
+            reject(new Error(`Server returned HTTP ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error during chunk upload'));
+        xhr.ontimeout = () => reject(new Error('Timeout during chunk upload'));
+        xhr.timeout = 180000; // 3 minutes timeout per 5MB chunk
+        xhr.send(chunkBlob);
       });
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errText}`);
-      }
-
-      const data = await res.json();
-      if (!data.success || !data.etag) {
-        throw new Error(data.error || 'Missing ETag in chunk response');
-      }
-
-      return {
-        partNumber,
-        etag: data.etag
-      };
+      return result;
     } catch (err) {
       lastError = err;
+      if (onChunkProgress) onChunkProgress(0);
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, Math.min(3000, attempt * 600)));
       }
@@ -142,7 +175,7 @@ async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob,
 
 /**
  * High-Speed Chunked Multipart Upload for large files (> 5MB)
- * Slices file into 5MB chunks and uploads with concurrency and live progress.
+ * Slices file into 5MB chunks and uploads with live byte-level streaming progress.
  */
 export async function uploadFileChunked(file, identifier = 'temp', uploadType = 'complaint', onProgress = null) {
   const token = getAuthToken();
@@ -173,10 +206,24 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
   const totalSize = file.size;
   const totalParts = Math.ceil(totalSize / CHUNK_SIZE);
   const completedParts = [];
-  let loadedBytes = 0;
+  
+  // Track loaded bytes across all parts for smooth live progress
+  const partLoadedMap = new Map();
+  for (let i = 1; i <= totalParts; i++) {
+    partLoadedMap.set(i, 0);
+  }
+
+  const emitProgress = () => {
+    if (!onProgress) return;
+    let sumLoaded = 0;
+    for (const b of partLoadedMap.values()) {
+      sumLoaded += b;
+    }
+    const percent = Math.min(99, Math.round((sumLoaded / totalSize) * 100));
+    onProgress(percent, sumLoaded, totalSize);
+  };
 
   try {
-    // 2. Upload chunks with a concurrency worker pool of 2 simultaneous parts
     const partQueue = [];
     for (let i = 0; i < totalParts; i++) {
       const start = i * CHUNK_SIZE;
@@ -189,20 +236,30 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
       });
     }
 
-    const workerConcurrency = Math.min(2, totalParts);
+    // Adaptive concurrency: on mobile networks, 1 chunk at a time prevents TCP bufferbloat and socket stalls.
+    // On desktop/broadband, 2 concurrent chunks maximize throughput.
+    const isMobileNet = isMobileOrSlowNetwork();
+    const workerConcurrency = isMobileNet ? 1 : Math.min(2, totalParts);
     let queueIndex = 0;
 
     const worker = async () => {
       while (queueIndex < partQueue.length) {
         const item = partQueue[queueIndex++];
-        const partResult = await uploadChunkWithRetry(storage_key, upload_id, item.partNumber, item.blob);
-        completedParts.push(partResult);
-        loadedBytes += (item.end - item.start);
+        const handleChunkProgress = (chunkLoaded) => {
+          partLoadedMap.set(item.partNumber, chunkLoaded);
+          emitProgress();
+        };
 
-        if (onProgress) {
-          const percent = Math.min(98, Math.round((loadedBytes / totalSize) * 100));
-          onProgress(percent);
-        }
+        const partResult = await uploadChunkWithRetry(
+          storage_key,
+          upload_id,
+          item.partNumber,
+          item.blob,
+          handleChunkProgress
+        );
+        completedParts.push(partResult);
+        partLoadedMap.set(item.partNumber, item.blob.size);
+        emitProgress();
       }
     };
 
@@ -230,7 +287,7 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
     }
 
     const finalData = await completeRes.json();
-    if (onProgress) onProgress(100);
+    if (onProgress) onProgress(100, totalSize, totalSize);
 
     return {
       file_name: finalData.file_name || file.name,
@@ -491,31 +548,51 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
   const totalBytesAllFiles = preOptimized.reduce((sum, it) => sum + it.size, 0) || 1;
   let activeCompletedFiles = 0;
 
+  // Immediately notify that preparation is complete and live upload is starting
+  if (onProgress) {
+    const totalMB = (totalBytesAllFiles / (1024 * 1024)).toFixed(1);
+    onProgress({
+      percent: 4,
+      currentFile: preOptimized[0]?.name || 'File 1',
+      currentIndex: 1,
+      totalFiles: preOptimized.length,
+      stage: `Uploading (1/${preOptimized.length}) • 0.0 / ${totalMB} MB`
+    });
+  }
+
   const updateAggregateProgress = (currentFileName, currentIndex) => {
     if (!onProgress) return;
-    const totalLoadedBytes = preOptimized.reduce((sum, it) => sum + it.loadedBytes, 0);
+    const totalLoadedBytes = preOptimized.reduce((sum, it) => sum + (it.loadedBytes || 0), 0);
     const overallPct = Math.min(98, Math.round((totalLoadedBytes / totalBytesAllFiles) * 94) + 4);
+
+    const loadedMB = (totalLoadedBytes / (1024 * 1024)).toFixed(1);
+    const totalMB = (totalBytesAllFiles / (1024 * 1024)).toFixed(1);
+    const activeIdx = Math.min(preOptimized.length, activeCompletedFiles + 1);
 
     onProgress({
       percent: overallPct,
       currentFile: currentFileName,
-      currentIndex,
+      currentIndex: activeIdx,
       totalFiles: preOptimized.length,
-      stage: `Uploading (${activeCompletedFiles}/${preOptimized.length} finished)`
+      stage: `Uploading (${activeIdx}/${preOptimized.length}) • ${loadedMB} / ${totalMB} MB`
     });
   };
 
   const results = new Array(preOptimized.length);
   let queueIndex = 0;
 
-  // Worker for concurrent execution
+  // Worker for execution
   const worker = async () => {
     while (queueIndex < preOptimized.length) {
       const itemIndex = queueIndex++;
       const item = preOptimized[itemIndex];
 
-      const handleSingleProgress = (filePct) => {
-        item.loadedBytes = Math.round((filePct / 100) * item.size);
+      const handleSingleProgress = (filePct, loadedBytes) => {
+        if (typeof loadedBytes === 'number') {
+          item.loadedBytes = loadedBytes;
+        } else {
+          item.loadedBytes = Math.round((filePct / 100) * item.size);
+        }
         updateAggregateProgress(item.name, item.index);
       };
 
@@ -538,7 +615,12 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
     }
   };
 
-  const poolSize = Math.min(concurrency, preOptimized.length);
+  // On mobile devices or when uploading large files (> 5MB, like videos),
+  // serialize file uploads (concurrency 1) to dedicate 100% of mobile uplink bandwidth to
+  // finishing each file without TCP packet collisions or connection timeouts.
+  const hasLargeFile = preOptimized.some(it => it.size > CHUNK_SIZE);
+  const isMobileNet = isMobileOrSlowNetwork();
+  const poolSize = (isMobileNet || hasLargeFile) ? 1 : Math.min(concurrency, preOptimized.length);
   const workers = Array.from({ length: poolSize }, () => worker());
   await Promise.all(workers);
 

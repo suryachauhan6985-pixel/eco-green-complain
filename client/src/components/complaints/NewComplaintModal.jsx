@@ -1015,7 +1015,7 @@ export const NewComplaintModal = ({
             onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
               setUploadProgress({
                 isUploading: true,
-                progress: Math.min(94, Math.max(5, percent)),
+                progress: Math.min(96, Math.max(1, percent)),
                 currentFile,
                 currentIndex,
                 totalFiles,
@@ -1134,7 +1134,7 @@ export const NewComplaintModal = ({
             onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
               setUploadProgress({
                 isUploading: true,
-                progress: Math.min(94, Math.max(5, percent)),
+                progress: Math.min(96, Math.max(1, percent)),
                 currentFile,
                 currentIndex,
                 totalFiles,

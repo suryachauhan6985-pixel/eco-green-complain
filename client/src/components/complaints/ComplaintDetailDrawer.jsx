@@ -390,7 +390,7 @@ export const ComplaintDetailDrawer = ({
         onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
           setAttachUploadProgress({
             isUploading: true,
-            progress: Math.min(95, Math.max(5, percent)),
+            progress: Math.min(96, Math.max(1, percent)),
             currentFile,
             currentIndex,
             totalFiles,
@@ -1098,7 +1098,7 @@ export const ComplaintDetailDrawer = ({
           onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
             setResolveUploadProgress({
               isUploading: true,
-              progress: Math.min(94, Math.max(5, percent)),
+              progress: Math.min(96, Math.max(1, percent)),
               currentFile,
               currentIndex,
               totalFiles,
@@ -1341,7 +1341,7 @@ export const ComplaintDetailDrawer = ({
           onProgress: ({ percent, currentFile, currentIndex, totalFiles, stage }) => {
             setAttachUploadProgress({
               isUploading: true,
-              progress: Math.min(94, Math.max(5, percent)),
+              progress: Math.min(96, Math.max(1, percent)),
               currentFile,
               currentIndex,
               totalFiles,
