@@ -54,6 +54,12 @@ export function VideoRecorderModal({
   // Dedicated Fixed Recording Orientation: 'portrait' | 'landscape' | null (null requires selection)
   const [selectedOrientation, setSelectedOrientation] = useState(null);
 
+  // Photo snapshot state & camera flash animation
+  const [capturedPhotos, setCapturedPhotos] = useState([]);
+  const [photoFlash, setPhotoFlash] = useState(false);
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [activeDeviceId, setActiveDeviceId] = useState(null);
+
   // Zoom control state - Defaults to 1x with 0.5x ultra-wide support
   const [zoomLevel, setZoomLevel] = useState(1);
   const [zoomCapabilities, setZoomCapabilities] = useState({
@@ -170,6 +176,13 @@ export function VideoRecorderModal({
     setZoomLevel(1); // strictly reset zoom to 1x
     setPreviewMeta({ width: 0, height: 0, isLandscape: false, rotation: 0 });
     setLiveStreamMeta({ width: 0, height: 0, isLandscape: false });
+    setCapturedPhotos(prev => {
+      prev.forEach(p => {
+        try { URL.revokeObjectURL(p.preview); } catch (_) {}
+      });
+      return [];
+    });
+    setPhotoFlash(false);
 
     currentPartChunksRef.current = [];
     completedPartsRef.current = [];
@@ -202,26 +215,196 @@ export function VideoRecorderModal({
     return '';
   };
 
-  // Apply zoom level (both native hardware optical/sensor zoom and smooth fallback digital scale)
-  const applyZoom = useCallback(async (targetZoom) => {
-    const minZ = 0.5;
-    const maxZ = zoomCapabilities.max || 5;
-    const clamped = Math.max(minZ, Math.min(maxZ, Number(Number(targetZoom).toFixed(1))));
-    setZoomLevel(clamped);
+  // Query all available camera devices to find physical ultra-wide and secondary lenses
+  const detectCameras = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return [];
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      setAvailableCameras(videoInputs);
+      return videoInputs;
+    } catch (_) {
+      return [];
+    }
+  }, []);
 
-    if (stream) {
-      const track = stream.getVideoTracks()[0];
-      if (track && zoomCapabilities.supported) {
-        if (clamped >= (zoomCapabilities.min || 1)) {
-          try {
-            await track.applyConstraints({ advanced: [{ zoom: clamped }] });
-          } catch (e) {
-            console.warn('Hardware zoom constraint application error:', e);
+  // Seamlessly switch video track on active stream without interrupting audio or MediaRecorder
+  const switchVideoTrack = useCallback(async (newVideoConstraints) => {
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.requestData(); } catch (_) {}
+      }
+
+      let tempStream;
+      try {
+        tempStream = await navigator.mediaDevices.getUserMedia({
+          video: newVideoConstraints,
+          audio: false
+        });
+      } catch (err1) {
+        // Fallback: If exact deviceId was rejected, try ideal deviceId or facingMode
+        if (newVideoConstraints.deviceId) {
+          const rawId = typeof newVideoConstraints.deviceId === 'object'
+            ? (newVideoConstraints.deviceId.exact || newVideoConstraints.deviceId.ideal)
+            : newVideoConstraints.deviceId;
+          tempStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { ideal: rawId },
+              width: newVideoConstraints.width,
+              height: newVideoConstraints.height
+            },
+            audio: false
+          });
+        } else {
+          throw err1;
+        }
+      }
+
+      const newTrack = tempStream.getVideoTracks()[0];
+      if (!newTrack) return null;
+
+      if (activeStreamRef.current) {
+        const oldTracks = activeStreamRef.current.getVideoTracks();
+        oldTracks.forEach(t => {
+          activeStreamRef.current.removeTrack(t);
+          try { t.stop(); } catch (_) {}
+        });
+        activeStreamRef.current.addTrack(newTrack);
+
+        if (videoPreviewRef.current) {
+          videoPreviewRef.current.srcObject = activeStreamRef.current;
+          videoPreviewRef.current.play().catch(() => {});
+        }
+        setStream(activeStreamRef.current);
+      }
+
+      const settings = newTrack.getSettings?.() || {};
+      if (settings.deviceId) setActiveDeviceId(settings.deviceId);
+
+      let isHwZoom = false;
+      let minZ = 0.5, maxZ = 5, stepZ = 0.1;
+      if (typeof newTrack.getCapabilities === 'function') {
+        const caps = newTrack.getCapabilities();
+        if ('zoom' in caps) {
+          isHwZoom = true;
+          minZ = caps.zoom.min ?? 0.5;
+          maxZ = caps.zoom.max ?? 5;
+          stepZ = caps.zoom.step ?? 0.1;
+        }
+      }
+      setZoomCapabilities({
+        supported: isHwZoom,
+        min: Math.min(0.5, minZ),
+        max: Math.max(3, maxZ),
+        step: stepZ
+      });
+
+      return newTrack;
+    } catch (err) {
+      console.warn('Dynamic video track switch failed:', err);
+      return null;
+    }
+  }, []);
+
+  // Apply zoom level (both native hardware optical/sensor zoom and physical ultra-wide camera lens switching)
+  const applyZoom = useCallback(async (targetZoom) => {
+    const target = Number(Number(targetZoom).toFixed(1));
+    setZoomLevel(target);
+
+    if (!activeStreamRef.current) return;
+    let track = activeStreamRef.current.getVideoTracks()[0];
+    if (!track) return;
+
+    const isLandscape = selectedOrientation === 'landscape';
+    const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+    const hasHardwareZoom = caps.zoom !== undefined;
+    const minHw = caps.zoom?.min ?? 1;
+
+    // Refresh devices if availableCameras is empty
+    let cams = availableCameras;
+    if (!cams || cams.length === 0) {
+      cams = await detectCameras();
+    }
+
+    const backCams = cams.filter(c => {
+      const lbl = (c.label || '').toLowerCase();
+      return lbl.includes('back') || lbl.includes('rear') || lbl.includes('environment') || (!lbl.includes('front') && !lbl.includes('user'));
+    });
+
+    // Case 1: Ultra-Wide (0.5x)
+    if (target < 1) {
+      // 1A: If current track physically supports zoom <= 0.5 in hardware
+      if (hasHardwareZoom && minHw <= target) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: target }] });
+          return;
+        } catch (_) {}
+      }
+
+      // 1B: Multi-Camera phone: Find the Ultra-Wide lens among back cameras
+      if (backCams.length > 1 && facingMode === 'environment') {
+        const ultraWideCam = backCams.find(c => {
+          const l = (c.label || '').toLowerCase();
+          return l.includes('ultra') || l.includes('wide') || l.includes('0.5') || l.includes('uw') || l.includes('2');
+        }) || (backCams[0].deviceId === activeDeviceId ? backCams[1] : backCams[0]);
+
+        if (ultraWideCam && ultraWideCam.deviceId && ultraWideCam.deviceId !== activeDeviceId) {
+          const switchedTrack = await switchVideoTrack({
+            deviceId: { exact: ultraWideCam.deviceId },
+            width: isLandscape ? { ideal: 1280 } : { ideal: 720 },
+            height: isLandscape ? { ideal: 720 } : { ideal: 1280 }
+          });
+          if (switchedTrack) {
+            // Apply minimum zoom on ultra-wide camera
+            if (typeof switchedTrack.getCapabilities === 'function' && switchedTrack.getCapabilities().zoom) {
+              const swCaps = switchedTrack.getCapabilities().zoom;
+              try {
+                await switchedTrack.applyConstraints({ advanced: [{ zoom: swCaps.min || 1 }] });
+              } catch (_) {}
+            }
+            return;
           }
         }
       }
+
+      // 1C: If device physically has no ultra-wide lens, fallback to lowest possible hardware zoom
+      if (hasHardwareZoom) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: minHw }] });
+        } catch (_) {}
+      }
+      return;
     }
-  }, [stream, zoomCapabilities]);
+
+    // Case 2: Standard (1x) or Telephoto (2x, 3x)
+    // If currently switched to secondary ultra-wide camera, switch back to the main back camera
+    if (backCams.length > 1 && facingMode === 'environment') {
+      const mainCam = backCams.find(c => {
+        const l = (c.label || '').toLowerCase();
+        return (l.includes('0') || l.includes('main') || !l.includes('wide')) && !l.includes('front');
+      }) || backCams[0];
+
+      if (mainCam && mainCam.deviceId && activeDeviceId && activeDeviceId !== mainCam.deviceId) {
+        const switchedTrack = await switchVideoTrack({
+          deviceId: { exact: mainCam.deviceId },
+          width: isLandscape ? { ideal: 1280 } : { ideal: 720 },
+          height: isLandscape ? { ideal: 720 } : { ideal: 1280 }
+        });
+        if (switchedTrack) track = switchedTrack;
+      }
+    }
+
+    // Apply hardware zoom constraint directly to main camera
+    if (track && (typeof track.getCapabilities === 'function' && track.getCapabilities().zoom)) {
+      const trackCaps = track.getCapabilities().zoom;
+      const clamped = Math.max(trackCaps.min || 1, Math.min(trackCaps.max || 8, target));
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: clamped }] });
+      } catch (e) {
+        console.warn('Hardware zoom constraint application error:', e);
+      }
+    }
+  }, [availableCameras, activeDeviceId, facingMode, selectedOrientation, switchVideoTrack, detectCameras]);
 
   // Start hardware camera stream with fixed orientation HD constraints and 1x zoom
   const initializeCamera = useCallback(async (desiredFacingMode = facingMode, desiredOrientation = selectedOrientation) => {
@@ -310,6 +493,14 @@ export function VideoRecorderModal({
       activeStreamRef.current = newStream;
       setStream(newStream);
 
+      // Store initial camera device ID and detect lenses now that permission is active
+      const curTrack = newStream.getVideoTracks()[0];
+      const curSettings = curTrack?.getSettings?.() || {};
+      if (curSettings.deviceId) {
+        setActiveDeviceId(curSettings.deviceId);
+      }
+      detectCameras().catch(() => {});
+
       // Immediately connect to video element to eliminate black screen
       if (videoPreviewRef.current) {
         videoPreviewRef.current.srcObject = newStream;
@@ -376,7 +567,7 @@ export function VideoRecorderModal({
     } finally {
       setIsInitializing(false);
     }
-  }, [isOpen, facingMode, selectedOrientation]);
+  }, [isOpen, facingMode, selectedOrientation, detectCameras]);
 
   // Cleanly teardown camera when modal closes
   useEffect(() => {
@@ -443,13 +634,57 @@ export function VideoRecorderModal({
     }
   }, [stream]);
 
-  // Flip camera between environment (back) and user (front)
-  const handleToggleFacingMode = async () => {
-    if (isRecording || !selectedOrientation) return;
+  // Flip camera between environment (back) and user (front) - Supports live switching during recording!
+  const handleToggleFacingMode = async (e) => {
+    if (e) e.stopPropagation();
+    if (!selectedOrientation) return;
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
-    await initializeCamera(nextMode, selectedOrientation);
+
+    const isLandscape = selectedOrientation === 'landscape';
+    const newConstraints = {
+      facingMode: { ideal: nextMode },
+      width: isLandscape ? { ideal: 1280, min: 640 } : { ideal: 720, min: 360 },
+      height: isLandscape ? { ideal: 720, min: 360 } : { ideal: 1280, min: 640 },
+      aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) }
+    };
+
+    if (isRecording) {
+      await switchVideoTrack(newConstraints);
+    } else {
+      await initializeCamera(nextMode, selectedOrientation);
+    }
   };
+
+  // High-resolution photo snapshot from active video stream
+  const handleCapturePhoto = useCallback((e) => {
+    if (e) e.stopPropagation();
+    if (!videoPreviewRef.current || !activeStreamRef.current) return;
+    const video = videoPreviewRef.current;
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, w, h);
+
+    setPhotoFlash(true);
+    setTimeout(() => setPhotoFlash(false), 200);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+      const photoName = `IMG_${ts}_site_photo.jpg`;
+      const photoFile = new File([blob], photoName, { type: 'image/jpeg', lastModified: Date.now() });
+      const photoPreview = URL.createObjectURL(blob);
+
+      setCapturedPhotos(prev => [...prev, { file: photoFile, preview: photoPreview, name: photoName }]);
+    }, 'image/jpeg', 0.92);
+  }, []);
 
   // Touch pinch-to-zoom event handlers
   const handleTouchStart = (e) => {
@@ -728,36 +963,48 @@ export function VideoRecorderModal({
 
   // Confirm and finish - passes either single file or array of split files
   const handleUseVideo = () => {
+    let videoFiles = [];
     if (!recordedParts || recordedParts.length === 0) {
-      if (!recordedBlob) return;
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const timestampStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const ext = recordedMimeType.includes('mp4') ? 'mp4' : 'webm';
-      const orientationTag = selectedOrientation || (previewMeta.isLandscape ? 'landscape' : 'portrait');
-      const fileName = `VID_${timestampStr}_${orientationTag}_hd.${ext}`;
+      if (recordedBlob) {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const timestampStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        const ext = recordedMimeType.includes('mp4') ? 'mp4' : 'webm';
+        const orientationTag = selectedOrientation || (previewMeta.isLandscape ? 'landscape' : 'portrait');
+        const fileName = `VID_${timestampStr}_${orientationTag}_hd.${ext}`;
 
-      const videoFile = new File([recordedBlob], fileName, {
-        type: recordedMimeType || 'video/webm',
-        lastModified: Date.now()
-      });
-
-      stopStream();
-      resetRecording();
-      setSelectedOrientation(null);
-      onRecordingComplete(videoFile);
-      onClose();
-      return;
+        const videoFile = new File([recordedBlob], fileName, {
+          type: recordedMimeType || 'video/webm',
+          lastModified: Date.now()
+        });
+        videoFiles = [videoFile];
+      }
+    } else {
+      videoFiles = recordedParts;
     }
 
-    const filesToSubmit = recordedParts.length === 1 ? recordedParts[0] : recordedParts;
+    const photoFiles = capturedPhotos.map(p => p.file);
+    const combined = [...videoFiles, ...photoFiles];
+
+    if (combined.length === 0) return;
 
     stopStream();
     resetRecording();
     setSelectedOrientation(null);
-    onRecordingComplete(filesToSubmit);
+    onRecordingComplete(combined.length === 1 ? combined[0] : combined);
     onClose();
     return;
+  };
+
+  const handleUseCapturedPhotosOnly = () => {
+    const photoFiles = capturedPhotos.map(p => p.file);
+    if (photoFiles.length === 0) return;
+
+    stopStream();
+    resetRecording();
+    setSelectedOrientation(null);
+    onRecordingComplete(photoFiles.length === 1 ? photoFiles[0] : photoFiles);
+    onClose();
   };
 
   // Fallback to native device file/camera input with size verification
@@ -982,13 +1229,13 @@ export function VideoRecorderModal({
                     isLandscape: w > h
                   });
                 }}
-                style={{
-                  transform: (!zoomCapabilities.supported || zoomLevel < (zoomCapabilities.min || 1) || zoomLevel > 1) ? `scale(${zoomLevel})` : undefined,
-                  transformOrigin: 'center center',
-                  transition: 'transform 0.15s ease-out'
-                }}
                 className="w-full h-full object-contain bg-black"
               />
+            )}
+
+            {/* Camera Shutter Flash Animation */}
+            {photoFlash && (
+              <div className="absolute inset-0 bg-white z-50 pointer-events-none animate-out fade-out duration-200" />
             )}
 
             {/* Device Rotation Guidance Helpers */}
@@ -1229,12 +1476,25 @@ export function VideoRecorderModal({
                 </button>
               )}
 
-              {/* Flip camera between Rear and Front (when not recording) */}
-              {!isRecording && !recordedBlob && (
+              {/* Snapped Photos Counter Pill */}
+              {capturedPhotos.length > 0 && !recordedBlob && (
+                <button
+                  type="button"
+                  onClick={handleUseCapturedPhotosOnly}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg transition-colors cursor-pointer border border-emerald-400/50"
+                  title="Click to save and use captured photos"
+                >
+                  <Camera className="w-3.5 h-3.5 text-white" />
+                  <span>{capturedPhotos.length} Photo{capturedPhotos.length > 1 ? 's' : ''}</span>
+                </button>
+              )}
+
+              {/* Flip camera between Rear and Front (Always available live, even while recording!) */}
+              {!recordedBlob && (
                 <button
                   type="button"
                   onClick={handleToggleFacingMode}
-                  className="p-2 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md"
+                  className="p-2 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-teal-400 hover:text-white border border-teal-500/40 transition-all cursor-pointer shadow-md"
                   title={`Flip camera (${facingMode === 'environment' ? 'Switch to Front' : 'Switch to Rear'})`}
                 >
                   <FlipHorizontal className="w-4 h-4" />
@@ -1298,16 +1558,30 @@ export function VideoRecorderModal({
 
           {/* FLOATING BOTTOM BAR: Minimal Footprint Shutter Dock */}
           <div className="absolute bottom-0 inset-x-0 p-4 pb-8 sm:pb-5 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-between z-20">
-            {/* Left Slot: Gallery / File Upload Fallback */}
-            <div className="w-20 flex justify-start">
+            {/* Left Slot: Gallery / File Upload Fallback + Photo Snapshot */}
+            <div className="w-24 sm:w-28 flex items-center justify-start gap-2">
               {!isRecording && !recordedBlob && (
                 <button
                   type="button"
                   onClick={() => fileFallbackInputRef.current?.click()}
-                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md flex items-center justify-center"
+                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md flex items-center justify-center hover:border-slate-300"
                   title="Upload video from gallery or file"
                 >
-                  <Upload className="w-5 h-5 text-slate-200" />
+                  <Upload className="w-4 h-4 sm:w-5 sm:h-5 text-slate-200" />
+                </button>
+              )}
+              {!recordedBlob && (
+                <button
+                  type="button"
+                  onClick={handleCapturePhoto}
+                  className={`p-3 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-xl flex items-center justify-center active:scale-90 border-2 ${
+                    isRecording
+                      ? 'bg-white/25 hover:bg-white/35 border-white text-white ring-2 ring-white/30'
+                      : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-300 text-white'
+                  }`}
+                  title="Take photo snapshot (saved with complaint)"
+                >
+                  <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 </button>
               )}
             </div>
@@ -1333,7 +1607,9 @@ export function VideoRecorderModal({
                     <Check className="w-4 h-4" />
                     <span>
                       {recordedParts.length > 1
-                        ? `Use Video (${recordedParts.length} Parts)`
+                        ? `Use Video (${recordedParts.length} Parts${capturedPhotos.length > 0 ? ` + ${capturedPhotos.length} Photos` : ''})`
+                        : capturedPhotos.length > 0
+                        ? `Use Video & ${capturedPhotos.length} Photo${capturedPhotos.length > 1 ? 's' : ''}`
                         : 'Use Video'}
                     </span>
                   </button>
@@ -1362,13 +1638,13 @@ export function VideoRecorderModal({
               )}
             </div>
 
-            {/* Right Slot: Quick Flip Camera (Rear ↔ Front) */}
-            <div className="w-20 flex justify-end">
-              {!isRecording && !recordedBlob && (
+            {/* Right Slot: Quick Flip Camera (Rear ↔ Front) - Always visible in Idle and Live Recording */}
+            <div className="w-24 sm:w-28 flex justify-end">
+              {!recordedBlob && (
                 <button
                   type="button"
                   onClick={handleToggleFacingMode}
-                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md flex items-center justify-center"
+                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 hover:border-teal-400 transition-all cursor-pointer shadow-md flex items-center justify-center active:scale-95"
                   title={`Flip camera (${facingMode === 'environment' ? 'Switch to Front' : 'Switch to Rear'})`}
                 >
                   <FlipHorizontal className="w-5 h-5 text-teal-400" />
