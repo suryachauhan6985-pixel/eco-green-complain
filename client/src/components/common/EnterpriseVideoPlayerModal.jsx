@@ -3,6 +3,7 @@ import {
   Play,
   Pause,
   RotateCw,
+  RotateCcw,
   Volume2,
   VolumeX,
   Maximize2,
@@ -89,6 +90,64 @@ export function EnterpriseVideoPlayerModal({
     return url;
   }, [videoUrl]);
 
+  const baseTimeOffsetRef = useRef(null);
+  const maxObservedDurationRef = useRef(0);
+
+  // Probe true media duration when browser reports corrupt or infinite duration
+  const probeDuration = useCallback((url, startOffset) => {
+    if (!url) return;
+    try {
+      const probe = document.createElement('video');
+      probe.preload = 'metadata';
+      probe.muted = true;
+      probe.playsInline = true;
+      probe.src = url;
+
+      let done = false;
+      const cleanup = () => {
+        if (done) return;
+        done = true;
+        probe.removeAttribute('src');
+        probe.load();
+        probe.remove();
+      };
+
+      const timeout = setTimeout(cleanup, 4500);
+
+      probe.onloadedmetadata = () => {
+        if (Number.isFinite(probe.duration) && probe.duration > 0 && probe.duration <= 3600 && startOffset === 0) {
+          setDuration(probe.duration);
+          maxObservedDurationRef.current = Math.max(maxObservedDurationRef.current, probe.duration);
+          clearTimeout(timeout);
+          cleanup();
+          return;
+        }
+        // Force Chromium to seek to the end to discover true end timestamp
+        try {
+          probe.currentTime = 1e101;
+        } catch (_) {}
+      };
+
+      probe.onseeked = () => {
+        const rawEnd = probe.currentTime;
+        if (Number.isFinite(rawEnd) && rawEnd > 0) {
+          const realDur = startOffset > 0 ? (rawEnd - startOffset) : (rawEnd > 3600 ? 0 : rawEnd);
+          if (realDur > 0 && realDur < 3600) {
+            setDuration(realDur);
+            maxObservedDurationRef.current = Math.max(maxObservedDurationRef.current, realDur);
+          }
+        }
+        clearTimeout(timeout);
+        cleanup();
+      };
+
+      probe.onerror = () => {
+        clearTimeout(timeout);
+        cleanup();
+      };
+    } catch (_) {}
+  }, []);
+
   // Reset & reinitialize video whenever modal opens or videoUrl changes
   useEffect(() => {
     if (isOpen && videoUrl) {
@@ -100,6 +159,8 @@ export function EnterpriseVideoPlayerModal({
       setRotation(0);
       setVideoError(null);
       setShowControls(true);
+      baseTimeOffsetRef.current = null;
+      maxObservedDurationRef.current = 0;
 
       // Force video element to reload source immediately
       if (videoRef.current) {
@@ -132,17 +193,42 @@ export function EnterpriseVideoPlayerModal({
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
-  // Video Time Update & Buffer Progress
+  // Video Time Update & Buffer Progress (with stream timestamp offset normalization)
   const handleTimeUpdate = () => {
-    if (!videoRef.current || isSeeking) return;
-    const cur = videoRef.current.currentTime || 0;
-    setCurrentTime(cur);
+    const v = videoRef.current;
+    if (!v || isSeeking) return;
 
-    const buf = videoRef.current.buffered;
-    if (buf && buf.length > 0 && videoRef.current.duration > 0) {
+    // Detect base timestamp offset from first frames
+    if (baseTimeOffsetRef.current === null) {
+      if (v.seekable && v.seekable.length > 0 && v.seekable.start(0) > 10) {
+        baseTimeOffsetRef.current = v.seekable.start(0);
+      } else if (v.currentTime > 10) {
+        baseTimeOffsetRef.current = v.currentTime;
+      } else {
+        baseTimeOffsetRef.current = 0;
+      }
+    }
+
+    const offset = baseTimeOffsetRef.current || 0;
+    const relCur = Math.max(0, (v.currentTime || 0) - offset);
+    setCurrentTime(relCur);
+
+    // Track max observed duration
+    if (relCur > maxObservedDurationRef.current) {
+      maxObservedDurationRef.current = relCur;
+      if (duration < relCur) {
+        setDuration(relCur);
+      }
+    }
+
+    const dur = duration > 0 ? duration : maxObservedDurationRef.current;
+    const buf = v.buffered;
+    if (buf && buf.length > 0 && dur > 0) {
       for (let i = 0; i < buf.length; i++) {
-        if (buf.start(i) <= cur && cur <= buf.end(i)) {
-          setBufferedPercent((buf.end(i) / videoRef.current.duration) * 100);
+        const bStart = Math.max(0, buf.start(i) - offset);
+        const bEnd = Math.max(0, buf.end(i) - offset);
+        if (bStart <= relCur && relCur <= bEnd) {
+          setBufferedPercent(Math.min(100, Math.max(0, (bEnd / dur) * 100)));
           break;
         }
       }
@@ -150,14 +236,41 @@ export function EnterpriseVideoPlayerModal({
   };
 
   const handleLoadedMetadata = () => {
-    if (!videoRef.current) return;
+    const v = videoRef.current;
+    if (!v) return;
     setIsLoading(false);
-    const d = videoRef.current.duration;
-    if (Number.isFinite(d) && d > 0) {
-      setDuration(d);
+
+    // Detect starting offset
+    let startOffset = 0;
+    if (v.seekable && v.seekable.length > 0 && v.seekable.start(0) > 10) {
+      startOffset = v.seekable.start(0);
+      baseTimeOffsetRef.current = startOffset;
+    } else if (v.currentTime > 10) {
+      startOffset = v.currentTime;
+      baseTimeOffsetRef.current = startOffset;
+    } else {
+      baseTimeOffsetRef.current = 0;
     }
-    const w = videoRef.current.videoWidth || 0;
-    const h = videoRef.current.videoHeight || 0;
+
+    // Evaluate duration
+    const d = v.duration;
+    if (Number.isFinite(d) && d > 0 && d <= 3600 && startOffset === 0) {
+      setDuration(d);
+      maxObservedDurationRef.current = d;
+    } else {
+      // Stream duration is corrupt or offset, probe real length
+      if (v.seekable && v.seekable.length > 0) {
+        const sDur = v.seekable.end(v.seekable.length - 1) - startOffset;
+        if (sDur > 0 && sDur <= 3600) {
+          setDuration(sDur);
+          maxObservedDurationRef.current = sDur;
+        }
+      }
+      probeDuration(effectiveStreamUrl, startOffset);
+    }
+
+    const w = v.videoWidth || 0;
+    const h = v.videoHeight || 0;
     setVideoMeta({
       isLandscape: w >= h,
       width: w,
@@ -167,10 +280,13 @@ export function EnterpriseVideoPlayerModal({
   };
 
   const handleDurationChange = () => {
-    if (!videoRef.current) return;
-    const d = videoRef.current.duration;
-    if (Number.isFinite(d) && d > 0) {
+    const v = videoRef.current;
+    if (!v) return;
+    const offset = baseTimeOffsetRef.current || 0;
+    const d = v.duration;
+    if (Number.isFinite(d) && d > 0 && d <= 3600 && offset === 0) {
       setDuration(d);
+      maxObservedDurationRef.current = Math.max(maxObservedDurationRef.current, d);
     }
   };
 
@@ -192,33 +308,54 @@ export function EnterpriseVideoPlayerModal({
     }
   }, []);
 
-  // Jump -5s / +5s
+  // Jump -5s / +5s (Relative to base offset with safe bounds)
   const jumpTime = useCallback((seconds, e) => {
     if (e) e.stopPropagation();
     if (!videoRef.current) return;
-    const maxDur = videoRef.current.duration || Infinity;
-    const newTime = Math.max(0, Math.min(maxDur, (videoRef.current.currentTime || 0) + seconds));
-    videoRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  }, []);
+    const offset = baseTimeOffsetRef.current || 0;
+    const currentRel = Math.max(0, (videoRef.current.currentTime || 0) - offset);
+    const dur = duration > 0 ? duration : (maxObservedDurationRef.current || 600);
+    const targetRel = Math.max(0, Math.min(dur, currentRel + seconds));
+    const targetHw = offset + targetRel;
 
-  // Seek bar click & drag handling
-  const handleSeek = (e) => {
+    setCurrentTime(targetRel);
+    try {
+      videoRef.current.currentTime = targetHw;
+      if (videoRef.current.paused && isPlaying) {
+        videoRef.current.play().catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Jump error:', err);
+    }
+  }, [duration, isPlaying]);
+
+  // Smooth Seek Bar Click & Drag Handling (Supports both Mouse and Touch)
+  const handleSeek = useCallback((clientX) => {
     if (!progressBarRef.current || !videoRef.current) return;
     const rect = progressBarRef.current.getBoundingClientRect();
-    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const targetTime = pos * (duration || 1);
+    const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const dur = duration > 0 ? duration : (maxObservedDurationRef.current || 30);
+    const targetRelTime = pos * dur;
+    const offset = baseTimeOffsetRef.current || 0;
+    const targetHwTime = offset + targetRelTime;
 
-    setCurrentTime(targetTime);
-    videoRef.current.currentTime = targetTime;
-  };
+    setCurrentTime(targetRelTime);
+    try {
+      videoRef.current.currentTime = targetHwTime;
+      if (videoRef.current.paused && isPlaying) {
+        videoRef.current.play().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Seek error:', e);
+    }
+  }, [duration, isPlaying]);
 
   const handleSeekStart = (e) => {
     e.stopPropagation();
     setIsSeeking(true);
-    handleSeek(e);
+    handleSeek(e.clientX);
 
-    const onMove = (moveEvent) => handleSeek(moveEvent);
+    const onMove = (moveEvent) => handleSeek(moveEvent.clientX);
     const onUp = () => {
       setIsSeeking(false);
       window.removeEventListener('mousemove', onMove);
@@ -227,6 +364,28 @@ export function EnterpriseVideoPlayerModal({
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+  };
+
+  const handleTouchSeekStart = (e) => {
+    e.stopPropagation();
+    setIsSeeking(true);
+    if (e.touches && e.touches[0]) {
+      handleSeek(e.touches[0].clientX);
+    }
+
+    const onMove = (moveEvent) => {
+      if (moveEvent.touches && moveEvent.touches[0]) {
+        handleSeek(moveEvent.touches[0].clientX);
+      }
+    };
+    const onUp = () => {
+      setIsSeeking(false);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onUp, { passive: true });
   };
 
   // Volume & Mute handling
@@ -353,8 +512,12 @@ export function EnterpriseVideoPlayerModal({
   const formatTime = (secs) => {
     if (!Number.isFinite(secs) || secs < 0) return '00:00';
     const total = Math.floor(secs);
-    const m = Math.floor(total / 60);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
     const s = total % 60;
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
@@ -538,14 +701,15 @@ export function EnterpriseVideoPlayerModal({
         }`}
         onClick={e => e.stopPropagation()}
       >
-        {/* Interactive Seek Bar */}
+        {/* Interactive Seek Bar (Supports both Mouse & Touch scrubbing) */}
         <div 
           ref={progressBarRef}
           onMouseDown={handleSeekStart}
-          className="relative w-full h-3 group flex items-center cursor-pointer mb-3 select-none"
+          onTouchStart={handleTouchSeekStart}
+          className="relative w-full py-2.5 group flex items-center cursor-pointer mb-2 select-none touch-none"
         >
           {/* Base background track */}
-          <div className="w-full h-1.5 group-hover:h-2.5 rounded-full bg-slate-800 transition-all overflow-hidden relative">
+          <div className="w-full h-1.5 sm:h-2 group-hover:h-2.5 rounded-full bg-slate-800 transition-all overflow-hidden relative">
             {/* Buffer bar */}
             <div 
               style={{ width: `${bufferedPercent}%` }}
@@ -561,7 +725,7 @@ export function EnterpriseVideoPlayerModal({
           {/* Seek scrubber thumb */}
           <div 
             style={{ left: `calc(${currentPercent}% - 7px)` }}
-            className="absolute w-3.5 h-3.5 bg-white rounded-full shadow-lg border border-teal-500 scale-0 group-hover:scale-100 transition-transform pointer-events-none"
+            className="absolute w-3.5 h-3.5 sm:w-4 sm:h-4 bg-white rounded-full shadow-lg border border-teal-500 scale-100 sm:scale-0 sm:group-hover:scale-100 transition-transform pointer-events-none"
           />
         </div>
 
@@ -572,34 +736,36 @@ export function EnterpriseVideoPlayerModal({
             <button
               type="button"
               onClick={togglePlay}
-              className="p-2 sm:p-2.5 rounded-xl bg-teal-500 text-slate-950 hover:bg-teal-400 transition-colors cursor-pointer shadow-sm"
+              className="p-2 sm:p-2.5 rounded-xl bg-teal-500 text-slate-950 hover:bg-teal-400 active:scale-95 transition-all cursor-pointer shadow-sm flex items-center justify-center"
               title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
             >
               {isPlaying ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-current" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current ml-0.5" />}
             </button>
 
-            {/* Skip -5s */}
+            {/* Skip -5s Backward */}
             <button
               type="button"
               onClick={(e) => jumpTime(-5, e)}
-              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs font-mono font-bold flex items-center gap-1 border border-slate-700/60"
-              title="Jump Backward 5s (Left Arrow)"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white transition-all cursor-pointer text-xs font-mono font-bold flex items-center gap-1 border border-slate-700/80 shadow-sm"
+              title="Rewind 5 seconds (Left Arrow)"
             >
-              -5s
+              <RotateCcw className="w-3.5 h-3.5 text-teal-400" />
+              <span>-5s</span>
             </button>
 
-            {/* Skip +5s */}
+            {/* Skip +5s Forward */}
             <button
               type="button"
               onClick={(e) => jumpTime(5, e)}
-              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs font-mono font-bold flex items-center gap-1 border border-slate-700/60"
-              title="Jump Forward 5s (Right Arrow)"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white transition-all cursor-pointer text-xs font-mono font-bold flex items-center gap-1 border border-slate-700/80 shadow-sm"
+              title="Fast-forward 5 seconds (Right Arrow)"
             >
-              +5s
+              <RotateCw className="w-3.5 h-3.5 text-teal-400" />
+              <span>+5s</span>
             </button>
 
             {/* Time Stamp */}
-            <div className="font-mono text-xs sm:text-sm text-slate-300 font-medium px-2">
+            <div className="font-mono text-xs sm:text-sm text-slate-300 font-medium px-2 flex items-center">
               <span className="text-white font-bold">{formatTime(currentTime)}</span>
               <span className="text-slate-500 mx-1">/</span>
               <span>{formatTime(duration)}</span>

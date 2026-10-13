@@ -197,15 +197,15 @@ export function VideoRecorderModal({
     }
   }, [previewUrl]);
 
-  // Pick best supported MIME type
+  // Pick best supported MIME type (WebM prioritized for standard 0-based timestamps on Chrome/Android)
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
     const candidates = [
-      'video/mp4;codecs=avc1,mp4a',
-      'video/mp4',
-      'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
-      'video/webm'
+      'video/webm;codecs=vp9,opus',
+      'video/webm',
+      'video/mp4;codecs=avc1,mp4a',
+      'video/mp4'
     ];
     for (const type of candidates) {
       if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
