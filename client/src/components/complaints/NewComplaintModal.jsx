@@ -2894,7 +2894,7 @@ export const NewComplaintModal = ({
           setIsVideoRecorderOpen(false);
         }}
         title="Record Initial Complaint Video"
-        subtitle="50 MB limit active • 720p HD auto-compressed recording with auto-split"
+        subtitle="3-minute 720p HD recording under 50 MB"
       />
 
       {/* Global Background-Blurred Progress Modal */}

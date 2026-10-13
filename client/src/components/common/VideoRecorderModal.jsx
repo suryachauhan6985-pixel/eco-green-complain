@@ -1,41 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Video,
-  Camera,
-  Square,
-  Play,
-  RotateCcw,
-  RotateCw,
-  Check,
-  X,
-  AlertTriangle,
-  ShieldCheck,
-  RefreshCw,
-  Upload,
-  Info,
-  Sparkles,
-  FlipHorizontal,
-  Maximize2,
-  ZoomIn,
-  ZoomOut,
-  Smartphone,
-  Monitor,
-  Layers,
-  CheckCircle2
+import { 
+  X, Camera, Video, RotateCcw, Check, Upload, AlertCircle, 
+  FlipHorizontal, Sparkles, RefreshCw, ZoomIn
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
-// High Quality HD Compression & Multi-Part Auto-Splitting (50 MB limit compliance)
-// 1. Bitrate: 850 kbps video + 48 kbps audio = ~898 kbps (~112 KB/s)
-//    Yields ~6.5 MB per minute of clear 720p HD footage (solar panel serials, meter readings, wiring).
-// 2. Auto-Split Threshold: 35 MB (Comfortably under the 50 MB server upload limit, fast mobile uplink).
-//    When a recording nears 35 MB, it auto-seals Part 1 and seamlessly continues recording into Part 2
-//    without interrupting camera feed or requiring any manual action from the user.
-const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // Strict 50 MB server limit
-const SPLIT_THRESHOLD_BYTES = 35 * 1024 * 1024; // 35 MB auto-split boundary per part
-const TARGET_VIDEO_BITRATE = 850_000; // 850 kbps video bitrate for high clarity + lightweight mobile upload (~6.5 MB per minute)
-const TARGET_AUDIO_BITRATE = 48_000; // 48 kbps clear mono voice audio
-const MAX_RECORDING_SECONDS = 600; // 10 minutes max total duration across parts
+// 3-Minute HD Optimization:
+// Target: 3 Minutes (~180s) 720p HD Video guaranteed under 50 MB upload limit.
+// 1.85 Mbps video + 64 kbps audio = ~1.91 Mbps total (~14.3 MB/min, ~43 MB for full 3 minutes).
+const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB server limit
+const MAX_RECORDING_SECONDS = 180; // Exactly 3 minutes
+const TARGET_VIDEO_BITRATE = 1_850_000; // 1.85 Mbps 720p HD
+const TARGET_AUDIO_BITRATE = 64_000; // 64 kbps clear audio
 
 export function VideoRecorderModal({
   isOpen,
@@ -43,167 +19,43 @@ export function VideoRecorderModal({
   onRecordingComplete,
   maxSizeBytes = MAX_LIMIT_BYTES,
   title = 'Record Site Video',
-  subtitle = 'High Quality HD Recording • Auto-Split Under 50 MB'
+  subtitle = '3-Minute 720p HD Camera (Under 50 MB)'
 }) {
   const [stream, setStream] = useState(null);
-  const [facingMode, setFacingMode] = useState('environment'); // back camera default for solar equipment
+  const [facingMode, setFacingMode] = useState('environment'); // Default to rear camera
   const [isInitializing, setIsInitializing] = useState(false);
   const [cameraError, setCameraError] = useState(null);
-  const [hasAudio, setHasAudio] = useState(true);
 
-  // Dedicated Fixed Recording Orientation: 'portrait' | 'landscape' | null (null requires selection)
-  const [selectedOrientation, setSelectedOrientation] = useState(null);
-
-  // Photo snapshot state & camera flash animation
-  const [capturedPhotos, setCapturedPhotos] = useState([]);
-  const [photoFlash, setPhotoFlash] = useState(false);
-  const [availableCameras, setAvailableCameras] = useState([]);
-  const [activeDeviceId, setActiveDeviceId] = useState(null);
-
-  // Zoom control state - Defaults to 1x with 0.5x ultra-wide support
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [zoomNotification, setZoomNotification] = useState(null);
-  const [zoomCapabilities, setZoomCapabilities] = useState({
-    supported: false,
-    min: 0.5,
-    max: 5,
-    step: 0.1
-  });
-
-  // Recording State & Multi-Part Tracking
+  // Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [currentSizeBytes, setCurrentSizeBytes] = useState(0);
-  const [activePartSizeBytes, setActivePartSizeBytes] = useState(0);
-  const [activePartNumber, setActivePartNumber] = useState(1);
-  const [splitNotification, setSplitNotification] = useState(null);
-  const [recordedParts, setRecordedParts] = useState([]); // Array of File objects
-  const [previewUrls, setPreviewUrls] = useState([]);
-  const [selectedReviewPartIndex, setSelectedReviewPartIndex] = useState(0);
   const [recordedBlob, setRecordedBlob] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [recordedMimeType, setRecordedMimeType] = useState('video/webm');
 
-  // Preview video orientation metadata & rotation controls
-  const [previewMeta, setPreviewMeta] = useState({
-    width: 0,
-    height: 0,
-    isLandscape: false,
-    rotation: 0
-  });
+  // Photo snapshots taken during session
+  const [capturedPhotos, setCapturedPhotos] = useState([]);
+  const [photoFlash, setPhotoFlash] = useState(false);
 
-  // Live camera stream dimensions metadata
-  const [liveStreamMeta, setLiveStreamMeta] = useState({
-    width: 0,
-    height: 0,
-    isLandscape: false
-  });
+  // Hardware Zoom (1x, 2x)
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [hasHardwareZoom, setHasHardwareZoom] = useState(false);
 
   const activeStreamRef = useRef(null);
   const videoPreviewRef = useRef(null);
   const playbackVideoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
-  const currentPartChunksRef = useRef([]);
-  const completedPartsRef = useRef([]);
-  const activePartNumberRef = useRef(1);
-  const isSplittingRef = useRef(false);
-  const userRequestedStopRef = useRef(false);
-  const baseTimestampRef = useRef('');
-  const recorderOptionsRef = useRef({});
+  const recordedChunksRef = useRef([]);
   const timerIntervalRef = useRef(null);
   const fileFallbackInputRef = useRef(null);
-  const previewUrlsRef = useRef([]);
+  const previewUrlRef = useRef(null);
 
-  // Touch pinch-to-zoom tracking refs
-  const touchStartDistanceRef = useRef(null);
-  const touchStartZoomRef = useRef(1);
-
-  // Handle escape key
-  const handleClose = useCallback(() => {
-    if (isRecording) {
-      if (!window.confirm('A video recording is currently in progress. Do you want to cancel and exit?')) {
-        return;
-      }
-    }
-    stopStream();
-    resetRecording();
-    setSelectedOrientation(null);
-    onClose();
-  }, [isRecording, onClose]);
-
-  useEscapeHandler(handleClose, isOpen, { priority: ESCAPE_PRIORITY.INNER_MODAL });
-
-  // Stop active camera stream tracks safely
-  const stopStream = useCallback(() => {
-    if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach(track => {
-        try {
-          track.stop();
-        } catch (_) {}
-      });
-      activeStreamRef.current = null;
-    }
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        try {
-          track.stop();
-        } catch (_) {}
-      });
-      setStream(null);
-    }
-  }, [stream]);
-
-  // Clean up recorded preview URLs
-  const resetRecording = useCallback(() => {
-    if (previewUrlsRef.current.length > 0) {
-      previewUrlsRef.current.forEach(u => {
-        try { URL.revokeObjectURL(u); } catch (_) {}
-      });
-      previewUrlsRef.current = [];
-    }
-    if (previewUrl) {
-      try { URL.revokeObjectURL(previewUrl); } catch (_) {}
-    }
-    setRecordedBlob(null);
-    setPreviewUrl(null);
-    setRecordedParts([]);
-    setPreviewUrls([]);
-    setSelectedReviewPartIndex(0);
-    setRecordingSeconds(0);
-    setCurrentSizeBytes(0);
-    setActivePartSizeBytes(0);
-    setActivePartNumber(1);
-    setSplitNotification(null);
-    setZoomLevel(1); // strictly reset zoom to 1x
-    setPreviewMeta({ width: 0, height: 0, isLandscape: false, rotation: 0 });
-    setLiveStreamMeta({ width: 0, height: 0, isLandscape: false });
-    setCapturedPhotos(prev => {
-      prev.forEach(p => {
-        try { URL.revokeObjectURL(p.preview); } catch (_) {}
-      });
-      return [];
-    });
-    setPhotoFlash(false);
-
-    currentPartChunksRef.current = [];
-    completedPartsRef.current = [];
-    activePartNumberRef.current = 1;
-    isSplittingRef.current = false;
-    userRequestedStopRef.current = false;
-    baseTimestampRef.current = '';
-
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-  }, [previewUrl]);
-
-  // Pick best supported MIME type (WebM prioritized for standard 0-based timestamps on Chrome/Android)
+  // Pick optimal supported container format
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
     const candidates = [
       'video/webm;codecs=vp8,opus',
-      'video/webm;codecs=vp9,opus',
       'video/webm',
       'video/mp4;codecs=avc1,mp4a',
       'video/mp4'
@@ -216,204 +68,103 @@ export function VideoRecorderModal({
     return '';
   };
 
-  // Query all available camera devices to find physical ultra-wide and secondary lenses
-  const detectCameras = useCallback(async () => {
-    try {
-      if (!navigator.mediaDevices?.enumerateDevices) return [];
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoInputs = devices.filter(d => d.kind === 'videoinput');
-      setAvailableCameras(videoInputs);
-      return videoInputs;
-    } catch (_) {
+  // Safely stop all camera tracks
+  const stopStream = useCallback(() => {
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(track => {
+        try { track.stop(); } catch (_) {}
+      });
+      activeStreamRef.current = null;
+    }
+    if (stream) {
+      stream.getTracks().forEach(track => {
+        try { track.stop(); } catch (_) {}
+      });
+      setStream(null);
+    }
+  }, [stream]);
+
+  // Reset recording session
+  const resetRecording = useCallback(() => {
+    if (previewUrlRef.current) {
+      try { URL.revokeObjectURL(previewUrlRef.current); } catch (_) {}
+      previewUrlRef.current = null;
+    }
+    if (previewUrl) {
+      try { URL.revokeObjectURL(previewUrl); } catch (_) {}
+    }
+    setRecordedBlob(null);
+    setPreviewUrl(null);
+    setRecordingSeconds(0);
+    setCurrentSizeBytes(0);
+    recordedChunksRef.current = [];
+    setCapturedPhotos(prev => {
+      prev.forEach(p => {
+        try { URL.revokeObjectURL(p.preview); } catch (_) {}
+      });
       return [];
+    });
+    setPhotoFlash(false);
+    setZoomLevel(1);
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  }, [previewUrl]);
+
+  // Clean close handler
+  const handleClose = useCallback(() => {
+    if (isRecording) {
+      if (!window.confirm('A video recording is currently in progress. Do you want to cancel and exit?')) {
+        return;
+      }
+    }
+    stopStream();
+    resetRecording();
+    onClose();
+  }, [isRecording, onClose, stopStream, resetRecording]);
+
+  useEscapeHandler(handleClose, isOpen, { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
+  // Connect active stream to live video element cleanly (eliminates black preview)
+  const attachStreamToVideo = useCallback((newStream) => {
+    const video = videoPreviewRef.current;
+    if (!video || !newStream) return;
+
+    try {
+      video.srcObject = newStream;
+      video.muted = true;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Retry on user interaction / metadata ready
+          video.onloadedmetadata = () => {
+            video.play().catch(() => {});
+          };
+        });
+      }
+    } catch (e) {
+      console.warn('[VideoRecorder] attachStream error:', e);
     }
   }, []);
 
-  // Seamlessly switch video track on active stream without interrupting audio or MediaRecorder
-  const switchVideoTrack = useCallback(async (newVideoConstraints) => {
-    try {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        try { mediaRecorderRef.current.requestData(); } catch (_) {}
-      }
-
-      // CRITICAL FOR ANDROID: Stop existing active camera track so hardware sensor is freed!
-      if (activeStreamRef.current) {
-        const oldTracks = activeStreamRef.current.getVideoTracks();
-        oldTracks.forEach(t => {
-          try { t.stop(); } catch (_) {}
-        });
-      }
-
-      let tempStream;
-      try {
-        tempStream = await navigator.mediaDevices.getUserMedia({
-          video: newVideoConstraints,
-          audio: false
-        });
-      } catch (err1) {
-        // Fallback: If exact deviceId was rejected, try ideal deviceId or facingMode
-        if (newVideoConstraints.deviceId) {
-          const rawId = typeof newVideoConstraints.deviceId === 'object'
-            ? (newVideoConstraints.deviceId.exact || newVideoConstraints.deviceId.ideal)
-            : newVideoConstraints.deviceId;
-          tempStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              deviceId: { ideal: rawId }
-            },
-            audio: false
-          });
-        } else {
-          tempStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: facingMode } },
-            audio: false
-          });
-        }
-      }
-
-      const newTrack = tempStream.getVideoTracks()[0];
-      if (!newTrack) return null;
-
-      if (activeStreamRef.current) {
-        activeStreamRef.current.addTrack(newTrack);
-
-        if (videoPreviewRef.current) {
-          videoPreviewRef.current.srcObject = activeStreamRef.current;
-          videoPreviewRef.current.play().catch(() => {});
-        }
-        setStream(activeStreamRef.current);
-      }
-
-      const settings = newTrack.getSettings?.() || {};
-      if (settings.deviceId) setActiveDeviceId(settings.deviceId);
-
-      let isHwZoom = false;
-      let minZ = 0.5, maxZ = 5, stepZ = 0.1;
-      if (typeof newTrack.getCapabilities === 'function') {
-        const caps = newTrack.getCapabilities();
-        if ('zoom' in caps) {
-          isHwZoom = true;
-          minZ = caps.zoom.min ?? 0.5;
-          maxZ = caps.zoom.max ?? 5;
-          stepZ = caps.zoom.step ?? 0.1;
-        }
-      }
-      setZoomCapabilities({
-        supported: isHwZoom,
-        min: Math.min(0.5, minZ),
-        max: Math.max(3, maxZ),
-        step: stepZ
-      });
-
-      return newTrack;
-    } catch (err) {
-      console.warn('Dynamic video track switch failed:', err);
-      return null;
-    }
-  }, [facingMode]);
-
-  // Apply zoom level (both native hardware optical/sensor zoom and physical ultra-wide camera lens switching)
-  const applyZoom = useCallback(async (targetZoom) => {
-    const target = Number(Number(targetZoom).toFixed(1));
-    setZoomLevel(target);
-
-    if (!activeStreamRef.current) return;
-    let track = activeStreamRef.current.getVideoTracks()[0];
-    if (!track) return;
-
-    const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
-    const hasHardwareZoom = caps.zoom !== undefined;
-    const minHw = caps.zoom?.min ?? 1;
-
-    // Refresh devices if availableCameras is empty
-    let cams = availableCameras;
-    if (!cams || cams.length === 0) {
-      cams = await detectCameras();
-    }
-
-    const backCams = cams.filter(c => {
-      const lbl = (c.label || '').toLowerCase();
-      return lbl.includes('back') || lbl.includes('rear') || lbl.includes('environment') || (!lbl.includes('front') && !lbl.includes('user'));
-    });
-
-    // Case 1: Ultra-Wide (0.5x)
-    if (target < 1) {
-      // 1A: If current track physically supports zoom <= 0.5 in hardware
-      if (hasHardwareZoom && minHw <= target) {
-        try {
-          await track.applyConstraints({ advanced: [{ zoom: target }] });
-          return;
-        } catch (_) {}
-      }
-
-      // 1B: Multi-Camera phone: Find the Ultra-Wide lens among back cameras
-      if (backCams.length > 1 && facingMode === 'environment') {
-        const ultraWideCam = backCams.find(c => {
-          const l = (c.label || '').toLowerCase();
-          return l.includes('ultra') || l.includes('wide') || l.includes('0.5') || l.includes('uw') || l.includes('2');
-        }) || (backCams[1] || backCams[0]);
-
-        if (ultraWideCam && ultraWideCam.deviceId && ultraWideCam.deviceId !== activeDeviceId) {
-          const switchedTrack = await switchVideoTrack({
-            deviceId: { exact: ultraWideCam.deviceId }
-          });
-          if (switchedTrack) {
-            setZoomNotification('Ultra-Wide (0.5x) Lens Active');
-            setTimeout(() => setZoomNotification(null), 2500);
-            return;
-          }
-        }
-      }
-
-      // 1C: If device physically has no ultra-wide lens, inform the technician
-      setZoomNotification('Ultra-wide (0.5x) lens not detected on this phone. Operating at standard 1x wide view.');
-      setTimeout(() => setZoomNotification(null), 3000);
-      setZoomLevel(1);
-      return;
-    }
-
-    // Case 2: Standard (1x) or Telephoto (2x, 3x)
-    // If currently on ultra-wide camera, switch back to primary camera (backCams[0])
-    if (backCams.length > 1 && facingMode === 'environment' && activeDeviceId) {
-      const mainCam = backCams[0];
-      if (mainCam && mainCam.deviceId && activeDeviceId !== mainCam.deviceId) {
-        const switchedTrack = await switchVideoTrack({
-          deviceId: { exact: mainCam.deviceId }
-        });
-        if (switchedTrack) track = switchedTrack;
-      }
-    }
-
-    // Apply hardware zoom constraint directly to main camera
-    if (track && (typeof track.getCapabilities === 'function' && track.getCapabilities().zoom)) {
-      const trackCaps = track.getCapabilities().zoom;
-      const clamped = Math.max(trackCaps.min || 1, Math.min(trackCaps.max || 8, target));
-      try {
-        await track.applyConstraints({ advanced: [{ zoom: clamped }] });
-      } catch (e) {
-        console.warn('Hardware zoom constraint application error:', e);
-      }
-    }
-  }, [availableCameras, activeDeviceId, facingMode, switchVideoTrack, detectCameras]);
-
-  // Start hardware camera stream with fixed orientation HD constraints and 1x zoom
-  const initializeCamera = useCallback(async (desiredFacingMode = facingMode, desiredOrientation = selectedOrientation) => {
-    if (!isOpen || !desiredOrientation) return;
+  // Initialize native camera feed
+  const initializeCamera = useCallback(async (desiredFacing = facingMode) => {
+    if (!isOpen) return;
     setIsInitializing(true);
     setCameraError(null);
-    setZoomLevel(1); // strictly enforce 1x base zoom
+    setZoomLevel(1);
 
-    // Stop any existing stream tracks cleanly
+    // Release any previous tracks first
     if (activeStreamRef.current) {
       activeStreamRef.current.getTracks().forEach(t => {
         try { t.stop(); } catch (_) {}
       });
       activeStreamRef.current = null;
-    }
-    if (stream) {
-      stream.getTracks().forEach(t => {
-        try { t.stop(); } catch (_) {}
-      });
-      setStream(null);
     }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -422,241 +173,131 @@ export function VideoRecorderModal({
       return;
     }
 
-    // Natural Aspect-Ratio & Orientation Mapping:
-    const isLandscape = desiredOrientation === 'landscape';
-    const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    // Standard natural camera constraints without restrictive bounds
+    const baseConstraints = {
+      video: {
+        facingMode: { ideal: desiredFacing },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true
+      }
+    };
 
-    // On mobile devices (particularly Android Chromium), the hardware camera sensor is mounted in landscape (16:9).
-    // Requesting width: 1280, height: 720 on mobile produces a vertical 720x1280 portrait stream,
-    // while width: 720, height: 1280 produces a horizontal 1280x720 landscape stream.
-    const effLandscape = isMobile ? !isLandscape : isLandscape;
-
+    let newStream = null;
     try {
-      const constraints = {
-        video: {
-          facingMode: { ideal: desiredFacingMode },
-          width: effLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-          height: effLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-          aspectRatio: { ideal: effLandscape ? (16 / 9) : (9 / 16) },
-          frameRate: { ideal: 30, max: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-          sampleRate: 44100
+      newStream = await navigator.mediaDevices.getUserMedia(baseConstraints);
+    } catch (primaryErr) {
+      console.warn('[VideoRecorder] Primary getUserMedia failed, trying fallback:', primaryErr);
+      try {
+        // Fallback 1: basic video + audio
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: desiredFacing } },
+          audio: true
+        });
+      } catch (audioErr) {
+        console.warn('[VideoRecorder] Audio request failed, trying video only:', audioErr);
+        try {
+          // Fallback 2: video only
+          newStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: desiredFacing } }
+          });
+        } catch (videoOnlyErr) {
+          try {
+            // Fallback 3: generic video
+            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (finalErr) {
+            console.error('[VideoRecorder] All getUserMedia attempts failed:', finalErr);
+            let msg = 'Could not access device camera. Please check camera permissions in your browser settings.';
+            if (finalErr.name === 'NotAllowedError' || finalErr.name === 'PermissionDeniedError') {
+              msg = 'Camera permission was denied. Please allow camera access in your browser settings to record video.';
+            } else if (finalErr.name === 'NotReadableError') {
+              msg = 'Camera is currently locked by another app or phone call. Please close other camera apps and try again.';
+            }
+            setCameraError(msg);
+            setIsInitializing(false);
+            return;
+          }
+        }
+      }
+    }
+
+    activeStreamRef.current = newStream;
+    setStream(newStream);
+    attachStreamToVideo(newStream);
+
+    // Detect hardware zoom capability
+    const track = newStream.getVideoTracks()[0];
+    if (track && typeof track.getCapabilities === 'function') {
+      const caps = track.getCapabilities();
+      setHasHardwareZoom(Boolean(caps && caps.zoom));
+    } else {
+      setHasHardwareZoom(false);
+    }
+
+    // Handle incoming phone call track interruptions
+    if (track) {
+      track.onended = () => {
+        if (isOpen && !recordedBlob) {
+          initializeCamera(desiredFacing);
         }
       };
-
-      let newStream;
-      try {
-        newStream = await navigator.mediaDevices.getUserMedia(constraints);
-        setHasAudio(true);
-      } catch (audioOrModeErr) {
-        console.warn('Audio or preferred constraint failed, trying basic video with audio:', audioOrModeErr);
-        try {
-          newStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: desiredFacingMode },
-              width: effLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-              height: effLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-              aspectRatio: { ideal: effLandscape ? (16 / 9) : (9 / 16) },
-              frameRate: { ideal: 30, max: 30 }
-            },
-            audio: true
-          });
-          setHasAudio(true);
-        } catch (modeErr) {
-          console.warn('Audio with video failed, trying video only:', modeErr);
-          try {
-            newStream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                facingMode: { ideal: desiredFacingMode },
-                aspectRatio: { ideal: effLandscape ? (16 / 9) : (9 / 16) }
-              }
-            });
-            setHasAudio(false);
-          } catch (basicErr) {
-            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
-            setHasAudio(false);
-          }
-        }
-      }
-
-      activeStreamRef.current = newStream;
-      setStream(newStream);
-
-      // Store initial camera device ID and detect lenses now that permission is active
-      const curTrack = newStream.getVideoTracks()[0];
-      const curSettings = curTrack?.getSettings?.() || {};
-      if (curSettings.deviceId) {
-        setActiveDeviceId(curSettings.deviceId);
-      }
-      detectCameras().catch(() => {});
-
-      // Immediately connect to video element to eliminate black screen
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = newStream;
-        const playPromise = videoPreviewRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => console.warn('Preview play warning:', e));
-        }
-      }
-
-      // Check hardware zoom capabilities (with 0.5x ultra-wide support)
-      const track = newStream.getVideoTracks()[0];
-      if (track) {
-        let isHardwareZoomAvailable = false;
-        let minZ = 0.5;
-        let maxZ = 5;
-        let stepZ = 0.1;
-
-        if (typeof track.getCapabilities === 'function') {
-          const caps = track.getCapabilities();
-          if ('zoom' in caps) {
-            isHardwareZoomAvailable = true;
-            minZ = caps.zoom.min ?? 0.5;
-            maxZ = caps.zoom.max ?? 5;
-            stepZ = caps.zoom.step ?? 0.1;
-          }
-        }
-
-        setZoomCapabilities({
-          supported: isHardwareZoomAvailable,
-          min: Math.min(0.5, minZ),
-          max: Math.max(3, maxZ),
-          step: stepZ
-        });
-        setZoomLevel(1); // strictly start at clean 1x normal view
-
-        // Phone call and camera interruptions resilience
-        track.onended = () => {
-          console.warn('[VideoRecorder] Camera track ended by incoming phone call or OS.');
-          if (isOpen && !recordedBlob) {
-            initializeCamera(desiredFacingMode, desiredOrientation);
-          }
-        };
-        track.onmute = () => {
-          console.warn('[VideoRecorder] Camera track temporarily muted by phone call/system.');
-        };
-        track.onunmute = () => {
-          console.log('[VideoRecorder] Camera track unmuted. Reconnecting preview.');
-          if (videoPreviewRef.current) {
-            videoPreviewRef.current.play().catch(() => {});
-          }
-        };
-      }
-    } catch (err) {
-      console.error('Camera initialization failed:', err);
-      let msg = 'Could not access camera. Please check camera permissions in your browser.';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Camera permission was denied. Please allow camera access in your browser settings to record video.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        msg = 'No camera device found on this system.';
-      } else if (err.name === 'NotReadableError') {
-        msg = 'Camera is currently in use by another application.';
-      }
-      setCameraError(msg);
-    } finally {
-      setIsInitializing(false);
     }
-  }, [isOpen, facingMode, selectedOrientation, detectCameras]);
 
-  // Cleanly teardown camera when modal closes
+    setIsInitializing(false);
+  }, [isOpen, facingMode, attachStreamToVideo, recordedBlob]);
+
+  // Initialize camera whenever modal opens
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      initializeCamera(facingMode);
+    } else {
       stopStream();
       resetRecording();
-      setSelectedOrientation(null);
     }
     return () => {
       stopStream();
     };
   }, [isOpen]);
 
-  // Handle Incoming Phone Calls and App Backgrounding / Visibility Changes
+  // Keep video preview attached if video element re-mounts
   useEffect(() => {
-    if (!isOpen) return;
-
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'hidden') {
-        console.log('[VideoRecorder] App hidden (possible incoming phone call). Preserving data.');
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          try {
-            // Flush all recorded chunks up to this moment so nothing is lost
-            mediaRecorderRef.current.requestData();
-          } catch (_) {}
-        }
-      } else if (document.visibilityState === 'visible') {
-        console.log('[VideoRecorder] App visible again. Verifying camera health.');
-        const activeTrack = activeStreamRef.current?.getVideoTracks()?.[0];
-        const isTrackDead = !activeTrack || activeTrack.readyState === 'ended' || activeTrack.muted;
-
-        if (isTrackDead) {
-          console.warn('[VideoRecorder] Camera track was interrupted by phone call/OS. Re-initializing camera...');
-          await initializeCamera(facingMode, selectedOrientation);
-        } else if (videoPreviewRef.current && activeStreamRef.current) {
-          videoPreviewRef.current.srcObject = activeStreamRef.current;
-          videoPreviewRef.current.play().catch(() => {});
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isOpen, facingMode, selectedOrientation, initializeCamera]);
-
-  // Handle explicit user orientation selection before starting camera
-  const handleSelectOrientation = async (mode) => {
-    setSelectedOrientation(mode);
-    await initializeCamera(facingMode, mode);
-  };
-
-  // CRITICAL: Keep video element synchronized with active stream at all times (guarantees preview on first load)
-  useEffect(() => {
-    if (videoPreviewRef.current && stream) {
-      if (videoPreviewRef.current.srcObject !== stream) {
-        videoPreviewRef.current.srcObject = stream;
-      }
-      const playPromise = videoPreviewRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {});
-      }
+    if (stream && videoPreviewRef.current && !recordedBlob) {
+      attachStreamToVideo(stream);
     }
-  }, [stream]);
+  }, [stream, recordedBlob, attachStreamToVideo]);
 
-  // Flip camera between environment (back) and user (front) - Supports live switching during recording!
-  const handleToggleFacingMode = async (e) => {
-    if (e) e.stopPropagation();
-    if (!selectedOrientation) return;
+  // Flip camera between Rear (environment) and Front (user)
+  const handleToggleFacingMode = async () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
+    await initializeCamera(nextMode);
+  };
 
-    const isLandscape = selectedOrientation === 'landscape';
-    const newConstraints = {
-      facingMode: { ideal: nextMode },
-      width: isLandscape ? { ideal: 1280, min: 640 } : { ideal: 720, min: 360 },
-      height: isLandscape ? { ideal: 720, min: 360 } : { ideal: 1280, min: 640 },
-      aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) }
-    };
+  // Apply hardware zoom (1x / 2x toggle)
+  const handleToggleZoom = async () => {
+    const track = activeStreamRef.current?.getVideoTracks()?.[0];
+    if (!track) return;
 
-    if (isRecording) {
-      await switchVideoTrack(newConstraints);
-    } else {
-      await initializeCamera(nextMode, selectedOrientation);
+    const nextZoom = zoomLevel === 1 ? 2 : 1;
+    setZoomLevel(nextZoom);
+
+    if (track.getCapabilities && track.getCapabilities().zoom) {
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: nextZoom }] });
+      } catch (_) {}
     }
   };
 
-  // High-resolution photo snapshot from active video stream
-  const handleCapturePhoto = useCallback((e) => {
-    if (e) e.stopPropagation();
-    if (!videoPreviewRef.current || !activeStreamRef.current) return;
+  // High-Resolution Snapshot Photo
+  const handleCapturePhoto = () => {
     const video = videoPreviewRef.current;
+    if (!video || !activeStreamRef.current) return;
+
     const w = video.videoWidth || 1280;
     const h = video.videoHeight || 720;
-
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -673,183 +314,15 @@ export function VideoRecorderModal({
       const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
       const photoName = `IMG_${ts}_site_photo.jpg`;
       const photoFile = new File([blob], photoName, { type: 'image/jpeg', lastModified: Date.now() });
-      const photoPreview = URL.createObjectURL(blob);
-
-      setCapturedPhotos(prev => [...prev, { file: photoFile, preview: photoPreview, name: photoName }]);
+      const photoUrl = URL.createObjectURL(blob);
+      setCapturedPhotos(prev => [...prev, { file: photoFile, preview: photoUrl, name: photoName }]);
     }, 'image/jpeg', 0.92);
-  }, []);
-
-  // Touch pinch-to-zoom event handlers
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      touchStartDistanceRef.current = dist;
-      touchStartZoomRef.current = zoomLevel;
-    }
   };
 
-  const handleTouchMove = (e) => {
-    if (e.touches.length === 2 && touchStartDistanceRef.current) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const factor = dist / touchStartDistanceRef.current;
-      const target = touchStartZoomRef.current * factor;
-      applyZoom(target);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    touchStartDistanceRef.current = null;
-  };
-
-  // Helper to attach recorder events for seamless auto-split multi-part recording
-  const setupRecorderInstance = (recorder, currentStream) => {
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) {
-        currentPartChunksRef.current.push(event.data);
-
-        // Calculate size of current part
-        let partBytes = 0;
-        for (const c of currentPartChunksRef.current) {
-          partBytes += c.size;
-        }
-        setActivePartSizeBytes(partBytes);
-
-        // Calculate total size across all completed parts + current part
-        let totalBytes = partBytes;
-        for (const p of completedPartsRef.current) {
-          totalBytes += p.size;
-        }
-        setCurrentSizeBytes(totalBytes);
-
-        // AUTOMATIC SPLIT TRIGGER:
-        // When the active part reaches 42 MB, automatically seal it and continue with Part N+1!
-        if (partBytes >= SPLIT_THRESHOLD_BYTES && !isSplittingRef.current && !userRequestedStopRef.current) {
-          isSplittingRef.current = true;
-          try {
-            recorder.stop();
-          } catch (stopErr) {
-            console.warn('Auto-split stop error:', stopErr);
-            isSplittingRef.current = false;
-          }
-        }
-      }
-    };
-
-    recorder.onstop = () => {
-      const chunks = currentPartChunksRef.current;
-      const currentPartNum = activePartNumberRef.current;
-      const mimeType = recorderOptionsRef.current.mimeType || recordedMimeType || 'video/webm';
-
-      if (chunks.length > 0) {
-        const blob = new Blob(chunks, { type: mimeType });
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const actualIsLandscape = liveStreamMeta.width > 0 
-          ? (liveStreamMeta.width > liveStreamMeta.height) 
-          : (selectedOrientation === 'landscape');
-        const orientationTag = actualIsLandscape ? 'landscape' : 'portrait';
-        const partName = `VID_${baseTimestampRef.current}_${orientationTag}_part${currentPartNum}.${ext}`;
-        const partFile = new File([blob], partName, {
-          type: mimeType,
-          lastModified: Date.now()
-        });
-        completedPartsRef.current.push(partFile);
-        setRecordedParts([...completedPartsRef.current]);
-      }
-
-      currentPartChunksRef.current = [];
-      setActivePartSizeBytes(0);
-
-      // Check whether this stop was caused by an auto-split OR by user stopping
-      if (isSplittingRef.current && !userRequestedStopRef.current && currentStream) {
-        // CONTINUE AUTO-SPLIT SEAMLESSLY
-        const nextPartNum = currentPartNum + 1;
-        activePartNumberRef.current = nextPartNum;
-        setActivePartNumber(nextPartNum);
-
-        const lastPartFile = completedPartsRef.current[completedPartsRef.current.length - 1];
-        const lastPartMB = lastPartFile ? (lastPartFile.size / (1024 * 1024)).toFixed(1) : '35.0';
-        setSplitNotification(`Part ${currentPartNum} saved (${lastPartMB} MB) • Seamlessly recording Part ${nextPartNum}...`);
-
-        setTimeout(() => {
-          setSplitNotification(null);
-        }, 4500);
-
-        try {
-          const nextRecorder = new MediaRecorder(currentStream, recorderOptionsRef.current);
-          setupRecorderInstance(nextRecorder, currentStream);
-          nextRecorder.start(500);
-          mediaRecorderRef.current = nextRecorder;
-          isSplittingRef.current = false;
-        } catch (startNextErr) {
-          console.error('Failed to start next part recorder:', startNextErr);
-          isSplittingRef.current = false;
-          finalizeRecordingSession();
-        }
-      } else {
-        // FINAL FINISH: User stopped recording or reached max total duration
-        finalizeRecordingSession();
-      }
-    };
-  };
-
-  // Finalize all recorded parts and create preview URLs
-  const finalizeRecordingSession = () => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-    setIsRecording(false);
-    isSplittingRef.current = false;
-    userRequestedStopRef.current = false;
-
-    const allParts = [...completedPartsRef.current];
-    if (allParts.length > 0) {
-      const totalCount = allParts.length;
-      const mimeType = recordedMimeType || 'video/webm';
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const actualIsLandscape = liveStreamMeta.width > 0 
-        ? (liveStreamMeta.width > liveStreamMeta.height) 
-        : (selectedOrientation === 'landscape');
-      const orientationTag = actualIsLandscape ? 'landscape' : 'portrait';
-
-      // If multiple parts, format clean filenames with Part X of Y
-      const finalFiles = allParts.map((file, idx) => {
-        if (totalCount > 1) {
-          const renamed = `VID_${baseTimestampRef.current}_${orientationTag}_part${idx + 1}_of_${totalCount}.${ext}`;
-          return new File([file], renamed, { type: file.type, lastModified: file.lastModified });
-        }
-        return file;
-      });
-
-      // Cleanup old preview URLs if any
-      if (previewUrlsRef.current.length > 0) {
-        previewUrlsRef.current.forEach(u => {
-          try { URL.revokeObjectURL(u); } catch (_) {}
-        });
-      }
-
-      const urls = finalFiles.map(f => URL.createObjectURL(f));
-      previewUrlsRef.current = urls;
-      setPreviewUrls(urls);
-      setRecordedParts(finalFiles);
-      setRecordedBlob(finalFiles[0]); // Primary reference
-      setPreviewUrl(urls[0]); // Default preview to Part 1
-      setSelectedReviewPartIndex(0);
-    }
-  };
-
-  // Start compressed high-quality recording with multi-part auto-split
+  // Start 3-minute 720p HD recording
   const handleStartRecording = () => {
     if (!stream) {
-      if (!isInitializing && !cameraError && selectedOrientation) {
-        initializeCamera(facingMode, selectedOrientation);
-      }
+      if (!isInitializing) initializeCamera(facingMode);
       return;
     }
     if (typeof MediaRecorder === 'undefined') {
@@ -858,30 +331,13 @@ export function VideoRecorderModal({
     }
 
     try {
-      currentPartChunksRef.current = [];
-      completedPartsRef.current = [];
-      activePartNumberRef.current = 1;
-      isSplittingRef.current = false;
-      userRequestedStopRef.current = false;
-
-      setActivePartNumber(1);
-      setActivePartSizeBytes(0);
-      setCurrentSizeBytes(0);
+      recordedChunksRef.current = [];
       setRecordingSeconds(0);
-      setRecordedParts([]);
-      setSplitNotification(null);
-
-      // Generate base timestamp for this session
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      baseTimestampRef.current = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      setCurrentSizeBytes(0);
 
       const mimeType = getOptimalMimeType();
       setRecordedMimeType(mimeType || 'video/webm');
 
-      // Optimized High-Quality Compression (~850 kbps Video + 48 kbps Audio):
-      // Results in ~6.5 MB per minute of clear 720p HD recording.
-      // Solar inverter serial numbers, meter readings, panel barcodes, and wire connections remain razor sharp.
       const recorderOptions = {
         videoBitsPerSecond: TARGET_VIDEO_BITRATE,
         audioBitsPerSecond: TARGET_AUDIO_BITRATE
@@ -889,17 +345,53 @@ export function VideoRecorderModal({
       if (mimeType) {
         recorderOptions.mimeType = mimeType;
       }
-      recorderOptionsRef.current = recorderOptions;
 
       const recorder = new MediaRecorder(stream, recorderOptions);
-      setupRecorderInstance(recorder, stream);
 
-      // Request data slices every 500ms to monitor live size counter & auto-split
-      recorder.start(500);
+      // Collect data every 1 second (1000ms) for smooth recording without lag
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          recordedChunksRef.current.push(e.data);
+          let total = 0;
+          for (const chunk of recordedChunksRef.current) {
+            total += chunk.size;
+          }
+          setCurrentSizeBytes(total);
+
+          // Auto-stop safety if nearing 48 MB
+          if (total >= 48 * 1024 * 1024) {
+            handleStopRecording('size_limit');
+          }
+        }
+      };
+
+      recorder.onstop = () => {
+        const chunks = recordedChunksRef.current;
+        const finalMime = recorderOptions.mimeType || recordedMimeType || 'video/webm';
+        if (chunks.length > 0) {
+          const blob = new Blob(chunks, { type: finalMime });
+          const ext = finalMime.includes('mp4') ? 'mp4' : 'webm';
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, '0');
+          const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+          const finalFile = new File([blob], `VID_${ts}_site_hd.${ext}`, {
+            type: finalMime,
+            lastModified: Date.now()
+          });
+
+          const url = URL.createObjectURL(finalFile);
+          previewUrlRef.current = url;
+          setRecordedBlob(finalFile);
+          setPreviewUrl(url);
+        }
+        setIsRecording(false);
+      };
+
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
 
-      // Live timer tick (max 600 seconds = 10 minutes total across parts)
+      // Timer tick (Max 180 seconds = 3 minutes)
       timerIntervalRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           const next = prev + 1;
@@ -910,14 +402,13 @@ export function VideoRecorderModal({
         });
       }, 1000);
     } catch (err) {
-      console.error('Failed to start recording:', err);
-      alert('Could not start video recording: ' + err.message);
+      console.error('[VideoRecorder] Failed to start recording:', err);
+      alert('Could not start recording: ' + err.message);
     }
   };
 
   // Stop recording
-  const handleStopRecording = (stopReason = 'user') => {
-    userRequestedStopRef.current = true;
+  const handleStopRecording = (reason = 'user') => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -926,95 +417,41 @@ export function VideoRecorderModal({
       try {
         mediaRecorderRef.current.stop();
       } catch (_) {}
-    } else {
-      finalizeRecordingSession();
     }
-
-    if (stopReason === 'time_limit') {
-      alert('Maximum session duration of 10 minutes reached. All parts have been saved under 50 MB each.');
+    if (reason === 'time_limit') {
+      // Completed full 3 minutes
     }
   };
 
-  // Discard and retake
+  // Retake video
   const handleRetake = () => {
     resetRecording();
-    if (!stream && selectedOrientation) {
-      initializeCamera(facingMode, selectedOrientation);
+    if (!stream) {
+      initializeCamera(facingMode);
     }
   };
 
-  // Switch reviewed part
-  const handleSelectReviewPart = (index) => {
-    if (previewUrls[index]) {
-      setSelectedReviewPartIndex(index);
-      setPreviewUrl(previewUrls[index]);
-      setRecordedBlob(recordedParts[index]);
-    }
-  };
-
-  // Rotate preview 90 degrees
-  const handleRotatePreview = () => {
-    setPreviewMeta(prev => ({
-      ...prev,
-      rotation: (prev.rotation + 90) % 360
-    }));
-  };
-
-  // Confirm and finish - passes either single file or array of split files
+  // Confirm and finish recording session
   const handleUseVideo = () => {
-    let videoFiles = [];
-    if (!recordedParts || recordedParts.length === 0) {
-      if (recordedBlob) {
-        const now = new Date();
-        const pad = (n) => String(n).padStart(2, '0');
-        const timestampStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-        const ext = recordedMimeType.includes('mp4') ? 'mp4' : 'webm';
-        const orientationTag = selectedOrientation || (previewMeta.isLandscape ? 'landscape' : 'portrait');
-        const fileName = `VID_${timestampStr}_${orientationTag}_hd.${ext}`;
-
-        const videoFile = new File([recordedBlob], fileName, {
-          type: recordedMimeType || 'video/webm',
-          lastModified: Date.now()
-        });
-        videoFiles = [videoFile];
-      }
-    } else {
-      videoFiles = recordedParts;
-    }
-
+    const videoFiles = recordedBlob ? [recordedBlob] : [];
     const photoFiles = capturedPhotos.map(p => p.file);
-    const combined = [...videoFiles, ...photoFiles];
+    const allFiles = [...videoFiles, ...photoFiles];
 
-    if (combined.length === 0) return;
+    if (allFiles.length === 0) return;
 
     stopStream();
     resetRecording();
-    setSelectedOrientation(null);
-    onRecordingComplete(combined.length === 1 ? combined[0] : combined);
-    onClose();
-    return;
-  };
-
-  const handleUseCapturedPhotosOnly = () => {
-    const photoFiles = capturedPhotos.map(p => p.file);
-    if (photoFiles.length === 0) return;
-
-    stopStream();
-    resetRecording();
-    setSelectedOrientation(null);
-    onRecordingComplete(photoFiles.length === 1 ? photoFiles[0] : photoFiles);
+    onRecordingComplete(allFiles.length === 1 ? allFiles[0] : allFiles);
     onClose();
   };
 
-  // Fallback to native device file/camera input with size verification
+  // Native device file / camera fallback
   const handleFallbackFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
     if (file.size > maxSizeBytes) {
-      alert(
-        `Selected video file "${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)} MB, which exceeds the 50 MB server upload limit.\n\nPlease use our In-App HD Camera to record — it automatically compresses video to ~10 MB/min and seamlessly auto-splits long recordings into parts under 50 MB with zero manual effort!`
-      );
+      alert(`Selected file (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 50 MB limit.`);
       e.target.value = '';
       return;
     }
@@ -1027,639 +464,247 @@ export function VideoRecorderModal({
 
   if (!isOpen) return null;
 
-  // Format helpers
   const formatTime = (secs) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const formatSizeMB = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
-  const partSizePercentage = Math.min(100, Math.round((activePartSizeBytes / SPLIT_THRESHOLD_BYTES) * 100));
-
-  // Determine progress bar color based on active part size threshold
-  let progressColorClass = 'bg-teal-400';
-  if (activePartSizeBytes > 38 * 1024 * 1024) {
-    progressColorClass = 'bg-amber-400 animate-pulse';
-  } else if (activePartSizeBytes > 30 * 1024 * 1024) {
-    progressColorClass = 'bg-emerald-400';
-  }
-
-  // Preset zoom levels to display (supports 0.5x ultra-wide up to max capability)
-  const availableZoomPresets = [0.5, 1, 2, 3].filter(z => z <= (zoomCapabilities.max || 5));
-
-  // If no orientation has been selected yet, show the pre-camera choice screen
-  if (!selectedOrientation) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 backdrop-enter-fade">
-        <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-white flex flex-col modal-enter-scale">
-          {/* Header */}
-          <div className="flex items-start justify-between pb-5 border-b border-slate-800">
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-                <span className="text-xs font-bold text-teal-400 uppercase tracking-wider font-mono">
-                  Site Inspection • Camera Setup
-                </span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                Select Video Orientation
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                Choose your recording orientation before starting the live camera feed
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleClose}
-              className="p-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer border border-slate-700/60"
-              title="Close (Esc)"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Orientation Choice Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 my-6">
-            {/* Portrait Choice Card */}
-            <button
-              type="button"
-              onClick={() => handleSelectOrientation('portrait')}
-              className="group relative p-6 rounded-2xl bg-slate-800/60 hover:bg-slate-800 border-2 border-slate-700 hover:border-teal-400 transition-all cursor-pointer flex flex-col items-center text-center shadow-lg hover:shadow-teal-500/10 hover:scale-[1.02] active:scale-[0.99]"
-            >
-              <div className="w-16 h-22 rounded-2xl bg-teal-500/10 border-2 border-teal-500/30 group-hover:border-teal-400 group-hover:bg-teal-500/20 flex flex-col items-center justify-between p-2 mb-4 transition-colors">
-                <div className="w-4 h-1 rounded-full bg-teal-400/50"></div>
-                <Smartphone className="w-8 h-8 text-teal-400" />
-                <div className="w-2 h-2 rounded-full border border-teal-400/50"></div>
-              </div>
-
-              <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 border border-teal-500/30 text-teal-300 text-[11px] font-mono font-bold mb-2">
-                9:16 Vertical
-              </span>
-              <h4 className="text-lg font-bold text-white mb-1.5 group-hover:text-teal-300 transition-colors">
-                Portrait
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed min-h-[36px]">
-                Full vertical screen with no side black bars. Ideal for single solar panels, meter readings, and wiring boxes.
-              </p>
-
-              <div className="mt-5 w-full py-2.5 px-4 rounded-xl bg-teal-600 group-hover:bg-teal-500 text-white text-xs font-bold transition-colors shadow-md flex items-center justify-center gap-1.5">
-                <span>Start in Portrait</span>
-              </div>
-            </button>
-
-            {/* Landscape Choice Card */}
-            <button
-              type="button"
-              onClick={() => handleSelectOrientation('landscape')}
-              className="group relative p-6 rounded-2xl bg-slate-800/60 hover:bg-slate-800 border-2 border-slate-700 hover:border-blue-400 transition-all cursor-pointer flex flex-col items-center text-center shadow-lg hover:shadow-blue-500/10 hover:scale-[1.02] active:scale-[0.99]"
-            >
-              <div className="w-24 h-16 rounded-2xl bg-blue-500/10 border-2 border-blue-500/30 group-hover:border-blue-400 group-hover:bg-blue-500/20 flex flex-col items-center justify-between p-2 mb-4 transition-colors">
-                <div className="w-6 h-1 rounded-full bg-blue-400/50"></div>
-                <Monitor className="w-8 h-8 text-blue-400" />
-                <div className="w-2 h-0.5 rounded-full bg-blue-400/30"></div>
-              </div>
-
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[11px] font-mono font-bold mb-2">
-                16:9 Widescreen
-              </span>
-              <h4 className="text-lg font-bold text-white mb-1.5 group-hover:text-blue-300 transition-colors">
-                Landscape
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed min-h-[36px]">
-                True widescreen full width with no side black bars. Ideal for full rooftop arrays, structure layouts, and inverter stations.
-              </p>
-
-              <div className="mt-5 w-full py-2.5 px-4 rounded-xl bg-blue-600 group-hover:bg-blue-500 text-white text-xs font-bold transition-colors shadow-md flex items-center justify-center gap-1.5">
-                <span>Start in Landscape</span>
-              </div>
-            </button>
-          </div>
-
-          {/* Footer note & gallery fallback */}
-          <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Camera locks to chosen orientation to guarantee edge-to-edge video without black bars.</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => fileFallbackInputRef.current?.click()}
-              className="text-xs text-teal-400 hover:text-teal-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Or upload pre-recorded video</span>
-            </button>
-          </div>
-
-          {/* Hidden Fallback File Input */}
-          <input
-            ref={fileFallbackInputRef}
-            type="file"
-            accept="video/*"
-            capture="environment"
-            onChange={handleFallbackFileChange}
-            className="hidden"
-          />
-        </div>
-      </div>
-    );
-  }
-
-  const isPortrait = selectedOrientation === 'portrait';
+  const formatMB = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
+  const remainingSeconds = Math.max(0, MAX_RECORDING_SECONDS - recordingSeconds);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-slate-950/90 sm:backdrop-blur-md backdrop-enter-fade">
-      {/* Full-screen on mobile, large immersive modal on tablet/desktop */}
-      <div className="relative w-full h-[100dvh] sm:h-[94vh] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-slate-800 bg-black overflow-hidden flex flex-col shadow-2xl modal-enter-scale">
+    <div className="fixed inset-0 z-80 flex items-center justify-center bg-black sm:bg-slate-950/90 sm:backdrop-blur-md animate-in fade-in duration-150">
+      {/* Full-screen on mobile, sleek floating frame on desktop */}
+      <div className="relative w-full h-[100dvh] sm:h-[90vh] sm:max-w-2xl sm:rounded-3xl bg-black overflow-hidden flex flex-col shadow-2xl">
         
-        {/* Top Slim Progress Bar (Active only when recording) */}
-        {isRecording && (
-          <div className="absolute top-0 inset-x-0 h-1.5 bg-black/50 z-30 overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 ease-out ${progressColorClass}`}
-              style={{ width: `${Math.max(3, partSizePercentage)}%` }}
+        {/* VIEWING / CAMERA CANVAS (True Edge-to-Edge object-cover with ZERO black bars) */}
+        <div className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden">
+          
+          {/* Live Viewfinder */}
+          {!recordedBlob && !cameraError && (
+            <video
+              ref={videoPreviewRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover bg-black"
             />
-          </div>
-        )}
+          )}
 
-        {/* Viewfinder Canvas (Edge-to-Edge object-cover with zero black bars) */}
-        <div 
-          className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none p-0"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {/* Active Viewfinder Container */}
-          <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
-
-            {/* Active Live Camera Stream (Strictly object-cover to eliminate side black bars completely) */}
-            {!recordedBlob && !cameraError && (
+          {/* Review Mode Playback */}
+          {recordedBlob && previewUrl && (
+            <div className="relative w-full h-full flex items-center justify-center bg-black">
               <video
-                ref={(el) => {
-                  videoPreviewRef.current = el;
-                  if (el && stream && el.srcObject !== stream) {
-                    el.srcObject = stream;
-                    el.play().catch(() => {});
-                  }
-                }}
+                ref={playbackVideoRef}
+                src={previewUrl}
+                controls
                 autoPlay
                 playsInline
-                muted
-                onLoadedMetadata={(e) => {
-                  const w = e.target.videoWidth || 0;
-                  const h = e.target.videoHeight || 0;
-                  setLiveStreamMeta({
-                    width: w,
-                    height: h,
-                    isLandscape: w > h
-                  });
-                }}
-                onResize={(e) => {
-                  const w = e.target.videoWidth || 0;
-                  const h = e.target.videoHeight || 0;
-                  setLiveStreamMeta({
-                    width: w,
-                    height: h,
-                    isLandscape: w > h
-                  });
-                }}
-                className="w-full h-full object-cover bg-black"
+                className="w-full h-full object-contain bg-black"
               />
-            )}
-
-            {/* Zoom Notification Floating Banner */}
-            {zoomNotification && (
-              <div className="absolute top-16 inset-x-4 max-w-sm mx-auto flex justify-center pointer-events-none z-35 animate-in fade-in">
-                <div className="px-4 py-2 rounded-xl bg-black/85 backdrop-blur-md border border-teal-400/60 text-teal-300 text-xs font-semibold shadow-2xl flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-teal-400 shrink-0" />
-                  <span>{zoomNotification}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Camera Shutter Flash Animation */}
-            {photoFlash && (
-              <div className="absolute inset-0 bg-white z-50 pointer-events-none animate-out fade-out duration-200" />
-            )}
-
-            {/* Device Rotation Guidance Helpers */}
-            {!recordedBlob && !isPortrait && liveStreamMeta.width > 0 && liveStreamMeta.width < liveStreamMeta.height && (
-              <div className="absolute bottom-24 inset-x-0 flex justify-center pointer-events-none z-25 px-4 animate-in fade-in">
-                <div className="px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-teal-400/50 text-teal-300 text-xs font-semibold flex items-center gap-2 shadow-xl">
-                  <RotateCw className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                  <span>Turn phone sideways for full widescreen</span>
-                </div>
-              </div>
-            )}
-            {!recordedBlob && isPortrait && liveStreamMeta.width > liveStreamMeta.height && (
-              <div className="absolute bottom-24 inset-x-0 flex justify-center pointer-events-none z-25 px-4 animate-in fade-in">
-                <div className="px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-teal-400/50 text-teal-300 text-xs font-semibold flex items-center gap-2 shadow-xl">
-                  <RotateCw className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                  <span>Hold phone upright for vertical portrait</span>
-                </div>
-              </div>
-            )}
-
-            {/* Recorded Playback Review Stream */}
-            {recordedBlob && previewUrl && (
-              <div className="relative w-full h-full flex items-center justify-center bg-black">
-                <video
-                  key={previewUrl}
-                  ref={playbackVideoRef}
-                  src={previewUrl}
-                  controls
-                  autoPlay
-                  playsInline
-                  onLoadedMetadata={(e) => {
-                    const w = e.target.videoWidth || 0;
-                    const h = e.target.videoHeight || 0;
-                    setPreviewMeta(prev => ({
-                      ...prev,
-                      width: w,
-                      height: h,
-                      isLandscape: w > h
-                    }));
-                  }}
-                  style={{
-                    transform: previewMeta.rotation ? `rotate(${previewMeta.rotation}deg)` : undefined,
-                    transition: 'transform 0.25s ease'
-                  }}
-                  className="w-full h-full object-contain bg-black"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Multi-Part Tab Selector in Review Mode (Shown when multiple parts recorded) */}
-          {recordedParts.length > 1 && recordedBlob && (
-            <div className="absolute top-16 inset-x-0 flex flex-col items-center gap-1.5 z-30 pointer-events-none px-4">
-              <div className="pointer-events-auto flex items-center gap-1.5 p-1 rounded-full bg-black/75 backdrop-blur-md border border-emerald-500/40 shadow-2xl">
-                <div className="px-2.5 py-0.5 text-[11px] font-bold text-emerald-400 flex items-center gap-1 font-mono">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{recordedParts.length} Parts Auto-Split:</span>
-                </div>
-                {recordedParts.map((part, idx) => (
-                  <button
-                    key={part.name || idx}
-                    type="button"
-                    onClick={() => handleSelectReviewPart(idx)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold font-mono transition-all cursor-pointer ${
-                      selectedReviewPartIndex === idx
-                        ? 'bg-emerald-500 text-slate-950 shadow-md scale-105'
-                        : 'text-slate-300 hover:text-white hover:bg-white/10'
-                    }`}
-                  >
-                    Part {idx + 1} ({formatSizeMB(part.size)} MB)
-                  </button>
-                ))}
-              </div>
-              <span className="text-[10px] text-emerald-300 bg-black/60 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono">
-                All parts under 50 MB limit • Will be attached together
-              </span>
             </div>
           )}
 
-          {/* Floating Auto-Split Live Notification Banner */}
-          {splitNotification && (
-            <div className="absolute top-16 inset-x-4 max-w-md mx-auto p-2.5 rounded-xl bg-emerald-950/90 backdrop-blur-md border border-emerald-400 text-white text-xs shadow-2xl flex items-center gap-2.5 z-40 animate-in fade-in slide-in-from-top-2 pointer-events-none">
-              <div className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-              </div>
-              <span className="font-semibold text-emerald-100">{splitNotification}</span>
-            </div>
+          {/* Shutter Flash Animation */}
+          {photoFlash && (
+            <div className="absolute inset-0 bg-white z-50 pointer-events-none animate-out fade-out duration-200" />
           )}
 
-          {/* Camera Loading Spinner */}
-          {isInitializing && (
-            <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center gap-3 text-slate-200 z-10">
-              <RefreshCw className="w-9 h-9 text-teal-400 animate-spin" />
-              <p className="text-xs font-semibold tracking-wide">
-                Starting {isPortrait ? 'Portrait' : 'Landscape'} camera...
+          {/* Camera Error Screen with One-Click Fallback */}
+          {cameraError && !recordedBlob && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center bg-slate-900 text-white">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mb-4">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold mb-2">Camera Unavailable</h4>
+              <p className="text-xs text-slate-300 max-w-sm mb-6 leading-relaxed">
+                {cameraError}
               </p>
-            </div>
-          )}
-
-          {/* Camera Error / Permission Denied Fallback Card */}
-          {cameraError && (
-            <div className="absolute inset-0 p-6 bg-slate-900/95 flex flex-col items-center justify-center text-center max-w-md mx-auto z-20">
-              <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-3">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <h4 className="text-sm font-bold text-white mb-1.5">Direct Camera Stream Unavailable</h4>
-              <p className="text-xs text-slate-300 mb-4 leading-relaxed">{cameraError}</p>
-              
-              <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full">
+              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
                 <button
                   type="button"
-                  onClick={() => initializeCamera(facingMode, selectedOrientation)}
-                  className="w-full py-2.5 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  onClick={() => initializeCamera(facingMode)}
+                  className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Retry Camera</span>
+                  <RefreshCw className="w-4 h-4" /> Try Again
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    stopStream();
-                    setSelectedOrientation(null);
-                  }}
-                  className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Change Orientation</span>
-                </button>
-              </div>
-
-              <div className="mt-3 w-full">
                 <button
                   type="button"
                   onClick={() => fileFallbackInputRef.current?.click()}
-                  className="w-full py-2 px-3 bg-slate-700/60 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-2 border border-slate-700"
                 >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Use Device File / Camera</span>
+                  <Upload className="w-4 h-4" /> Use Device Camera
                 </button>
               </div>
-
-              <p className="text-[10px] text-slate-400 mt-3">
-                Note: File upload limit is 50 MB per file.
-              </p>
             </div>
           )}
 
-          {/* FLOATING TOP BAR: Sleek, non-intrusive HUD Over Viewfinder */}
-          <div className="absolute top-0 inset-x-0 p-3 sm:p-4 bg-gradient-to-b from-black/85 via-black/30 to-transparent flex items-center justify-between z-20 pointer-events-none gap-2">
-            {/* Status / Policy Badge */}
+          {/* TOP HUD BAR: Clean, non-intrusive floating stats */}
+          <div className="absolute top-0 inset-x-0 p-3 sm:p-4 bg-gradient-to-b from-black/80 via-black/30 to-transparent flex items-center justify-between z-30 pointer-events-none">
+            
+            {/* Status / Live Telemetry */}
             <div className="pointer-events-auto flex items-center gap-2">
               {isRecording ? (
-                /* Active Recording Telemetry Pill */
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-red-500/50 shadow-lg text-white">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-red-500/60 shadow-lg text-white">
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
                   </span>
                   <span className="text-xs font-bold font-mono tracking-wider">
-                    {formatTime(recordingSeconds)}
+                    {formatTime(recordingSeconds)} / 03:00
                   </span>
                   <span className="text-[11px] text-teal-300 font-mono font-bold border-l border-white/20 pl-2">
-                    Part {activePartNumber} ({formatSizeMB(activePartSizeBytes)} MB)
-                  </span>
-                  <span className="text-[10px] text-slate-300 font-mono border-l border-white/20 pl-2 hidden xs:inline">
-                    Total: {formatSizeMB(currentSizeBytes)} MB
-                  </span>
-                  <span className="text-[10px] text-teal-300 font-mono border-l border-white/20 pl-2 hidden sm:inline">
-                    {zoomLevel.toFixed(1)}x
+                    {formatMB(currentSizeBytes)} MB / 50 MB
                   </span>
                 </div>
               ) : recordedBlob ? (
-                /* Review Mode Pill */
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-emerald-500/50 text-white text-xs">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="font-semibold">
-                    {recordedParts.length > 1
-                      ? `${recordedParts.length} Parts (${formatSizeMB(currentSizeBytes)} MB Total)`
-                      : `${formatSizeMB(recordedBlob.size)} MB`}
-                  </span>
-                  <span className="text-[10px] text-emerald-400 font-mono font-bold capitalize">
-                    ({selectedOrientation})
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-emerald-500/60 text-white text-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span className="font-bold font-mono">
+                    {formatTime(recordingSeconds)} • {formatMB(recordedBlob.size)} MB (720p HD)
                   </span>
                 </div>
               ) : (
-                /* Idle Ready Pill (Very compact so entire screen is visible) */
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white text-xs shadow-md">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white text-xs shadow-md">
                   <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-                  <span className="font-semibold text-[11px]">
-                    {isPortrait ? 'Fixed Portrait (9:16)' : 'Fixed Landscape (16:9)'}
-                  </span>
-                  <span className="text-[10px] text-teal-300 font-mono hidden xs:inline">• Max 50 MB / Part</span>
+                  <span className="font-semibold text-[11px]">720p HD • Max 3 Min • 50 MB</span>
                 </div>
               )}
             </div>
 
-            {/* Fixed Orientation Locked Indicator Badge */}
-            {!recordedBlob && (
-              <div className="pointer-events-auto flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/20 text-white shadow-lg text-[11px] font-mono">
-                {isPortrait ? (
-                  <>
-                    <Smartphone className="w-3.5 h-3.5 text-teal-400" />
-                    <span className="font-semibold">Fixed • Portrait</span>
-                  </>
-                ) : (
-                  <>
-                    <Monitor className="w-3.5 h-3.5 text-blue-400" />
-                    <span className="font-semibold">Fixed • Landscape</span>
-                  </>
-                )}
-                {!isRecording && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = isPortrait ? 'landscape' : 'portrait';
-                      handleSelectOrientation(next);
-                    }}
-                    className="ml-1.5 px-2.5 py-0.5 rounded-full bg-teal-500/30 hover:bg-teal-500/50 text-[10px] text-teal-200 font-sans font-bold transition-all cursor-pointer border border-teal-400/40"
-                    title={`Switch to ${isPortrait ? 'Landscape' : 'Portrait'} mode`}
-                  >
-                    Switch to {isPortrait ? 'Landscape' : 'Portrait'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Top Right Action Icons */}
+            {/* Top Right Close Button */}
             <div className="pointer-events-auto flex items-center gap-2">
-              {/* Rotate preview button in review mode */}
-              {recordedBlob && (
-                <button
-                  type="button"
-                  onClick={handleRotatePreview}
-                  className="p-2 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md"
-                  title="Rotate video (90°)"
-                >
-                  <RotateCw className="w-4 h-4" />
-                </button>
-              )}
-
-              {/* Snapped Photos Counter Pill */}
-              {capturedPhotos.length > 0 && !recordedBlob && (
-                <button
-                  type="button"
-                  onClick={handleUseCapturedPhotosOnly}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg transition-colors cursor-pointer border border-emerald-400/50"
-                  title="Click to save and use captured photos"
-                >
-                  <Camera className="w-3.5 h-3.5 text-white" />
-                  <span>{capturedPhotos.length} Photo{capturedPhotos.length > 1 ? 's' : ''}</span>
-                </button>
-              )}
-
-              {/* Flip camera between Rear and Front (Always available live, even while recording!) */}
-              {!recordedBlob && (
-                <button
-                  type="button"
-                  onClick={handleToggleFacingMode}
-                  className="p-2 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-teal-400 hover:text-white border border-teal-500/40 transition-all cursor-pointer shadow-md"
-                  title={`Flip camera (${facingMode === 'environment' ? 'Switch to Front' : 'Switch to Rear'})`}
-                >
-                  <FlipHorizontal className="w-4 h-4" />
-                </button>
-              )}
-
-              {/* Close button */}
               <button
                 type="button"
                 onClick={handleClose}
-                className="p-2 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md"
-                title="Exit video recorder (Esc)"
+                className="p-2 bg-black/50 hover:bg-black/75 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md"
+                title="Close Camera (Esc)"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          {/* Near-Limit Live Hint (Shows that Part N will auto-split seamlessly into next part) */}
-          {isRecording && activePartSizeBytes > 30 * 1024 * 1024 && !splitNotification && (
-            <div className="absolute top-16 inset-x-4 max-w-sm mx-auto p-2.5 rounded-xl bg-teal-950/90 backdrop-blur-md border border-teal-400 text-white text-xs shadow-2xl flex items-center gap-2 z-20 pointer-events-none">
-              <Sparkles className="w-4 h-4 text-teal-300 shrink-0 animate-spin" />
-              <span>
-                <strong>Part {activePartNumber} nearing 35 MB.</strong> Will auto-split seamlessly into Part {activePartNumber + 1}. Keep recording!
-              </span>
-            </div>
-          )}
-
-          {/* FLOATING ZOOM PRESET CONTROLS (Positioned vertically on the Right Side - Safe Distance from Shutter) */}
+          {/* Floating Zoom Button (Right side, tap to toggle 1x / 2x) */}
           {!recordedBlob && !cameraError && (
-            <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-30 pointer-events-none">
-              <div className="pointer-events-auto flex flex-col items-center gap-2 p-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 shadow-2xl">
-                {availableZoomPresets.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      applyZoom(preset);
-                    }}
-                    className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full text-xs font-bold font-mono flex items-center justify-center transition-all cursor-pointer ${
-                      Math.abs(zoomLevel - preset) < 0.2
-                        ? 'bg-teal-500 text-slate-950 shadow-md scale-105 ring-2 ring-teal-300'
-                        : 'text-white/80 hover:text-white hover:bg-white/15'
-                    }`}
-                    title={`Set zoom to ${preset}x`}
-                  >
-                    {preset}x
-                  </button>
-                ))}
-
-                {/* Show custom decimal zoom level if pinched between presets */}
-                {!availableZoomPresets.some(p => Math.abs(zoomLevel - p) < 0.2) && (
-                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold text-teal-400 bg-teal-950/80 rounded-full border border-teal-500/40">
-                    {zoomLevel.toFixed(1)}x
-                  </span>
-                )}
-              </div>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto">
+              <button
+                type="button"
+                onClick={handleToggleZoom}
+                className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white text-xs font-bold font-mono flex items-center justify-center hover:bg-black/80 transition-all shadow-xl cursor-pointer"
+                title="Toggle Zoom (1x / 2x)"
+              >
+                {zoomLevel}x
+              </button>
             </div>
           )}
 
-          {/* FLOATING BOTTOM BAR: Minimal Footprint Shutter Dock */}
-          <div className="absolute bottom-0 inset-x-0 p-4 pb-8 sm:pb-5 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-between z-20">
-            {/* Left Slot: Gallery / File Upload Fallback + Photo Snapshot */}
-            <div className="w-24 sm:w-28 flex items-center justify-start gap-2">
-              {!isRecording && !recordedBlob && (
-                <button
-                  type="button"
-                  onClick={() => fileFallbackInputRef.current?.click()}
-                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md flex items-center justify-center hover:border-slate-300"
-                  title="Upload video from gallery or file"
-                >
-                  <Upload className="w-4 h-4 sm:w-5 sm:h-5 text-slate-200" />
-                </button>
-              )}
-              {!recordedBlob && (
-                <button
-                  type="button"
-                  onClick={handleCapturePhoto}
-                  className={`p-3 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-xl flex items-center justify-center active:scale-90 border-2 ${
-                    isRecording
-                      ? 'bg-white/25 hover:bg-white/35 border-white text-white ring-2 ring-white/30'
-                      : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-300 text-white'
-                  }`}
-                  title="Take photo snapshot (saved with complaint)"
-                >
-                  <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                </button>
-              )}
+          {/* 3-Minute Limit Approaching Warning */}
+          {isRecording && remainingSeconds <= 30 && remainingSeconds > 0 && (
+            <div className="absolute top-16 inset-x-4 max-w-xs mx-auto p-2 rounded-xl bg-amber-500/90 text-slate-950 text-xs font-bold text-center shadow-2xl z-30 animate-pulse pointer-events-none">
+              ⚠️ {remainingSeconds}s remaining before 3-minute limit
             </div>
-
-            {/* Center Slot: Primary Shutter Control (Big, Unobstructed, Safe from Zoom Buttons) */}
-            <div className="flex items-center justify-center">
-              {recordedBlob ? (
-                /* Post-Recording Action Buttons */
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleRetake}
-                    className="py-2.5 px-4 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md text-white rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/15 cursor-pointer shadow-lg"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Retake</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleUseVideo}
-                    className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xl shadow-emerald-950/50"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>
-                      {recordedParts.length > 1
-                        ? `Use Video (${recordedParts.length} Parts${capturedPhotos.length > 0 ? ` + ${capturedPhotos.length} Photos` : ''})`
-                        : capturedPhotos.length > 0
-                        ? `Use Video & ${capturedPhotos.length} Photo${capturedPhotos.length > 1 ? 's' : ''}`
-                        : 'Use Video'}
-                    </span>
-                  </button>
-                </div>
-              ) : isRecording ? (
-                /* Active Recording: Big Stop Shutter */
-                <button
-                  type="button"
-                  onClick={() => handleStopRecording('user')}
-                  className="w-18 h-18 sm:w-20 sm:h-20 rounded-full border-4 border-red-500 bg-red-600/20 backdrop-blur-md flex items-center justify-center cursor-pointer active:scale-95 transition-transform shadow-2xl shadow-red-950/60"
-                  title="Stop recording"
-                >
-                  <div className="w-7 h-7 rounded-md bg-red-500 shadow-md animate-pulse" />
-                </button>
-              ) : (
-                /* Idle: Big Camera Shutter Record Button */
-                <button
-                  type="button"
-                  disabled={isInitializing || !stream || !!cameraError}
-                  onClick={handleStartRecording}
-                  className="w-18 h-18 sm:w-20 sm:h-20 rounded-full border-4 border-white bg-white/10 backdrop-blur-md flex items-center justify-center cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-transform shadow-2xl"
-                  title={!stream ? "Connecting to camera..." : "Start recording (HD auto-compressed • auto-splits under 50 MB)"}
-                >
-                  <div className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 transition-colors shadow-inner" />
-                </button>
-              )}
-            </div>
-
-            {/* Right Slot: Quick Flip Camera (Rear ↔ Front) - Always visible in Idle and Live Recording */}
-            <div className="w-24 sm:w-28 flex justify-end">
-              {!recordedBlob && (
-                <button
-                  type="button"
-                  onClick={handleToggleFacingMode}
-                  className="p-3 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-full text-white border border-white/20 hover:border-teal-400 transition-all cursor-pointer shadow-md flex items-center justify-center active:scale-95"
-                  title={`Flip camera (${facingMode === 'environment' ? 'Switch to Front' : 'Switch to Rear'})`}
-                >
-                  <FlipHorizontal className="w-5 h-5 text-teal-400" />
-                </button>
-              )}
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Hidden Fallback File Input */}
+        {/* BOTTOM CAMERA CONTROLS BAR */}
+        <div className="relative w-full p-4 sm:p-5 bg-gradient-to-t from-black via-black/95 to-black/70 flex flex-col items-center justify-center gap-3 z-30">
+          
+          {/* Main Shutter & Actions Row */}
+          {!recordedBlob ? (
+            <div className="w-full flex items-center justify-around max-w-sm">
+              
+              {/* Snapshot Photo Button */}
+              <button
+                type="button"
+                onClick={handleCapturePhoto}
+                disabled={isInitializing || Boolean(cameraError)}
+                className="p-3 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer disabled:opacity-30 relative"
+                title="Take photo snapshot"
+              >
+                <Camera className="w-6 h-6 text-white" />
+                {capturedPhotos.length > 0 && (
+                  <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-teal-500 text-slate-950 font-mono text-[10px] font-bold shadow-md">
+                    {capturedPhotos.length}
+                  </span>
+                )}
+              </button>
+
+              {/* Big Center Shutter Button */}
+              <div className="relative flex items-center justify-center">
+                {isRecording ? (
+                  /* STOP RECORDING BUTTON (Red Square inside ring) */
+                  <button
+                    type="button"
+                    onClick={() => handleStopRecording('user')}
+                    className="w-18 h-18 sm:w-20 sm:h-20 rounded-full border-4 border-white flex items-center justify-center bg-black/40 active:scale-95 transition-all cursor-pointer shadow-2xl ring-4 ring-red-500/40"
+                    title="Stop Recording"
+                  >
+                    <div className="w-7 h-7 rounded-md bg-red-600 shadow-md animate-pulse" />
+                  </button>
+                ) : (
+                  /* START RECORDING BUTTON (Red Circle inside white ring) */
+                  <button
+                    type="button"
+                    onClick={handleStartRecording}
+                    disabled={isInitializing || Boolean(cameraError)}
+                    className="w-18 h-18 sm:w-20 sm:h-20 rounded-full border-4 border-white flex items-center justify-center bg-black/40 hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-2xl disabled:opacity-30"
+                    title="Start Recording (3 min HD)"
+                  >
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-600 hover:bg-red-500 shadow-md transition-colors" />
+                  </button>
+                )}
+              </div>
+
+              {/* Flip Camera Button (Rear ⇄ Front) */}
+              <button
+                type="button"
+                onClick={handleToggleFacingMode}
+                disabled={isRecording || isInitializing || Boolean(cameraError)}
+                className="p-3 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer disabled:opacity-30"
+                title={`Switch camera (${facingMode === 'environment' ? 'Front' : 'Rear'})`}
+              >
+                <FlipHorizontal className="w-6 h-6 text-white" />
+              </button>
+            </div>
+          ) : (
+            /* REVIEW MODE CONTROLS: Retake vs Use Video */
+            <div className="w-full flex items-center justify-center gap-3 max-w-sm">
+              <button
+                type="button"
+                onClick={handleRetake}
+                className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-700 shadow-md"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Retake</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleUseVideo}
+                className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-900/30"
+              >
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                <span>Use Video {capturedPhotos.length > 0 ? `+ ${capturedPhotos.length} Photos` : ''}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Secondary Device File Fallback Link */}
+          {!isRecording && !recordedBlob && (
+            <button
+              type="button"
+              onClick={() => fileFallbackInputRef.current?.click()}
+              className="text-[11px] text-teal-400 hover:text-teal-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Or choose video from device gallery</span>
+            </button>
+          )}
+        </div>
+
+        {/* Hidden Device Camera / File Fallback Input */}
         <input
           ref={fileFallbackInputRef}
           type="file"
@@ -1672,4 +717,5 @@ export function VideoRecorderModal({
     </div>
   );
 }
+
 export default VideoRecorderModal;
