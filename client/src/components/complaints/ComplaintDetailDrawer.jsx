@@ -19,6 +19,7 @@ import { ProcessingProgressModal } from '../common/ProcessingProgressModal';
 import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, broadcastTechniciansUpdate } from '../../utils/liveSync';
 import { NewComplaintModal } from './NewComplaintModal';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
+import { EnterpriseVideoPlayerModal } from '../common/EnterpriseVideoPlayerModal';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 
@@ -4486,8 +4487,16 @@ export const ComplaintDetailDrawer = ({
         </div>
       )}
 
-      {/* Lightbox / High-Res Document & Photo Preview Modal */}
-      {previewDocModal && (
+      {/* Enterprise Full-Window Custom Video Player */}
+      <EnterpriseVideoPlayerModal
+        isOpen={Boolean(previewDocModal && previewDocModal.isVideo)}
+        onClose={() => setPreviewDocModal(null)}
+        videoUrl={previewDocModal?.url}
+        fileName={previewDocModal?.name}
+      />
+
+      {/* Lightbox / High-Res Document & Photo Preview Modal (Non-Video) */}
+      {previewDocModal && !previewDocModal.isVideo && (
         <div 
           role="dialog"
           aria-modal="true"
@@ -4502,35 +4511,15 @@ export const ComplaintDetailDrawer = ({
           }}
         >
           <div 
-            className={`relative w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150 transition-all ${
-              previewDocModal?.isVideo
-                ? (previewVideoMeta.isLandscape ? 'max-w-5xl' : 'max-w-md')
-                : 'max-w-3xl'
-            }`} 
+            className="relative w-full max-w-4xl bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150 transition-all"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="text-xs font-bold text-slate-800 truncate">{previewDocModal.name}</span>
-                {previewDocModal.isVideo && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold shrink-0">
-                    {previewVideoMeta.isLandscape ? 'Landscape' : 'Portrait'}
-                  </span>
-                )}
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                {previewDocModal.isVideo && (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewVideoMeta(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }))}
-                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                    title="Rotate video (0°, 90°, 180°, 270°)"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span>Rotate{previewVideoMeta.rotation ? ` ${previewVideoMeta.rotation}°` : ''}</span>
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
@@ -4556,55 +4545,7 @@ export const ComplaintDetailDrawer = ({
               </div>
             </div>
             <div className="p-2 flex items-center justify-center max-h-[75vh] overflow-auto bg-slate-50/70 rounded-xl mt-2">
-              {previewDocModal.isVideo ? (
-                <div className="relative flex flex-col items-center justify-center w-full">
-                  <video 
-                    key={previewDocModal.url}
-                    controls 
-                    autoPlay 
-                    playsInline
-                    preload="metadata"
-                    onLoadedMetadata={(e) => {
-                      const w = e.target.videoWidth || 0;
-                      const h = e.target.videoHeight || 0;
-                      if (w && h) {
-                        setPreviewVideoMeta(prev => ({ ...prev, isLandscape: w > h }));
-                      }
-                    }}
-                    style={{
-                      transform: previewVideoMeta.rotation ? `rotate(${previewVideoMeta.rotation}deg)` : undefined,
-                      transition: 'transform 0.25s ease'
-                    }}
-                    className={`rounded-lg shadow-sm bg-black object-contain ${
-                      previewVideoMeta.isLandscape
-                        ? 'w-full aspect-video max-h-[75vh]'
-                        : 'max-w-full max-h-[75vh] aspect-[9/16]'
-                    }`}
-                    onError={() => {
-                      const fb = document.getElementById('preview-video-fallback-view');
-                      if (fb) fb.style.display = 'flex';
-                    }}
-                  >
-                    <source src={getStreamUrl(previewDocModal.url)} type="video/mp4" />
-                    <source src={getDownloadUrl(previewDocModal.url)} type="video/mp4" />
-                    Your browser does not support video playback.
-                  </video>
-                  <div id="preview-video-fallback-view" style={{ display: 'none' }} className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border border-slate-200 my-4 w-full">
-                    <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 mx-auto mb-2">
-                      <Video className="w-6 h-6" />
-                    </div>
-                    <p className="text-xs font-bold text-slate-800">{previewDocModal.name}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original MP4 video:</p>
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                    >
-                      <Download className="w-3.5 h-3.5" /> Download Video
-                    </button>
-                  </div>
-                </div>
-              ) : previewDocModal.isImage ? (
+              {previewDocModal.isImage ? (
                 <div className="relative flex flex-col items-center justify-center w-full">
                   <img 
                     src={previewDocModal.url} 

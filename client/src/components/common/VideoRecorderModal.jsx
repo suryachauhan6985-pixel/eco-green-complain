@@ -54,11 +54,11 @@ export function VideoRecorderModal({
   // Dedicated Fixed Recording Orientation: 'portrait' | 'landscape' | null (null requires selection)
   const [selectedOrientation, setSelectedOrientation] = useState(null);
 
-  // Zoom control state - Strictly defaults to 1x zoom
+  // Zoom control state - Defaults to 1x with 0.5x ultra-wide support
   const [zoomLevel, setZoomLevel] = useState(1);
   const [zoomCapabilities, setZoomCapabilities] = useState({
     supported: false,
-    min: 1,
+    min: 0.5,
     max: 5,
     step: 0.1
   });
@@ -204,7 +204,7 @@ export function VideoRecorderModal({
 
   // Apply zoom level (both native hardware optical/sensor zoom and smooth fallback digital scale)
   const applyZoom = useCallback(async (targetZoom) => {
-    const minZ = zoomCapabilities.min || 1;
+    const minZ = 0.5;
     const maxZ = zoomCapabilities.max || 5;
     const clamped = Math.max(minZ, Math.min(maxZ, Number(Number(targetZoom).toFixed(1))));
     setZoomLevel(clamped);
@@ -212,10 +212,12 @@ export function VideoRecorderModal({
     if (stream) {
       const track = stream.getVideoTracks()[0];
       if (track && zoomCapabilities.supported) {
-        try {
-          await track.applyConstraints({ advanced: [{ zoom: clamped }] });
-        } catch (e) {
-          console.warn('Hardware zoom constraint application error:', e);
+        if (clamped >= (zoomCapabilities.min || 1)) {
+          try {
+            await track.applyConstraints({ advanced: [{ zoom: clamped }] });
+          } catch (e) {
+            console.warn('Hardware zoom constraint application error:', e);
+          }
         }
       }
     }
@@ -248,21 +250,18 @@ export function VideoRecorderModal({
       return;
     }
 
-    // Hardware Camera Orientation Mapping for Real Mobile Devices:
-    // On mobile devices (Android / iOS), camera sensors and display coordinates are rotated 90 degrees.
-    // - Selecting Landscape (widescreen 16:9): Mobile camera requires vertical constraint (9:16 / 720x1280)
-    //   to produce a true 16:9 widescreen horizontal stream.
-    // - Selecting Portrait (vertical 9:16): Mobile camera requires widescreen constraint (16:9 / 1280x720)
-    //   to produce a true 9:16 vertical stream without black bars.
-    const isHardwarePortraitConstraint = desiredOrientation === 'landscape';
+    // Natural Aspect-Ratio & Orientation Mapping:
+    // When Landscape is chosen: request 16:9 widescreen (1280x720) without sensor cropping
+    // When Portrait is chosen: request 9:16 vertical (720x1280)
+    const isLandscape = desiredOrientation === 'landscape';
 
     try {
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: isHardwarePortraitConstraint ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-          height: isHardwarePortraitConstraint ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-          aspectRatio: { ideal: isHardwarePortraitConstraint ? (9 / 16) : (16 / 9) },
+          width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+          height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+          aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
           frameRate: { ideal: 30, max: 30 }
         },
         audio: {
@@ -283,9 +282,9 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: desiredFacingMode },
-              width: isHardwarePortraitConstraint ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-              height: isHardwarePortraitConstraint ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-              aspectRatio: { ideal: isHardwarePortraitConstraint ? (9 / 16) : (16 / 9) },
+              width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+              height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+              aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
               frameRate: { ideal: 30, max: 30 }
             },
             audio: true
@@ -297,7 +296,7 @@ export function VideoRecorderModal({
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
                 facingMode: { ideal: desiredFacingMode },
-                aspectRatio: { ideal: isHardwarePortraitConstraint ? (9 / 16) : (16 / 9) }
+                aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) }
               }
             });
             setHasAudio(false);
@@ -320,11 +319,11 @@ export function VideoRecorderModal({
         }
       }
 
-      // Check hardware zoom capabilities without forcing any initial digital or optical zoom
+      // Check hardware zoom capabilities (with 0.5x ultra-wide support)
       const track = newStream.getVideoTracks()[0];
       if (track) {
         let isHardwareZoomAvailable = false;
-        let minZ = 1;
+        let minZ = 0.5;
         let maxZ = 5;
         let stepZ = 0.1;
 
@@ -332,7 +331,7 @@ export function VideoRecorderModal({
           const caps = track.getCapabilities();
           if ('zoom' in caps) {
             isHardwareZoomAvailable = true;
-            minZ = caps.zoom.min ?? 1;
+            minZ = caps.zoom.min ?? 0.5;
             maxZ = caps.zoom.max ?? 5;
             stepZ = caps.zoom.step ?? 0.1;
           }
@@ -340,11 +339,28 @@ export function VideoRecorderModal({
 
         setZoomCapabilities({
           supported: isHardwareZoomAvailable,
-          min: minZ,
+          min: Math.min(0.5, minZ),
           max: Math.max(3, maxZ),
           step: stepZ
         });
         setZoomLevel(1); // strictly start at clean 1x normal view
+
+        // Phone call and camera interruptions resilience
+        track.onended = () => {
+          console.warn('[VideoRecorder] Camera track ended by incoming phone call or OS.');
+          if (isOpen && !recordedBlob) {
+            initializeCamera(desiredFacingMode, desiredOrientation);
+          }
+        };
+        track.onmute = () => {
+          console.warn('[VideoRecorder] Camera track temporarily muted by phone call/system.');
+        };
+        track.onunmute = () => {
+          console.log('[VideoRecorder] Camera track unmuted. Reconnecting preview.');
+          if (videoPreviewRef.current) {
+            videoPreviewRef.current.play().catch(() => {});
+          }
+        };
       }
     } catch (err) {
       console.error('Camera initialization failed:', err);
@@ -373,6 +389,40 @@ export function VideoRecorderModal({
       stopStream();
     };
   }, [isOpen]);
+
+  // Handle Incoming Phone Calls and App Backgrounding / Visibility Changes
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'hidden') {
+        console.log('[VideoRecorder] App hidden (possible incoming phone call). Preserving data.');
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          try {
+            // Flush all recorded chunks up to this moment so nothing is lost
+            mediaRecorderRef.current.requestData();
+          } catch (_) {}
+        }
+      } else if (document.visibilityState === 'visible') {
+        console.log('[VideoRecorder] App visible again. Verifying camera health.');
+        const activeTrack = activeStreamRef.current?.getVideoTracks()?.[0];
+        const isTrackDead = !activeTrack || activeTrack.readyState === 'ended' || activeTrack.muted;
+
+        if (isTrackDead) {
+          console.warn('[VideoRecorder] Camera track was interrupted by phone call/OS. Re-initializing camera...');
+          await initializeCamera(facingMode, selectedOrientation);
+        } else if (videoPreviewRef.current && activeStreamRef.current) {
+          videoPreviewRef.current.srcObject = activeStreamRef.current;
+          videoPreviewRef.current.play().catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isOpen, facingMode, selectedOrientation, initializeCamera]);
 
   // Handle explicit user orientation selection before starting camera
   const handleSelectOrientation = async (mode) => {
@@ -749,8 +799,8 @@ export function VideoRecorderModal({
     progressColorClass = 'bg-emerald-400';
   }
 
-  // Preset zoom levels to display (clamped to max zoom capability)
-  const availableZoomPresets = [1, 2, 3, 5].filter(z => z <= (zoomCapabilities.max || 5));
+  // Preset zoom levels to display (supports 0.5x ultra-wide up to max capability)
+  const availableZoomPresets = [0.5, 1, 2, 3].filter(z => z <= (zoomCapabilities.max || 5));
 
   // If no orientation has been selected yet, show the pre-camera choice screen
   if (!selectedOrientation) {
@@ -933,7 +983,7 @@ export function VideoRecorderModal({
                   });
                 }}
                 style={{
-                  transform: (!zoomCapabilities.supported && zoomLevel > 1) ? `scale(${zoomLevel})` : undefined,
+                  transform: (!zoomCapabilities.supported || zoomLevel < (zoomCapabilities.min || 1) || zoomLevel > 1) ? `scale(${zoomLevel})` : undefined,
                   transformOrigin: 'center center',
                   transition: 'transform 0.15s ease-out'
                 }}

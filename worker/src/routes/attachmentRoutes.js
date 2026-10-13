@@ -432,10 +432,11 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
       ).catch(() => ({ rows: [] }));
 
       if (matchInDb.rows && matchInDb.rows.length === 0) {
-        // Also allow if complaintId part of key exists in complaints table or is a temporary upload
+        // Also allow if folder is an application staging folder or valid complaint ID
         const keyParts = cleanKey.split('/');
         const folderId = keyParts[1];
-        if (folderId && folderId !== 'general' && folderId !== 'temp') {
+        const exemptFolders = ['general', 'temp', 'registration_media', 'registration_draft', 'whatsapp_media'];
+        if (folderId && !exemptFolders.includes(folderId)) {
           const compExists = await query(
             'SELECT id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
             [folderId],
