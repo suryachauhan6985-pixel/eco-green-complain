@@ -62,6 +62,7 @@ export function VideoRecorderModal({
 
   // Zoom control state - Defaults to 1x with 0.5x ultra-wide support
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomNotification, setZoomNotification] = useState(null);
   const [zoomCapabilities, setZoomCapabilities] = useState({
     supported: false,
     min: 0.5,
@@ -235,6 +236,14 @@ export function VideoRecorderModal({
         try { mediaRecorderRef.current.requestData(); } catch (_) {}
       }
 
+      // CRITICAL FOR ANDROID: Stop existing active camera track so hardware sensor is freed!
+      if (activeStreamRef.current) {
+        const oldTracks = activeStreamRef.current.getVideoTracks();
+        oldTracks.forEach(t => {
+          try { t.stop(); } catch (_) {}
+        });
+      }
+
       let tempStream;
       try {
         tempStream = await navigator.mediaDevices.getUserMedia({
@@ -249,14 +258,15 @@ export function VideoRecorderModal({
             : newVideoConstraints.deviceId;
           tempStream = await navigator.mediaDevices.getUserMedia({
             video: {
-              deviceId: { ideal: rawId },
-              width: newVideoConstraints.width,
-              height: newVideoConstraints.height
+              deviceId: { ideal: rawId }
             },
             audio: false
           });
         } else {
-          throw err1;
+          tempStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facingMode } },
+            audio: false
+          });
         }
       }
 
@@ -264,11 +274,6 @@ export function VideoRecorderModal({
       if (!newTrack) return null;
 
       if (activeStreamRef.current) {
-        const oldTracks = activeStreamRef.current.getVideoTracks();
-        oldTracks.forEach(t => {
-          activeStreamRef.current.removeTrack(t);
-          try { t.stop(); } catch (_) {}
-        });
         activeStreamRef.current.addTrack(newTrack);
 
         if (videoPreviewRef.current) {
@@ -304,7 +309,7 @@ export function VideoRecorderModal({
       console.warn('Dynamic video track switch failed:', err);
       return null;
     }
-  }, []);
+  }, [facingMode]);
 
   // Apply zoom level (both native hardware optical/sensor zoom and physical ultra-wide camera lens switching)
   const applyZoom = useCallback(async (targetZoom) => {
@@ -315,7 +320,6 @@ export function VideoRecorderModal({
     let track = activeStreamRef.current.getVideoTracks()[0];
     if (!track) return;
 
-    const isLandscape = selectedOrientation === 'landscape';
     const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
     const hasHardwareZoom = caps.zoom !== undefined;
     const minHw = caps.zoom?.min ?? 1;
@@ -346,49 +350,34 @@ export function VideoRecorderModal({
         const ultraWideCam = backCams.find(c => {
           const l = (c.label || '').toLowerCase();
           return l.includes('ultra') || l.includes('wide') || l.includes('0.5') || l.includes('uw') || l.includes('2');
-        }) || (backCams[0].deviceId === activeDeviceId ? backCams[1] : backCams[0]);
+        }) || (backCams[1] || backCams[0]);
 
         if (ultraWideCam && ultraWideCam.deviceId && ultraWideCam.deviceId !== activeDeviceId) {
           const switchedTrack = await switchVideoTrack({
-            deviceId: { exact: ultraWideCam.deviceId },
-            width: isLandscape ? { ideal: 1280 } : { ideal: 720 },
-            height: isLandscape ? { ideal: 720 } : { ideal: 1280 }
+            deviceId: { exact: ultraWideCam.deviceId }
           });
           if (switchedTrack) {
-            // Apply minimum zoom on ultra-wide camera
-            if (typeof switchedTrack.getCapabilities === 'function' && switchedTrack.getCapabilities().zoom) {
-              const swCaps = switchedTrack.getCapabilities().zoom;
-              try {
-                await switchedTrack.applyConstraints({ advanced: [{ zoom: swCaps.min || 1 }] });
-              } catch (_) {}
-            }
+            setZoomNotification('Ultra-Wide (0.5x) Lens Active');
+            setTimeout(() => setZoomNotification(null), 2500);
             return;
           }
         }
       }
 
-      // 1C: If device physically has no ultra-wide lens, fallback to lowest possible hardware zoom
-      if (hasHardwareZoom) {
-        try {
-          await track.applyConstraints({ advanced: [{ zoom: minHw }] });
-        } catch (_) {}
-      }
+      // 1C: If device physically has no ultra-wide lens, inform the technician
+      setZoomNotification('Ultra-wide (0.5x) lens not detected on this phone. Operating at standard 1x wide view.');
+      setTimeout(() => setZoomNotification(null), 3000);
+      setZoomLevel(1);
       return;
     }
 
     // Case 2: Standard (1x) or Telephoto (2x, 3x)
-    // If currently switched to secondary ultra-wide camera, switch back to the main back camera
-    if (backCams.length > 1 && facingMode === 'environment') {
-      const mainCam = backCams.find(c => {
-        const l = (c.label || '').toLowerCase();
-        return (l.includes('0') || l.includes('main') || !l.includes('wide')) && !l.includes('front');
-      }) || backCams[0];
-
-      if (mainCam && mainCam.deviceId && activeDeviceId && activeDeviceId !== mainCam.deviceId) {
+    // If currently on ultra-wide camera, switch back to primary camera (backCams[0])
+    if (backCams.length > 1 && facingMode === 'environment' && activeDeviceId) {
+      const mainCam = backCams[0];
+      if (mainCam && mainCam.deviceId && activeDeviceId !== mainCam.deviceId) {
         const switchedTrack = await switchVideoTrack({
-          deviceId: { exact: mainCam.deviceId },
-          width: isLandscape ? { ideal: 1280 } : { ideal: 720 },
-          height: isLandscape ? { ideal: 720 } : { ideal: 1280 }
+          deviceId: { exact: mainCam.deviceId }
         });
         if (switchedTrack) track = switchedTrack;
       }
@@ -404,7 +393,7 @@ export function VideoRecorderModal({
         console.warn('Hardware zoom constraint application error:', e);
       }
     }
-  }, [availableCameras, activeDeviceId, facingMode, selectedOrientation, switchVideoTrack, detectCameras]);
+  }, [availableCameras, activeDeviceId, facingMode, switchVideoTrack, detectCameras]);
 
   // Start hardware camera stream with fixed orientation HD constraints and 1x zoom
   const initializeCamera = useCallback(async (desiredFacingMode = facingMode, desiredOrientation = selectedOrientation) => {
@@ -434,17 +423,21 @@ export function VideoRecorderModal({
     }
 
     // Natural Aspect-Ratio & Orientation Mapping:
-    // When Landscape is chosen: request 16:9 widescreen (1280x720) without sensor cropping
-    // When Portrait is chosen: request 9:16 vertical (720x1280)
     const isLandscape = desiredOrientation === 'landscape';
+    const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // On mobile devices (particularly Android Chromium), the hardware camera sensor is mounted in landscape (16:9).
+    // Requesting width: 1280, height: 720 on mobile produces a vertical 720x1280 portrait stream,
+    // while width: 720, height: 1280 produces a horizontal 1280x720 landscape stream.
+    const effLandscape = isMobile ? !isLandscape : isLandscape;
 
     try {
       const constraints = {
         video: {
           facingMode: { ideal: desiredFacingMode },
-          width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-          height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-          aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
+          width: effLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+          height: effLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+          aspectRatio: { ideal: effLandscape ? (16 / 9) : (9 / 16) },
           frameRate: { ideal: 30, max: 30 }
         },
         audio: {
@@ -465,9 +458,9 @@ export function VideoRecorderModal({
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: desiredFacingMode },
-              width: isLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
-              height: isLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
-              aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) },
+              width: effLandscape ? { ideal: 1280, min: 640, max: 1920 } : { ideal: 720, min: 360, max: 1080 },
+              height: effLandscape ? { ideal: 720, min: 360, max: 1080 } : { ideal: 1280, min: 640, max: 1920 },
+              aspectRatio: { ideal: effLandscape ? (16 / 9) : (9 / 16) },
               frameRate: { ideal: 30, max: 30 }
             },
             audio: true
@@ -479,7 +472,7 @@ export function VideoRecorderModal({
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
                 facingMode: { ideal: desiredFacingMode },
-                aspectRatio: { ideal: isLandscape ? (16 / 9) : (9 / 16) }
+                aspectRatio: { ideal: effLandscape ? (16 / 9) : (9 / 16) }
               }
             });
             setHasAudio(false);
@@ -756,7 +749,10 @@ export function VideoRecorderModal({
       if (chunks.length > 0) {
         const blob = new Blob(chunks, { type: mimeType });
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const orientationTag = selectedOrientation || (previewMeta.isLandscape ? 'landscape' : 'portrait');
+        const actualIsLandscape = liveStreamMeta.width > 0 
+          ? (liveStreamMeta.width > liveStreamMeta.height) 
+          : (selectedOrientation === 'landscape');
+        const orientationTag = actualIsLandscape ? 'landscape' : 'portrait';
         const partName = `VID_${baseTimestampRef.current}_${orientationTag}_part${currentPartNum}.${ext}`;
         const partFile = new File([blob], partName, {
           type: mimeType,
@@ -817,7 +813,10 @@ export function VideoRecorderModal({
       const totalCount = allParts.length;
       const mimeType = recordedMimeType || 'video/webm';
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const orientationTag = selectedOrientation || (previewMeta.isLandscape ? 'landscape' : 'portrait');
+      const actualIsLandscape = liveStreamMeta.width > 0 
+        ? (liveStreamMeta.width > liveStreamMeta.height) 
+        : (selectedOrientation === 'landscape');
+      const orientationTag = actualIsLandscape ? 'landscape' : 'portrait';
 
       // If multiple parts, format clean filenames with Part X of Y
       const finalFiles = allParts.map((file, idx) => {
@@ -1184,21 +1183,17 @@ export function VideoRecorderModal({
           </div>
         )}
 
-        {/* Viewfinder Canvas (Locked to Chosen Orientation with Edge-to-Edge object-cover) */}
+        {/* Viewfinder Canvas (Edge-to-Edge object-cover with zero black bars) */}
         <div 
-          className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none p-0 sm:p-2"
+          className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none p-0"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Aspect-Ratio-Locked Frame (Prevents black side bars and forces true edge-to-edge Portrait or Landscape) */}
-          <div className={`relative w-full h-full flex items-center justify-center overflow-hidden ${
-            isPortrait 
-              ? 'max-w-md aspect-[9/16] sm:rounded-2xl shadow-2xl' 
-              : 'max-w-5xl aspect-[16/9] sm:rounded-2xl shadow-2xl'
-          } bg-black`}>
+          {/* Active Viewfinder Container */}
+          <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
 
-            {/* Active Live Camera Stream (Strictly object-cover to eliminate side black bars) */}
+            {/* Active Live Camera Stream (Strictly object-cover to eliminate side black bars completely) */}
             {!recordedBlob && !cameraError && (
               <video
                 ref={(el) => {
@@ -1229,8 +1224,18 @@ export function VideoRecorderModal({
                     isLandscape: w > h
                   });
                 }}
-                className="w-full h-full object-contain bg-black"
+                className="w-full h-full object-cover bg-black"
               />
+            )}
+
+            {/* Zoom Notification Floating Banner */}
+            {zoomNotification && (
+              <div className="absolute top-16 inset-x-4 max-w-sm mx-auto flex justify-center pointer-events-none z-35 animate-in fade-in">
+                <div className="px-4 py-2 rounded-xl bg-black/85 backdrop-blur-md border border-teal-400/60 text-teal-300 text-xs font-semibold shadow-2xl flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span>{zoomNotification}</span>
+                </div>
+              </div>
             )}
 
             {/* Camera Shutter Flash Animation */}
@@ -1450,13 +1455,13 @@ export function VideoRecorderModal({
                   <button
                     type="button"
                     onClick={() => {
-                      stopStream();
-                      setSelectedOrientation(null);
+                      const next = isPortrait ? 'landscape' : 'portrait';
+                      handleSelectOrientation(next);
                     }}
-                    className="ml-1.5 px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-[10px] text-white font-sans transition-colors cursor-pointer border border-white/10"
-                    title="Switch orientation before recording"
+                    className="ml-1.5 px-2.5 py-0.5 rounded-full bg-teal-500/30 hover:bg-teal-500/50 text-[10px] text-teal-200 font-sans font-bold transition-all cursor-pointer border border-teal-400/40"
+                    title={`Switch to ${isPortrait ? 'Landscape' : 'Portrait'} mode`}
                   >
-                    Change
+                    Switch to {isPortrait ? 'Landscape' : 'Portrait'}
                   </button>
                 )}
               </div>
