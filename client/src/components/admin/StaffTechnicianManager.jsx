@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../api/client';
 import { 
   Users, Wrench, Plus, Trash2, CheckCircle2, XCircle, 
@@ -1254,9 +1255,9 @@ export const StaffTechnicianManager = () => {
       )}
 
       {/* Add Member Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+      {isAddModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-9999 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <Plus className="w-4 h-4 text-emerald-600" />
@@ -1264,7 +1265,7 @@ export const StaffTechnicianManager = () => {
               </h3>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1354,26 +1355,27 @@ export const StaffTechnicianManager = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs cursor-pointer"
                 >
                   Save Member
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Edit Member Modal */}
-      {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+      {isEditModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-9999 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-emerald-600" />
@@ -1381,7 +1383,7 @@ export const StaffTechnicianManager = () => {
               </h3>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1475,7 +1477,7 @@ export const StaffTechnicianManager = () => {
                         setIsEditModalOpen(false);
                         handleOpenPasswordReset(editingMember, editingMember?.isTech);
                       }}
-                      className="w-full px-3 py-2 bg-white hover:bg-amber-50/70 border border-amber-300 text-amber-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-98"
+                      className="w-full px-3 py-2 bg-white hover:bg-amber-50/70 border border-amber-300 text-amber-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-98 cursor-pointer"
                     >
                       <Key className="w-3.5 h-3.5 text-amber-600" />
                       <span>Reset Account Password</span>
@@ -1488,26 +1490,27 @@ export const StaffTechnicianManager = () => {
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs cursor-pointer"
                 >
                   Update Member
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ================= DEDICATED PROFESSIONAL PASSWORD RESET MODAL ================= */}
-      {isResetModalOpen && resetMember && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95">
+      {isResetModalOpen && resetMember && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-9999 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
             {/* Header */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -1661,12 +1664,13 @@ export const StaffTechnicianManager = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {/* Edit Product Modal */}
-      {editingProduct && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4 animate-in fade-in zoom-in-95">
+      {editingProduct && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-9999 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-emerald-600" />
@@ -1720,7 +1724,8 @@ export const StaffTechnicianManager = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

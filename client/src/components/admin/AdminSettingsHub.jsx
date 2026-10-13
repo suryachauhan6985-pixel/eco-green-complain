@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Settings, User, Shield, MessageSquare, Layers, FileText, 
   Check, Save, RefreshCw, Key, Phone, Mail, Sparkles, Copy, 
@@ -572,8 +573,8 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
         email: safeEmail,
         password: addAccountForm.password.trim(),
         role: addAccountRole,
-        daily_voucher_rate: Number(addAccountForm.daily_voucher_rate) || 400,
-        specialization: addAccountForm.specialization?.trim() || undefined
+        daily_voucher_rate: 400,
+        specialization: undefined
       });
 
       showToast(`New ${addAccountRole === 'staff' ? 'Staff Member' : 'Technician'} created successfully!`, 'success');
@@ -1775,9 +1776,9 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
           )}
 
           {/* Add Account Modal */}
-          {isAddAccountModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-              <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+          {isAddAccountModalOpen && typeof document !== 'undefined' && createPortal(
+            <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto my-auto">
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
                   <div className="flex items-center gap-2">
                     <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
@@ -1793,7 +1794,7 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                   <button
                     type="button"
                     onClick={() => setIsAddAccountModalOpen(false)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -1861,37 +1862,6 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                     />
                   </div>
 
-                  {addAccountRole === 'technician' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                          Daily Voucher Rate (₹)
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="50"
-                          value={addAccountForm.daily_voucher_rate}
-                          onChange={(e) => setAddAccountForm(f => ({ ...f, daily_voucher_rate: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                          Specialization
-                        </label>
-                        <input
-                          type="text"
-                          value={addAccountForm.specialization}
-                          onChange={(e) => setAddAccountForm(f => ({ ...f, specialization: e.target.value }))}
-                          placeholder="e.g. Rooftop Inverters"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                        />
-                      </div>
-                    </div>
-                  )}
-
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-bold text-slate-700">
@@ -1900,7 +1870,7 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                       <button
                         type="button"
                         onClick={generateAddAccountPassword}
-                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
                       >
                         Regenerate
                       </button>
@@ -1919,14 +1889,14 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                     <button
                       type="button"
                       onClick={() => setIsAddAccountModalOpen(false)}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={addAccountLoading}
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                     >
                       {addAccountLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       <span>Create Account</span>
@@ -1934,7 +1904,8 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                   </div>
                 </form>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}
