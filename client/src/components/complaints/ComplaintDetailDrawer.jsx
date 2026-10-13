@@ -10,7 +10,7 @@ import {
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
   Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX,
-  ClipboardCheck
+  ClipboardCheck, Maximize2, Minimize2
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly, formatIndianTimeOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -4488,131 +4488,172 @@ export const ComplaintDetailDrawer = ({
       )}
 
       {/* Lightbox / High-Res Document, Video & Photo Preview Modal */}
-      {previewDocModal && (
-        <div 
-          role="dialog"
-          aria-modal="true"
-          tabIndex={-1}
-          className="fixed inset-0 z-80 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 outline-none" 
-          onClick={() => {
-            setPreviewDocModal(null);
-            setPreviewVideoMeta({ isLandscape: false, rotation: 0 });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.stopPropagation();
-              setPreviewDocModal(null);
-              setPreviewVideoMeta({ isLandscape: false, rotation: 0 });
-            }
-          }}
-        >
+      {previewDocModal && (() => {
+        const isRotated90or270 = (previewVideoMeta.rotation % 180) !== 0;
+        const isEffectiveLandscape = isRotated90or270
+          ? !previewVideoMeta.isLandscape
+          : previewVideoMeta.isLandscape;
+        const isFullscreen = Boolean(previewVideoMeta.isFullscreen);
+
+        return (
           <div 
-            className={`relative w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200 animate-in zoom-in-95 duration-150 transition-all ${
-              previewDocModal?.isVideo
-                ? (previewVideoMeta.isLandscape ? 'max-w-5xl' : 'max-w-md')
-                : 'max-w-4xl'
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
+            className={`fixed inset-0 z-80 flex items-center justify-center animate-in fade-in duration-150 outline-none ${
+              isFullscreen
+                ? 'bg-black p-0'
+                : 'bg-slate-950/85 backdrop-blur-sm p-2 sm:p-4'
             }`} 
-            onClick={e => e.stopPropagation()}
+            onClick={() => {
+              setPreviewDocModal(null);
+              setPreviewVideoMeta({ isLandscape: false, rotation: 0, isFullscreen: false });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                setPreviewDocModal(null);
+                setPreviewVideoMeta({ isLandscape: false, rotation: 0, isFullscreen: false });
+              }
+            }}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="text-xs font-bold text-slate-800 truncate">{previewDocModal.name}</span>
-                {previewDocModal.isVideo && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold shrink-0">
-                    {previewVideoMeta.isLandscape ? 'Landscape' : 'Portrait'}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {previewDocModal.isVideo && (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewVideoMeta(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }))}
-                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                    title="Rotate video (0°, 90°, 180°, 270°)"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span>Rotate{previewVideoMeta.rotation ? ` ${previewVideoMeta.rotation}°` : ''}</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
-                >
-                  <Download className="w-3.5 h-3.5" /> Download File
-                </button>
-                <a
-                  href={getDownloadUrl(previewDocModal.url)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" /> Full Tab
-                </a>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setPreviewDocModal(null);
-                    setPreviewVideoMeta({ isLandscape: false, rotation: 0 });
-                  }} 
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            <div className="p-2 flex items-center justify-center max-h-[75vh] overflow-auto bg-slate-50/70 rounded-xl mt-2">
-              {previewDocModal.isVideo ? (
-                <div className="relative flex flex-col items-center justify-center w-full">
-                  <video 
-                    key={previewDocModal.url}
-                    controls 
-                    autoPlay 
-                    playsInline
-                    preload="metadata"
-                    onLoadedMetadata={(e) => {
-                      const w = e.target.videoWidth || 0;
-                      const h = e.target.videoHeight || 0;
-                      if (w && h) {
-                        setPreviewVideoMeta(prev => ({ ...prev, isLandscape: w > h }));
-                      }
-                    }}
-                    style={{
-                      transform: previewVideoMeta.rotation ? `rotate(${previewVideoMeta.rotation}deg)` : undefined,
-                      transition: 'transform 0.25s ease'
-                    }}
-                    className={`rounded-lg shadow-sm bg-black object-contain ${
-                      previewVideoMeta.isLandscape
-                        ? 'w-full aspect-video max-h-[75vh]'
-                        : 'max-w-full max-h-[75vh] aspect-[9/16]'
-                    }`}
-                    onError={() => {
-                      const fb = document.getElementById('preview-video-fallback-view');
-                      if (fb) fb.style.display = 'flex';
-                    }}
-                  >
-                    <source src={getStreamUrl(previewDocModal.url)} type="video/mp4" />
-                    <source src={getDownloadUrl(previewDocModal.url)} type="video/mp4" />
-                    Your browser does not support video playback.
-                  </video>
-                  <div id="preview-video-fallback-view" style={{ display: 'none' }} className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border border-slate-200 my-4 w-full">
-                    <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 mx-auto mb-2">
-                      <Video className="w-6 h-6" />
-                    </div>
-                    <p className="text-xs font-bold text-slate-800">{previewDocModal.name}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original MP4 video:</p>
+            <div 
+              className={`relative w-full bg-white transition-all duration-300 shadow-2xl flex flex-col ${
+                isFullscreen
+                  ? 'h-[100dvh] w-full max-w-none rounded-none p-3 sm:p-4 border-0'
+                  : `rounded-2xl overflow-hidden p-3 border border-slate-200 ${
+                      previewDocModal?.isVideo
+                        ? (isEffectiveLandscape ? 'max-w-5xl' : 'max-w-md')
+                        : 'max-w-4xl'
+                    }`
+              }`} 
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800 truncate">{previewDocModal.name}</span>
+                  {previewDocModal.isVideo && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold shrink-0">
+                      {isEffectiveLandscape ? 'Landscape' : 'Portrait'}
+                      {previewVideoMeta.rotation ? ` (${previewVideoMeta.rotation}°)` : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {previewDocModal.isVideo && (
                     <button
                       type="button"
-                      onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      onClick={() => setPreviewVideoMeta(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }))}
+                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Rotate video 90° clockwise"
                     >
-                      <Download className="w-3.5 h-3.5" /> Download Video
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Rotate{previewVideoMeta.rotation ? ` ${previewVideoMeta.rotation}°` : ''}</span>
                     </button>
-                  </div>
+                  )}
+                  {/* Full Window / Maximize Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVideoMeta(prev => ({ ...prev, isFullscreen: !prev.isFullscreen }))}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title={isFullscreen ? 'Restore window size' : 'Expand to full window'}
+                  >
+                    {isFullscreen ? (
+                      <>
+                        <Minimize2 className="w-3.5 h-3.5 text-slate-600" />
+                        <span>Restore</span>
+                      </>
+                    ) : (
+                      <>
+                        <Maximize2 className="w-3.5 h-3.5 text-slate-600" />
+                        <span>Full Window</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Download File
+                  </button>
+                  {/* Open in New Browser Tab (uses stream URL to prevent unwanted file download) */}
+                  <a
+                    href={getStreamUrl(previewDocModal.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
+                    title="Open streaming player in new browser tab"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Full Tab
+                  </a>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setPreviewDocModal(null);
+                      setPreviewVideoMeta({ isLandscape: false, rotation: 0, isFullscreen: false });
+                    }} 
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                    title="Close (Esc)"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-              ) : previewDocModal.isImage ? (
+              </div>
+              <div className={`p-2 flex items-center justify-center overflow-hidden bg-slate-900 rounded-xl mt-2 w-full flex-1 ${
+                isFullscreen ? 'h-full max-h-none' : 'max-h-[75vh]'
+              }`}>
+                {previewDocModal.isVideo ? (
+                  <div className={`relative flex items-center justify-center overflow-hidden w-full ${
+                    isFullscreen ? 'h-full' : (isEffectiveLandscape ? 'aspect-video max-h-[75vh]' : 'aspect-[9/16] max-h-[75vh]')
+                  }`}>
+                    <video 
+                      key={previewDocModal.url}
+                      controls 
+                      autoPlay 
+                      playsInline
+                      preload="metadata"
+                      onLoadedMetadata={(e) => {
+                        const w = e.target.videoWidth || 0;
+                        const h = e.target.videoHeight || 0;
+                        if (w && h) {
+                          setPreviewVideoMeta(prev => ({ ...prev, isLandscape: w > h }));
+                        }
+                      }}
+                      style={{
+                        transform: previewVideoMeta.rotation 
+                          ? `rotate(${previewVideoMeta.rotation}deg) scale(${isRotated90or270 ? (16 / 9) : 1})` 
+                          : undefined,
+                        transformOrigin: 'center center',
+                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                      }}
+                      className="w-full h-full max-w-full max-h-full object-contain rounded-lg"
+                      onError={() => {
+                        const fb = document.getElementById('preview-video-fallback-view');
+                        if (fb) fb.style.display = 'flex';
+                      }}
+                    >
+                      <source src={getStreamUrl(previewDocModal.url)} type="video/mp4" />
+                      <source src={getDownloadUrl(previewDocModal.url)} type="video/mp4" />
+                      Your browser does not support video playback.
+                    </video>
+                    <div id="preview-video-fallback-view" style={{ display: 'none' }} className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border border-slate-200 my-4 w-full">
+                      <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 mx-auto mb-2">
+                        <Video className="w-6 h-6" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-800">{previewDocModal.name}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original MP4 video:</p>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download Video
+                      </button>
+                    </div>
+                  </div>
+                ) : previewDocModal.isImage ? (
                 <div className="relative flex flex-col items-center justify-center w-full">
                   <ZoomableImageViewer
                     src={previewDocModal.url}
@@ -4663,7 +4704,8 @@ export const ComplaintDetailDrawer = ({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
       {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard with Auto-Split) */}
       <VideoRecorderModal
         isOpen={Boolean(videoRecorderTarget)}
