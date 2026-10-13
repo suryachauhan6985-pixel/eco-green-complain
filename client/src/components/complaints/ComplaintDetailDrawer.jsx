@@ -135,7 +135,9 @@ export const ComplaintDetailDrawer = ({
   const [savingPayment, setSavingPayment] = useState(false);
   const [revertingPayment, setRevertingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
-  const [previewVideoMeta, setPreviewVideoMeta] = useState({ isLandscape: false, rotation: 0 });
+  const [previewVideoMeta, setPreviewVideoMeta] = useState({ isLandscape: false, rotation: 0, isFullscreen: false });
+  const videoContainerRef = useRef(null);
+  const [videoContainerSize, setVideoContainerSize] = useState({ width: 0, height: 0 });
   const [uploadingAtt, setUploadingAtt] = useState(false);
   const [deletingAttId, setDeletingAttId] = useState(null);
   const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
@@ -180,6 +182,23 @@ export const ComplaintDetailDrawer = ({
       window.removeEventListener('keydown', handlePreviewEscapeCapture, { capture: true });
     };
   }, [isOpen, previewDocModal]);
+
+  // Track video preview container dimensions for perfect fit-to-screen rotation
+  useEffect(() => {
+    if (!previewDocModal?.isVideo || !videoContainerRef.current) return;
+    const updateSize = () => {
+      if (videoContainerRef.current) {
+        setVideoContainerSize({
+          width: videoContainerRef.current.clientWidth,
+          height: videoContainerRef.current.clientHeight
+        });
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(videoContainerRef.current);
+    return () => ro.disconnect();
+  }, [previewDocModal, previewVideoMeta.isFullscreen, previewVideoMeta.rotation]);
 
   // Stage: Edit Complaint Modal (Inner Modal Stage)
   useEscapeHandler(() => {
@@ -4520,7 +4539,7 @@ export const ComplaintDetailDrawer = ({
             <div 
               className={`relative w-full bg-white transition-all duration-300 shadow-2xl flex flex-col ${
                 isFullscreen
-                  ? 'h-[100dvh] w-full max-w-none rounded-none p-3 sm:p-4 border-0'
+                  ? 'h-[100dvh] w-full max-w-none rounded-none p-3 sm:p-4 border-0 overflow-hidden'
                   : `rounded-2xl overflow-hidden p-3 border border-slate-200 ${
                       previewDocModal?.isVideo
                         ? (isEffectiveLandscape ? 'max-w-5xl' : 'max-w-md')
@@ -4578,16 +4597,6 @@ export const ComplaintDetailDrawer = ({
                   >
                     <Download className="w-3.5 h-3.5" /> Download File
                   </button>
-                  {/* Open in New Browser Tab (uses stream URL to prevent unwanted file download) */}
-                  <a
-                    href={getStreamUrl(previewDocModal.url)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
-                    title="Open streaming player in new browser tab"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> Full Tab
-                  </a>
                   <button 
                     type="button" 
                     onClick={() => {
@@ -4601,13 +4610,18 @@ export const ComplaintDetailDrawer = ({
                   </button>
                 </div>
               </div>
-              <div className={`p-2 flex items-center justify-center overflow-hidden bg-slate-900 rounded-xl mt-2 w-full flex-1 ${
-                isFullscreen ? 'h-full max-h-none' : 'max-h-[75vh]'
-              }`}>
+              <div 
+                className={`p-2 flex items-center justify-center overflow-hidden bg-slate-900 rounded-xl mt-2 w-full flex-1 ${
+                  isFullscreen ? 'h-full max-h-none min-h-0' : 'max-h-[75vh]'
+                }`}
+              >
                 {previewDocModal.isVideo ? (
-                  <div className={`relative flex items-center justify-center overflow-hidden w-full ${
-                    isFullscreen ? 'h-full' : (isEffectiveLandscape ? 'aspect-video max-h-[75vh]' : 'aspect-[9/16] max-h-[75vh]')
-                  }`}>
+                  <div 
+                    ref={videoContainerRef}
+                    className={`relative flex items-center justify-center overflow-hidden w-full ${
+                      isFullscreen ? 'h-full min-h-0' : (isEffectiveLandscape ? 'aspect-video max-h-[75vh]' : 'aspect-[9/16] max-h-[75vh]')
+                    }`}
+                  >
                     <video 
                       key={previewDocModal.url}
                       controls 
@@ -4622,13 +4636,22 @@ export const ComplaintDetailDrawer = ({
                         }
                       }}
                       style={{
+                        width: isRotated90or270 && videoContainerSize.height > 0
+                          ? `${videoContainerSize.height}px`
+                          : '100%',
+                        height: isRotated90or270 && videoContainerSize.width > 0
+                          ? `${videoContainerSize.width}px`
+                          : '100%',
+                        maxWidth: isRotated90or270 ? 'none' : '100%',
+                        maxHeight: isRotated90or270 ? 'none' : '100%',
                         transform: previewVideoMeta.rotation 
-                          ? `rotate(${previewVideoMeta.rotation}deg) scale(${isRotated90or270 ? (16 / 9) : 1})` 
+                          ? `rotate(${previewVideoMeta.rotation}deg)` 
                           : undefined,
                         transformOrigin: 'center center',
+                        objectFit: 'contain',
                         transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                       }}
-                      className="w-full h-full max-w-full max-h-full object-contain rounded-lg"
+                      className="object-contain rounded-lg shadow-sm"
                       onError={() => {
                         const fb = document.getElementById('preview-video-fallback-view');
                         if (fb) fb.style.display = 'flex';
