@@ -100,7 +100,7 @@ function getAuthToken() {
 /**
  * Upload an individual chunk with exponential backoff retry
  */
-async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob, maxRetries = 3) {
+async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob, maxRetries = 4) {
   const token = getAuthToken();
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -132,7 +132,7 @@ async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob,
     } catch (err) {
       lastError = err;
       if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, attempt * 500));
+        await new Promise((r) => setTimeout(r, Math.min(3000, attempt * 600)));
       }
     }
   }
@@ -210,13 +210,14 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
     await Promise.all(workers);
 
     // 3. Complete and seal the multipart upload
+    const sortedParts = [...completedParts].sort((a, b) => (a.partNumber || a.part_number) - (b.partNumber || b.part_number));
     const completeRes = await fetch('/api/upload/complete', {
       method: 'POST',
       headers,
       body: JSON.stringify({
         upload_id,
         storage_key,
-        parts: completedParts,
+        parts: sortedParts,
         filename: file.name,
         mime_type: file.type || 'application/octet-stream',
         file_size: totalSize

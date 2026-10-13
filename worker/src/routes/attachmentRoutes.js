@@ -194,9 +194,11 @@ attachmentRoutes.post('/upload/complete', optionalAuth, async (c) => {
     }
 
     const body = await c.req.json().catch(() => ({}));
-    const { upload_id, storage_key, parts, filename, mime_type, file_size } = body;
+    const storageKey = body.storage_key || body.storageKey;
+    const uploadId = body.upload_id || body.uploadId;
+    const { parts, filename, mime_type, file_size } = body;
 
-    if (!upload_id || !storage_key || !Array.isArray(parts) || parts.length === 0) {
+    if (!uploadId || !storageKey || !Array.isArray(parts) || parts.length === 0) {
       return c.json({ error: 'Missing completion parameters (upload_id, storage_key, parts array)' }, 400);
     }
 
@@ -206,7 +208,7 @@ attachmentRoutes.post('/upload/complete', optionalAuth, async (c) => {
       etag: p.etag
     }));
 
-    const multipartUpload = bucket.resumeMultipartUpload(storageKey, upload_id);
+    const multipartUpload = bucket.resumeMultipartUpload(storageKey, uploadId);
     await multipartUpload.complete(sortedParts);
 
     const publicServeUrl = `/api/attachments/r2/${storageKey}`;
@@ -231,10 +233,11 @@ attachmentRoutes.post('/upload/abort', optionalAuth, async (c) => {
     if (!bucket) return c.json({ error: 'Storage unavailable' }, 500);
 
     const body = await c.req.json().catch(() => ({}));
-    const { upload_id, storage_key } = body;
+    const storageKey = body.storage_key || body.storageKey;
+    const uploadId = body.upload_id || body.uploadId;
 
-    if (upload_id && storage_key) {
-      const multipartUpload = bucket.resumeMultipartUpload(storageKey, upload_id);
+    if (uploadId && storageKey) {
+      const multipartUpload = bucket.resumeMultipartUpload(storageKey, uploadId);
       await multipartUpload.abort().catch(() => {});
     }
 

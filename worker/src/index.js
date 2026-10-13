@@ -24,9 +24,9 @@ app.use('*', cors({
     }
     return 'https://complain.ecogreensolar.co.in';
   },
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Filename'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Filename', 'X-Upload-Id', 'X-Storage-Key', 'X-Part-Number', 'Range'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  exposeHeaders: ['Content-Length', 'ETag', 'Content-Disposition'],
+  exposeHeaders: ['Content-Length', 'ETag', 'Content-Disposition', 'Accept-Ranges', 'Content-Range'],
   maxAge: 86400
 }));
 
