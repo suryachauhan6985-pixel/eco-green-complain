@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, Camera, Video, RotateCcw, Check, Upload, AlertCircle, 
-  FlipHorizontal, Sparkles, RefreshCw, ZoomIn
+  FlipHorizontal, RefreshCw, Play, Pause
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
-// 3-Minute HD Optimization:
+// 3-Minute 720p HD Optimization:
 // Target: 3 Minutes (~180s) 720p HD Video guaranteed under 50 MB upload limit.
 // 1.85 Mbps video + 64 kbps audio = ~1.91 Mbps total (~14.3 MB/min, ~43 MB for full 3 minutes).
 const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB server limit
@@ -19,7 +19,7 @@ export function VideoRecorderModal({
   onRecordingComplete,
   maxSizeBytes = MAX_LIMIT_BYTES,
   title = 'Record Site Video',
-  subtitle = '3-Minute 720p HD Camera (Under 50 MB)'
+  subtitle = '3-minute 720p HD recording under 50 MB'
 }) {
   const [stream, setStream] = useState(null);
   const [facingMode, setFacingMode] = useState('environment'); // Default to rear camera
@@ -38,9 +38,11 @@ export function VideoRecorderModal({
   const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [photoFlash, setPhotoFlash] = useState(false);
 
-  // Hardware Zoom (1x, 2x)
+  // Zoom presets: 0.5x, 1x, 2x
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [hasHardwareZoom, setHasHardwareZoom] = useState(false);
+  const [zoomNotification, setZoomNotification] = useState(null);
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [activeDeviceId, setActiveDeviceId] = useState(null);
 
   const activeStreamRef = useRef(null);
   const videoPreviewRef = useRef(null);
@@ -50,6 +52,20 @@ export function VideoRecorderModal({
   const timerIntervalRef = useRef(null);
   const fileFallbackInputRef = useRef(null);
   const previewUrlRef = useRef(null);
+  const touchStartDistRef = useRef(null);
+
+  // Detect camera devices to find potential ultra-wide rear camera
+  const detectCameras = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      setAvailableCameras(videoDevices);
+      return videoDevices;
+    } catch (_) {
+      return [];
+    }
+  }, []);
 
   // Pick optimal supported container format
   const getOptimalMimeType = () => {
@@ -106,6 +122,7 @@ export function VideoRecorderModal({
     });
     setPhotoFlash(false);
     setZoomLevel(1);
+    setZoomNotification(null);
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -153,7 +170,7 @@ export function VideoRecorderModal({
   }, []);
 
   // Initialize native camera feed
-  const initializeCamera = useCallback(async (desiredFacing = facingMode) => {
+  const initializeCamera = useCallback(async (desiredFacing = facingMode, deviceId = null) => {
     if (!isOpen) return;
     setIsInitializing(true);
     setCameraError(null);
@@ -173,13 +190,13 @@ export function VideoRecorderModal({
       return;
     }
 
-    // Standard natural camera constraints without restrictive bounds
+    // Standard natural camera constraints
+    const videoConstraints = deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      : { facingMode: { ideal: desiredFacing }, width: { ideal: 1280 }, height: { ideal: 720 } };
+
     const baseConstraints = {
-      video: {
-        facingMode: { ideal: desiredFacing },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      },
+      video: videoConstraints,
       audio: {
         echoCancellation: true,
         noiseSuppression: true
@@ -228,17 +245,13 @@ export function VideoRecorderModal({
     setStream(newStream);
     attachStreamToVideo(newStream);
 
-    // Detect hardware zoom capability
+    // Track active device ID
     const track = newStream.getVideoTracks()[0];
-    if (track && typeof track.getCapabilities === 'function') {
-      const caps = track.getCapabilities();
-      setHasHardwareZoom(Boolean(caps && caps.zoom));
-    } else {
-      setHasHardwareZoom(false);
-    }
-
-    // Handle incoming phone call track interruptions
     if (track) {
+      const settings = typeof track.getSettings === 'function' ? track.getSettings() : {};
+      if (settings.deviceId) {
+        setActiveDeviceId(settings.deviceId);
+      }
       track.onended = () => {
         if (isOpen && !recordedBlob) {
           initializeCamera(desiredFacing);
@@ -246,8 +259,10 @@ export function VideoRecorderModal({
       };
     }
 
+    // Refresh devices list
+    detectCameras();
     setIsInitializing(false);
-  }, [isOpen, facingMode, attachStreamToVideo, recordedBlob]);
+  }, [isOpen, facingMode, attachStreamToVideo, recordedBlob, detectCameras]);
 
   // Initialize camera whenever modal opens
   useEffect(() => {
@@ -276,19 +291,108 @@ export function VideoRecorderModal({
     await initializeCamera(nextMode);
   };
 
-  // Apply hardware zoom (1x / 2x toggle)
-  const handleToggleZoom = async () => {
+  // Zoom Handler: Supports 0.5x, 1x, 2x presets
+  const applyZoom = useCallback(async (targetZoom) => {
+    setZoomLevel(targetZoom);
+
     const track = activeStreamRef.current?.getVideoTracks()?.[0];
     if (!track) return;
 
-    const nextZoom = zoomLevel === 1 ? 2 : 1;
-    setZoomLevel(nextZoom);
+    const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+    const hasHardwareZoom = Boolean(caps && caps.zoom);
 
-    if (track.getCapabilities && track.getCapabilities().zoom) {
-      try {
-        await track.applyConstraints({ advanced: [{ zoom: nextZoom }] });
-      } catch (_) {}
+    if (targetZoom === 0.5) {
+      // 1. Try hardware zoom < 1 if supported
+      if (hasHardwareZoom && caps.zoom?.min <= 0.5) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: 0.5 }] });
+          return;
+        } catch (_) {}
+      }
+
+      // 2. Try switching to physical ultra-wide back camera
+      if (!isRecording && facingMode === 'environment') {
+        const cams = availableCameras.length > 0 ? availableCameras : await detectCameras();
+        const backCams = cams.filter(c => {
+          const lbl = (c.label || '').toLowerCase();
+          return lbl.includes('back') || lbl.includes('rear') || lbl.includes('environment') || (!lbl.includes('front') && !lbl.includes('user'));
+        });
+
+        if (backCams.length > 1) {
+          const ultraWide = backCams.find(c => {
+            const l = (c.label || '').toLowerCase();
+            return l.includes('ultra') || l.includes('wide') || l.includes('0.5') || l.includes('uw') || l.includes('2');
+          }) || backCams[1];
+
+          if (ultraWide && ultraWide.deviceId && ultraWide.deviceId !== activeDeviceId) {
+            try {
+              await initializeCamera('environment', ultraWide.deviceId);
+              setZoomNotification('Ultra-Wide (0.5x) Lens Active');
+              setTimeout(() => setZoomNotification(null), 2500);
+              return;
+            } catch (_) {}
+          }
+        }
+      }
+
+      // Ultra-wide lens not found on device
+      setZoomNotification('Ultra-wide (0.5x) lens not detected on this phone. Standard wide active.');
+      setTimeout(() => setZoomNotification(null), 2500);
+      setZoomLevel(1);
+      return;
     }
+
+    if (targetZoom === 1) {
+      // Standard 1x zoom
+      if (hasHardwareZoom) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+        } catch (_) {}
+      }
+      return;
+    }
+
+    if (targetZoom === 2) {
+      // 2x zoom
+      if (hasHardwareZoom) {
+        const targetVal = Math.min(caps.zoom?.max || 2, 2);
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: targetVal }] });
+        } catch (_) {}
+      }
+    }
+  }, [availableCameras, activeDeviceId, facingMode, isRecording, detectCameras, initializeCamera]);
+
+  // Pinch-to-zoom gesture handlers
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartDistRef.current = dist;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && touchStartDistRef.current) {
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = currentDist / touchStartDistRef.current;
+      if (ratio > 1.3 && zoomLevel < 2) {
+        applyZoom(2);
+        touchStartDistRef.current = currentDist;
+      } else if (ratio < 0.7 && zoomLevel > 1) {
+        applyZoom(1);
+        touchStartDistRef.current = currentDist;
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartDistRef.current = null;
   };
 
   // High-Resolution Snapshot Photo
@@ -418,9 +522,6 @@ export function VideoRecorderModal({
         mediaRecorderRef.current.stop();
       } catch (_) {}
     }
-    if (reason === 'time_limit') {
-      // Completed full 3 minutes
-    }
   };
 
   // Retake video
@@ -474,14 +575,18 @@ export function VideoRecorderModal({
   const remainingSeconds = Math.max(0, MAX_RECORDING_SECONDS - recordingSeconds);
 
   return (
-    <div className="fixed inset-0 z-80 flex items-center justify-center bg-black sm:bg-slate-950/90 sm:backdrop-blur-md animate-in fade-in duration-150">
-      {/* Full-screen on mobile, sleek floating frame on desktop */}
-      <div className="relative w-full h-[100dvh] sm:h-[90vh] sm:max-w-2xl sm:rounded-3xl bg-black overflow-hidden flex flex-col shadow-2xl">
+    <div className="fixed inset-0 z-80 w-full h-[100dvh] bg-black overflow-hidden flex flex-col">
+      {/* Container stays 100% full screen on all orientations without card margins */}
+      <div className="relative w-full h-full flex-1 flex flex-col bg-black overflow-hidden">
         
-        {/* VIEWING / CAMERA CANVAS (True Edge-to-Edge object-cover with ZERO black bars) */}
-        <div className="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden">
-          
-          {/* Live Viewfinder */}
+        {/* VIEWING / CAMERA CANVAS */}
+        <div 
+          className="relative flex-1 w-full min-h-0 bg-black flex items-center justify-center overflow-hidden touch-none"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Live Viewfinder (Natural edge-to-edge object-cover) */}
           {!recordedBlob && !cameraError && (
             <video
               ref={videoPreviewRef}
@@ -492,16 +597,16 @@ export function VideoRecorderModal({
             />
           )}
 
-          {/* Review Mode Playback */}
+          {/* Review Mode Playback: NO autoplay, perfectly fits screen on rotation */}
           {recordedBlob && previewUrl && (
-            <div className="relative w-full h-full flex items-center justify-center bg-black">
+            <div className="relative flex-1 w-full h-full min-h-0 flex items-center justify-center bg-black overflow-hidden p-2 sm:p-4">
               <video
                 ref={playbackVideoRef}
                 src={previewUrl}
                 controls
-                autoPlay
                 playsInline
-                className="w-full h-full object-contain bg-black"
+                preload="metadata"
+                className="max-w-full max-h-full w-auto h-auto object-contain bg-black shadow-2xl rounded-lg"
               />
             </div>
           )}
@@ -509,6 +614,16 @@ export function VideoRecorderModal({
           {/* Shutter Flash Animation */}
           {photoFlash && (
             <div className="absolute inset-0 bg-white z-50 pointer-events-none animate-out fade-out duration-200" />
+          )}
+
+          {/* Zoom notification banner */}
+          {zoomNotification && (
+            <div className="absolute top-16 inset-x-4 max-w-sm mx-auto flex justify-center pointer-events-none z-40 animate-in fade-in">
+              <div className="px-4 py-2 rounded-xl bg-black/85 backdrop-blur-md border border-teal-400/60 text-teal-300 text-xs font-semibold shadow-2xl flex items-center gap-2">
+                <Camera className="w-4 h-4 text-teal-400 shrink-0" />
+                <span>{zoomNotification}</span>
+              </div>
+            </div>
           )}
 
           {/* Camera Error Screen with One-Click Fallback */}
@@ -540,7 +655,7 @@ export function VideoRecorderModal({
             </div>
           )}
 
-          {/* TOP HUD BAR: Clean, non-intrusive floating stats */}
+          {/* TOP HUD BAR: Clean floating status bar */}
           <div className="absolute top-0 inset-x-0 p-3 sm:p-4 bg-gradient-to-b from-black/80 via-black/30 to-transparent flex items-center justify-between z-30 pointer-events-none">
             
             {/* Status / Live Telemetry */}
@@ -586,20 +701,6 @@ export function VideoRecorderModal({
             </div>
           </div>
 
-          {/* Floating Zoom Button (Right side, tap to toggle 1x / 2x) */}
-          {!recordedBlob && !cameraError && (
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto">
-              <button
-                type="button"
-                onClick={handleToggleZoom}
-                className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white text-xs font-bold font-mono flex items-center justify-center hover:bg-black/80 transition-all shadow-xl cursor-pointer"
-                title="Toggle Zoom (1x / 2x)"
-              >
-                {zoomLevel}x
-              </button>
-            </div>
-          )}
-
           {/* 3-Minute Limit Approaching Warning */}
           {isRecording && remainingSeconds <= 30 && remainingSeconds > 0 && (
             <div className="absolute top-16 inset-x-4 max-w-xs mx-auto p-2 rounded-xl bg-amber-500/90 text-slate-950 text-xs font-bold text-center shadow-2xl z-30 animate-pulse pointer-events-none">
@@ -609,8 +710,29 @@ export function VideoRecorderModal({
         </div>
 
         {/* BOTTOM CAMERA CONTROLS BAR */}
-        <div className="relative w-full p-4 sm:p-5 bg-gradient-to-t from-black via-black/95 to-black/70 flex flex-col items-center justify-center gap-3 z-30">
+        <div className="relative w-full p-3 sm:p-5 bg-gradient-to-t from-black via-black/95 to-black/70 flex flex-col items-center justify-center gap-2 z-30 shrink-0">
           
+          {/* Zoom Preset Selector Pill: [0.5x] [1x] [2x] right above shutter */}
+          {!recordedBlob && !cameraError && (
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 shadow-xl mb-0.5">
+              {[0.5, 1, 2].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => applyZoom(preset)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold font-mono transition-all cursor-pointer ${
+                    Math.abs(zoomLevel - preset) < 0.2
+                      ? 'bg-teal-500 text-slate-950 shadow-md scale-105'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={`Set zoom to ${preset}x`}
+                >
+                  {preset}x
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Main Shutter & Actions Row */}
           {!recordedBlob ? (
             <div className="w-full flex items-center justify-around max-w-sm">
@@ -634,7 +756,7 @@ export function VideoRecorderModal({
               {/* Big Center Shutter Button */}
               <div className="relative flex items-center justify-center">
                 {isRecording ? (
-                  /* STOP RECORDING BUTTON (Red Square inside ring) */
+                  /* STOP RECORDING BUTTON */
                   <button
                     type="button"
                     onClick={() => handleStopRecording('user')}
@@ -644,7 +766,7 @@ export function VideoRecorderModal({
                     <div className="w-7 h-7 rounded-md bg-red-600 shadow-md animate-pulse" />
                   </button>
                 ) : (
-                  /* START RECORDING BUTTON (Red Circle inside white ring) */
+                  /* START RECORDING BUTTON */
                   <button
                     type="button"
                     onClick={handleStartRecording}
