@@ -52,7 +52,6 @@ export function VideoRecorderModal({
   const timerIntervalRef = useRef(null);
   const fileFallbackInputRef = useRef(null);
   const previewUrlRef = useRef(null);
-  const touchStartDistRef = useRef(null);
 
   // Detect camera devices to find potential ultra-wide rear camera
   const detectCameras = useCallback(async () => {
@@ -291,9 +290,10 @@ export function VideoRecorderModal({
     await initializeCamera(nextMode);
   };
 
-  // Zoom Handler: Supports 0.5x, 1x, 2x presets
+  // Zoom Handler: Supports 0.5x up to 5x zoom
   const applyZoom = useCallback(async (targetZoom) => {
-    setZoomLevel(targetZoom);
+    const clampedZoom = Math.max(0.5, Math.min(5, Number(Number(targetZoom).toFixed(1))));
+    setZoomLevel(clampedZoom);
 
     const track = activeStreamRef.current?.getVideoTracks()?.[0];
     if (!track) return;
@@ -301,7 +301,7 @@ export function VideoRecorderModal({
     const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
     const hasHardwareZoom = Boolean(caps && caps.zoom);
 
-    if (targetZoom === 0.5) {
+    if (clampedZoom === 0.5) {
       // 1. Try hardware zoom < 1 if supported
       if (hasHardwareZoom && caps.zoom?.min <= 0.5) {
         try {
@@ -342,28 +342,23 @@ export function VideoRecorderModal({
       return;
     }
 
-    if (targetZoom === 1) {
-      // Standard 1x zoom
-      if (hasHardwareZoom) {
-        try {
-          await track.applyConstraints({ advanced: [{ zoom: 1 }] });
-        } catch (_) {}
-      }
-      return;
-    }
-
-    if (targetZoom === 2) {
-      // 2x zoom
-      if (hasHardwareZoom) {
-        const targetVal = Math.min(caps.zoom?.max || 2, 2);
-        try {
-          await track.applyConstraints({ advanced: [{ zoom: targetVal }] });
-        } catch (_) {}
+    // Zoom from 1x up to 5x
+    if (hasHardwareZoom) {
+      const maxHw = caps.zoom?.max || 5;
+      const minHw = caps.zoom?.min || 1;
+      const targetVal = Math.max(minHw, Math.min(maxHw, clampedZoom));
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: targetVal }] });
+      } catch (err) {
+        console.warn('Failed to apply hardware zoom:', err);
       }
     }
   }, [availableCameras, activeDeviceId, facingMode, isRecording, detectCameras, initializeCamera]);
 
-  // Pinch-to-zoom gesture handlers
+  const touchStartDistRef = useRef(null);
+  const touchStartZoomRef = useRef(1);
+
+  // Pinch-to-zoom gesture handlers (supports 0.5x to 5.0x smooth scaling)
   const handleTouchStart = (e) => {
     if (e.touches.length === 2) {
       const dist = Math.hypot(
@@ -371,6 +366,7 @@ export function VideoRecorderModal({
         e.touches[0].clientY - e.touches[1].clientY
       );
       touchStartDistRef.current = dist;
+      touchStartZoomRef.current = zoomLevel;
     }
   };
 
@@ -380,14 +376,9 @@ export function VideoRecorderModal({
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      const ratio = currentDist / touchStartDistRef.current;
-      if (ratio > 1.3 && zoomLevel < 2) {
-        applyZoom(2);
-        touchStartDistRef.current = currentDist;
-      } else if (ratio < 0.7 && zoomLevel > 1) {
-        applyZoom(1);
-        touchStartDistRef.current = currentDist;
-      }
+      const scale = currentDist / touchStartDistRef.current;
+      const newZoom = Math.max(0.5, Math.min(5, Number((touchStartZoomRef.current * scale).toFixed(1))));
+      applyZoom(newZoom);
     }
   };
 
@@ -701,6 +692,39 @@ export function VideoRecorderModal({
             </div>
           </div>
 
+          {/* FLOATING ZOOM PRESET CONTROLS (Vertical Pill on the Right Side) */}
+          {!recordedBlob && !cameraError && (
+            <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-35 pointer-events-none">
+              <div className="pointer-events-auto flex flex-col items-center gap-1.5 p-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 shadow-2xl">
+                {[0.5, 1, 2, 3, 5].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyZoom(preset);
+                    }}
+                    className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full text-xs font-bold font-mono flex items-center justify-center transition-all cursor-pointer ${
+                      Math.abs(zoomLevel - preset) < 0.2
+                        ? 'bg-teal-500 text-slate-950 shadow-md scale-105 ring-2 ring-teal-300'
+                        : 'text-white/80 hover:text-white hover:bg-white/15'
+                    }`}
+                    title={`Set zoom to ${preset}x`}
+                  >
+                    {preset}x
+                  </button>
+                ))}
+
+                {/* Show custom decimal zoom level if pinched between presets */}
+                {![0.5, 1, 2, 3, 5].some(p => Math.abs(zoomLevel - p) < 0.2) && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-teal-400 bg-teal-950/80 rounded-full border border-teal-500/40">
+                    {zoomLevel.toFixed(1)}x
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 3-Minute Limit Approaching Warning */}
           {isRecording && remainingSeconds <= 30 && remainingSeconds > 0 && (
             <div className="absolute top-16 inset-x-4 max-w-xs mx-auto p-2 rounded-xl bg-amber-500/90 text-slate-950 text-xs font-bold text-center shadow-2xl z-30 animate-pulse pointer-events-none">
@@ -710,29 +734,8 @@ export function VideoRecorderModal({
         </div>
 
         {/* BOTTOM CAMERA CONTROLS BAR */}
-        <div className="relative w-full p-3 sm:p-5 bg-gradient-to-t from-black via-black/95 to-black/70 flex flex-col items-center justify-center gap-2 z-30 shrink-0">
+        <div className="relative w-full p-4 sm:p-5 bg-gradient-to-t from-black via-black/95 to-black/70 flex flex-col items-center justify-center gap-2 z-30 shrink-0">
           
-          {/* Zoom Preset Selector Pill: [0.5x] [1x] [2x] right above shutter */}
-          {!recordedBlob && !cameraError && (
-            <div className="flex items-center gap-1.5 p-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 shadow-xl mb-0.5">
-              {[0.5, 1, 2].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => applyZoom(preset)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold font-mono transition-all cursor-pointer ${
-                    Math.abs(zoomLevel - preset) < 0.2
-                      ? 'bg-teal-500 text-slate-950 shadow-md scale-105'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                  title={`Set zoom to ${preset}x`}
-                >
-                  {preset}x
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Main Shutter & Actions Row */}
           {!recordedBlob ? (
             <div className="w-full flex items-center justify-around max-w-sm">
