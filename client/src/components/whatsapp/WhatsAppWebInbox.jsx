@@ -1273,6 +1273,9 @@ export const WhatsAppWebInbox = ({
       try {
         const res = await api.verifyWhatsAppNumber(newChatPhone);
         setNewChatVerification(res);
+        if (res?.customerName) {
+          setNewChatName(prev => prev ? prev : res.customerName);
+        }
       } catch (e) {
         setNewChatVerification(null);
       } finally {

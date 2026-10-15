@@ -774,6 +774,41 @@ export async function sendWhatsApp({
       } catch (_) {}
     }
 
+    // Graceful fallback to approved utility template if 24-hour conversation window has elapsed (Meta error 131047)
+    if (!isSuccess && payload.type === 'text') {
+      const errCode = data?.error?.code;
+      const errMsg = String(data?.error?.message || '');
+      if (errCode === 131047 || /24 hours|re-engagement|template/i.test(errMsg)) {
+        try {
+          const tmplPayload = {
+            messaging_product: 'whatsapp',
+            to: formattedPhone,
+            type: 'template',
+            template: {
+              name: 'hello_world',
+              language: { code: 'en_US' }
+            }
+          };
+          const tmplResp = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(tmplPayload)
+          });
+          const tmplData = await tmplResp.json();
+          if (tmplResp.ok && tmplData?.messages?.[0]?.id) {
+            data = tmplData;
+            wamid = tmplData.messages[0].id;
+            isSuccess = true;
+            errorMsg = null;
+            templateName = 'hello_world';
+          }
+        } catch (_) {}
+      }
+    }
+
     // Persist to whatsapp_messages table
     try {
       if (existingMessageId) {

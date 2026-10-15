@@ -973,17 +973,70 @@ whatsappRoutes.get('/verify-number/:phone', authenticateToken, async (c) => {
     const cleanDigits = (phone || '').replace(/\D/g, '');
     const last10 = cleanDigits.slice(-10);
 
-    const res = await query(
+    if (!last10 || last10.length < 10) {
+      return c.json({ success: false, error: 'Invalid phone number format' }, 400);
+    }
+
+    const regRes = await query(
       `SELECT * FROM whatsapp_number_registry WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`,
       [last10],
       c.env,
       c.executionCtx
-    );
+    ).catch(() => ({ rows: [] }));
 
-    if (res.rows && res.rows.length > 0) {
-      return c.json({ success: true, verified: res.rows[0].status === 'verified', registry: res.rows[0] });
+    const reg = regRes.rows?.[0] || null;
+    let customerName = reg?.customer_name || null;
+    let isVerified = reg?.status === 'verified';
+    let isExistingCustomer = false;
+
+    // Check installed_customers directory
+    if (!customerName) {
+      const instRes = await query(
+        `SELECT customer_name, consumer_no, city_village FROM installed_customers 
+         WHERE RIGHT(REGEXP_REPLACE(consumer_mobile, '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`,
+        [last10],
+        c.env,
+        c.executionCtx
+      ).catch(() => ({ rows: [] }));
+      if (instRes.rows?.[0]?.customer_name) {
+        customerName = instRes.rows[0].customer_name;
+        isExistingCustomer = true;
+      }
+    } else {
+      isExistingCustomer = true;
     }
-    return c.json({ success: true, verified: false, registry: null });
+
+    // Check complaints
+    if (!customerName) {
+      const compRes = await query(
+        `SELECT customer_name FROM complaints 
+         WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`,
+        [last10],
+        c.env,
+        c.executionCtx
+      ).catch(() => ({ rows: [] }));
+      if (compRes.rows?.[0]?.customer_name && compRes.rows[0].customer_name !== 'Customer') {
+        customerName = compRes.rows[0].customer_name;
+        isExistingCustomer = true;
+      }
+    }
+
+    if (isExistingCustomer && !isVerified) {
+      isVerified = true;
+    }
+
+    return c.json({
+      success: true,
+      verified: isVerified,
+      isVerified,
+      isWhatsApp: isVerified,
+      status: isVerified ? 'verified' : (reg?.status || 'unconfirmed'),
+      isExistingCustomer,
+      customerName,
+      formatted: `+91 ${last10}`,
+      formattedPhone: `+91 ${last10}`,
+      registry: reg
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
