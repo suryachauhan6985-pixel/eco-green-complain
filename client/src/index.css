@@ -361,4 +361,83 @@ input, select, textarea, button, a {
   top: env(safe-area-inset-top, 0px);
 }
 
+/* ================= Legacy Browser Universal Color & Gradient Fallbacks ================= */
+.bg-gradient-to-r {
+  --tw-gradient-position: to right !important;
+}
+.bg-gradient-to-br {
+  --tw-gradient-position: to bottom right !important;
+}
+.bg-gradient-to-b {
+  --tw-gradient-position: to bottom !important;
+}
+.bg-gradient-to-l {
+  --tw-gradient-position: to left !important;
+}
+.bg-gradient-to-t {
+  --tw-gradient-position: to top !important;
+}
+
+/* Explicit fallback backgrounds for prominent cards and banners */
+.bg-gradient-to-r.from-emerald-800.to-teal-900 {
+  background-color: #064e3b !important;
+  background-image: linear-gradient(to right, #064e3b, #134e4a) !important;
+}
+.bg-gradient-to-br.from-emerald-600.to-teal-700 {
+  background-color: #059669 !important;
+  background-image: linear-gradient(to bottom right, #059669, #0f766e) !important;
+}
+.bg-emerald-900 {
+  background-color: #064e3b !important;
+}
+.bg-emerald-800 {
+  background-color: #064e3b !important;
+}
+.bg-emerald-700 {
+  background-color: #047857 !important;
+}
+.bg-emerald-600 {
+  background-color: #059669 !important;
+}
+.bg-emerald-500 {
+  background-color: #10b981 !important;
+}
+.bg-emerald-100 {
+  background-color: #d1fae5 !important;
+}
+.bg-emerald-50 {
+  background-color: #ecfdf5 !important;
+}
+.text-emerald-900 {
+  color: #064e3b !important;
+}
+.text-emerald-800 {
+  color: #064e3b !important;
+}
+.text-emerald-700 {
+  color: #047857 !important;
+}
+.text-emerald-600 {
+  color: #059669 !important;
+}
+.text-emerald-500 {
+  color: #10b981 !important;
+}
+.text-emerald-200 {
+  color: #a7f3d0 !important;
+}
+.text-emerald-100 {
+  color: #d1fae5 !important;
+}
+.border-emerald-600 {
+  border-color: #059669 !important;
+}
+.border-emerald-500 {
+  border-color: #10b981 !important;
+}
+.border-emerald-200 {
+  border-color: #a7f3d0 !important;
+}
+
+
 

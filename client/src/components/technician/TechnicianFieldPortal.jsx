@@ -646,20 +646,27 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   return (
     <div className="w-full max-w-full min-w-0 space-y-4">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-3.5 sm:p-6 rounded-2xl shadow-md w-full max-w-full min-w-0">
+      <div 
+        className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-3.5 sm:p-6 rounded-2xl shadow-md w-full max-w-full min-w-0"
+        style={{
+          backgroundColor: '#064e3b',
+          backgroundImage: 'linear-gradient(to right, #064e3b, #134e4a)',
+          color: '#ffffff'
+        }}
+      >
         <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 min-w-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-            <div className="p-2.5 sm:p-3 bg-white/10 rounded-xl shrink-0">
+            <div className="p-2.5 sm:p-3 bg-white/10 rounded-xl shrink-0" style={{ backgroundColor: 'rgba(255, 255, 255, 0.12)' }}>
               <Wrench className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" />
             </div>
             <div className="min-w-0">
-              <span className="text-[10px] sm:text-[11px] uppercase font-mono tracking-wider text-emerald-200 block truncate">
+              <span className="text-[10px] sm:text-[11px] uppercase font-mono tracking-wider text-emerald-200 block truncate" style={{ color: '#a7f3d0' }}>
                 {currentUser?.role === 'technician' ? 'Technician Field Workspace' : 'Field Operations & Cash Management'}
               </span>
-              <h2 className="text-base sm:text-xl font-black truncate">
+              <h2 className="text-base sm:text-xl font-black truncate" style={{ color: '#ffffff' }}>
                 {currentUser?.role === 'technician' ? (techProfile?.name || currentUser?.name) : (currentUser?.name || 'Admin Supervisor')}
               </h2>
-              <p className="text-[11px] sm:text-xs text-emerald-100 truncate">
+              <p className="text-[11px] sm:text-xs text-emerald-100 truncate" style={{ color: '#d1fae5' }}>
                 Service Zone: <strong>{techProfile?.area_zone || 'All Gujarat & Bengaluru Territories'}</strong>
               </p>
             </div>
@@ -740,6 +747,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         <button
           type="button"
           onClick={() => handleSectionSwitch('field_ops')}
+          style={section === 'field_ops' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
           className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             section === 'field_ops'
               ? 'bg-emerald-800 text-white shadow-sm'
@@ -752,6 +760,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         <button
           type="button"
           onClick={() => handleSectionSwitch('collection')}
+          style={section === 'collection' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
           className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             section === 'collection'
               ? 'bg-emerald-800 text-white shadow-sm'
@@ -769,6 +778,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         <button
           type="button"
           onClick={() => handleSectionSwitch('tour_ledger')}
+          style={section === 'tour_ledger' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
           className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             section === 'tour_ledger'
               ? 'bg-emerald-800 text-white shadow-sm'
@@ -1227,6 +1237,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <button
             type="button"
             onClick={() => handleJobStatusFilterChange('Assigned')}
+            style={jobStatusFilter === 'Assigned' ? { backgroundColor: '#2563eb', color: '#ffffff' } : {}}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'Assigned'
                 ? 'bg-blue-600 text-white shadow-xs'
@@ -1244,6 +1255,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <button
             type="button"
             onClick={() => handleJobStatusFilterChange('In Progress')}
+            style={jobStatusFilter === 'In Progress' ? { backgroundColor: '#d97706', color: '#ffffff' } : {}}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'In Progress'
                 ? 'bg-amber-600 text-white shadow-xs'
@@ -1261,6 +1273,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <button
             type="button"
             onClick={() => handleJobStatusFilterChange('On Hold')}
+            style={jobStatusFilter === 'On Hold' ? { backgroundColor: '#9333ea', color: '#ffffff' } : {}}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'On Hold'
                 ? 'bg-purple-600 text-white shadow-xs'
@@ -1279,6 +1292,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             <button
               type="button"
               onClick={() => handleJobStatusFilterChange('Reopened')}
+              style={jobStatusFilter === 'Reopened' ? { backgroundColor: '#e11d48', color: '#ffffff' } : {}}
               className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                 jobStatusFilter === 'Reopened'
                   ? 'bg-rose-600 text-white shadow-xs'
@@ -1297,6 +1311,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <button
             type="button"
             onClick={() => handleJobStatusFilterChange('Completed')}
+            style={jobStatusFilter === 'Completed' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'Completed'
                 ? 'bg-emerald-600 text-white shadow-xs'
@@ -1314,6 +1329,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           <button
             type="button"
             onClick={() => handleJobStatusFilterChange('all')}
+            style={jobStatusFilter === 'all' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
             className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               jobStatusFilter === 'all'
                 ? 'bg-emerald-800 text-white shadow-xs'

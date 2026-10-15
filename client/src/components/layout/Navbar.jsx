@@ -153,6 +153,7 @@ export const Navbar = ({
               {currentUser?.role === 'technician' && (
                 <button
                   onClick={() => setCurrentTab('technician')}
+                  style={currentTab === 'technician' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                     currentTab === 'technician'
                       ? 'bg-emerald-600 text-white shadow-2xs'
@@ -169,6 +170,7 @@ export const Navbar = ({
                 <>
                   <button
                     onClick={() => setCurrentTab('complaints')}
+                    style={currentTab === 'complaints' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'complaints'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -181,6 +183,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('technician')}
+                    style={currentTab === 'technician' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'technician'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -193,6 +196,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('whatsapp-inbox')}
+                    style={currentTab === 'whatsapp-inbox' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'whatsapp-inbox'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -210,6 +214,7 @@ export const Navbar = ({
                 <>
                   <button
                     onClick={() => setCurrentTab('complaints')}
+                    style={currentTab === 'complaints' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'complaints'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -222,6 +227,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('technician')}
+                    style={currentTab === 'technician' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'technician'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -234,6 +240,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('whatsapp-inbox')}
+                    style={currentTab === 'whatsapp-inbox' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'whatsapp-inbox'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -246,6 +253,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('team')}
+                    style={currentTab === 'team' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'team'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -258,6 +266,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('analytics')}
+                    style={currentTab === 'analytics' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'analytics'
                         ? 'bg-emerald-600 text-white shadow-2xs'
@@ -270,6 +279,7 @@ export const Navbar = ({
 
                   <button
                     onClick={() => setCurrentTab('settings')}
+                    style={currentTab === 'settings' || currentTab === 'templates' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
                     className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       currentTab === 'settings' || currentTab === 'templates'
                         ? 'bg-emerald-600 text-white shadow-2xs'
