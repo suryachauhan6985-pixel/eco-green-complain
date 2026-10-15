@@ -8,6 +8,21 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  css: {
+    transformer: 'lightningcss',
+    lightningcss: {
+      targets: {
+        chrome: 100 << 16,
+        firefox: 100 << 16,
+        safari: 15 << 16,
+        edge: 100 << 16,
+      }
+    }
+  },
+  build: {
+    target: ['chrome100', 'firefox100', 'safari15', 'edge100'],
+    cssMinify: 'lightningcss',
+  },
   server: {
     host: true,
     port: 5173,

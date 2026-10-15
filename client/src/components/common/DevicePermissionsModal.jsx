@@ -80,6 +80,14 @@ export const DevicePermissionsModal = () => {
         return;
       }
 
+      // Avoid blocking desktop PC users with camera & GPS prompts
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+        (typeof window !== 'undefined' && window.innerWidth < 768 && 'ontouchstart' in window);
+      if (!isMobile) {
+        markPermissionsHandled();
+        return;
+      }
+
       const states = await checkCurrentPermissions();
       // If all 3 are already granted, mark completed and never prompt
       if (states.notif === 'granted' && states.geo === 'granted' && states.cam === 'granted') {
