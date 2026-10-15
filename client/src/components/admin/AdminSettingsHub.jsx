@@ -1621,7 +1621,7 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
                               <input
                                 type="number"
                                 min="0"
-                                step="50"
+                                step="any"
                                 value={techEditForm.daily_voucher_rate}
                                 onChange={(e) => setTechEditForm(f => ({ ...f, daily_voucher_rate: e.target.value }))}
                                 className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"

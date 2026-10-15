@@ -2500,7 +2500,7 @@ export const NewComplaintModal = ({
                       <input
                         type="number"
                         min="0"
-                        step="50"
+                        step="any"
                         placeholder="0 (Free for In-Warranty)"
                         value={formData.estimated_charges}
                         onChange={(e) => {

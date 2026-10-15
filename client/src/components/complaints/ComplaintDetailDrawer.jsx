@@ -4305,7 +4305,7 @@ export const ComplaintDetailDrawer = ({
                         <input
                           type="number"
                           min="1"
-                          step="10"
+                          step="any"
                           required
                           placeholder="Enter amount collected from customer"
                           value={paymentData.payment_collected}
