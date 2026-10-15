@@ -1083,12 +1083,12 @@ async function handleCreateComplaint(c, isPublic = false) {
     c.executionCtx
   );
 
-  // In-app notification for Staff
+  // In-app notification for Admin & Staff (with actor suppression)
   await query(`
     INSERT INTO in_app_notifications (
       id, type, ticket_id, complaint_id, title, message, customer_name,
       target_role, performed_by_name, performed_by_role
-    ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'admin', $7, $8)
+    ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'all', $7, $8)
     ON CONFLICT (id) DO NOTHING
   `, [
     `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -1101,7 +1101,7 @@ async function handleCreateComplaint(c, isPublic = false) {
     user?.role || (isPublic ? 'customer' : 'staff')
   ], c.env, c.executionCtx).catch(() => {});
 
-  // OS Background Web Push for Admin & Staff
+  // OS Background Web Push for Admin & Staff (excluding the user who created it)
   c.executionCtx?.waitUntil?.(
     dispatchPushToRoles(['admin', 'staff'], {
       title: `☀️ New Ticket: ${newComp.ticket_id}`,
@@ -1109,7 +1109,10 @@ async function handleCreateComplaint(c, isPublic = false) {
       ticketId: newComp.ticket_id,
       url: `/complaints?ticket=${newComp.ticket_id}`,
       tag: `ticket-${newComp.ticket_id}`
-    }, c.env, c.executionCtx).catch(() => {})
+    }, c.env, c.executionCtx, {
+      excludeUserId: user?.id,
+      excludePhone: user?.phone
+    }).catch(() => {})
   );
 
   // WhatsApp Notification in Background
@@ -1409,14 +1412,17 @@ complaintRoutes.post('/:id/assign', authenticateToken, async (c) => {
           }, c.env, c.executionCtx).catch(() => {});
         }
 
-        // Push update to Admin & Staff
+        // Push update to Admin & Staff (excluding actor)
         await dispatchPushToRoles(['admin', 'staff'], {
           title: `Technician Assigned: ${complaint.ticket_id}`,
           body: `${primaryTech.name} assigned to ${complaint.customer_name}`,
           ticketId: complaint.ticket_id,
           url: `/complaints?ticket=${complaint.ticket_id}`,
           tag: `assign-${complaint.ticket_id}`
-        }, c.env, c.executionCtx).catch(() => {});
+        }, c.env, c.executionCtx, {
+          excludeUserId: user?.id,
+          excludePhone: user?.phone
+        }).catch(() => {});
       })()
     );
 
@@ -2507,7 +2513,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         INSERT INTO in_app_notifications (
           id, type, ticket_id, complaint_id, title, message, customer_name,
           target_role, performed_by_name, performed_by_role
-        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'admin', $7, $8)
+        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'all', $7, $8)
         ON CONFLICT (id) DO NOTHING
       `, [
         `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -2527,7 +2533,10 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
           ticketId: current.ticket_id,
           url: `/complaints?ticket=${current.ticket_id}`,
           tag: `ticket-${current.ticket_id}`
-        }, c.env, c.executionCtx).catch(() => {})
+        }, c.env, c.executionCtx, {
+          excludeUserId: user?.id,
+          excludePhone: user?.phone
+        }).catch(() => {})
       );
 
       const isSurvey = isSurveyTicket(prodType, issueCat);

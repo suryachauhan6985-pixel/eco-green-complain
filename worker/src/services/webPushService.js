@@ -110,7 +110,7 @@ async function sendToSubscription(subRow, payload, env, ctx) {
 /**
  * Dispatch push notifications to roles (e.g. ['admin', 'staff'] or 'technician' or 'all')
  */
-export async function dispatchPushToRoles(roles, payload, env, ctx) {
+export async function dispatchPushToRoles(roles, payload, env, ctx, options = {}) {
   try {
     const rawRoles = Array.isArray(roles) ? roles : [roles];
     const isAll = rawRoles.includes('all');
@@ -131,8 +131,22 @@ export async function dispatchPushToRoles(roles, payload, env, ctx) {
       rows = res.rows || [];
     }
 
+    // Suppress push to the user who initiated the action (prevent self-notifications across Web, PWA, etc.)
+    if (options.excludeUserId) {
+      rows = rows.filter(sub => String(sub.user_id || '') !== String(options.excludeUserId));
+    }
+    if (options.excludePhone) {
+      const cleanExcludePhone = String(options.excludePhone).replace(/\D/g, '').slice(-10);
+      if (cleanExcludePhone) {
+        rows = rows.filter(sub => {
+          const subPhone = String(sub.phone || '').replace(/\D/g, '').slice(-10);
+          return !subPhone || subPhone !== cleanExcludePhone;
+        });
+      }
+    }
+
     if (!rows.length) {
-      console.log('[WebPush] No push subscriptions registered for roles:', roles);
+      console.log('[WebPush] No push subscriptions registered for roles (or all excluded):', roles);
       return { sent: 0, total: 0 };
     }
 

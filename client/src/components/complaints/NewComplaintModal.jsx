@@ -1198,11 +1198,12 @@ export const NewComplaintModal = ({
           title: `New Ticket Registered: ${res.complaint.ticket_id}`,
           message: `Customer ${res.complaint.customer_name} raised a ticket for ${res.complaint.product_type} (${res.complaint.issue_category}).`,
           customerName: res.complaint.customer_name,
-          targetRole: 'admin',
+          targetRole: 'all',
           performedByName: currentUser?.name || 'Front Desk Staff',
           performedByRole: currentUser?.role || 'staff',
           performedByUserId: currentUser?.id,
-          performedByUsername: currentUser?.username
+          performedByUsername: currentUser?.username,
+          performedByPhone: currentUser?.phone
         });
       }
 

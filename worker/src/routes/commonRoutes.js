@@ -1752,7 +1752,10 @@ commonRoutes.post('/in-app-notifications', optionalAuth, async (c) => {
         if (targetTechId) {
           await dispatchPushToTechnician(targetTechId, null, pushPayload, c.env, c.executionCtx).catch(() => {});
         } else {
-          await dispatchPushToRoles(targetRole, pushPayload, c.env, c.executionCtx).catch(() => {});
+          await dispatchPushToRoles(targetRole, pushPayload, c.env, c.executionCtx, {
+            excludeUserId: user?.id || b.performedByUserId,
+            excludePhone: user?.phone || b.performedByPhone
+          }).catch(() => {});
         }
       })()
     );

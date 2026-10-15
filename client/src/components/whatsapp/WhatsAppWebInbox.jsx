@@ -573,14 +573,26 @@ export const WhatsAppWebInbox = ({
             if (c.last_sender_type === 'customer' && msgId > 0 && !knownMsgIdsRef.current.has(msgId)) {
               // Brand new incoming message!
               knownMsgIdsRef.current.add(msgId);
-              playNotificationChime();
-              showOSNotification({
-                title: `💬 ${c.sender_name || c.phone}`,
-                body: c.last_message || 'New message received',
-                tag: `wa-${c.phone}`,
-                url: `/whatsapp-inbox?phone=${c.phone}`
-              });
-              showToast(`💬 New WhatsApp from ${c.sender_name || c.phone}: ${c.last_message || 'New message'}`, 'info');
+
+              const isCurrentChatOpen = Boolean(
+                selectedPhone &&
+                (c.phone || '').replace(/\D/g, '').slice(-10) === (selectedPhone || '').replace(/\D/g, '').slice(-10)
+              );
+              const isPageFocused = typeof document !== 'undefined' && document.visibilityState === 'visible' && document.hasFocus();
+
+              // Suppress loud chime, OS alert, and toast if the user is currently looking at this active conversation
+              if (!isCurrentChatOpen || !isPageFocused) {
+                playNotificationChime();
+                showOSNotification({
+                  title: `💬 ${c.sender_name || c.phone}`,
+                  body: c.last_message || 'New message received',
+                  tag: `wa-${c.phone}`,
+                  url: `/whatsapp-inbox?phone=${c.phone}`
+                });
+                if (!isCurrentChatOpen) {
+                  showToast(`💬 New WhatsApp from ${c.sender_name || c.phone}: ${c.last_message || 'New message'}`, 'info');
+                }
+              }
             }
           });
         } else {
@@ -675,8 +687,9 @@ export const WhatsAppWebInbox = ({
           const newCustomerMessages = newMsgs.filter(m => m.sender_type === 'customer');
           if (newCustomerMessages.length > 0) {
             const latest = newCustomerMessages[newCustomerMessages.length - 1];
-            playLoudChime();
-            if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
+            const isTabBackground = typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus());
+            if (isTabBackground) {
+              playLoudChime();
               showOSNotification({
                 title: `💬 WhatsApp: ${contactInfo?.sender_name || phone}`,
                 body: latest.message_body || 'New message received',
@@ -707,8 +720,9 @@ export const WhatsAppWebInbox = ({
 
           if (newCustomerMessages.length > 0) {
             const latest = newCustomerMessages[newCustomerMessages.length - 1];
-            playLoudChime();
-            if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
+            const isTabBackground = typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus());
+            if (isTabBackground) {
+              playLoudChime();
               showOSNotification({
                 title: `💬 WhatsApp: ${contactInfo?.sender_name || phone}`,
                 body: latest.message_body || 'New message received',

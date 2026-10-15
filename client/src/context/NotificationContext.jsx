@@ -190,28 +190,36 @@ export const NotificationProvider = ({ children }) => {
   const isNotificationForUser = useCallback((notif, user) => {
     if (!user || user.role === 'customer') return false;
 
-    // Suppress self-notifications only if specifically performed by me
+    // Suppress self-notifications when performed by the current user
     const performedName = (notif.performedByName || '').trim().toLowerCase();
     const myName = (user.name || '').trim().toLowerCase();
-    const performedByMe = (
-      (performedName && myName && performedName === myName && !['system', 'staff support', 'admin', 'automated'].includes(performedName)) ||
-      (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
-      (notif.performedByUsername && user.username && notif.performedByUsername.toLowerCase() === user.username.toLowerCase())
-    );
-    if (performedByMe && notif.type !== 'system') return false;
+    const myUsername = (user.username || '').trim().toLowerCase();
+    const myPhone = (user.phone || '').replace(/\D/g, '').slice(-10);
+    const notifPhone = (notif.performedByPhone || '').replace(/\D/g, '').slice(-10);
 
-    // 1. Admin sees everything across the entire organization
+    const isSystemAction = notif.type === 'system' || ['system', 'automated'].includes(performedName);
+
+    const performedByMe = !isSystemAction && Boolean(
+      (notif.performedByUserId && user.id && String(notif.performedByUserId) === String(user.id)) ||
+      (notif.performedByUsername && myUsername && notif.performedByUsername.toLowerCase() === myUsername) ||
+      (notifPhone && myPhone && notifPhone === myPhone) ||
+      (performedName && myName && (performedName === myName || performedName.includes(myName) || myName.includes(performedName))) ||
+      (user.role === 'admin' && notif.performedByRole === 'admin' && (performedName.includes('admin') || myName.includes('admin'))) ||
+      (user.role === 'staff' && notif.performedByRole === 'staff' && performedName === myName)
+    );
+
+    if (performedByMe) return false;
+
+    // 1. Admin sees everything across the entire organization (except actions performed by Admin)
     if (user.role === 'admin') return true;
 
-    // 2. Staff sees technician updates, status changes, resolutions, notes, reopens
+    // 2. Staff sees all updates, resolutions, notes, reopens, and new tickets (including when raised by Admin)!
     if (user.role === 'staff') {
-      if (notif.type === 'new_ticket') return false; // new ticket creation notifications to Admin only
-
       return (
         notif.targetRole === 'staff' ||
         notif.targetRole === 'all' ||
         notif.targetRole === 'admin' ||
-        ['status_update', 'resolved', 'note', 'reopened', 'payment', 'feedback'].includes(notif.type)
+        ['new_ticket', 'status_update', 'resolved', 'note', 'reopened', 'payment', 'feedback'].includes(notif.type)
       );
     }
 
@@ -444,6 +452,14 @@ export const NotificationProvider = ({ children }) => {
   const checkWhatsAppIncoming = useCallback(async () => {
     // Only check when user is logged in, tab is visible, and no request is currently in-flight
     if (!currentUser || typeof document === 'undefined' || document.visibilityState !== 'visible' || isCheckingWARef.current) return;
+
+    // If user is currently on WhatsApp Web, suppress global incoming chime/notification to prevent double alerts
+    const isWhatsAppActive = typeof window !== 'undefined' && (
+      window.location.pathname.includes('/whatsapp') ||
+      window.location.hash.includes('whatsapp')
+    );
+    if (isWhatsAppActive) return;
+
     isCheckingWARef.current = true;
     try {
       if (api.getWhatsAppConversations) {
@@ -592,8 +608,11 @@ export const NotificationProvider = ({ children }) => {
       targetTechnicianName: data.targetTechnicianName || '',
       performedByName: data.performedByName || currentUser?.name || 'Staff',
       performedByRole: data.performedByRole || currentUser?.role || 'staff',
+      performedByUserId: data.performedByUserId || currentUser?.id,
+      performedByUsername: data.performedByUsername || currentUser?.username,
+      performedByPhone: data.performedByPhone || currentUser?.phone,
       createdAt: new Date().toISOString(),
-      readBy: [],
+      readBy: currentUser ? Array.from(new Set([...(data.readBy || []), ...getUserKeys(currentUser), 'read'])) : [],
       acknowledgedBy: []
     };
 
@@ -609,20 +628,6 @@ export const NotificationProvider = ({ children }) => {
     try {
       window.dispatchEvent(new CustomEvent('egs_in_app_notification_created', { detail: newNotif }));
     } catch (_) {}
-
-    // If targeted to active user, trigger popup, audio chime, and OS system notification
-    if (currentUser && isNotificationForUser(newNotif, currentUser)) {
-      setActivePopup(newNotif);
-      playNotificationChime();
-      showOSNotification({
-        title: newNotif.title || 'Eco Green Support Alert',
-        body: newNotif.message || 'New complaint or service update received.',
-        ticketId: newNotif.ticketId,
-        notificationId: newNotif.id,
-        createdAt: newNotif.createdAt,
-        url: newNotif.ticketId ? `/complaints?ticket=${newNotif.ticketId}` : '/complaints'
-      });
-    }
 
     // Post to backend
     try {
