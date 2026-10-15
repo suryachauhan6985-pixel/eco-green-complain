@@ -169,6 +169,11 @@ export const ComplaintDetailDrawer = ({
     return true;
   }, Boolean(isOpen && previewDocModal), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
+  useEscapeHandler(() => {
+    setIsWhatsAppMediaPickerOpen(false);
+    return true;
+  }, Boolean(isOpen && isWhatsAppMediaPickerOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+
   // Dedicated window capture keydown listener for previewDocModal
   useEffect(() => {
     if (!isOpen || !previewDocModal) return;
@@ -557,6 +562,61 @@ export const ComplaintDetailDrawer = ({
       }
       return prev.filter(p => p.id !== id);
     });
+  };
+
+  // Customer WhatsApp Media Picker State & Actions
+  const [isWhatsAppMediaPickerOpen, setIsWhatsAppMediaPickerOpen] = useState(false);
+  const [whatsAppMediaTargetType, setWhatsAppMediaTargetType] = useState('registration'); // 'registration' | 'inverter_serial'
+  const [customerWhatsAppMedia, setCustomerWhatsAppMedia] = useState([]);
+  const [loadingWhatsAppMedia, setLoadingWhatsAppMedia] = useState(false);
+  const [attachingWhatsAppMsgId, setAttachingWhatsAppMsgId] = useState(null);
+
+  const handleOpenWhatsAppMediaPicker = async (targetType = 'registration') => {
+    setWhatsAppMediaTargetType(targetType);
+    setIsWhatsAppMediaPickerOpen(true);
+    const phone = ticket?.customer_phone || ticket?.phone;
+    if (!phone) {
+      showToast('No customer phone number found on this complaint', 'warning');
+      return;
+    }
+    try {
+      setLoadingWhatsAppMedia(true);
+      const res = await api.getCustomerWhatsAppMedia(phone);
+      setCustomerWhatsAppMedia(Array.isArray(res?.media) ? res.media : []);
+    } catch (err) {
+      showToast('Failed to load WhatsApp media: ' + err.message, 'error');
+    } finally {
+      setLoadingWhatsAppMedia(false);
+    }
+  };
+
+  const handleAttachWhatsAppMedia = async (msg) => {
+    if (!ticket || !msg) return;
+    try {
+      setAttachingWhatsAppMsgId(msg.id);
+      const res = await api.attachWhatsAppMediaToComplaint({
+        message_id: msg.id,
+        complaint_id: ticket.id,
+        attachment_type: whatsAppMediaTargetType,
+        custom_notes: 'Attached from customer WhatsApp chat'
+      });
+
+      if (res && res.success) {
+        showToast('WhatsApp media attached to complaint successfully!', 'success');
+        if (res.attachment) {
+          setAttachments(prev => [res.attachment, ...prev]);
+        } else {
+          fetchTicketDetails();
+        }
+        notifyComplaintChanged({ action: 'attachment_added' });
+      } else {
+        throw new Error(res?.error || 'Failed to attach');
+      }
+    } catch (err) {
+      showToast('Error attaching WhatsApp media: ' + err.message, 'error');
+    } finally {
+      setAttachingWhatsAppMsgId(null);
+    }
   };
 
   // WhatsApp Live Chat State
@@ -2325,6 +2385,16 @@ export const ComplaintDetailDrawer = ({
                                     onChange={handleUploadMoreAttachments}
                                   />
                                 </label>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenWhatsAppMediaPicker('registration')}
+                                  disabled={uploadingAtt}
+                                  className="cursor-pointer px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                  title="Import and attach photos/videos sent by customer on WhatsApp"
+                                >
+                                  <MessageSquare className="w-3 h-3 text-emerald-600" />
+                                  <span>From WhatsApp</span>
+                                </button>
                               </>
                             )}
                           </div>
@@ -4740,6 +4810,178 @@ export const ComplaintDetailDrawer = ({
         </div>
         );
       })()}
+      {/* Import Media Directly from Customer's WhatsApp Chat Modal */}
+      {isWhatsAppMediaPickerOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150"
+          onClick={() => !attachingWhatsAppMsgId && setIsWhatsAppMediaPickerOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-emerald-700 to-teal-800 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-emerald-100" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Attach Media from Customer WhatsApp</h3>
+                  <p className="text-[11px] text-emerald-100 font-medium">
+                    Customer: {ticket?.customer_name || 'Customer'} (+91 {ticket?.customer_phone?.replace(/^91/, '') || ticket?.phone?.replace(/^91/, '')})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(attachingWhatsAppMsgId)}
+                onClick={() => setIsWhatsAppMediaPickerOpen(false)}
+                className="p-1 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-800">Target Category:</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                    {whatsAppMediaTargetType === 'registration' ? 'Initial Fault Proof' : 'Inverter Plate / Serial'}
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500">
+                  {customerWhatsAppMedia.length} WhatsApp media file(s) found
+                </span>
+              </div>
+
+              {loadingWhatsAppMedia ? (
+                <div className="py-16 text-center text-slate-500 space-y-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto" />
+                  <p className="text-xs font-semibold">Retrieving media from WhatsApp conversation...</p>
+                </div>
+              ) : customerWhatsAppMedia.length === 0 ? (
+                <div className="py-16 text-center text-slate-500 space-y-2">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                    <FileX className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-700">No WhatsApp Media Available</p>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                    The customer has not sent any photos, videos, or documents on WhatsApp to this phone number yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {customerWhatsAppMedia.map((m) => {
+                    const isAttached = String(m.complaint_id) === String(ticket?.id);
+                    const isAttaching = attachingWhatsAppMsgId === m.id;
+                    const mediaType = m.media_type || (m.media_url?.endsWith('.mp4') ? 'video' : m.media_url?.endsWith('.pdf') ? 'document' : 'image');
+
+                    return (
+                      <div
+                        key={m.id}
+                        className={`p-3 rounded-xl border transition-all flex flex-col justify-between gap-2.5 ${
+                          isAttached
+                            ? 'bg-emerald-50/50 border-emerald-300'
+                            : 'bg-white border-slate-200 hover:border-emerald-400 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          {mediaType === 'image' && m.media_url ? (
+                            <img
+                              src={m.media_url}
+                              alt="Thumbnail"
+                              className="w-16 h-16 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
+                            />
+                          ) : mediaType === 'video' ? (
+                            <div className="w-16 h-16 rounded-lg bg-slate-900 flex flex-col items-center justify-center text-white shrink-0">
+                              <Video className="w-5 h-5 text-emerald-400" />
+                              <span className="text-[8px] font-bold mt-1 text-slate-300">VIDEO</span>
+                            </div>
+                          ) : (
+                            <div className="w-16 h-16 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0">
+                              <FileText className="w-5 h-5" />
+                              <span className="text-[8px] font-bold mt-1">DOC</span>
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-700">
+                                {mediaType}
+                              </span>
+                              {isAttached && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
+                                  <Check className="w-2.5 h-2.5" /> Attached
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-semibold text-slate-800 truncate" title={m.media_caption || m.file_name || 'Media attachment'}>
+                              {m.media_caption || m.file_name || 'Media attachment'}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {formatIndianDateTime(m.created_at) || m.created_at}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <a
+                            href={m.media_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] font-semibold text-emerald-700 hover:underline flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Preview</span>
+                          </a>
+
+                          <button
+                            type="button"
+                            disabled={isAttaching}
+                            onClick={() => handleAttachWhatsAppMedia(m)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                              isAttached
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                            }`}
+                          >
+                            {isAttaching ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                <span>Attaching...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Paperclip className="w-3 h-3" />
+                                <span>{isAttached ? 'Attach Again' : 'Attach to Ticket'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsWhatsAppMediaPickerOpen(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Live In-App Compressed Video Recorder Modal (50 MB Limit Guard with Auto-Split) */}
       <VideoRecorderModal
         isOpen={Boolean(videoRecorderTarget)}

@@ -2306,6 +2306,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+  getCustomerWhatsAppMedia: (phone) => request(`/whatsapp/customer-media/${encodeURIComponent(phone)}`),
   resendTechnicianWorkOrder: (id) => request(`/complaints/${encodeURIComponent(id)}/resend-technician`, {
     method: 'POST'
   }),

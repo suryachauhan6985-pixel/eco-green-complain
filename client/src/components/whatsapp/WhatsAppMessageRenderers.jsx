@@ -3,7 +3,7 @@ import {
   Play, Pause, Download, Maximize2, RotateCw, ZoomIn, ZoomOut,
   FileText, ExternalLink, MapPin, Copy, Phone, User, Check,
   CheckCheck, Clock, AlertCircle, Eye, RefreshCw, X, Mic,
-  FileSpreadsheet, Archive, File, Star, Smile, Plus
+  FileSpreadsheet, Archive, File, Star, Smile, Plus, Paperclip
 } from 'lucide-react';
 
 /**
@@ -307,7 +307,8 @@ export function WhatsAppDocumentCard({
   docName = 'Document',
   fileSizeStr,
   onOpenPdf,
-  onDownload
+  onDownload,
+  onAttachToComplaint
 }) {
   const ext = (docName.split('.').pop() || '').toLowerCase();
 
@@ -366,6 +367,16 @@ export function WhatsAppDocumentCard({
       </div>
 
       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {onAttachToComplaint && (
+          <button
+            type="button"
+            onClick={onAttachToComplaint}
+            className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer"
+            title="Attach to Complaint / Ticket"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+        )}
         {isPdf && onOpenPdf && (
           <button
             type="button"
@@ -737,7 +748,8 @@ export function WhatsAppQuickReactionHover() {
 export function WhatsAppMediaLightbox({
   media,
   onClose,
-  onDownload
+  onDownload,
+  onAttachToComplaint
 }) {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -802,6 +814,18 @@ export function WhatsAppMediaLightbox({
                 <RotateCw className="w-4 h-4" />
               </button>
             </>
+          )}
+
+          {onAttachToComplaint && (
+            <button
+              type="button"
+              onClick={onAttachToComplaint}
+              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer mr-1"
+              title="Attach to Complaint / Ticket"
+            >
+              <Paperclip className="w-3.5 h-3.5" />
+              <span>Attach to Ticket</span>
+            </button>
           )}
 
           {onDownload && (

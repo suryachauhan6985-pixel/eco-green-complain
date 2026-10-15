@@ -730,6 +730,22 @@ whatsappRoutes.get('/chats/:phone', authenticateToken, async (c) => {
       }
     }
 
+    // Look up active or latest complaint for this customer to ensure ticket_id and complaint_id are always resolved
+    try {
+      const compLookup = await query(
+        `SELECT id, ticket_id, status FROM complaints 
+         WHERE customer_phone LIKE '%' || $1
+         ORDER BY CASE WHEN status NOT IN ('Resolved', 'Closed', 'Cancelled') THEN 0 ELSE 1 END, created_at DESC LIMIT 1`,
+        [last10],
+        c.env,
+        c.executionCtx
+      );
+      if (compLookup.rows && compLookup.rows[0]) {
+        complaintId = compLookup.rows[0].id;
+        ticketId = compLookup.rows[0].ticket_id;
+      }
+    } catch (_) {}
+
     const canonicalPhone = cleanDigits.startsWith('91') && cleanDigits.length === 12
       ? cleanDigits
       : cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
@@ -1125,6 +1141,168 @@ whatsappRoutes.post('/retry-message/:id', authenticateToken, async (c) => {
     } else {
       return c.json({ success: false, status: 'failed', error: sendRes.error });
     }
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/whatsapp/attach-to-complaint - Attach WhatsApp Media to Existing Complaint / Draft
+whatsappRoutes.post('/attach-to-complaint', authenticateToken, async (c) => {
+  try {
+    const user = c.get('user');
+    const uploaderName = user?.name || user?.username || 'Staff Support Desk';
+    const body = await c.req.json().catch(() => ({}));
+    const messageId = body.message_id || body.id;
+    let complaintId = body.complaint_id;
+    const attachmentType = body.attachment_type || 'registration';
+    const customNotes = (body.custom_notes || '').trim();
+
+    if (!messageId) {
+      return c.json({ error: 'message_id is required' }, 400);
+    }
+
+    const msgRes = await query(
+      'SELECT * FROM whatsapp_messages WHERE id::text = $1 OR wam_id = $1 LIMIT 1',
+      [String(messageId)],
+      c.env,
+      c.executionCtx
+    );
+    if (!msgRes.rows.length) {
+      return c.json({ error: 'WhatsApp message not found' }, 404);
+    }
+    const msg = msgRes.rows[0];
+
+    // Determine media URL
+    let fileUrl = msg.media_url;
+    if (!fileUrl && msg.media_id) {
+      fileUrl = `/api/whatsapp/media/${msg.media_id}?phone=${encodeURIComponent(msg.phone || '')}`;
+    }
+    if (!fileUrl) {
+      return c.json({ error: 'This message does not contain media to attach' }, 400);
+    }
+
+    // Auto-resolve complaint ID from customer phone if not provided
+    if (!complaintId && msg.phone) {
+      const last10 = String(msg.phone).replace(/\D/g, '').slice(-10);
+      const activeComp = await query(
+        `SELECT id, ticket_id FROM complaints 
+         WHERE customer_phone LIKE '%' || $1 AND status NOT IN ('Cancelled')
+         ORDER BY CASE WHEN status NOT IN ('Resolved', 'Closed') THEN 0 ELSE 1 END, created_at DESC LIMIT 1`,
+        [last10],
+        c.env,
+        c.executionCtx
+      );
+      if (activeComp.rows.length > 0) {
+        complaintId = activeComp.rows[0].id;
+      }
+    }
+
+    if (!complaintId) {
+      return c.json({ error: 'Target complaint_id or ticket_id is required' }, 400);
+    }
+
+    const compRes = await query(
+      'SELECT id, ticket_id, customer_name, status FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+      [String(complaintId)],
+      c.env,
+      c.executionCtx
+    );
+    if (!compRes.rows.length) {
+      return c.json({ error: 'Target complaint not found' }, 404);
+    }
+    const targetComp = compRes.rows[0];
+
+    // Determine file type & extension
+    const isImage = msg.media_type === 'image' || (fileUrl && /\.(jpe?g|png|webp|gif)/i.test(fileUrl));
+    const isVideo = msg.media_type === 'video' || (fileUrl && /\.(mp4|webm|mov)/i.test(fileUrl));
+    const isDoc = msg.media_type === 'document' || (fileUrl && /\.(pdf|docx?|xlsx?|txt)/i.test(fileUrl));
+    const isAudio = msg.media_type === 'audio' || (fileUrl && /\.(ogg|mp3|m4a|wav)/i.test(fileUrl));
+
+    let ext = isImage ? 'jpg' : isVideo ? 'mp4' : isDoc ? 'pdf' : isAudio ? 'ogg' : 'bin';
+    let fileType = isImage ? 'image/jpeg' : isVideo ? 'video/mp4' : isDoc ? 'application/pdf' : isAudio ? 'audio/ogg' : 'application/octet-stream';
+
+    let fileName = (msg.media_caption || '').trim();
+    if (!fileName || fileName.includes('\n')) {
+      const mediaLabel = isImage ? 'Photo' : isVideo ? 'Video' : isDoc ? 'Document' : isAudio ? 'Voice' : 'Media';
+      fileName = `WhatsApp_${mediaLabel}_${targetComp.ticket_id || targetComp.id}_${Date.now()}.${ext}`;
+    } else if (!fileName.includes('.')) {
+      fileName = `${fileName}.${ext}`;
+    }
+
+    // Insert into complaint_attachments
+    const attRes = await query(
+      `INSERT INTO complaint_attachments (
+        complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id, file_name, file_url, file_type, uploaded_by, attachment_type, created_at`,
+      [
+        targetComp.id,
+        fileName,
+        fileUrl,
+        fileType,
+        fileUrl,
+        `Customer via WhatsApp (Attached by ${uploaderName})`,
+        attachmentType
+      ],
+      c.env,
+      c.executionCtx
+    );
+
+    // Update whatsapp_messages with linked complaint_id
+    await query('UPDATE whatsapp_messages SET complaint_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [targetComp.id, msg.id], c.env, c.executionCtx);
+
+    // Record in complaint timeline
+    const mediaLabel = isImage ? 'photo' : isVideo ? 'video' : isDoc ? 'document' : 'media file';
+    const tlNotes = customNotes
+      ? `Attached customer WhatsApp ${mediaLabel} "${fileName}": ${customNotes}`
+      : `Attached customer WhatsApp ${mediaLabel} "${fileName}" from chat (+91 ${(msg.phone || '').replace(/^91/, '')})`;
+
+    await query(
+      `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+       VALUES ($1, 'Document Attached', $2, $3, $4, 0)`,
+      [
+        targetComp.id,
+        tlNotes,
+        uploaderName,
+        user?.role || 'staff'
+      ],
+      c.env,
+      c.executionCtx
+    ).catch(() => {});
+
+    return c.json({
+      success: true,
+      message: `Media attached to ticket #${targetComp.ticket_id || targetComp.id} successfully`,
+      attachment: attRes.rows[0],
+      ticket_id: targetComp.ticket_id,
+      complaint_id: targetComp.id
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/whatsapp/customer-media/:phone - Fetch recent media messages for customer phone
+whatsappRoutes.get('/customer-media/:phone', authenticateToken, async (c) => {
+  try {
+    const rawPhone = c.req.param('phone');
+    const cleanDigits = (rawPhone || '').replace(/\D/g, '');
+    const last10 = cleanDigits.slice(-10);
+    if (!last10) return c.json({ success: true, media: [] });
+
+    const res = await query(
+      `SELECT id, complaint_id, phone, sender_type, sender_name, message_body, 
+              media_id, media_type, media_url, media_caption, created_at
+       FROM whatsapp_messages
+       WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1
+         AND (media_url IS NOT NULL OR media_id IS NOT NULL OR media_type IN ('image', 'video', 'document', 'audio'))
+       ORDER BY created_at DESC LIMIT 50`,
+      [last10],
+      c.env,
+      c.executionCtx
+    );
+
+    return c.json({ success: true, media: res.rows || [] });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

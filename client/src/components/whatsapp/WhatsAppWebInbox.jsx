@@ -7,7 +7,7 @@ import { useDialog } from '../../context/DialogContext';
 import { playNotificationChime as playLoudChime } from '../../utils/sound';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { showOSNotification, requestPushPermission } from '../../utils/pushNotification';
-import { subscribeLiveSync, broadcastWhatsAppUpdate } from '../../utils/liveSync';
+import { subscribeLiveSync, broadcastWhatsAppUpdate, broadcastComplaintsUpdate } from '../../utils/liveSync';
 import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import {
   WhatsAppTextRenderer,
@@ -338,7 +338,14 @@ export const WhatsAppWebInbox = ({
   const [showStarredDrawer, setShowStarredDrawer] = useState(false);
   const [highlightedMsgId, setHighlightedMsgId] = useState(null);
 
-
+  // Direct Attach Media to Complaint Modal state
+  const [attachMediaModal, setAttachMediaModal] = useState(null); // { msg, mediaUrl, fileName, mediaType }
+  const [attachTargetComplaintId, setAttachTargetComplaintId] = useState('');
+  const [attachTargetType, setAttachTargetType] = useState('registration'); // 'registration' | 'inverter_serial' | 'resolution'
+  const [attachCustomNotes, setAttachCustomNotes] = useState('');
+  const [isAttachingMedia, setIsAttachingMedia] = useState(false);
+  const [customerComplaintsList, setCustomerComplaintsList] = useState([]);
+  const [loadingCustomerComplaints, setLoadingCustomerComplaints] = useState(false);
 
   // Phase 3, 4, 5 State variables: Voice Recording, Quick Templates, Online/Offline, Pinned/Archived/Muted
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -417,6 +424,7 @@ export const WhatsAppWebInbox = ({
 
   // Stage 4: Inner modals (Settings, New Chat, Edit Name, Contact Info, Starred Drawer, Forward Modal, Quick Templates)
   useEscapeHandler(() => {
+    if (attachMediaModal) { setAttachMediaModal(null); return true; }
     if (isQuickTemplatesOpen) { setIsQuickTemplatesOpen(false); return true; }
     if (showStarredDrawer) { setShowStarredDrawer(false); return true; }
     if (forwardModalMsg) { setForwardModalMsg(null); return true; }
@@ -425,7 +433,7 @@ export const WhatsAppWebInbox = ({
     if (isEditNameModalOpen) { setIsEditNameModalOpen(false); return true; }
     if (isContactInfoOpen) { setIsContactInfoOpen(false); return true; }
     return false;
-  }, Boolean(isQuickTemplatesOpen || showStarredDrawer || forwardModalMsg || isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
+  }, Boolean(attachMediaModal || isQuickTemplatesOpen || showStarredDrawer || forwardModalMsg || isSettingsModalOpen || isNewChatModalOpen || isEditNameModalOpen || isContactInfoOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
   // Stage 5: Active Chat Thread -> Return to Conversation List
   useEscapeHandler(() => {
@@ -1558,6 +1566,105 @@ export const WhatsAppWebInbox = ({
     }
   };
 
+  // Open Direct Attach to Complaint Modal
+  const openAttachMediaModal = async (msg) => {
+    if (!msg) return;
+    setActionMessageMenuId(null);
+    const mediaUrl = getWhatsAppMediaUrl(msg);
+    const isVid = isVideoMessage(msg);
+    const isDoc = isDocumentMessage(msg);
+    const mediaType = msg.media_type || (isVid ? 'video' : isDoc ? 'document' : 'image');
+    let ext = isVid ? 'mp4' : isDoc ? 'pdf' : 'jpg';
+    let defaultName = (msg.media_caption || '').trim();
+    if (!defaultName) {
+      defaultName = `WhatsApp_${mediaType.toUpperCase()}_${msg.id || Date.now()}.${ext}`;
+    }
+
+    const preselectedId = contactInfo?.complaint?.id || contactInfo?.complaint_id || selectedConv?.complaint_id || '';
+    setAttachTargetComplaintId(preselectedId ? String(preselectedId) : '');
+    setAttachTargetType('registration');
+    setAttachCustomNotes('');
+    setAttachMediaModal({
+      msg,
+      mediaUrl,
+      fileName: defaultName,
+      mediaType
+    });
+
+    const phoneToSearch = msg.phone || selectedPhone;
+    if (phoneToSearch) {
+      setLoadingCustomerComplaints(true);
+      try {
+        const historyRes = await api.getCustomerHistory(phoneToSearch);
+        const list = Array.isArray(historyRes?.history) ? historyRes.history : [];
+        setCustomerComplaintsList(list);
+        if (!preselectedId && list.length > 0) {
+          const active = list.find(c => !['Resolved', 'Closed', 'Cancelled'].includes(c.status)) || list[0];
+          setAttachTargetComplaintId(String(active.id));
+        }
+      } catch (err) {
+        console.warn('Failed to fetch customer complaints for media attachment:', err);
+      } finally {
+        setLoadingCustomerComplaints(false);
+      }
+    }
+  };
+
+  // Execute attaching WhatsApp media to target complaint
+  const handleExecuteAttachMedia = async () => {
+    if (!attachMediaModal || !attachTargetComplaintId) {
+      showToast('Please select a target complaint or draft ticket', 'warning');
+      return;
+    }
+    try {
+      setIsAttachingMedia(true);
+      const res = await api.attachWhatsAppMediaToComplaint({
+        message_id: attachMediaModal.msg.id,
+        complaint_id: attachTargetComplaintId,
+        attachment_type: attachTargetType,
+        custom_notes: attachCustomNotes
+      });
+
+      if (res && res.success) {
+        showToast(`Media attached to ticket #${res.ticket_id || attachTargetComplaintId} successfully!`, 'success');
+
+        // Update local messages state so attached badge displays immediately
+        setMessages(prev => prev.map(m => {
+          if (m.id === attachMediaModal.msg.id) {
+            return {
+              ...m,
+              complaint_id: res.complaint_id,
+              linked_ticket_id: res.ticket_id
+            };
+          }
+          return m;
+        }));
+
+        if (!contactInfo?.ticket_id && res.ticket_id) {
+          setContactInfo(prev => ({
+            ...prev,
+            ticket_id: res.ticket_id,
+            complaint_id: res.complaint_id
+          }));
+        }
+
+        // Live broadcast update to refresh ComplaintDetailDrawer if open
+        broadcastComplaintsUpdate({
+          ticketId: res.ticket_id,
+          action: 'attachment_added'
+        });
+
+        setAttachMediaModal(null);
+      } else {
+        throw new Error(res?.error || 'Failed to attach media');
+      }
+    } catch (err) {
+      showToast('Error attaching media: ' + err.message, 'error');
+    } finally {
+      setIsAttachingMedia(false);
+    }
+  };
+
   // Helper to render avatar initials or clean user icon when name starts with '+' or digits
   const renderAvatarContent = (name, phone, iconClass = "w-5 h-5") => {
     const cleanName = (name || '').trim();
@@ -1948,6 +2055,17 @@ export const WhatsAppWebInbox = ({
                           <span>Forward</span>
                         </button>
 
+                        {(isImageMessage(msg) || isVideoMessage(msg) || isDocumentMessage(msg) || Boolean(msg.media_url)) && (
+                          <button
+                            type="button"
+                            onClick={() => openAttachMediaModal(msg)}
+                            className="w-full px-3 py-2 text-left hover:bg-emerald-50 text-emerald-800 flex items-center gap-2.5 cursor-pointer font-bold transition-colors"
+                          >
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>Attach to Complaint</span>
+                          </button>
+                        )}
+
                         {/* Edit is ONLY available for company outgoing messages, NEVER for customer incoming messages */}
                         {msg.sender_type === 'company' && (
                           <button
@@ -2090,7 +2208,15 @@ export const WhatsAppWebInbox = ({
                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-2">
                           <button
                             type="button"
-                            onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
+                            onClick={() => openAttachMediaModal(msg)}
+                            className="p-2 bg-emerald-600 rounded-full text-white hover:bg-emerald-700 shadow-md transition-colors cursor-pointer"
+                            title="Attach Photo to Complaint / Ticket"
+                          >
+                            <Paperclip className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption, msg })}
                             className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
                             title="View Full Size"
                           >
@@ -2148,7 +2274,15 @@ export const WhatsAppWebInbox = ({
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption })}
+                              onClick={() => openAttachMediaModal(msg)}
+                              className="p-1.5 hover:bg-emerald-600/40 text-emerald-300 hover:text-emerald-100 rounded-md transition-colors cursor-pointer"
+                              title="Attach Video to Complaint / Ticket"
+                            >
+                              <Paperclip className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
                               className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
                               title="Open Full Player"
                             >
@@ -2202,6 +2336,7 @@ export const WhatsAppWebInbox = ({
                         docName={docName}
                         onOpenPdf={() => docUrl && setPreviewMedia({ url: docUrl, type: 'pdf', title: docName })}
                         onDownload={() => docUrl && handleDownloadFile(docUrl, docName)}
+                        onAttachToComplaint={() => openAttachMediaModal(msg)}
                       />
                     );
                   })()
@@ -2428,6 +2563,16 @@ export const WhatsAppWebInbox = ({
                     onRetry={() => handleRetryMessage(msg)}
                   />
                 </div>
+
+                {/* Attached to Complaint Badge */}
+                {msg.complaint_id && (
+                  <div className="mt-1 pt-1 border-t border-black/5 flex items-center justify-between gap-1 text-[10px] font-bold text-emerald-800">
+                    <span className="flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200/80 rounded px-1.5 py-0.5">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                      <span>Attached to Ticket #{msg.linked_ticket_id || contactInfo?.ticket_id || selectedConv?.ticket_id || msg.complaint_id}</span>
+                    </span>
+                  </div>
+                )}
 
                 {/* 1-Click WhatsApp Web / App Dispatch & Retry Action Bar for Failed Messages */}
                 {msg.status === 'failed' && !isCustomer && (
@@ -4321,6 +4466,16 @@ export const WhatsAppWebInbox = ({
               previewMedia.url,
               previewMedia.type === 'video' ? 'whatsapp_video.mp4' : 'whatsapp_photo.jpg'
             )}
+            onAttachToComplaint={() => {
+              const targetMsg = previewMedia.msg || messages.find(m => getWhatsAppMediaUrl(m) === previewMedia.url) || {
+                id: 'preview_media',
+                media_url: previewMedia.url,
+                media_caption: previewMedia.caption || previewMedia.title,
+                media_type: previewMedia.type
+              };
+              setPreviewMedia(null);
+              openAttachMediaModal(targetMsg);
+            }}
           />
         )
       )}
@@ -4394,6 +4549,216 @@ export const WhatsAppWebInbox = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Direct Attach WhatsApp Media to Complaint / Draft Modal */}
+      {attachMediaModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-150"
+          onClick={() => !isAttachingMedia && setAttachMediaModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-emerald-700 to-teal-800 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                  <Paperclip className="w-4 h-4 text-emerald-100" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Attach Media to Complaint Ticket</h3>
+                  <p className="text-[11px] text-emerald-100 font-medium">Link customer WhatsApp media to complaint records</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isAttachingMedia}
+                onClick={() => setAttachMediaModal(null)}
+                className="p-1 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700">
+              {/* Media Preview Card */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+                {attachMediaModal.mediaType === 'image' && attachMediaModal.mediaUrl ? (
+                  <img
+                    src={attachMediaModal.mediaUrl}
+                    alt="Media preview"
+                    className="w-16 h-16 rounded-lg object-cover border border-slate-300 shrink-0"
+                  />
+                ) : attachMediaModal.mediaType === 'video' ? (
+                  <div className="w-16 h-16 rounded-lg bg-slate-900 flex flex-col items-center justify-center text-white shrink-0">
+                    <Video className="w-6 h-6 text-emerald-400" />
+                    <span className="text-[9px] text-slate-300 font-bold mt-1">VIDEO</span>
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0">
+                    <FileText className="w-6 h-6" />
+                    <span className="text-[9px] font-bold mt-1">DOCUMENT</span>
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1">
+                    {attachMediaModal.mediaType}
+                  </span>
+                  <p className="text-xs font-semibold text-slate-800 truncate" title={attachMediaModal.fileName}>
+                    {attachMediaModal.fileName}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    From: +{selectedPhone?.replace(/^91/, '')} ({contactInfo?.sender_name || 'Customer'})
+                  </p>
+                </div>
+              </div>
+
+              {/* Target Complaint Selection */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Target Complaint Ticket *
+                </label>
+                {loadingCustomerComplaints ? (
+                  <div className="py-4 text-center text-slate-500 flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                    <span>Loading customer tickets...</span>
+                  </div>
+                ) : customerComplaintsList.length === 0 ? (
+                  <div className="space-y-2">
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px]">
+                      No previous complaints found automatically for this phone number. You can enter a Ticket ID or Complaint ID manually below.
+                    </div>
+                    <input
+                      type="text"
+                      value={attachTargetComplaintId}
+                      onChange={(e) => setAttachTargetComplaintId(e.target.value)}
+                      placeholder="Enter Ticket ID (e.g. EGS-2026-000140 or numeric ID)"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-xs font-medium"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <select
+                      value={attachTargetComplaintId}
+                      onChange={(e) => setAttachTargetComplaintId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-xs font-medium"
+                    >
+                      <option value="">-- Select a complaint ticket --</option>
+                      {customerComplaintsList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          #{c.ticket_id || c.id} — {c.product_type || 'Solar System'} ({c.issue_category || 'Fault'}) [{c.status}]
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-[11px] text-slate-500">Or enter Ticket ID manually:</span>
+                      <input
+                        type="text"
+                        value={attachTargetComplaintId}
+                        onChange={(e) => setAttachTargetComplaintId(e.target.value)}
+                        placeholder="Ticket ID / Complaint ID"
+                        className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Attachment Classification */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Attachment Category
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAttachTargetType('registration')}
+                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                      attachTargetType === 'registration'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <FileCheck className="w-4 h-4 mx-auto mb-1 text-emerald-600" />
+                    <span className="text-[11px] block">Initial Fault Proof</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttachTargetType('inverter_serial')}
+                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                      attachTargetType === 'inverter_serial'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4 mx-auto mb-1 text-teal-600" />
+                    <span className="text-[11px] block">Inverter / Plate</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttachTargetType('resolution')}
+                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                      attachTargetType === 'resolution'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Wrench className="w-4 h-4 mx-auto mb-1 text-cyan-600" />
+                    <span className="text-[11px] block">Resolution Proof</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Notes */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Optional Remarks / Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={attachCustomNotes}
+                  onChange={(e) => setAttachCustomNotes(e.target.value)}
+                  placeholder="e.g. Inverter error code / physical damage shared by customer via WhatsApp"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+              <button
+                type="button"
+                disabled={isAttachingMedia}
+                onClick={() => setAttachMediaModal(null)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isAttachingMedia || !attachTargetComplaintId}
+                onClick={handleExecuteAttachMedia}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                {isAttachingMedia ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Attaching...</span>
+                  </>
+                ) : (
+                  <>
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>Attach to Complaint</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
