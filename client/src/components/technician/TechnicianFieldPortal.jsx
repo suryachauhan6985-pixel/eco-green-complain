@@ -1604,7 +1604,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         {job.status}
                       </span>
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                        👨‍🔧 {job.technician_name || myTechData?.name || currentUser?.name || 'Assigned to You'}
+                        👨‍🔧 {job.technician_name || myTechData?.name || currentUser?.name || 'Assigned Specialist'}
                       </span>
                       {job.secondary_technician_name && (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1">

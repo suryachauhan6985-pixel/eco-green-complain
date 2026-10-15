@@ -186,6 +186,33 @@ export const NotificationProvider = ({ children }) => {
     playNotificationChime({ volume: 0.95, ...opts });
   }, []);
 
+  // Track tickets assigned to the active technician to filter ticket-level notifications accurately
+  const [techAssignedTicketIds, setTechAssignedTicketIds] = useState(new Set());
+
+  const refreshTechAssignedTickets = useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'technician') {
+      setTechAssignedTicketIds(new Set());
+      return;
+    }
+    try {
+      if (api.getComplaints) {
+        const res = await api.getComplaints({});
+        if (res?.complaints && Array.isArray(res.complaints)) {
+          const ids = new Set();
+          res.complaints.forEach(c => {
+            if (c.ticket_id) ids.add(String(c.ticket_id));
+            if (c.id) ids.add(String(c.id));
+          });
+          setTechAssignedTicketIds(ids);
+        }
+      }
+    } catch (_) {}
+  }, [currentUser]);
+
+  useEffect(() => {
+    refreshTechAssignedTickets();
+  }, [refreshTechAssignedTickets]);
+
   // Check if a notification targets the active user (Role-Based Filtering)
   const isNotificationForUser = useCallback((notif, user) => {
     if (!user || user.role === 'customer') return false;
@@ -223,11 +250,15 @@ export const NotificationProvider = ({ children }) => {
       );
     }
 
-    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them
+    // 3. Technician ONLY sees work orders, assignments, notes explicitly for them or on their assigned tickets
     if (user.role === 'technician') {
       if (['staff', 'admin'].includes(notif.targetRole)) return false;
 
-      const currentTechId = String(user.technicianId || user.technician_id || user.id || '');
+      const currentTechIds = [
+        user.technicianId ? String(user.technicianId) : null,
+        user.technician_id ? String(user.technician_id) : null,
+        user.id ? String(user.id) : null
+      ].filter(Boolean);
       const currentTechName = (user.name || '').trim().toLowerCase();
       const currentTechPhone = (user.phone || '').replace(/[^0-9]/g, '').slice(-10);
 
@@ -235,28 +266,27 @@ export const NotificationProvider = ({ children }) => {
       const targetTechName = (notif.targetTechnicianName || '').trim().toLowerCase();
       const targetTechPhone = (notif.targetTechnicianPhone || '').replace(/[^0-9]/g, '').slice(-10);
 
-      const idMatches = targetTechId && currentTechId && targetTechId === currentTechId;
+      const idMatches = targetTechId && currentTechIds.includes(targetTechId);
       const nameMatches = targetTechName && currentTechName && (
-        currentTechName.includes(targetTechName) || targetTechName.includes(currentTechName)
+        currentTechName === targetTechName || currentTechName.includes(targetTechName) || targetTechName.includes(currentTechName)
       );
       const phoneMatches = targetTechPhone && currentTechPhone && targetTechPhone === currentTechPhone;
 
       if (idMatches || nameMatches || phoneMatches) return true;
 
-      if (['assignment', 'reassigned'].includes(notif.type) || notif.targetRole === 'technician') {
-        if (!targetTechId && !targetTechName) return true;
-        return idMatches || nameMatches || phoneMatches;
-      }
-
-      if (['reopened', 'note'].includes(notif.type) && notif.targetRole === 'all') {
-        return idMatches || nameMatches || phoneMatches;
+      // Check if notification is tied to a complaint assigned to this technician
+      const notifTicketKey = notif.ticketId || (notif.complaintId ? String(notif.complaintId) : null);
+      if (notifTicketKey && techAssignedTicketIds.has(String(notifTicketKey))) {
+        // Exclude internal staff/admin-only notifications
+        if (['staff', 'admin'].includes(notif.targetRole)) return false;
+        return true;
       }
 
       return false;
     }
 
     return false;
-  }, []);
+  }, [techAssignedTicketIds]);
 
   // Compute primary identifier key for a user (backward compatibility)
   const getUserKey = useCallback((user) => {
@@ -546,15 +576,21 @@ export const NotificationProvider = ({ children }) => {
       }
     };
 
-    // Multi-tab Live Sync listener for instant notification/whatsapp updates
-    const unsubscribeLiveSync = subscribeLiveSync(['notifications', 'whatsapp'], () => {
+    // Multi-tab Live Sync listener for instant notification/whatsapp/complaint updates
+    const unsubscribeLiveSync = subscribeLiveSync(['notifications', 'whatsapp', 'complaints'], () => {
       fetchFromBackend();
       checkWhatsAppIncoming();
+      refreshTechAssignedTickets();
     });
+
+    const handleComplaintChange = () => {
+      refreshTechAssignedTickets();
+    };
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('egs_in_app_notifications_cleared', handleClearedEvent);
     window.addEventListener('egs_in_app_notification_created', handleCustomNotify);
+    window.addEventListener('egs_complaints_updated', handleComplaintChange);
     window.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
 
@@ -563,6 +599,7 @@ export const NotificationProvider = ({ children }) => {
       if (document.visibilityState === 'visible') {
         fetchFromBackend();
         checkWhatsAppIncoming();
+        refreshTechAssignedTickets();
       }
     }, 30000);
 
@@ -571,11 +608,12 @@ export const NotificationProvider = ({ children }) => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('egs_in_app_notifications_cleared', handleClearedEvent);
       window.removeEventListener('egs_in_app_notification_created', handleCustomNotify);
+      window.removeEventListener('egs_complaints_updated', handleComplaintChange);
       window.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
       clearInterval(interval);
     };
-  }, [fetchFromBackend, checkWhatsAppIncoming]);
+  }, [fetchFromBackend, checkWhatsAppIncoming, refreshTechAssignedTickets]);
 
   // Automatically register device for OS background Web Push when permission is granted
   useEffect(() => {

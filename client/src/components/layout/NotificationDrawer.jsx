@@ -129,7 +129,7 @@ const SwipeableCard = ({ children, onDismiss, disabled = false, className = '' }
 export const NotificationDrawer = ({ isOpen, onClose, onSelectComplaint }) => {
   const { currentUser, unreadSimulatedCount, setUnreadSimulatedCount } = useAuth();
   const { 
-    notifications, 
+    userNotifications: notifications, 
     unreadCount, 
     markAsRead, 
     markTicketAsRead,

@@ -255,19 +255,33 @@ export const ComplaintDetailDrawer = ({
   const isResolved = ticket?.status === 'Resolved';
   const isClosed = ticket?.status === 'Closed';
 
-  const currentTechId = String(currentUser?.technicianId || currentUser?.technician_id || '');
-  const isPrimaryTechnician = currentUser?.role === 'technician' &&
-    Boolean(ticket?.assigned_technician_id) &&
-    String(ticket.assigned_technician_id) === currentTechId;
-  const isSecondaryPartnerOnly = currentUser?.role === 'technician' &&
-    Boolean(ticket?.secondary_technician_id) &&
-    String(ticket.secondary_technician_id) === currentTechId &&
-    !isPrimaryTechnician;
-  const isAssignedTechnician = isPrimaryTechnician || (
-    currentUser?.role === 'technician' &&
-    Boolean(ticket?.secondary_technician_id) &&
-    String(ticket.secondary_technician_id) === currentTechId
+  const userTechIds = [
+    currentUser?.technicianId ? String(currentUser.technicianId) : null,
+    currentUser?.technician_id ? String(currentUser.technician_id) : null,
+    currentUser?.id ? String(currentUser.id) : null
+  ].filter(Boolean);
+
+  const myTechName = (currentUser?.name || '').trim().toLowerCase();
+
+  const isPrimaryTechnician = currentUser?.role === 'technician' && Boolean(
+    (ticket?.assigned_technician_id && userTechIds.includes(String(ticket.assigned_technician_id))) ||
+    (ticket?.technician_name && myTechName && (
+      ticket.technician_name.trim().toLowerCase() === myTechName ||
+      ticket.technician_name.trim().toLowerCase().includes(myTechName) ||
+      myTechName.includes(ticket.technician_name.trim().toLowerCase())
+    ))
   );
+
+  const isSecondaryPartnerOnly = currentUser?.role === 'technician' && !isPrimaryTechnician && Boolean(
+    (ticket?.secondary_technician_id && userTechIds.includes(String(ticket.secondary_technician_id))) ||
+    (ticket?.secondary_technician_name && myTechName && (
+      ticket.secondary_technician_name.trim().toLowerCase() === myTechName ||
+      ticket.secondary_technician_name.trim().toLowerCase().includes(myTechName) ||
+      myTechName.includes(ticket.secondary_technician_name.trim().toLowerCase())
+    ))
+  );
+
+  const isAssignedTechnician = isPrimaryTechnician || isSecondaryPartnerOnly;
 
   // Previous resolution history extraction for reopened tickets
   const previousResolution = React.useMemo(() => {
@@ -673,10 +687,10 @@ export const ComplaintDetailDrawer = ({
         }
         if (data.complaint.resolved_by_technician_id) {
           setResolvedByTechId(String(data.complaint.resolved_by_technician_id));
-        } else if (currentUser?.role === 'technician') {
-          setResolvedByTechId(String(currentUser.id));
         } else if (data.complaint.assigned_technician_id) {
           setResolvedByTechId(String(data.complaint.assigned_technician_id));
+        } else {
+          setResolvedByTechId('');
         }
         setFollowUpStatus(data.complaint.status);
       }
@@ -1150,7 +1164,7 @@ export const ComplaintDetailDrawer = ({
         }
       }
       if (!resolvedTechName) {
-        if (currentUser?.role === 'technician') {
+        if (isAssignedTechnician) {
           resolvedTechId = String(currentUser.id);
           resolvedTechName = currentUser.name;
         } else if (ticket.technician_name) {
@@ -1162,7 +1176,7 @@ export const ComplaintDetailDrawer = ({
       if (resolvedTechId) data.append('resolved_by_technician_id', resolvedTechId);
       if (resolvedTechName) data.append('resolved_by_technician_name', resolvedTechName);
 
-      const activeTechName = resolvedTechName || ticket.technician_name || ticket.assigned_tech_name || (currentUser?.role === 'technician' ? currentUser?.name : '');
+      const activeTechName = resolvedTechName || ticket.technician_name || ticket.assigned_tech_name || (isAssignedTechnician ? currentUser?.name : '');
       if (activeTechName) {
         data.append('technician_name', activeTechName);
       }
@@ -2228,7 +2242,7 @@ export const ComplaintDetailDrawer = ({
                                 </div>
                               )}
                             </div>
-                          ) : (ticket.assigned_technician_id || ticket.technician_name || effectiveRole === 'technician') ? (
+                          ) : (isAssignedTechnician || ((ticket.assigned_technician_id || ticket.technician_name) && effectiveRole !== 'technician')) ? (
                             <button
                               type="button"
                               onClick={openPaymentModal}
@@ -2696,7 +2710,7 @@ export const ComplaintDetailDrawer = ({
                         </div>
 
                         {/* Active Assigned Specialist Card */}
-                        {(ticket.assigned_technician_id || ticket.technician_name || currentUser?.role === 'technician') ? (
+                        {(ticket.assigned_technician_id || ticket.technician_name) ? (
                           <div className="bg-gradient-to-br from-emerald-50/80 to-slate-50 rounded-xl p-4 border border-emerald-200 space-y-3 shadow-2xs">
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div className="flex items-center gap-3">
@@ -2706,11 +2720,11 @@ export const ComplaintDetailDrawer = ({
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <h5 className="font-bold text-slate-900 text-sm">
-                                      {ticket.technician_name || (currentUser?.role === 'technician' ? currentUser.name : 'Field Technician')}
-                                      {currentUser?.role === 'technician' ? ' (You)' : ''}
+                                      {ticket.technician_name || 'Assigned Field Specialist'}
+                                      {isPrimaryTechnician ? ' (You)' : ''}
                                     </h5>
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                      {currentUser?.role === 'technician' ? '✓ Assigned to You' : '✓ Primary / Lead Specialist'}
+                                      {isPrimaryTechnician ? '✓ Assigned to You' : '✓ Primary / Lead Specialist'}
                                     </span>
                                     {ticket.secondary_technician_name && (
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1">
@@ -2726,7 +2740,7 @@ export const ComplaintDetailDrawer = ({
                               </div>
 
                               <div className="flex items-center gap-1.5 self-start">
-                                {currentUser?.role === 'technician' ? (
+                                {isAssignedTechnician ? (
                                   /* Technician Quick Actions to Customer */
                                   <div className="flex items-center gap-1.5">
                                     <a
@@ -2753,7 +2767,7 @@ export const ComplaintDetailDrawer = ({
                                       );
                                     })()}
                                   </div>
-                                ) : (
+                                ) : ['admin', 'staff'].includes(currentUser?.role) ? (
                                   /* Staff/Admin Actions to Technician */
                                   <>
                                     {(() => {
@@ -2807,7 +2821,7 @@ export const ComplaintDetailDrawer = ({
                                       <span>{sendingReminder ? 'Sending...' : 'Send Reminder'}</span>
                                     </button>
                                   </>
-                                )}
+                                ) : null}
                               </div>
                             </div>
 
@@ -2820,9 +2834,12 @@ export const ComplaintDetailDrawer = ({
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-2">
-                                      <strong className="text-blue-950 font-bold">{ticket.secondary_technician_name}</strong>
+                                      <strong className="text-blue-950 font-bold">
+                                        {ticket.secondary_technician_name}
+                                        {isSecondaryPartnerOnly ? ' (You)' : ''}
+                                      </strong>
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                                        Co-Technician / Partner Specialist
+                                        {isSecondaryPartnerOnly ? '✓ Assigned to You (Partner Specialist)' : 'Co-Technician / Partner Specialist'}
                                       </span>
                                     </div>
                                     <p className="text-[11px] text-blue-700 mt-0.5">
@@ -3154,6 +3171,14 @@ export const ComplaintDetailDrawer = ({
                           </span>
                         )}
                       </div>
+                    ) : (currentUser?.role === 'technician' && !isAssignedTechnician) ? (
+                      <div className="rounded-xl p-4 bg-slate-50 border border-slate-200 flex items-center gap-2.5 text-xs text-slate-700">
+                        <ShieldAlert className="w-4 h-4 text-slate-500 shrink-0" />
+                        <div>
+                          <span className="font-bold text-slate-800 block">Read-Only Ticket View</span>
+                          <span className="text-[11px] text-slate-500">This ticket is not assigned to you. Adding site notes and stage updates is restricted.</span>
+                        </div>
+                      </div>
                     ) : (
                       <div id="log-visit-note-section" className={`rounded-xl p-4 border space-y-3 scroll-mt-20 transition-all ${followUpStatus === 'On Hold' ? 'bg-amber-50/60 border-amber-300' : 'bg-white border-slate-200'}`}>
                         <div className="flex items-center justify-between">
@@ -3255,7 +3280,17 @@ export const ComplaintDetailDrawer = ({
                           </div>
                         )}
 
-                        {isSecondaryPartnerOnly ? (
+                        {currentUser?.role === 'technician' && !isAssignedTechnician ? (
+                          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 space-y-1">
+                            <div className="flex items-center gap-2 font-bold text-slate-800">
+                              <AlertTriangle className="w-4 h-4 text-slate-500" />
+                              <span>Resolution Restricted (View Only)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              This ticket is not assigned to you. Only the assigned technician ({ticket.technician_name || 'Assigned Specialist'}) or staff supervisors can submit resolution details for this ticket.
+                            </p>
+                          </div>
+                        ) : isSecondaryPartnerOnly ? (
                           <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1">
                             <div className="flex items-center gap-2 font-bold text-amber-950">
                               <AlertTriangle className="w-4 h-4 text-amber-600" />
@@ -3280,7 +3315,7 @@ export const ComplaintDetailDrawer = ({
                                 </span>
                               </div>
                               <select
-                                value={resolvedByTechId || (currentUser?.role === 'technician' ? String(currentUser.id) : String(ticket.assigned_technician_id || ''))}
+                                value={resolvedByTechId || String(ticket.assigned_technician_id || (isAssignedTechnician ? currentUser.id : ''))}
                                 onChange={(e) => setResolvedByTechId(e.target.value)}
                                 className="w-full text-xs px-2.5 py-1.5 bg-white border border-indigo-300 rounded-lg text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                               >
