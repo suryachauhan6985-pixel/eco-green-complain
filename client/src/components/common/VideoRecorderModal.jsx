@@ -566,18 +566,18 @@ export function VideoRecorderModal({
   const remainingSeconds = Math.max(0, MAX_RECORDING_SECONDS - recordingSeconds);
 
   return (
-    <div className="fixed inset-0 z-80 w-full h-[100dvh] bg-black overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-80 w-full h-[100dvh] bg-black overflow-hidden select-none">
       {/* Container stays 100% full screen on all orientations without card margins */}
-      <div className="relative w-full h-full flex-1 flex flex-col bg-black overflow-hidden">
+      <div className="relative w-full h-full bg-black overflow-hidden">
         
-        {/* VIEWING / CAMERA CANVAS */}
+        {/* VIEWING / CAMERA CANVAS - 100% full screen edge-to-edge */}
         <div 
-          className="relative flex-1 w-full min-h-0 bg-black flex items-center justify-center overflow-hidden touch-none"
+          className="absolute inset-0 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Live Viewfinder (Natural edge-to-edge object-cover) */}
+          {/* Live Viewfinder (Natural edge-to-edge object-cover filling entire screen) */}
           {!recordedBlob && !cameraError && (
             <video
               ref={videoPreviewRef}
@@ -590,7 +590,7 @@ export function VideoRecorderModal({
 
           {/* Review Mode Playback: NO autoplay, perfectly fits screen on rotation */}
           {recordedBlob && previewUrl && (
-            <div className="relative flex-1 w-full h-full min-h-0 flex items-center justify-center bg-black overflow-hidden p-2 sm:p-4">
+            <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black overflow-hidden p-2 sm:p-4 pb-28 landscape:pb-16">
               <video
                 ref={playbackVideoRef}
                 src={previewUrl}
@@ -733,12 +733,12 @@ export function VideoRecorderModal({
           )}
         </div>
 
-        {/* BOTTOM CAMERA CONTROLS BAR */}
-        <div className="relative w-full p-4 sm:p-5 bg-gradient-to-t from-black via-black/95 to-black/70 flex flex-col items-center justify-center gap-2 z-30 shrink-0">
+        {/* FLOATING BOTTOM CAMERA CONTROLS BAR (Floats seamlessly over live viewfinder in portrait & landscape) */}
+        <div className="absolute bottom-0 inset-x-0 p-3 sm:p-5 landscape:p-2 pb-safe bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col items-center justify-center gap-1.5 z-30 pointer-events-none">
           
           {/* Main Shutter & Actions Row */}
           {!recordedBlob ? (
-            <div className="w-full flex items-center justify-around max-w-sm">
+            <div className="pointer-events-auto w-full flex items-center justify-around max-w-sm">
               
               {/* Snapshot Photo Button */}
               <button
@@ -795,7 +795,7 @@ export function VideoRecorderModal({
             </div>
           ) : (
             /* REVIEW MODE CONTROLS: Retake vs Use Video */
-            <div className="w-full flex items-center justify-center gap-3 max-w-sm">
+            <div className="pointer-events-auto w-full flex items-center justify-center gap-3 max-w-sm">
               <button
                 type="button"
                 onClick={handleRetake}
@@ -821,7 +821,7 @@ export function VideoRecorderModal({
             <button
               type="button"
               onClick={() => fileFallbackInputRef.current?.click()}
-              className="text-[11px] text-teal-400 hover:text-teal-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer transition-colors"
+              className="pointer-events-auto text-[11px] text-teal-400 hover:text-teal-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer transition-colors"
             >
               <Upload className="w-3.5 h-3.5" />
               <span>Or choose video from device gallery</span>

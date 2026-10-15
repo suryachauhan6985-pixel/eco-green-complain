@@ -136,8 +136,13 @@ export const ComplaintDetailDrawer = ({
   const [revertingPayment, setRevertingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
   const [previewVideoMeta, setPreviewVideoMeta] = useState({ isLandscape: false, rotation: 0, isFullscreen: false });
+  const [videoPlaybackError, setVideoPlaybackError] = useState(false);
   const videoContainerRef = useRef(null);
   const [videoContainerSize, setVideoContainerSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    setVideoPlaybackError(false);
+  }, [previewDocModal?.url]);
   const [uploadingAtt, setUploadingAtt] = useState(false);
   const [deletingAttId, setDeletingAttId] = useState(null);
   const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
@@ -4622,59 +4627,65 @@ export const ComplaintDetailDrawer = ({
                       isFullscreen ? 'h-full min-h-0' : (isEffectiveLandscape ? 'aspect-video max-h-[75vh]' : 'aspect-[9/16] max-h-[75vh]')
                     }`}
                   >
-                    <video 
-                      key={previewDocModal.url}
-                      controls 
-                      autoPlay 
-                      playsInline
-                      preload="metadata"
-                      onLoadedMetadata={(e) => {
-                        const w = e.target.videoWidth || 0;
-                        const h = e.target.videoHeight || 0;
-                        if (w && h) {
-                          setPreviewVideoMeta(prev => ({ ...prev, isLandscape: w > h }));
-                        }
-                      }}
-                      style={{
-                        width: isRotated90or270 && videoContainerSize.height > 0
-                          ? `${videoContainerSize.height}px`
-                          : '100%',
-                        height: isRotated90or270 && videoContainerSize.width > 0
-                          ? `${videoContainerSize.width}px`
-                          : '100%',
-                        maxWidth: isRotated90or270 ? 'none' : '100%',
-                        maxHeight: isRotated90or270 ? 'none' : '100%',
-                        transform: previewVideoMeta.rotation 
-                          ? `rotate(${previewVideoMeta.rotation}deg)` 
-                          : undefined,
-                        transformOrigin: 'center center',
-                        objectFit: 'contain',
-                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                      }}
-                      className="object-contain rounded-lg shadow-sm"
-                      onError={() => {
-                        const fb = document.getElementById('preview-video-fallback-view');
-                        if (fb) fb.style.display = 'flex';
-                      }}
-                    >
-                      <source src={getStreamUrl(previewDocModal.url)} type="video/mp4" />
-                      <source src={getDownloadUrl(previewDocModal.url)} type="video/mp4" />
-                      Your browser does not support video playback.
-                    </video>
-                    <div id="preview-video-fallback-view" style={{ display: 'none' }} className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border border-slate-200 my-4 w-full">
-                      <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 mx-auto mb-2">
-                        <Video className="w-6 h-6" />
+                    {videoPlaybackError ? (
+                      <div className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border border-slate-200 my-4 w-full max-w-md mx-auto">
+                        <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 mx-auto mb-2">
+                          <Video className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs font-bold text-slate-800">{previewDocModal.name}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original video:</p>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Download Video
+                        </button>
                       </div>
-                      <p className="text-xs font-bold text-slate-800">{previewDocModal.name}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original MP4 video:</p>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    ) : (
+                      <video 
+                        key={previewDocModal.url}
+                        src={previewDocModal.url}
+                        controls 
+                        autoPlay 
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={(e) => {
+                          const w = e.target.videoWidth || 0;
+                          const h = e.target.videoHeight || 0;
+                          if (w && h) {
+                            setPreviewVideoMeta(prev => ({ ...prev, isLandscape: w > h }));
+                          }
+                          setVideoPlaybackError(false);
+                        }}
+                        onCanPlay={() => setVideoPlaybackError(false)}
+                        onPlaying={() => setVideoPlaybackError(false)}
+                        onError={(e) => {
+                          if (!e.target.videoWidth && e.target.readyState === 0) {
+                            setVideoPlaybackError(true);
+                          }
+                        }}
+                        style={{
+                          width: isRotated90or270 && videoContainerSize.height > 0
+                            ? `${videoContainerSize.height}px`
+                            : '100%',
+                          height: isRotated90or270 && videoContainerSize.width > 0
+                            ? `${videoContainerSize.width}px`
+                            : '100%',
+                          maxWidth: isRotated90or270 ? 'none' : '100%',
+                          maxHeight: isRotated90or270 ? 'none' : '100%',
+                          transform: previewVideoMeta.rotation 
+                            ? `rotate(${previewVideoMeta.rotation}deg)` 
+                            : undefined,
+                          transformOrigin: 'center center',
+                          objectFit: 'contain',
+                          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                        }}
+                        className="object-contain rounded-lg shadow-sm"
                       >
-                        <Download className="w-3.5 h-3.5" /> Download Video
-                      </button>
-                    </div>
+                        Your browser does not support video playback.
+                      </video>
+                    )}
                   </div>
                 ) : previewDocModal.isImage ? (
                 <div className="relative flex flex-col items-center justify-center w-full">

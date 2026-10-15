@@ -1078,10 +1078,42 @@ whatsappRoutes.post('/retry-message/:id', authenticateToken, async (c) => {
       db_complaint_id: complaint?.id || msg.complaint_id || null
     };
 
+    let templateName = msg.template_name;
+    const bodyText = msg.message_body || '';
+
+    // Smart template detection on retry: if template_name was not saved, detect status update pattern
+    if (!templateName && bodyText) {
+      if (/Update on Complaint/i.test(bodyText) || (/Eco Green Solar Alert/i.test(bodyText) && /Status:/i.test(bodyText))) {
+        templateName = 'status__followup_note_update';
+        
+        const tktMatch = bodyText.match(/Update on Complaint \*?([A-Za-z0-9_-]+)\*?/i);
+        if (tktMatch && tktMatch[1]) {
+          variables.complaint_id = tktMatch[1].trim();
+          variables.ticket_id = tktMatch[1].trim();
+          variables.feedback_url = `${appUrl}/track/${tktMatch[1].trim()}`;
+        }
+        
+        const prodMatch = bodyText.match(/\(([^)]+)\):/);
+        if (prodMatch && prodMatch[1]) {
+          variables.product_type = prodMatch[1].trim();
+        }
+
+        const statusMatch = bodyText.match(/Status:\s*\*?([^\n*]+)\*?/i);
+        if (statusMatch && statusMatch[1]) {
+          variables.status = statusMatch[1].trim();
+        }
+
+        const notesMatch = bodyText.match(/Notes:\s*(.+?)(?=\n\n|\n- Eco|$)/is);
+        if (notesMatch && notesMatch[1]) {
+          variables.notes = notesMatch[1].trim();
+        }
+      }
+    }
+
     const sendRes = await sendWhatsApp({
       to: msg.phone,
       message: msg.message_body,
-      templateName: msg.template_name,
+      templateName,
       variables,
       senderName: msg.sender_name || 'Eco Green Solar',
       existingMessageId: msg.id,

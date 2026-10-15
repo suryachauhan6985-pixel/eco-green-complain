@@ -1498,12 +1498,25 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
     );
 
     if (notify_customer && complaint.customer_phone) {
+      const effectiveStatus = status || complaint.status || 'In Progress';
+      const effectiveNote = actualNote || `Status updated to ${effectiveStatus}`;
       c.executionCtx?.waitUntil?.(
         sendWhatsApp({
           to: complaint.customer_phone,
-          message: `*Eco Green Solar Alert*\n\nUpdate on Complaint *${complaint.ticket_id}* (${complaint.product_type}):\nStatus: *${status || complaint.status}*\nNotes: ${actualNote}\n\n- Eco Green Solar Care`,
+          templateName: 'status__followup_note_update',
+          variables: {
+            complaint_id: complaint.ticket_id,
+            ticket_id: complaint.ticket_id,
+            product_type: complaint.product_type || 'Solar Rooftop Systems',
+            status: effectiveStatus,
+            notes: effectiveNote,
+            feedback_url: `${c.env?.APP_URL || 'https://complain.ecogreensolar.co.in'}/track/${complaint.ticket_id}`,
+            db_complaint_id: complaint.id
+          },
           env: c.env
-        }).catch(() => {})
+        }).catch((err) => {
+          console.warn('[WhatsApp Status Note Update Error]', err.message);
+        })
       );
     }
 
