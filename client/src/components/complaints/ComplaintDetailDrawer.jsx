@@ -151,6 +151,13 @@ export const ComplaintDetailDrawer = ({
   // Live In-App Compressed Video Recorder Modal State (50 MB limit guard)
   const [videoRecorderTarget, setVideoRecorderTarget] = useState(null); // 'registration' | 'resolution' | null
 
+  // Customer WhatsApp Media Picker State
+  const [isWhatsAppMediaPickerOpen, setIsWhatsAppMediaPickerOpen] = useState(false);
+  const [whatsAppMediaTargetType, setWhatsAppMediaTargetType] = useState('registration'); // 'registration' | 'inverter_serial'
+  const [customerWhatsAppMedia, setCustomerWhatsAppMedia] = useState([]);
+  const [loadingWhatsAppMedia, setLoadingWhatsAppMedia] = useState(false);
+  const [attachingWhatsAppMsgId, setAttachingWhatsAppMsgId] = useState(null);
+
   const handleVideoRecorded = (result) => {
     if (!result) return;
     const files = Array.isArray(result) ? result : [result];
@@ -564,12 +571,7 @@ export const ComplaintDetailDrawer = ({
     });
   };
 
-  // Customer WhatsApp Media Picker State & Actions
-  const [isWhatsAppMediaPickerOpen, setIsWhatsAppMediaPickerOpen] = useState(false);
-  const [whatsAppMediaTargetType, setWhatsAppMediaTargetType] = useState('registration'); // 'registration' | 'inverter_serial'
-  const [customerWhatsAppMedia, setCustomerWhatsAppMedia] = useState([]);
-  const [loadingWhatsAppMedia, setLoadingWhatsAppMedia] = useState(false);
-  const [attachingWhatsAppMsgId, setAttachingWhatsAppMsgId] = useState(null);
+  // Customer WhatsApp Media Picker Actions
 
   const handleOpenWhatsAppMediaPicker = async (targetType = 'registration') => {
     setWhatsAppMediaTargetType(targetType);
