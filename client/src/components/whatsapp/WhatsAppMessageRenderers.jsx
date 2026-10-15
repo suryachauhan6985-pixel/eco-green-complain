@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play, Pause, Download, Maximize2, RotateCw, ZoomIn, ZoomOut,
   FileText, ExternalLink, MapPin, Copy, Phone, User, Check,
@@ -751,22 +751,197 @@ export function WhatsAppMediaLightbox({
   onDownload,
   onAttachToComplaint
 }) {
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
+  const isVideo = media && (media.type === 'video' || (media.url && /\.(mp4|webm|mov)($|\?)/i.test(media.url)));
 
+  const containerRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Gesture tracking refs
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const positionRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const touchDistanceRef = useRef(null);
+  const touchStartZoomRef = useRef(1);
+  const lastTapRef = useRef(0);
+
+  // Synchronize refs with state
+  useEffect(() => {
+    positionRef.current = position;
+  }, [position]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  // Reset zoom and pan
+  const handleReset = useCallback(() => {
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  // Zoom adjustment helper
+  const adjustZoom = useCallback((delta) => {
+    setZoom((prev) => {
+      const next = Math.min(5, Math.max(0.5, Number((prev + delta).toFixed(2))));
+      if (next <= 1) {
+        setPosition({ x: 0, y: 0 });
+      }
+      return next;
+    });
+  }, []);
+
+  // Mouse Wheel Zoom (Desktop)
+  const handleWheel = useCallback((e) => {
+    if (isVideo) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const delta = e.deltaY < 0 ? 0.25 : -0.25;
+    setZoom((prev) => {
+      const next = Math.min(5, Math.max(0.5, Number((prev + delta).toFixed(2))));
+      if (next <= 1) {
+        setPosition({ x: 0, y: 0 });
+      }
+      return next;
+    });
+  }, [isVideo]);
+
+  // Attach non-passive wheel listener on container to prevent page scroll while zooming
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || isVideo) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, [handleWheel, isVideo]);
+
+  // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === '+') setZoom(z => Math.min(3, z + 0.25));
-      if (e.key === '-') setZoom(z => Math.max(0.5, z - 0.25));
+      if (isVideo) return;
+      if (e.key === '+' || e.key === '=') adjustZoom(0.25);
+      if (e.key === '-') adjustZoom(-0.25);
+      if (e.key === '0' || e.key === 'r') handleReset();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, adjustZoom, handleReset, isVideo]);
+
+  // Mouse Drag to Pan (Desktop)
+  const handleMouseDown = (e) => {
+    if (zoom <= 1 || isVideo) return;
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - positionRef.current.x,
+      y: e.clientY - positionRef.current.y,
+    };
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || zoom <= 1 || isVideo) return;
+    e.preventDefault();
+    setPosition({
+      x: e.clientX - dragStartRef.current.x,
+      y: e.clientY - dragStartRef.current.y,
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Double click to toggle zoom (Desktop)
+  const handleDoubleClick = (e) => {
+    if (isVideo) return;
+    e.stopPropagation();
+    if (zoom > 1.2) {
+      handleReset();
+    } else {
+      setZoom(2.5);
+    }
+  };
+
+  // Mobile Touch Gestures: Pinch-to-zoom & Touch Pan
+  const handleTouchStart = (e) => {
+    if (isVideo) return;
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchDistanceRef.current = dist;
+      touchStartZoomRef.current = zoomRef.current;
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const now = Date.now();
+      // Double-tap to toggle zoom
+      if (now - lastTapRef.current < 300) {
+        e.preventDefault();
+        if (zoomRef.current > 1.2) {
+          handleReset();
+        } else {
+          setZoom(2.5);
+        }
+        lastTapRef.current = 0;
+        return;
+      }
+      lastTapRef.current = now;
+
+      if (zoomRef.current > 1) {
+        setIsDragging(true);
+        dragStartRef.current = {
+          x: e.touches[0].clientX - positionRef.current.x,
+          y: e.touches[0].clientY - positionRef.current.y,
+        };
+      }
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (isVideo) return;
+    if (e.touches.length === 2 && touchDistanceRef.current) {
+      e.preventDefault();
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = currentDist / touchDistanceRef.current;
+      const next = Math.min(5, Math.max(0.5, Number((touchStartZoomRef.current * ratio).toFixed(2))));
+      setZoom(next);
+      if (next <= 1) {
+        setPosition({ x: 0, y: 0 });
+      }
+      return;
+    }
+
+    if (e.touches.length === 1 && isDragging && zoomRef.current > 1) {
+      e.preventDefault();
+      setPosition({
+        x: e.touches[0].clientX - dragStartRef.current.x,
+        y: e.touches[0].clientY - dragStartRef.current.y,
+      });
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.touches.length < 2) {
+      touchDistanceRef.current = null;
+    }
+    if (e.touches.length === 0) {
+      setIsDragging(false);
+    }
+  };
 
   if (!media || !media.url) return null;
-
-  const isVideo = media.type === 'video' || (media.url && /\.(mp4|webm|mov)($|\?)/i.test(media.url));
 
   return (
     <div
@@ -790,18 +965,27 @@ export function WhatsAppMediaLightbox({
             <>
               <button
                 type="button"
-                onClick={() => setZoom(z => Math.max(0.5, z - 0.25))}
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                title="Zoom Out (-)"
+                onClick={() => adjustZoom(-0.25)}
+                disabled={zoom <= 0.5}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white transition-colors cursor-pointer"
+                title="Zoom Out (- or Scroll Down)"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
-              <span className="text-xs font-mono px-1">{Math.round(zoom * 100)}%</span>
               <button
                 type="button"
-                onClick={() => setZoom(z => Math.min(3, z + 0.25))}
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                title="Zoom In (+)"
+                onClick={handleReset}
+                className="text-xs font-mono px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-emerald-400 font-bold transition-colors cursor-pointer"
+                title="Reset Zoom & Pan (Double Click to toggle)"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={() => adjustZoom(0.25)}
+                disabled={zoom >= 5}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white transition-colors cursor-pointer"
+                title="Zoom In (+ or Scroll Up)"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
@@ -812,6 +996,14 @@ export function WhatsAppMediaLightbox({
                 title="Rotate 90°"
               >
                 <RotateCw className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                title="Reset Zoom & Pan"
+              >
+                <RefreshCw className="w-4 h-4" />
               </button>
             </>
           )}
@@ -852,8 +1044,19 @@ export function WhatsAppMediaLightbox({
 
       {/* Media Canvas */}
       <div
+        ref={containerRef}
         onClick={(e) => e.stopPropagation()}
-        className="flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-2 modal-enter-scale"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-2 modal-enter-scale select-none ${
+          !isVideo && zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+        }`}
       >
         {isVideo ? (
           <video
@@ -867,24 +1070,33 @@ export function WhatsAppMediaLightbox({
           <img
             src={media.url}
             alt="WhatsApp Media"
+            draggable={false}
             style={{
-              transform: `scale(${zoom}) rotate(${rotation}deg)`,
-              transition: 'transform 0.15s ease-out'
+              transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
+              transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+              willChange: 'transform',
             }}
-            className="max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl"
+            className="max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl select-none"
           />
         )}
       </div>
 
-      {/* Lightbox Footer Caption */}
-      {media.caption && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-2xl bg-black/60 backdrop-blur-md text-white text-center py-2 px-4 rounded-xl text-xs z-10"
-        >
-          {media.caption}
-        </div>
-      )}
+      {/* Lightbox Footer Caption & Interaction Tip */}
+      <div className="w-full max-w-2xl flex flex-col items-center gap-1.5 z-10">
+        {!isVideo && (
+          <div className="text-[11px] text-white/50 tracking-wide font-medium">
+            Scroll mouse wheel to zoom • Drag to pan • Double click to toggle
+          </div>
+        )}
+        {media.caption && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-black/60 backdrop-blur-md text-white text-center py-2 px-4 rounded-xl text-xs"
+          >
+            {media.caption}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
