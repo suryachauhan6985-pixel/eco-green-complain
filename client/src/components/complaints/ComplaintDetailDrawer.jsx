@@ -10,7 +10,7 @@ import {
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
   Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX,
-  ClipboardCheck, Maximize2, Minimize2
+  ClipboardCheck, Maximize2, Minimize2, Building2
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly, formatIndianTimeOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -111,6 +111,51 @@ export const ComplaintDetailDrawer = ({
   const [reopenReason, setReopenReason] = useState('');
   const [reopenTechId, setReopenTechId] = useState('');
   const [reopening, setReopening] = useState(false);
+
+  // Dealer Details State & Fallback Directory Lookup
+  const [fetchedDealer, setFetchedDealer] = useState(null);
+  const [showDrawerDealerAlternates, setShowDrawerDealerAlternates] = useState(false);
+
+  useEffect(() => {
+    let isSubscribed = true;
+    if (ticket?.dealer_name && !ticket?.dealer_contact) {
+      api.findDealerByName(ticket.dealer_name)
+        .then(res => {
+          if (isSubscribed && res?.dealer) {
+            setFetchedDealer(res.dealer);
+          }
+        })
+        .catch(err => console.warn('Dealer fallback fetch error:', err));
+    } else {
+      setFetchedDealer(null);
+    }
+    return () => { isSubscribed = false; };
+  }, [ticket?.dealer_name, ticket?.dealer_contact]);
+
+  const currentDealerName = ticket?.dealer_name || fetchedDealer?.dealer_name || '';
+  const currentDealerPerson = ticket?.dealer_contact_person || fetchedDealer?.contact_person || '';
+  const currentDealerContact = ticket?.dealer_contact || fetchedDealer?.primary_contact || '';
+  const currentDealerAlternates = useMemo(() => {
+    let alts = [];
+    if (ticket?.dealer_alternate_contacts) {
+      try {
+        alts = Array.isArray(ticket.dealer_alternate_contacts)
+          ? ticket.dealer_alternate_contacts
+          : JSON.parse(ticket.dealer_alternate_contacts);
+      } catch (_) {
+        alts = String(ticket.dealer_alternate_contacts).split(/[,/]/).map(s => s.trim()).filter(Boolean);
+      }
+    } else if (fetchedDealer?.alternate_contacts) {
+      try {
+        alts = Array.isArray(fetchedDealer.alternate_contacts)
+          ? fetchedDealer.alternate_contacts
+          : JSON.parse(fetchedDealer.alternate_contacts);
+      } catch (_) {
+        alts = String(fetchedDealer.alternate_contacts).split(/[,/]/).map(s => s.trim()).filter(Boolean);
+      }
+    }
+    return Array.isArray(alts) ? alts.filter(Boolean) : [];
+  }, [ticket?.dealer_alternate_contacts, fetchedDealer?.alternate_contacts]);
 
   // Edit Complaint Modal State
   const [isEditing, setIsEditing] = useState(false);
@@ -2102,14 +2147,114 @@ export const ComplaintDetailDrawer = ({
                             </span>
                           </div>
                         )}
-                        {ticket.dealer_name && (
-                          <div>
-                            <span className="text-slate-400 block text-[11px]">Dealer Name:</span>
-                            <span className="font-semibold text-slate-800">{ticket.dealer_name}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
+
+                    {/* Dealer & Channel Partner Information Card */}
+                    {currentDealerName && (
+                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-sky-600" />
+                            Dealer & Partner Information
+                          </h4>
+                          {currentDealerAlternates.length > 0 && (
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setShowDrawerDealerAlternates(!showDrawerDealerAlternates)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-2.5 py-1 rounded-full transition-all shadow-xs cursor-pointer"
+                                title="Click to view alternate contact numbers"
+                              >
+                                <Phone className="w-3 h-3 text-sky-600" />
+                                <span>+{currentDealerAlternates.length} Extra Contacts</span>
+                              </button>
+
+                              {showDrawerDealerAlternates && (
+                                <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-3 z-30 animate-in fade-in zoom-in-95">
+                                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                      Alternate Contact Numbers
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowDrawerDealerAlternates(false)}
+                                      className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1 cursor-pointer"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {currentDealerAlternates.map((num, idx) => (
+                                      <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+                                        <span className="font-mono font-medium text-slate-800">{num}</span>
+                                        <div className="flex items-center gap-1">
+                                          <a
+                                            href={`tel:${num}`}
+                                            className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                            title="Call alternate contact"
+                                          >
+                                            <Phone className="w-3.5 h-3.5" />
+                                          </a>
+                                          <a
+                                            href={`https://wa.me/${num.replace(/[^0-9]/g, '')}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="p-1 rounded bg-green-50 text-green-700 hover:bg-green-100 transition-colors"
+                                            title="WhatsApp alternate contact"
+                                          >
+                                            <MessageCircle className="w-3.5 h-3.5" />
+                                          </a>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Dealer Firm Name:</span>
+                            <span className="font-semibold text-slate-800 break-words">{currentDealerName}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Contact Person:</span>
+                            <span className="font-medium text-slate-800">{currentDealerPerson || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[11px]">Primary Contact:</span>
+                            {currentDealerContact ? (
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="font-mono font-bold text-slate-800">{currentDealerContact}</span>
+                                <a
+                                  href={`tel:${currentDealerContact}`}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-semibold border border-emerald-200 transition-colors"
+                                  title="Call dealer"
+                                >
+                                  <Phone className="w-3 h-3" />
+                                  <span>Call</span>
+                                </a>
+                                <a
+                                  href={`https://wa.me/${currentDealerContact.replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 hover:bg-green-100 text-[11px] font-semibold border border-green-200 transition-colors"
+                                  title="WhatsApp dealer"
+                                >
+                                  <MessageCircle className="w-3 h-3" />
+                                  <span>WhatsApp</span>
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium">N/A</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Estimated Charges & Payment Collection Card */}
                     <div className="bg-amber-50/60 rounded-xl p-4 border border-amber-200">

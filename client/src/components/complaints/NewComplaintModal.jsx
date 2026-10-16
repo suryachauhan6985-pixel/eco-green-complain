@@ -17,7 +17,7 @@ import {
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
   Gauge, Layers, ArrowLeft, Plus, Hash, Building2, Map, Video, Camera, Info,
-  ClipboardCheck, Zap, RotateCw, RotateCcw
+  ClipboardCheck, Zap, RotateCw, RotateCcw, Users
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = {
@@ -124,6 +124,9 @@ export const NewComplaintModal = ({
     consumer_no: '',
     order_no: '',
     dealer_name: '',
+    dealer_contact: '',
+    dealer_contact_person: '',
+    dealer_alternate_contacts: '',
     invoice_no: '',
     invoice_date: '',
     location_url: '',
@@ -141,6 +144,130 @@ export const NewComplaintModal = ({
     inverter_make: '',
     scheme: ''
   });
+
+  const [dealerSuggestions, setDealerSuggestions] = useState([]);
+  const [showDealerSuggestions, setShowDealerSuggestions] = useState(false);
+  const [loadingDealers, setLoadingDealers] = useState(false);
+  const [showAlternateContactsPopover, setShowAlternateContactsPopover] = useState(false);
+  const [newAlternateInput, setNewAlternateInput] = useState('');
+  const [showAddAlternateInput, setShowAddAlternateInput] = useState(false);
+  const dealerWrapperRef = useRef(null);
+  const alternatePopoverRef = useRef(null);
+
+  // Close dealer suggestions / popover on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dealerWrapperRef.current && !dealerWrapperRef.current.contains(e.target)) {
+        setShowDealerSuggestions(false);
+      }
+      if (alternatePopoverRef.current && !alternatePopoverRef.current.contains(e.target)) {
+        // keep open if clicking inside
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Parse alternate contacts array safely
+  const dealerAlternateList = useMemo(() => {
+    if (!formData.dealer_alternate_contacts) return [];
+    try {
+      const parsed = typeof formData.dealer_alternate_contacts === 'string'
+        ? JSON.parse(formData.dealer_alternate_contacts)
+        : formData.dealer_alternate_contacts;
+      return Array.isArray(parsed) ? parsed.map(x => String(x).trim()).filter(Boolean) : [];
+    } catch (_) {
+      return [];
+    }
+  }, [formData.dealer_alternate_contacts]);
+
+  const handleDealerNameChange = async (val) => {
+    setFormData(prev => ({ ...prev, dealer_name: val }));
+    if (!val || val.trim().length < 2) {
+      setDealerSuggestions([]);
+      setShowDealerSuggestions(false);
+      return;
+    }
+    try {
+      setLoadingDealers(true);
+      const res = await api.getDealers({ search: val.trim() });
+      if (res && Array.isArray(res.dealers)) {
+        setDealerSuggestions(res.dealers.slice(0, 8));
+        setShowDealerSuggestions(true);
+      }
+    } catch (_) {}
+    finally {
+      setLoadingDealers(false);
+    }
+  };
+
+  const selectDealer = (d) => {
+    setFormData(prev => ({
+      ...prev,
+      dealer_name: d.dealer_name || '',
+      dealer_contact_person: d.contact_person || prev.dealer_contact_person || '',
+      dealer_contact: d.primary_contact || prev.dealer_contact || '',
+      dealer_alternate_contacts: d.alternate_contacts || ''
+    }));
+    setShowDealerSuggestions(false);
+  };
+
+  const autoFetchDealerDetails = useCallback(async (dealerName) => {
+    if (!dealerName || !dealerName.trim()) return;
+    try {
+      const res = await api.findDealerByName(dealerName.trim());
+      if (res?.dealer) {
+        setFormData(prev => ({
+          ...prev,
+          dealer_contact_person: prev.dealer_contact_person || res.dealer.contact_person || '',
+          dealer_contact: prev.dealer_contact || res.dealer.primary_contact || '',
+          dealer_alternate_contacts: prev.dealer_alternate_contacts || res.dealer.alternate_contacts || ''
+        }));
+      }
+    } catch (_) {}
+  }, []);
+
+  const makeAlternatePrimary = (altNumber) => {
+    const currentPrimary = formData.dealer_contact;
+    const remaining = dealerAlternateList.filter(n => n !== altNumber);
+    if (currentPrimary && !remaining.includes(currentPrimary)) {
+      remaining.unshift(currentPrimary);
+    }
+    setFormData(prev => ({
+      ...prev,
+      dealer_contact: altNumber,
+      dealer_alternate_contacts: remaining.length > 0 ? JSON.stringify(remaining) : ''
+    }));
+    showToast(`Dealer primary contact switched to ${altNumber}`, 'info');
+  };
+
+  const removeAlternateNumber = (numToRemove) => {
+    const updated = dealerAlternateList.filter(n => n !== numToRemove);
+    setFormData(prev => ({
+      ...prev,
+      dealer_alternate_contacts: updated.length > 0 ? JSON.stringify(updated) : ''
+    }));
+  };
+
+  const addAlternateNumber = () => {
+    const clean = newAlternateInput.replace(/\D/g, '').slice(-10);
+    if (clean.length < 10) {
+      showToast('Please enter a valid 10-digit mobile number', 'warning');
+      return;
+    }
+    if (clean === formData.dealer_contact || dealerAlternateList.includes(clean)) {
+      showToast('This contact number is already added', 'warning');
+      return;
+    }
+    const updated = [...dealerAlternateList, clean];
+    setFormData(prev => ({
+      ...prev,
+      dealer_alternate_contacts: JSON.stringify(updated)
+    }));
+    setNewAlternateInput('');
+    setShowAddAlternateInput(false);
+    showToast(`Added alternate number: ${clean}`, 'success');
+  };
 
   const [isDragging, setIsDragging] = useState(false);
   const [isVideoRecorderOpen, setIsVideoRecorderOpen] = useState(false);
@@ -201,6 +328,9 @@ export const NewComplaintModal = ({
           consumer_no: initialData.consumer_no || '',
           order_no: initialData.order_no || '',
           dealer_name: initialData.dealer_name || '',
+          dealer_contact: initialData.dealer_contact || '',
+          dealer_contact_person: initialData.dealer_contact_person || '',
+          dealer_alternate_contacts: initialData.dealer_alternate_contacts || '',
           invoice_no: initialData.invoice_no || '',
           invoice_date: initialData.invoice_date || '',
           location_url: initialData.location_url || '',
@@ -221,6 +351,9 @@ export const NewComplaintModal = ({
           inverter_make: initialData.inverter_make || '',
           scheme: initialData.scheme || ''
         });
+        if (initialData.dealer_name && !initialData.dealer_contact) {
+          autoFetchDealerDetails(initialData.dealer_name);
+        }
         if (editPincode) {
           setPincodeStatus('valid');
         }
@@ -283,6 +416,9 @@ export const NewComplaintModal = ({
           consumer_no: c.consumer_no || prev.consumer_no || '',
           order_no: cleanOrderNo || prev.order_no || '',
           dealer_name: cleanDealerName || prev.dealer_name || '',
+          dealer_contact: (c.dealer_contact || '').trim() || prev.dealer_contact || '',
+          dealer_contact_person: (c.dealer_contact_person || '').trim() || prev.dealer_contact_person || '',
+          dealer_alternate_contacts: (c.dealer_alternate_contacts || '').trim() || prev.dealer_alternate_contacts || '',
           invoice_no: c.invoice_no || prev.invoice_no || '',
           invoice_date: cleanDate || prev.invoice_date || '',
           is_in_warranty: computedWarranty,
@@ -295,6 +431,10 @@ export const NewComplaintModal = ({
           scheme: c.scheme || prev.scheme || '',
           issue_description: initialData.issue_description || prev.issue_description || ''
         }));
+
+        if (cleanDealerName && !c.dealer_contact) {
+          autoFetchDealerDetails(cleanDealerName);
+        }
 
         if (c.pincode) {
           setPincodeStatus('valid');
@@ -780,6 +920,9 @@ export const NewComplaintModal = ({
       consumer_no: c.consumer_no || prev.consumer_no,
       order_no: cleanOrderNo || prev.order_no || '',
       dealer_name: cleanDealerName || prev.dealer_name || '',
+      dealer_contact: (c.dealer_contact || '').trim() || prev.dealer_contact || '',
+      dealer_contact_person: (c.dealer_contact_person || '').trim() || prev.dealer_contact_person || '',
+      dealer_alternate_contacts: (c.dealer_alternate_contacts || '').trim() || prev.dealer_alternate_contacts || '',
       invoice_no: c.invoice_no || prev.invoice_no || '',
       invoice_date: cleanDate || prev.invoice_date || '',
       is_in_warranty: computedWarranty,
@@ -791,6 +934,10 @@ export const NewComplaintModal = ({
       inverter_make: c.inverter_make || prev.inverter_make || '',
       scheme: c.scheme || prev.scheme || ''
     }));
+
+    if (cleanDealerName && !c.dealer_contact) {
+      autoFetchDealerDetails(cleanDealerName);
+    }
   };
 
   const handleClearCustomer = () => {
@@ -811,6 +958,9 @@ export const NewComplaintModal = ({
       consumer_no: '',
       order_no: '',
       dealer_name: '',
+      dealer_contact: '',
+      dealer_contact_person: '',
+      dealer_alternate_contacts: '',
       invoice_no: '',
       invoice_date: '',
       location_url: '',
@@ -2247,7 +2397,7 @@ export const NewComplaintModal = ({
                   System Identification & Warranty Status
                 </h4>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">Consumer No. (Optional)</label>
                     <input
@@ -2269,17 +2419,202 @@ export const NewComplaintModal = ({
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                     />
                   </div>
+                </div>
 
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Dealer Name (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Solar Dealer Agency"
-                      value={formData.dealer_name || ''}
-                      onChange={(e) => setFormData({ ...formData, dealer_name: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
+                {/* Dealer / Channel Partner Details */}
+                <div className="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                      Dealer & Partner Information
+                    </h5>
+                    {dealerAlternateList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAlternateContactsPopover(!showAlternateContactsPopover)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition-colors shadow-2xs"
+                      >
+                        <Phone className="w-3 h-3 text-amber-700" />
+                        +{dealerAlternateList.length} Extra {dealerAlternateList.length === 1 ? 'Contact' : 'Contacts'}
+                      </button>
+                    )}
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Dealer Firm Name with Typeahead Search */}
+                    <div className="relative" ref={dealerWrapperRef}>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Dealer Firm Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Solar Dealer Agency"
+                        value={formData.dealer_name || ''}
+                        onChange={(e) => handleDealerNameChange(e.target.value)}
+                        onFocus={() => {
+                          if (dealerSuggestions.length > 0) setShowDealerSuggestions(true);
+                        }}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                      {loadingDealers && (
+                        <div className="absolute right-3 top-7 text-[10px] text-amber-600 font-medium">Searching...</div>
+                      )}
+                      {showDealerSuggestions && dealerSuggestions.length > 0 && (
+                        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                          {dealerSuggestions.map((d) => (
+                            <div
+                              key={d.id || d.dealer_name}
+                              onClick={() => selectDealer(d)}
+                              className="px-3 py-2 hover:bg-amber-50 cursor-pointer border-b border-slate-100 last:border-b-0 text-left transition-colors"
+                            >
+                              <p className="text-xs font-bold text-slate-800">{d.dealer_name}</p>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                                {d.contact_person && <span>👤 {d.contact_person}</span>}
+                                {d.primary_contact && <span>📞 {d.primary_contact}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dealer Contact Person Name */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Contact Person Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Authorized Person Name"
+                        value={formData.dealer_contact_person || ''}
+                        onChange={(e) => setFormData({ ...formData, dealer_contact_person: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    {/* Primary Contact Number */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          Primary Contact No.
+                        </label>
+                        {formData.dealer_contact && formData.dealer_contact.replace(/\D/g, '').length >= 10 && (
+                          <div className="flex items-center gap-1.5">
+                            <a
+                              href={`tel:${formData.dealer_contact.replace(/\D/g, '').slice(-10)}`}
+                              className="text-[10px] font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5"
+                              title="Call Dealer"
+                            >
+                              <Phone className="w-2.5 h-2.5" /> Call
+                            </a>
+                            <a
+                              href={`https://wa.me/91${formData.dealer_contact.replace(/\D/g, '').slice(-10)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 inline-flex items-center gap-0.5"
+                              title="WhatsApp Dealer"
+                            >
+                              <MessageCircle className="w-2.5 h-2.5" /> WA
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        type="tel"
+                        placeholder="e.g., 9898362623"
+                        value={formData.dealer_contact || ''}
+                        onChange={(e) => setFormData({ ...formData, dealer_contact: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Extra / Alternate Contacts Dropdown / Modal */}
+                  {showAlternateContactsPopover && (
+                    <div ref={alternatePopoverRef} className="bg-white p-3 rounded-lg border border-amber-300 shadow-sm space-y-2 mt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-amber-600" />
+                          Alternate Dealer Contacts ({dealerAlternateList.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddAlternateInput(!showAddAlternateInput)}
+                          className="text-[10px] font-semibold text-amber-800 hover:text-amber-950 inline-flex items-center gap-0.5"
+                        >
+                          <Plus className="w-3 h-3" /> Add Alternate
+                        </button>
+                      </div>
+
+                      {dealerAlternateList.length === 0 ? (
+                        <p className="text-[11px] text-slate-500 italic">No extra contacts found for this dealer.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {dealerAlternateList.map((altNum, idx) => {
+                            const cleanNum = String(altNum).replace(/\D/g, '').slice(-10);
+                            return (
+                              <div key={idx} className="flex items-center justify-between bg-slate-50 px-2.5 py-1.5 rounded-md border border-slate-200 text-xs">
+                                <span className="font-mono font-semibold text-slate-800">
+                                  📞 {cleanNum}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`tel:${cleanNum}`}
+                                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5 bg-blue-50 px-2 py-0.5 rounded border border-blue-200"
+                                  >
+                                    <Phone className="w-2.5 h-2.5" /> Call
+                                  </a>
+                                  <a
+                                    href={`https://wa.me/91${cleanNum}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-0.5 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
+                                  >
+                                    <MessageCircle className="w-2.5 h-2.5" /> WhatsApp
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => makeAlternatePrimary(cleanNum)}
+                                    className="text-[10px] text-amber-800 hover:text-amber-950 font-medium underline"
+                                    title="Make this primary contact number"
+                                  >
+                                    Make Primary
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAlternateNumber(altNum)}
+                                    className="text-slate-400 hover:text-red-600 p-0.5"
+                                    title="Remove alternate number"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {showAddAlternateInput && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                          <input
+                            type="tel"
+                            placeholder="Enter 10-digit alternate mobile"
+                            value={newAlternateInput}
+                            onChange={(e) => setNewAlternateInput(e.target.value)}
+                            className="text-xs px-2.5 py-1.5 border border-slate-300 rounded flex-1 font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={addAlternateNumber}
+                            className="px-2.5 py-1.5 bg-amber-600 text-white rounded text-xs font-semibold hover:bg-amber-700"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

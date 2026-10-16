@@ -639,12 +639,16 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
     if (!q || q.length < 2) {
       const sample = await query(`
         SELECT 
-          id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
-          dealer_name, invoice_no, invoice_date, installation_date,
-          warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty,
-          scheme, pv_capacity
-        FROM installed_customers 
-        ORDER BY id DESC 
+          c.id, c.customer_name, c.consumer_mobile, c.consumer_no, c.city_village, c.order_no,
+          c.dealer_name, c.invoice_no, c.invoice_date, c.installation_date,
+          c.warranty_expiry_date, c.panel_make, c.inverter_make, c.inverter_serial, c.is_in_warranty,
+          c.scheme, c.pv_capacity,
+          d.contact_person AS dealer_contact_person,
+          d.primary_contact AS dealer_contact,
+          d.alternate_contacts AS dealer_alternate_contacts
+        FROM installed_customers c
+        LEFT JOIN dealers d ON LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
+        ORDER BY c.id DESC 
         LIMIT 10
       `, [], c.env, c.executionCtx);
       return c.json({ customers: sample.rows, totalMatches: sample.rows.length });
@@ -658,27 +662,31 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
       const paramIdx = idx + 1;
       params.push(`%${token}%`);
       conditions.push(`(
-        customer_name ILIKE $${paramIdx} 
-        OR consumer_mobile ILIKE $${paramIdx} 
-        OR consumer_no ILIKE $${paramIdx} 
-        OR city_village ILIKE $${paramIdx} 
-        OR inverter_serial ILIKE $${paramIdx}
-        OR invoice_no ILIKE $${paramIdx}
-        OR dealer_name ILIKE $${paramIdx}
-        OR order_no ILIKE $${paramIdx}
+        c.customer_name ILIKE $${paramIdx} 
+        OR c.consumer_mobile ILIKE $${paramIdx} 
+        OR c.consumer_no ILIKE $${paramIdx} 
+        OR c.city_village ILIKE $${paramIdx} 
+        OR c.inverter_serial ILIKE $${paramIdx}
+        OR c.invoice_no ILIKE $${paramIdx}
+        OR c.dealer_name ILIKE $${paramIdx}
+        OR c.order_no ILIKE $${paramIdx}
       )`);
     });
 
     const whereClause = conditions.join(' AND ');
     const r = await query(`
       SELECT 
-        id, customer_name, consumer_mobile, consumer_no, city_village, order_no,
-        dealer_name, invoice_no, invoice_date, installation_date,
-        warranty_expiry_date, panel_make, inverter_make, inverter_serial, is_in_warranty,
-        scheme, pv_capacity
-      FROM installed_customers 
+        c.id, c.customer_name, c.consumer_mobile, c.consumer_no, c.city_village, c.order_no,
+        c.dealer_name, c.invoice_no, c.invoice_date, c.installation_date,
+        c.warranty_expiry_date, c.panel_make, c.inverter_make, c.inverter_serial, c.is_in_warranty,
+        c.scheme, c.pv_capacity,
+        d.contact_person AS dealer_contact_person,
+        d.primary_contact AS dealer_contact,
+        d.alternate_contacts AS dealer_alternate_contacts
+      FROM installed_customers c
+      LEFT JOIN dealers d ON LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
       WHERE ${whereClause}
-      ORDER BY id DESC 
+      ORDER BY c.id DESC 
       LIMIT 25
     `, params, c.env, c.executionCtx);
 
@@ -690,25 +698,29 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
       tokens.forEach((token, idx) => {
         const paramIdx = idx + 1;
         complaintConditions.push(`(
-          customer_name ILIKE $${paramIdx} 
-          OR customer_phone ILIKE $${paramIdx} 
-          OR consumer_no ILIKE $${paramIdx} 
-          OR city ILIKE $${paramIdx} 
-          OR order_no ILIKE $${paramIdx}
-          OR dealer_name ILIKE $${paramIdx}
+          c.customer_name ILIKE $${paramIdx} 
+          OR c.customer_phone ILIKE $${paramIdx} 
+          OR c.consumer_no ILIKE $${paramIdx} 
+          OR c.city ILIKE $${paramIdx} 
+          OR c.order_no ILIKE $${paramIdx}
+          OR c.dealer_name ILIKE $${paramIdx}
         )`);
       });
       const compWhere = complaintConditions.join(' AND ');
       const compRes = await query(`
-        SELECT DISTINCT ON (customer_phone, customer_name)
-          id, customer_name, customer_phone as consumer_mobile, consumer_no, city as city_village, order_no,
-          dealer_name, invoice_no, invoice_date, NULL as installation_date,
-          NULL as warranty_expiry_date, panel_make, inverter_make,
-          product_serial as inverter_serial, is_in_warranty, customer_address,
-          scheme, pv_capacity
-        FROM complaints
+        SELECT DISTINCT ON (c.customer_phone, c.customer_name)
+          c.id, c.customer_name, c.customer_phone as consumer_mobile, c.consumer_no, c.city as city_village, c.order_no,
+          c.dealer_name, c.invoice_no, c.invoice_date, NULL as installation_date,
+          NULL as warranty_expiry_date, c.panel_make, c.inverter_make,
+          c.product_serial as inverter_serial, c.is_in_warranty, c.customer_address,
+          c.scheme, c.pv_capacity,
+          COALESCE(c.dealer_contact_person, d.contact_person) AS dealer_contact_person,
+          COALESCE(c.dealer_contact, d.primary_contact) AS dealer_contact,
+          COALESCE(c.dealer_alternate_contacts, d.alternate_contacts) AS dealer_alternate_contacts
+        FROM complaints c
+        LEFT JOIN dealers d ON LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
         WHERE ${compWhere}
-        ORDER BY customer_phone, customer_name, id DESC
+        ORDER BY c.customer_phone, c.customer_name, c.id DESC
         LIMIT ${25 - results.length}
       `, params, c.env, c.executionCtx).catch(() => ({ rows: [] }));
 
@@ -881,6 +893,155 @@ commonRoutes.post('/customers/sync', authenticateToken, requireRole('admin', 'st
     }
 
     return c.json({ success: true, count: inserted });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/dealers - Search, exact lookup, or list all dealers
+commonRoutes.get('/dealers', authenticateToken, async (c) => {
+  try {
+    const q = (c.req.query('search') || c.req.query('q') || '').trim();
+    const name = (c.req.query('name') || '').trim();
+
+    if (name) {
+      const res = await query(`
+        SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
+        FROM dealers
+        WHERE LOWER(TRIM(dealer_name)) = LOWER(TRIM($1))
+        LIMIT 1
+      `, [name], c.env, c.executionCtx);
+      return c.json({ dealer: res.rows[0] || null });
+    }
+
+    if (q) {
+      const res = await query(`
+        SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
+        FROM dealers
+        WHERE dealer_name ILIKE $1 
+           OR contact_person ILIKE $1 
+           OR primary_contact ILIKE $1
+        ORDER BY dealer_name ASC
+        LIMIT 50
+      `, [`%${q}%`], c.env, c.executionCtx);
+      return c.json({ dealers: res.rows });
+    }
+
+    const res = await query(`
+      SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
+      FROM dealers
+      ORDER BY dealer_name ASC
+      LIMIT 1000
+    `, [], c.env, c.executionCtx);
+    return c.json({ dealers: res.rows });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// POST /api/dealers/sync - Sync dealer sheet from Excel
+commonRoutes.post('/dealers/sync', authenticateToken, requireRole('admin', 'staff'), async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { 
+      dealers = body.rows || [],
+      isFirstBatch = false,
+      isLastBatch = false,
+      batchIndex = 0,
+      totalBatches = 1
+    } = body;
+
+    if (!Array.isArray(dealers) || dealers.length === 0) {
+      return c.json({ success: true, count: 0, message: 'No dealer rows provided' });
+    }
+
+    // Comprehensive helper to parse 10-digit Indian phone numbers
+    const parsePhones = (rawStr) => {
+      if (!rawStr) return [];
+      const s = String(rawStr).replace(/mo\.?:?/gi, ' ').replace(/phone:?/gi, ' ').replace(/mobile:?/gi, ' ');
+      const parts = s.split(/[,;\/|&\n]|(?:\band\b)/i);
+      const phones = [];
+      for (const part of parts) {
+        const digits = part.replace(/\D/g, '');
+        if (digits.length >= 10) {
+          if (digits.length === 12 && digits.startsWith('91')) {
+            phones.push(digits.slice(2));
+          } else if (digits.length === 11 && digits.startsWith('0')) {
+            phones.push(digits.slice(1));
+          } else if (digits.length === 10) {
+            phones.push(digits);
+          } else if (digits.length > 10) {
+            for (let i = 0; i <= digits.length - 10; i += 10) {
+              const sub = digits.slice(i, i + 10);
+              if (sub.length === 10) phones.push(sub);
+            }
+          }
+        }
+      }
+      return Array.from(new Set(phones));
+    };
+
+    if (isFirstBatch || (batchIndex === 0 && !body.append)) {
+      await query(`
+        CREATE TABLE IF NOT EXISTS dealers (
+          id SERIAL PRIMARY KEY,
+          dealer_name TEXT NOT NULL,
+          contact_person TEXT,
+          primary_contact TEXT,
+          alternate_contacts TEXT,
+          raw_contact TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_dealers_name ON dealers (LOWER(dealer_name));
+      `, [], c.env, c.executionCtx);
+
+      if (body.truncate || isFirstBatch) {
+        await query('TRUNCATE TABLE dealers RESTART IDENTITY', [], c.env, c.executionCtx);
+      }
+    }
+
+    const CHUNK_SIZE = 50;
+    let inserted = 0;
+
+    for (let i = 0; i < dealers.length; i += CHUNK_SIZE) {
+      const chunk = dealers.slice(i, i + CHUNK_SIZE);
+      const valueClauses = [];
+      const values = [];
+      let pIdx = 1;
+
+      for (const d of chunk) {
+        const name = String(d.dealer_name || d['DEALER NAME'] || d.name || '').trim();
+        if (!name) continue;
+        const person = String(d.contact_person || d['CONTACT PERSON'] || d.person || '').trim() || null;
+        const rawContact = String(d.contact_no || d['CONTACT NO.'] || d.phone || d.mobile || '').trim() || null;
+        const phones = parsePhones(rawContact);
+        const primary = phones.length > 0 ? phones[0] : (rawContact ? rawContact.slice(0, 50) : null);
+        const alternates = phones.length > 1 ? JSON.stringify(phones.slice(1)) : null;
+
+        valueClauses.push(`($${pIdx}, $${pIdx+1}, $${pIdx+2}, $${pIdx+3}, $${pIdx+4})`);
+        values.push(name, person, primary, alternates, rawContact);
+        pIdx += 5;
+        inserted++;
+      }
+
+      if (valueClauses.length > 0) {
+        await query(`
+          INSERT INTO dealers (dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact)
+          VALUES ${valueClauses.join(', ')}
+        `, values, c.env, c.executionCtx);
+      }
+    }
+
+    const countRes = await query('SELECT COUNT(*) as total FROM dealers', [], c.env, c.executionCtx);
+    const totalCount = parseInt(countRes.rows[0]?.total || 0, 10);
+
+    return c.json({
+      success: true,
+      insertedCount: inserted,
+      totalDealers: totalCount,
+      message: `Successfully processed ${inserted} dealers`
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

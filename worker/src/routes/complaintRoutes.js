@@ -620,6 +620,11 @@ async function handleCreateDraftComplaint(c, preParsedBody = null) {
   const canonicalPhone = last10 ? `+91${last10}` : (raw_phone || '');
   const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
   const dealer_name = (body.dealer_name || '').trim();
+  const dealer_contact = (body.dealer_contact || '').trim();
+  const dealer_contact_person = (body.dealer_contact_person || '').trim();
+  const dealer_alternate_contacts = body.dealer_alternate_contacts 
+    ? (typeof body.dealer_alternate_contacts === 'string' ? body.dealer_alternate_contacts : JSON.stringify(body.dealer_alternate_contacts))
+    : null;
 
   const ticket_id = await generateNextTicketId(c.env, c.executionCtx);
   const user = c.get('user');
@@ -639,7 +644,8 @@ async function handleCreateDraftComplaint(c, preParsedBody = null) {
       is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
       product_type, product_serial, installation_id, issue_category, issue_description,
       priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
-      dealer_name, pv_capacity, panel_make, inverter_make, scheme, created_at, updated_at
+      dealer_name, dealer_contact, dealer_contact_person, dealer_alternate_contacts,
+      pv_capacity, panel_make, inverter_make, scheme, created_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9, $10,
@@ -647,7 +653,8 @@ async function handleCreateDraftComplaint(c, preParsedBody = null) {
       $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25,
       $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      $31, $32, $33, $34,
+      $35, $36, $37, $38, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     ) RETURNING *
   `;
 
@@ -689,6 +696,9 @@ async function handleCreateDraftComplaint(c, preParsedBody = null) {
     null,    // No visit date on draft
     user?.id || null,
     dealer_name,
+    dealer_contact,
+    dealer_contact_person,
+    dealer_alternate_contacts,
     body.pv_capacity ? String(body.pv_capacity).trim() : '',
     body.panel_make ? String(body.panel_make).trim() : '',
     body.inverter_make ? String(body.inverter_make).trim() : '',
@@ -823,12 +833,15 @@ async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBod
       location_url = COALESCE($22, location_url),
       installation_id = COALESCE($23, installation_id),
       dealer_name = COALESCE($24, dealer_name),
-      pv_capacity = COALESCE($25, pv_capacity),
-      panel_make = COALESCE($26, panel_make),
-      inverter_make = COALESCE($27, inverter_make),
-      scheme = COALESCE($28, scheme),
+      dealer_contact = COALESCE($25, dealer_contact),
+      dealer_contact_person = COALESCE($26, dealer_contact_person),
+      dealer_alternate_contacts = COALESCE($27, dealer_alternate_contacts),
+      pv_capacity = COALESCE($28, pv_capacity),
+      panel_make = COALESCE($29, panel_make),
+      inverter_make = COALESCE($30, inverter_make),
+      scheme = COALESCE($31, scheme),
       updated_at = CURRENT_TIMESTAMP
-    WHERE id = $29
+    WHERE id = $32
   `, [
     b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
     b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
@@ -854,6 +867,9 @@ async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBod
     b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
     b.installation_id !== undefined ? (b.installation_id ? b.installation_id.trim() : null) : null,
     b.dealer_name !== undefined ? (b.dealer_name ? b.dealer_name.trim() : null) : null,
+    b.dealer_contact !== undefined ? (b.dealer_contact ? b.dealer_contact.trim() : null) : null,
+    b.dealer_contact_person !== undefined ? (b.dealer_contact_person ? b.dealer_contact_person.trim() : null) : null,
+    b.dealer_alternate_contacts !== undefined ? (b.dealer_alternate_contacts ? (typeof b.dealer_alternate_contacts === 'string' ? b.dealer_alternate_contacts : JSON.stringify(b.dealer_alternate_contacts)) : null) : null,
     b.pv_capacity !== undefined ? (b.pv_capacity ? String(b.pv_capacity).trim() : null) : null,
     b.panel_make !== undefined ? (b.panel_make ? b.panel_make.trim() : null) : null,
     b.inverter_make !== undefined ? (b.inverter_make ? b.inverter_make.trim() : null) : null,
@@ -908,6 +924,11 @@ async function handleCreateComplaint(c, isPublic = false) {
   const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
   const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
   const dealer_name = (body.dealer_name || '').trim();
+  const dealer_contact = (body.dealer_contact || '').trim();
+  const dealer_contact_person = (body.dealer_contact_person || '').trim();
+  const dealer_alternate_contacts = body.dealer_alternate_contacts 
+    ? (typeof body.dealer_alternate_contacts === 'string' ? body.dealer_alternate_contacts : JSON.stringify(body.dealer_alternate_contacts))
+    : null;
 
   if (!isDraft) {
     if (!customer_name || !last10) {
@@ -958,7 +979,8 @@ async function handleCreateComplaint(c, isPublic = false) {
       is_in_warranty, estimated_charges, notify_charges, payment_collected, payment_status,
       product_type, product_serial, installation_id, issue_category, issue_description,
       priority, status, assigned_technician_id, expected_visit_date, registered_by_user_id,
-      dealer_name, pv_capacity, panel_make, inverter_make, scheme, created_at, updated_at
+      dealer_name, dealer_contact, dealer_contact_person, dealer_alternate_contacts,
+      pv_capacity, panel_make, inverter_make, scheme, created_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9, $10,
@@ -966,7 +988,8 @@ async function handleCreateComplaint(c, isPublic = false) {
       $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25,
       $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      $31, $32, $33, $34,
+      $35, $36, $37, $38, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     ) RETURNING *
   `;
 
@@ -1008,6 +1031,9 @@ async function handleCreateComplaint(c, isPublic = false) {
     isDraft ? null : (body.expected_visit_date || null),
     user?.id || null,
     dealer_name,
+    dealer_contact,
+    dealer_contact_person,
+    dealer_alternate_contacts,
     body.pv_capacity ? String(body.pv_capacity).trim() : '',
     body.panel_make ? String(body.panel_make).trim() : '',
     body.inverter_make ? String(body.inverter_make).trim() : '',
@@ -2405,13 +2431,16 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         location_url = COALESCE($24, location_url),
         installation_id = COALESCE($25, installation_id),
         dealer_name = COALESCE($26, dealer_name),
-        pv_capacity = COALESCE($27, pv_capacity),
-        panel_make = COALESCE($28, panel_make),
-        inverter_make = COALESCE($29, inverter_make),
-        scheme = COALESCE($30, scheme),
+        dealer_contact = COALESCE($27, dealer_contact),
+        dealer_contact_person = COALESCE($28, dealer_contact_person),
+        dealer_alternate_contacts = COALESCE($29, dealer_alternate_contacts),
+        pv_capacity = COALESCE($30, pv_capacity),
+        panel_make = COALESCE($31, panel_make),
+        inverter_make = COALESCE($32, inverter_make),
+        scheme = COALESCE($33, scheme),
         updated_at = CURRENT_TIMESTAMP,
         status_updated_at = CURRENT_TIMESTAMP
-      WHERE id = $31
+      WHERE id = $34
     `, [
       b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
       b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
@@ -2439,6 +2468,9 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
       b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
       b.installation_id !== undefined ? (b.installation_id ? b.installation_id.trim() : null) : null,
       b.dealer_name !== undefined ? (b.dealer_name ? b.dealer_name.trim() : null) : null,
+      b.dealer_contact !== undefined ? (b.dealer_contact ? b.dealer_contact.trim() : null) : null,
+      b.dealer_contact_person !== undefined ? (b.dealer_contact_person ? b.dealer_contact_person.trim() : null) : null,
+      b.dealer_alternate_contacts !== undefined ? (b.dealer_alternate_contacts ? (typeof b.dealer_alternate_contacts === 'string' ? b.dealer_alternate_contacts : JSON.stringify(b.dealer_alternate_contacts)) : null) : null,
       b.pv_capacity !== undefined ? (b.pv_capacity ? String(b.pv_capacity).trim() : null) : null,
       b.panel_make !== undefined ? (b.panel_make ? b.panel_make.trim() : null) : null,
       b.inverter_make !== undefined ? (b.inverter_make ? b.inverter_make.trim() : null) : null,

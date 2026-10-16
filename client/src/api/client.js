@@ -2080,6 +2080,24 @@ export const api = {
     });
   },
 
+  // Dealer Management & Sync
+  getDealers: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.search) q.set('search', params.search);
+    if (params.name) q.set('name', params.name);
+    const qs = q.toString();
+    return request('/dealers' + (qs ? `?${qs}` : ''));
+  },
+  findDealerByName: (name) => {
+    return request('/dealers?name=' + encodeURIComponent(name || ''));
+  },
+  syncDealersBatch: (data) => {
+    return request('/dealers/sync', {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    });
+  },
+
   // WhatsApp Master Relay (Zero-Ban Local Chrome Relay Queue)
   getRelayStatus: () => request('/whatsapp/relay/status'),
   enqueueWhatsAppMessage: (data) => request('/whatsapp/queue', {

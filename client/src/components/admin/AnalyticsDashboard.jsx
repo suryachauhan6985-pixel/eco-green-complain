@@ -232,19 +232,21 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       
-      const sheetName = workbook.SheetNames.find(s => {
+      // 1. Detect dealer sheet if present
+      const dealerSheetName = workbook.SheetNames.find(s => {
+        const n = s.trim().toLowerCase();
+        return n.includes('dealer') || n === 'dealers';
+      });
+
+      // 2. Detect customer sheet (skip dealer sheet)
+      const customerSheetName = workbook.SheetNames.find(s => {
+        if (s === dealerSheetName) return false;
         const n = s.trim().toUpperCase();
-        return n === 'ALL CUSTOMER' || n === 'ALL CUSTOMERS' || n === 'CUSTOMERS' || n === 'CUSTOMER' || n === 'SHEET1';
-      }) || workbook.SheetNames[0];
+        return n === 'ALL CUSTOMER' || n === 'ALL CUSTOMERS' || n === 'CUSTOMERS' || n === 'CUSTOMER' || n === 'SHEET1' || n === 'PART' || n.includes('REGISTER');
+      }) || workbook.SheetNames.find(s => s !== dealerSheetName) || (!dealerSheetName ? workbook.SheetNames[0] : null);
 
-      const sheet = workbook.Sheets[sheetName];
-      if (!sheet) {
-        throw new Error('No valid sheet found in uploaded Excel workbook');
-      }
-
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      if (!rows || rows.length === 0) {
-        throw new Error('Uploaded Excel file appears to be empty');
+      if (!dealerSheetName && !customerSheetName) {
+        throw new Error('No valid customer or dealer sheet found in uploaded Excel workbook');
       }
 
       // Robust helper to extract Excel cell values matching multiple possible column headers
@@ -376,127 +378,178 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       let outWarrantyCount = 0;
       const today = new Date();
       const mappedCustomers = [];
+      const mappedDealers = [];
 
-      for (const r of rows) {
-        const customerName = String(getExcelVal(r, [
-          'Customer Name', 'CustomerName', 'Name of Customer', 'Consumer Name', 'Client Name', 'Name', 'Customer'
-        ])).trim();
-        if (!customerName) continue;
+      // 1. Process Dealer Directory Sheet if present
+      if (dealerSheetName && workbook.Sheets[dealerSheetName]) {
+        const dealerSheet = workbook.Sheets[dealerSheetName];
+        const dealerRows = XLSX.utils.sheet_to_json(dealerSheet, { defval: '' });
+        for (const r of dealerRows) {
+          const dealerName = String(getExcelVal(r, ['DEALER NAME', 'Dealer Name', 'Dealer', 'Firm Name', 'Firm', 'Agency'])).trim();
+          if (!dealerName) continue;
+          const contactPerson = String(getExcelVal(r, ['CONTACT PERSON', 'Contact Person', 'Person Name', 'Person', 'Representative'])).trim();
+          const contactNo = String(getExcelVal(r, ['CONTACT NO.', 'Contact No.', 'Contact No', 'Mobile No', 'Phone', 'Mobile', 'Contact'])).trim();
 
-        const rawMeterDate = getExcelVal(r, [
-          'Date of Installation of Solar Meter', 'Date of Installation', 'Installation Date', 'Install Date',
-          'Date of Commissioning', 'Commissioning Date', 'DOC', 'DOI', 'Installation Dt',
-          'Meter Installation Date', 'Meter Date', 'Date of Solar Meter Installation',
-          'Date of Commissioning of Solar PV System', 'Commissioning Dt', 'Solar Meter Inst Date',
-          'Connection Date', 'Work Completion Date'
-        ]);
-        const rawInvDate = getExcelVal(r, [
-          'Invoice Date', 'InvoiceDate', 'Inv Date', 'Bill Date', 'Date'
-        ]);
-
-        const installD = parseExcelDate(rawMeterDate);
-        const invD = parseExcelDate(rawInvDate);
-        const refD = installD || invD;
-
-        let isInWarranty = 0;
-        let expiryDateStr = null;
-
-        if (refD && !isNaN(refD.getTime())) {
-          const expiryDate = new Date(refD);
-          expiryDate.setFullYear(expiryDate.getFullYear() + 5);
-          expiryDateStr = formatDate(expiryDate);
-
-          // Precise 5-Year Warranty Rule: If today is within 5 years from installation, plant is IN WARRANTY
-          isInWarranty = today <= expiryDate ? 1 : 0;
-        } else {
-          isInWarranty = 0;
+          mappedDealers.push({
+            dealer_name: dealerName,
+            contact_person: contactPerson || null,
+            contact_no: contactNo || null
+          });
         }
-
-        if (isInWarranty) inWarrantyCount++;
-        else outWarrantyCount++;
-
-        const srVal = getExcelVal(r, ['Sr No.', 'Sr. No.', 'Sr No', 'Sr#', 'S.No', 'Serial No']);
-        const srNo = (srVal !== '' && !isNaN(srVal)) ? parseInt(srVal, 10) : null;
-
-        const pvVal = getExcelVal(r, ['PV Capacity', 'PV Capacity (kW)', 'Capacity', 'Capacity (kW)', 'Plant Capacity']);
-        const pvCapacity = (pvVal !== '' && !isNaN(pvVal)) ? parseFloat(pvVal) : null;
-
-        mappedCustomers.push({
-          sr_no: srNo,
-          order_no: String(getExcelVal(r, [
-            'Order No', 'Order No.', 'Order Number', 'Order_No', 'order_no', 'Order', 'Order Id', 'Order ID',
-            'SO No', 'SO Number', 'SO No.', 'SO#', 'Order#', 'Sales Order', 'Sales Order No', 'Sales Order Number',
-            'Work Order', 'Work Order No', 'WO No', 'Application No', 'Application Number', 'App No', 'App No.',
-            'Registration No', 'Reg No', 'Ref No', 'Reference No'
-          ])).trim() || null,
-          scheme: String(getExcelVal(r, ['Scheme', 'Project Scheme', 'Scheme Name', 'Govt Scheme'])).trim() || null,
-          pv_capacity: pvCapacity,
-          consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim() || null,
-          consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim() || null,
-          customer_name: customerName,
-          city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim() || null,
-          installation_date: formatDate(installD) || formatDate(invD),
-          dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim() || null,
-          invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim() || null,
-          invoice_date: formatDate(invD) || formatDate(installD),
-          panel_make: String(getExcelVal(r, ['Panel Make', 'Panel Manufacturer', 'Module Make', 'Panel Brand'])).trim() || null,
-          inverter_make: String(getExcelVal(r, ['Inverter Make', 'Inverter Manufacturer', 'Inverter Brand'])).trim() || null,
-          inverter_serial: String(getExcelVal(r, ['Inverter Sr. No.', 'Inverter Sr No', 'Inverter Serial', 'Inverter Serial No', 'Serial No'])).trim() || null,
-          is_in_warranty: isInWarranty,
-          warranty_expiry_date: expiryDateStr
-        });
       }
 
-      const totalCustomers = mappedCustomers.length;
-      if (totalCustomers === 0) {
-        throw new Error('No valid customer rows found in uploaded sheet');
+      // 2. Process Customer Directory Sheet if present
+      if (customerSheetName && workbook.Sheets[customerSheetName]) {
+        const customerSheet = workbook.Sheets[customerSheetName];
+        const customerRows = XLSX.utils.sheet_to_json(customerSheet, { defval: '' });
+
+        for (const r of customerRows) {
+          const customerName = String(getExcelVal(r, [
+            'Customer Name', 'CustomerName', 'Name of Customer', 'Consumer Name', 'Client Name', 'Name', 'Customer'
+          ])).trim();
+          if (!customerName) continue;
+
+          const rawMeterDate = getExcelVal(r, [
+            'Date of Installation of Solar Meter', 'Date of Installation', 'Installation Date', 'Install Date',
+            'Date of Commissioning', 'Commissioning Date', 'DOC', 'DOI', 'Installation Dt',
+            'Meter Installation Date', 'Meter Date', 'Date of Solar Meter Installation',
+            'Date of Commissioning of Solar PV System', 'Commissioning Dt', 'Solar Meter Inst Date',
+            'Connection Date', 'Work Completion Date'
+          ]);
+          const rawInvDate = getExcelVal(r, [
+            'Invoice Date', 'InvoiceDate', 'Inv Date', 'Bill Date', 'Date'
+          ]);
+
+          const installD = parseExcelDate(rawMeterDate);
+          const invD = parseExcelDate(rawInvDate);
+          const refD = installD || invD;
+
+          let isInWarranty = 0;
+          let expiryDateStr = null;
+
+          if (refD && !isNaN(refD.getTime())) {
+            const expiryDate = new Date(refD);
+            expiryDate.setFullYear(expiryDate.getFullYear() + 5);
+            expiryDateStr = formatDate(expiryDate);
+
+            // Precise 5-Year Warranty Rule: If today is within 5 years from installation, plant is IN WARRANTY
+            isInWarranty = today <= expiryDate ? 1 : 0;
+          } else {
+            isInWarranty = 0;
+          }
+
+          if (isInWarranty) inWarrantyCount++;
+          else outWarrantyCount++;
+
+          const srVal = getExcelVal(r, ['Sr No.', 'Sr. No.', 'Sr No', 'Sr#', 'S.No', 'Serial No']);
+          const srNo = (srVal !== '' && !isNaN(srVal)) ? parseInt(srVal, 10) : null;
+
+          const pvVal = getExcelVal(r, ['PV Capacity', 'PV Capacity (kW)', 'Capacity', 'Capacity (kW)', 'Plant Capacity']);
+          const pvCapacity = (pvVal !== '' && !isNaN(pvVal)) ? parseFloat(pvVal) : null;
+
+          mappedCustomers.push({
+            sr_no: srNo,
+            order_no: String(getExcelVal(r, [
+              'Order No', 'Order No.', 'Order Number', 'Order_No', 'order_no', 'Order', 'Order Id', 'Order ID',
+              'SO No', 'SO Number', 'SO No.', 'SO#', 'Order#', 'Sales Order', 'Sales Order No', 'Sales Order Number',
+              'Work Order', 'Work Order No', 'WO No', 'Application No', 'Application Number', 'App No', 'App No.',
+              'Registration No', 'Reg No', 'Ref No', 'Reference No'
+            ])).trim() || null,
+            scheme: String(getExcelVal(r, ['Scheme', 'Project Scheme', 'Scheme Name', 'Govt Scheme'])).trim() || null,
+            pv_capacity: pvCapacity,
+            consumer_no: String(getExcelVal(r, ['Consumer No.', 'Consumer No', 'Consumer Number', 'CA No', 'Account No', 'K No'])).trim() || null,
+            consumer_mobile: String(getExcelVal(r, ['Consumer Mobile', 'Mobile', 'Mobile No', 'Phone', 'Phone No', 'Contact', 'Contact No'])).trim() || null,
+            customer_name: customerName,
+            city_village: String(getExcelVal(r, ['City/Village', 'City', 'Village', 'Location', 'Town', 'District'])).trim() || null,
+            installation_date: formatDate(installD) || formatDate(invD),
+            dealer_name: String(getExcelVal(r, ['Dealer Name', 'Dealer', 'Agency', 'Vendor', 'Channel Partner'])).trim() || null,
+            invoice_no: String(getExcelVal(r, ['Invoice No ', 'Invoice No.', 'Invoice No', 'Invoice Number', 'Bill No', 'Inv No'])).trim() || null,
+            invoice_date: formatDate(invD) || formatDate(installD),
+            panel_make: String(getExcelVal(r, ['Panel Make', 'Panel Manufacturer', 'Module Make', 'Panel Brand'])).trim() || null,
+            inverter_make: String(getExcelVal(r, ['Inverter Make', 'Inverter Manufacturer', 'Inverter Brand'])).trim() || null,
+            inverter_serial: String(getExcelVal(r, ['Inverter Sr. No.', 'Inverter Sr No', 'Inverter Serial', 'Inverter Serial No', 'Serial No'])).trim() || null,
+            is_in_warranty: isInWarranty,
+            warranty_expiry_date: expiryDateStr
+          });
+        }
       }
 
-      // Stream customer records to database in optimized batches of 250 for zero drops and smooth progress
-      const BATCH_SIZE = 250;
-      const totalBatches = Math.ceil(mappedCustomers.length / BATCH_SIZE);
-      let latestServerResult = null;
+      if (mappedCustomers.length === 0 && mappedDealers.length === 0) {
+        throw new Error('No valid customer or dealer rows found in uploaded sheet');
+      }
 
-      for (let b = 0; b < totalBatches; b++) {
-        const start = b * BATCH_SIZE;
-        const end = Math.min(start + BATCH_SIZE, mappedCustomers.length);
-        const chunk = mappedCustomers.slice(start, end);
-        const isFirstBatch = b === 0;
-        const isLastBatch = b === totalBatches - 1;
-
-        const progressPercent = Math.round((end / mappedCustomers.length) * 100);
+      // 3. Sync Dealer Directory to Database
+      if (mappedDealers.length > 0) {
         setSyncToast({
           type: 'info',
-          message: `Saving to database: ${end.toLocaleString()} / ${mappedCustomers.length.toLocaleString()} records (${progressPercent}%)...`
+          message: `Saving ${mappedDealers.length.toLocaleString()} dealer directory records to database...`
         });
-
-        const res = await api.syncCustomersBatch({
-          isFirstBatch,
-          isLastBatch,
-          batchIndex: b,
-          totalBatches,
-          totalCustomers: mappedCustomers.length,
-          inWarrantyCount,
-          outWarrantyCount,
-          customers: chunk
-        });
-
-        if (isLastBatch && res) {
-          latestServerResult = res;
+        const DEALER_BATCH = 100;
+        const totalDealerBatches = Math.ceil(mappedDealers.length / DEALER_BATCH);
+        for (let db = 0; db < totalDealerBatches; db++) {
+          const dChunk = mappedDealers.slice(db * DEALER_BATCH, (db + 1) * DEALER_BATCH);
+          await api.syncDealersBatch({
+            isFirstBatch: db === 0,
+            isLastBatch: db === totalDealerBatches - 1,
+            batchIndex: db,
+            totalBatches: totalDealerBatches,
+            dealers: dChunk
+          });
         }
       }
 
-      // Fetch live verified count directly from database
-      await fetchCustomerStats();
+      // 4. Sync Customer Directory to Database
+      const totalCustomers = mappedCustomers.length;
+      if (totalCustomers > 0) {
+        const BATCH_SIZE = 250;
+        const totalBatches = Math.ceil(mappedCustomers.length / BATCH_SIZE);
 
-      // Save complete uploaded customer list into localStorage for instant offline typeahead autofill
-      try {
-        localStorage.setItem('egs_uploaded_customers', JSON.stringify(mappedCustomers.slice(0, 3000)));
-      } catch (_) {}
+        for (let b = 0; b < totalBatches; b++) {
+          const start = b * BATCH_SIZE;
+          const end = Math.min(start + BATCH_SIZE, mappedCustomers.length);
+          const chunk = mappedCustomers.slice(start, end);
+          const isFirstBatch = b === 0;
+          const isLastBatch = b === totalBatches - 1;
+
+          const progressPercent = Math.round((end / mappedCustomers.length) * 100);
+          setSyncToast({
+            type: 'info',
+            message: `Saving to database: ${end.toLocaleString()} / ${mappedCustomers.length.toLocaleString()} customer records (${progressPercent}%)...`
+          });
+
+          await api.syncCustomersBatch({
+            isFirstBatch,
+            isLastBatch,
+            batchIndex: b,
+            totalBatches,
+            totalCustomers: mappedCustomers.length,
+            inWarrantyCount,
+            outWarrantyCount,
+            customers: chunk
+          });
+        }
+
+        // Fetch live verified count directly from database
+        await fetchCustomerStats();
+
+        // Save complete uploaded customer list into localStorage for instant offline typeahead autofill
+        try {
+          localStorage.setItem('egs_uploaded_customers', JSON.stringify(mappedCustomers.slice(0, 3000)));
+        } catch (_) {}
+      }
+
+      let successMessage = '';
+      if (mappedCustomers.length > 0 && mappedDealers.length > 0) {
+        successMessage = `Successfully saved ${mappedCustomers.length.toLocaleString()} customer records and ${mappedDealers.length.toLocaleString()} dealer records to database! In Warranty: ${inWarrantyCount.toLocaleString()} (0-5 Yrs), Out of Warranty: ${outWarrantyCount.toLocaleString()} (5+ Yrs)`;
+      } else if (mappedDealers.length > 0) {
+        successMessage = `Successfully saved all ${mappedDealers.length.toLocaleString()} dealer records permanently in database!`;
+      } else {
+        successMessage = `Successfully saved all ${mappedCustomers.length.toLocaleString()} customer records permanently in database! In Warranty: ${inWarrantyCount.toLocaleString()} (0-5 Yrs), Out of Warranty: ${outWarrantyCount.toLocaleString()} (5+ Yrs)`;
+      }
 
       setSyncToast({
         type: 'success',
-        message: `Successfully saved all ${totalCustomers.toLocaleString()} customer records permanently in database! In Warranty: ${inWarrantyCount.toLocaleString()} (0-5 Yrs), Out of Warranty: ${outWarrantyCount.toLocaleString()} (5+ Yrs)`
+        message: successMessage
       });
       setTimeout(() => setSyncToast(null), 8000);
     } catch (err) {
