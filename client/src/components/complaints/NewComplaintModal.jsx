@@ -1,5 +1,5 @@
 import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { api } from '../../api/client';
 import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
