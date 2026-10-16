@@ -1088,7 +1088,7 @@ async function handleCreateComplaint(c, isPublic = false) {
     INSERT INTO in_app_notifications (
       id, type, ticket_id, complaint_id, title, message, customer_name,
       target_role, performed_by_name, performed_by_role
-    ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'all', $7, $8)
+    ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'staff', $7, $8)
     ON CONFLICT (id) DO NOTHING
   `, [
     `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -2513,7 +2513,7 @@ complaintRoutes.put('/:id', authenticateToken, async (c) => {
         INSERT INTO in_app_notifications (
           id, type, ticket_id, complaint_id, title, message, customer_name,
           target_role, performed_by_name, performed_by_role
-        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'all', $7, $8)
+        ) VALUES ($1, 'new_ticket', $2, $3, $4, $5, $6, 'staff', $7, $8)
         ON CONFLICT (id) DO NOTHING
       `, [
         `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

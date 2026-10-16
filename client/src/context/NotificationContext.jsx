@@ -252,6 +252,8 @@ export const NotificationProvider = ({ children }) => {
 
     // 3. Technician ONLY sees work orders, assignments, notes explicitly for them or on their assigned tickets
     if (user.role === 'technician') {
+      // Unassigned new ticket registrations are strictly for staff/admin desk, NEVER for technicians
+      if (notif.type === 'new_ticket') return false;
       if (['staff', 'admin'].includes(notif.targetRole)) return false;
 
       const currentTechIds = [

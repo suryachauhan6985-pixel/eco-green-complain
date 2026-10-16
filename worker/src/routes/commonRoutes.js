@@ -1740,7 +1740,11 @@ commonRoutes.post('/in-app-notifications', optionalAuth, async (c) => {
     // Dispatch OS background Web Push
     c.executionCtx?.waitUntil?.(
       (async () => {
-        const targetRole = b.targetRole || 'all';
+        let targetRole = b.targetRole || 'all';
+        // Unassigned new ticket registrations must strictly target admin & staff desk, NEVER technicians
+        if (b.type === 'new_ticket' && !b.targetTechnicianId) {
+          targetRole = ['admin', 'staff'];
+        }
         const targetTechId = b.targetTechnicianId;
         const pushPayload = {
           title: b.title || 'Eco Green Support Alert',

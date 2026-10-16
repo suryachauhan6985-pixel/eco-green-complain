@@ -1189,7 +1189,7 @@ export const NewComplaintModal = ({
       setCreatedTicket(res.complaint);
       setCreatedWhatsApp(res.whatsapp || null);
 
-      // Trigger In-App Notification (Restricted to Admin Only as per ECO-5)
+      // Trigger In-App Notification (Restricted to Staff & Admin Desk)
       if (res && res.complaint) {
         addNotification({
           type: 'new_ticket',
@@ -1198,7 +1198,9 @@ export const NewComplaintModal = ({
           title: `New Ticket Registered: ${res.complaint.ticket_id}`,
           message: `Customer ${res.complaint.customer_name} raised a ticket for ${res.complaint.product_type} (${res.complaint.issue_category}).`,
           customerName: res.complaint.customer_name,
-          targetRole: 'all',
+          targetRole: 'staff',
+          targetTechnicianId: null,
+          targetTechnicianName: '',
           performedByName: currentUser?.name || 'Front Desk Staff',
           performedByRole: currentUser?.role || 'staff',
           performedByUserId: currentUser?.id,
