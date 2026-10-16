@@ -148,6 +148,7 @@ export const NewComplaintModal = ({
   const [dealerSuggestions, setDealerSuggestions] = useState([]);
   const [showDealerSuggestions, setShowDealerSuggestions] = useState(false);
   const [loadingDealers, setLoadingDealers] = useState(false);
+  const [matchingDealerOptions, setMatchingDealerOptions] = useState([]);
   const [showAlternateContactsPopover, setShowAlternateContactsPopover] = useState(false);
   const [newAlternateInput, setNewAlternateInput] = useState('');
   const [showAddAlternateInput, setShowAddAlternateInput] = useState(false);
@@ -186,6 +187,7 @@ export const NewComplaintModal = ({
     if (!val || val.trim().length < 2) {
       setDealerSuggestions([]);
       setShowDealerSuggestions(false);
+      setMatchingDealerOptions([]);
       return;
     }
     try {
@@ -194,6 +196,9 @@ export const NewComplaintModal = ({
       if (res && Array.isArray(res.dealers)) {
         setDealerSuggestions(res.dealers.slice(0, 8));
         setShowDealerSuggestions(true);
+        if (Array.isArray(res.matches) && res.matches.length > 0) {
+          setMatchingDealerOptions(res.matches);
+        }
       }
     } catch (_) {}
     finally {
@@ -204,16 +209,19 @@ export const NewComplaintModal = ({
   const selectDealer = (d) => {
     setFormData(prev => ({
       ...prev,
-      dealer_name: d.dealer_name || '',
-      dealer_contact_person: d.contact_person || prev.dealer_contact_person || '',
-      dealer_contact: d.primary_contact || prev.dealer_contact || '',
+      dealer_name: d.dealer_name || prev.dealer_name,
+      dealer_contact_person: d.contact_person || '',
+      dealer_contact: d.primary_contact || '',
       dealer_alternate_contacts: d.alternate_contacts || ''
     }));
     setShowDealerSuggestions(false);
   };
 
   const autoFetchDealerDetails = useCallback(async (dealerName) => {
-    if (!dealerName || !dealerName.trim()) return;
+    if (!dealerName || !dealerName.trim()) {
+      setMatchingDealerOptions([]);
+      return;
+    }
     try {
       const res = await api.findDealerByName(dealerName.trim());
       if (res?.dealer) {
@@ -224,7 +232,14 @@ export const NewComplaintModal = ({
           dealer_alternate_contacts: prev.dealer_alternate_contacts || res.dealer.alternate_contacts || ''
         }));
       }
-    } catch (_) {}
+      if (Array.isArray(res?.matches) && res.matches.length > 0) {
+        setMatchingDealerOptions(res.matches);
+      } else {
+        setMatchingDealerOptions([]);
+      }
+    } catch (_) {
+      setMatchingDealerOptions([]);
+    }
   }, []);
 
   const makeAlternatePrimary = (altNumber) => {
@@ -2528,6 +2543,51 @@ export const NewComplaintModal = ({
                       />
                     </div>
                   </div>
+
+                  {/* Matching Dealer Directory Options Pills */}
+                  {matchingDealerOptions.length > 0 && (
+                    <div className="mt-2.5 p-2.5 bg-amber-100/70 border border-amber-300/90 rounded-xl animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                        <span className="text-[10px] font-bold text-amber-950 flex items-center gap-1">
+                          <Building2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>
+                            Matching Dealers from Directory ({matchingDealerOptions.length}):
+                          </span>
+                        </span>
+                        <span className="text-[9.5px] text-amber-800 font-medium">
+                          Click to select / switch dealer
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {matchingDealerOptions.map((d) => {
+                          const isSelected = Boolean(formData.dealer_contact && formData.dealer_contact === d.primary_contact);
+                          return (
+                            <button
+                              key={d.id || d.dealer_name}
+                              type="button"
+                              onClick={() => selectDealer(d)}
+                              className={`text-[10px] px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer font-medium shadow-2xs flex items-center gap-1.5 ${
+                                isSelected
+                                  ? 'bg-amber-600 text-white border-amber-700 font-bold'
+                                  : 'bg-white border-amber-300 text-slate-800 hover:bg-amber-100 hover:border-amber-500'
+                              }`}
+                              title={`Select ${d.dealer_name}`}
+                            >
+                              <span>🏢</span>
+                              <span className="font-semibold">{d.dealer_name}</span>
+                              {d.contact_person && <span className="opacity-80">({d.contact_person})</span>}
+                              {d.primary_contact && (
+                                <span className={`font-mono text-[9.5px] ${isSelected ? 'text-amber-100' : 'text-slate-600 font-semibold'}`}>
+                                  📞 {d.primary_contact}
+                                </span>
+                              )}
+                              {isSelected && <span className="ml-0.5">✓ Selected</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Extra / Alternate Contacts Dropdown / Modal */}
                   {showAlternateContactsPopover && (

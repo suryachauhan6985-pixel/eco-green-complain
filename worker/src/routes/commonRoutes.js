@@ -684,7 +684,17 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
         d.primary_contact AS dealer_contact,
         d.alternate_contacts AS dealer_alternate_contacts
       FROM installed_customers c
-      LEFT JOIN dealers d ON LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
+      LEFT JOIN LATERAL (
+        SELECT d.contact_person, d.primary_contact, d.alternate_contacts
+        FROM dealers d
+        WHERE LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
+           OR (LENGTH(d.dealer_name) >= 4 AND LOWER(COALESCE(c.dealer_name, '')) LIKE '%' || LOWER(TRIM(d.dealer_name)) || '%')
+           OR (LENGTH(COALESCE(c.dealer_name, '')) >= 4 AND LOWER(d.dealer_name) LIKE '%' || LOWER(TRIM(c.dealer_name)) || '%')
+        ORDER BY 
+          CASE WHEN LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name)) THEN 1 ELSE 2 END,
+          LENGTH(d.dealer_name) DESC
+        LIMIT 1
+      ) d ON TRUE
       WHERE ${whereClause}
       ORDER BY c.id DESC 
       LIMIT 25
@@ -718,7 +728,17 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
           COALESCE(c.dealer_contact, d.primary_contact) AS dealer_contact,
           COALESCE(c.dealer_alternate_contacts, d.alternate_contacts) AS dealer_alternate_contacts
         FROM complaints c
-        LEFT JOIN dealers d ON LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
+        LEFT JOIN LATERAL (
+          SELECT d.contact_person, d.primary_contact, d.alternate_contacts
+          FROM dealers d
+          WHERE LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name))
+             OR (LENGTH(d.dealer_name) >= 4 AND LOWER(COALESCE(c.dealer_name, '')) LIKE '%' || LOWER(TRIM(d.dealer_name)) || '%')
+             OR (LENGTH(COALESCE(c.dealer_name, '')) >= 4 AND LOWER(d.dealer_name) LIKE '%' || LOWER(TRIM(c.dealer_name)) || '%')
+          ORDER BY 
+            CASE WHEN LOWER(TRIM(COALESCE(c.dealer_name, ''))) = LOWER(TRIM(d.dealer_name)) THEN 1 ELSE 2 END,
+            LENGTH(d.dealer_name) DESC
+          LIMIT 1
+        ) d ON TRUE
         WHERE ${compWhere}
         ORDER BY c.customer_phone, c.customer_name, c.id DESC
         LIMIT ${25 - results.length}
@@ -898,42 +918,153 @@ commonRoutes.post('/customers/sync', authenticateToken, requireRole('admin', 'st
   }
 });
 
-// GET /api/dealers - Search, exact lookup, or list all dealers
+let dealersMemoryCache = null;
+let dealersCacheTime = 0;
+const DEALERS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function getAllCachedDealers(env, executionCtx) {
+  const now = Date.now();
+  if (dealersMemoryCache && (now - dealersCacheTime) < DEALERS_CACHE_TTL) {
+    return dealersMemoryCache;
+  }
+  const res = await query(`
+    SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
+    FROM dealers
+    ORDER BY dealer_name ASC
+  `, [], env, executionCtx).catch(() => ({ rows: [] }));
+
+  dealersMemoryCache = res.rows || [];
+  dealersCacheTime = now;
+  return dealersMemoryCache;
+}
+
+function tokenizeDealerStr(str) {
+  if (!str) return [];
+  return String(str)
+    .toLowerCase()
+    .replace(/[^\w\s]/gi, ' ')
+    .split(/\s+/)
+    .map(t => t.trim())
+    .filter(t => t.length >= 3 && !['and', 'the', 'pvt', 'ltd'].includes(t));
+}
+
+function computeWordSimilarity(w1, w2) {
+  if (w1 === w2) return 1.0;
+  if (w1.startsWith(w2) || w2.startsWith(w1)) {
+    const minLen = Math.min(w1.length, w2.length);
+    if (minLen >= 4) return 0.9;
+    if (minLen >= 3) return 0.8;
+  }
+  if (w1.length >= 4 && w2.length >= 4 && w1.slice(0, 4) === w2.slice(0, 4)) {
+    return 0.8;
+  }
+  return 0;
+}
+
+function fuzzyMatchDealers(searchTerm, dealersList) {
+  if (!searchTerm || !searchTerm.trim() || !Array.isArray(dealersList) || dealersList.length === 0) {
+    return [];
+  }
+  const qClean = searchTerm.trim().toLowerCase();
+  const qTokens = tokenizeDealerStr(searchTerm);
+
+  const scored = [];
+
+  for (const d of dealersList) {
+    const dName = (d.dealer_name || '').trim().toLowerCase();
+    if (!dName) continue;
+
+    // 1. Exact match (highest priority)
+    if (dName === qClean) {
+      scored.push({ dealer: d, score: 100, reason: 'exact' });
+      continue;
+    }
+
+    // 2. Direct containment (one inside the other)
+    // e.g. 'jog electric - jetpar' includes 'jog electric'
+    if (qClean.includes(dName)) {
+      scored.push({ dealer: d, score: 92, reason: 'q_contains_d' });
+      continue;
+    }
+    // e.g. dealer 'jog electric' includes input 'jog'
+    if (dName.includes(qClean)) {
+      scored.push({ dealer: d, score: 85, reason: 'd_contains_q' });
+      continue;
+    }
+
+    // 3. Token-based matching
+    const dTokens = tokenizeDealerStr(d.dealer_name);
+    let matchScore = 0;
+    let matchesCount = 0;
+
+    for (const qt of qTokens) {
+      let bestWordScore = 0;
+      for (const dt of dTokens) {
+        const sim = computeWordSimilarity(qt, dt);
+        if (sim > bestWordScore) bestWordScore = sim;
+      }
+      if (bestWordScore > 0) {
+        matchScore += bestWordScore;
+        matchesCount++;
+      }
+    }
+
+    if (matchesCount > 0) {
+      const finalScore = (matchScore / Math.max(1, Math.min(qTokens.length, dTokens.length))) * 70;
+      if (finalScore >= 30) {
+        scored.push({ dealer: d, score: Math.round(finalScore), reason: 'tokens', matchesCount });
+      }
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.dealer.dealer_name.localeCompare(b.dealer.dealer_name));
+  return scored.map(s => ({ ...s.dealer, _matchScore: s.score, _matchReason: s.reason }));
+}
+
+// GET /api/dealers - Search, exact lookup, fuzzy matching, or list all dealers
 commonRoutes.get('/dealers', authenticateToken, async (c) => {
   try {
     const q = (c.req.query('search') || c.req.query('q') || '').trim();
     const name = (c.req.query('name') || '').trim();
 
+    const allDealers = await getAllCachedDealers(c.env, c.executionCtx);
+
     if (name) {
-      const res = await query(`
-        SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
-        FROM dealers
-        WHERE LOWER(TRIM(dealer_name)) = LOWER(TRIM($1))
-        LIMIT 1
-      `, [name], c.env, c.executionCtx);
-      return c.json({ dealer: res.rows[0] || null });
+      const matches = fuzzyMatchDealers(name, allDealers);
+      return c.json({
+        dealer: matches[0] || null,
+        matches: matches.slice(0, 10),
+        hasMultiple: matches.length > 1
+      });
     }
 
     if (q) {
-      const res = await query(`
-        SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
-        FROM dealers
-        WHERE dealer_name ILIKE $1 
-           OR contact_person ILIKE $1 
-           OR primary_contact ILIKE $1
-        ORDER BY dealer_name ASC
-        LIMIT 50
-      `, [`%${q}%`], c.env, c.executionCtx);
-      return c.json({ dealers: res.rows });
+      const matches = fuzzyMatchDealers(q, allDealers);
+      if (matches.length > 0) {
+        return c.json({
+          dealers: matches.slice(0, 20),
+          dealer: matches[0] || null,
+          matches: matches.slice(0, 10),
+          hasMultiple: matches.length > 1
+        });
+      }
+      // Fallback: simple text match on dealer_name, contact_person, or phone
+      const qLower = q.toLowerCase();
+      const fallback = allDealers.filter(d => 
+        (d.dealer_name && d.dealer_name.toLowerCase().includes(qLower)) ||
+        (d.contact_person && d.contact_person.toLowerCase().includes(qLower)) ||
+        (d.primary_contact && d.primary_contact.includes(q))
+      ).slice(0, 20);
+
+      return c.json({
+        dealers: fallback,
+        dealer: fallback[0] || null,
+        matches: fallback.slice(0, 10),
+        hasMultiple: fallback.length > 1
+      });
     }
 
-    const res = await query(`
-      SELECT id, dealer_name, contact_person, primary_contact, alternate_contacts, raw_contact
-      FROM dealers
-      ORDER BY dealer_name ASC
-      LIMIT 1000
-    `, [], c.env, c.executionCtx);
-    return c.json({ dealers: res.rows });
+    return c.json({ dealers: allDealers });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
@@ -1035,7 +1166,7 @@ commonRoutes.post('/dealers/sync', authenticateToken, requireRole('admin', 'staf
 
     const countRes = await query('SELECT COUNT(*) as total FROM dealers', [], c.env, c.executionCtx);
     const totalCount = parseInt(countRes.rows[0]?.total || 0, 10);
-
+    dealersMemoryCache = null;
     return c.json({
       success: true,
       insertedCount: inserted,
