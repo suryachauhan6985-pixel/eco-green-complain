@@ -48,10 +48,10 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
   const getInitialJobStatus = () => {
     const st = getUrlParam('status');
-    if (!st) return 'all';
+    if (!st) return 'Assigned';
     const valid = ['Assigned', 'In Progress', 'On Hold', 'Reopened', 'Completed', 'all', 'Overdue'];
     const found = valid.find(v => v.toLowerCase() === st.toLowerCase());
-    return found || 'all';
+    return found || 'Assigned';
   };
 
   const getInitialTechId = () => {
@@ -117,7 +117,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
   const handleJobStatusFilterChange = (st) => {
     setJobStatusFilter(st);
-    updateUrlParams({ status: st === 'all' ? null : st });
+    updateUrlParams({ status: st === 'Assigned' ? null : st });
   };
 
   // --- HIERARCHICAL STAGE ESCAPE HANDLERS FOR TECHNICIAN ---
