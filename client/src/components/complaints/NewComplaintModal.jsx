@@ -154,6 +154,7 @@ export const NewComplaintModal = ({
   const [showAddAlternateInput, setShowAddAlternateInput] = useState(false);
   const dealerWrapperRef = useRef(null);
   const alternatePopoverRef = useRef(null);
+  const dealerSearchTimeoutRef = useRef(null);
 
   // Close dealer suggestions / popover on outside click
   useEffect(() => {
@@ -166,7 +167,10 @@ export const NewComplaintModal = ({
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      if (dealerSearchTimeoutRef.current) clearTimeout(dealerSearchTimeoutRef.current);
+    };
   }, []);
 
   // Parse alternate contacts array safely
@@ -182,28 +186,53 @@ export const NewComplaintModal = ({
     }
   }, [formData.dealer_alternate_contacts]);
 
-  const handleDealerNameChange = async (val) => {
+  const handleDealerNameChange = (val) => {
     setFormData(prev => ({ ...prev, dealer_name: val }));
+
+    if (dealerSearchTimeoutRef.current) {
+      clearTimeout(dealerSearchTimeoutRef.current);
+    }
+
     if (!val || val.trim().length < 2) {
       setDealerSuggestions([]);
       setShowDealerSuggestions(false);
       setMatchingDealerOptions([]);
       return;
     }
-    try {
-      setLoadingDealers(true);
-      const res = await api.getDealers({ search: val.trim() });
-      if (res && Array.isArray(res.dealers)) {
-        setDealerSuggestions(res.dealers.slice(0, 8));
-        setShowDealerSuggestions(true);
-        if (Array.isArray(res.matches) && res.matches.length > 0) {
-          setMatchingDealerOptions(res.matches);
+
+    dealerSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        setLoadingDealers(true);
+        const res = await api.getDealers({ search: val.trim() });
+        if (res && Array.isArray(res.dealers)) {
+          setDealerSuggestions(res.dealers.slice(0, 8));
+          setShowDealerSuggestions(true);
+          if (Array.isArray(res.matches) && res.matches.length > 0) {
+            setMatchingDealerOptions(res.matches);
+          }
+
+          // Auto-populate contact person & phone immediately if exact or strong match found
+          const bestDealer = res.dealer || res.dealers[0];
+          if (bestDealer) {
+            const vNorm = val.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            const dNorm = (bestDealer.dealer_name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            const isMatch = dNorm === vNorm || dNorm.includes(vNorm) || vNorm.includes(dNorm) || (bestDealer._matchScore >= 70);
+
+            if (isMatch) {
+              setFormData(prev => ({
+                ...prev,
+                dealer_contact_person: prev.dealer_contact_person || bestDealer.contact_person || '',
+                dealer_contact: prev.dealer_contact || bestDealer.primary_contact || '',
+                dealer_alternate_contacts: prev.dealer_alternate_contacts || bestDealer.alternate_contacts || ''
+              }));
+            }
+          }
         }
+      } catch (_) {}
+      finally {
+        setLoadingDealers(false);
       }
-    } catch (_) {}
-    finally {
-      setLoadingDealers(false);
-    }
+    }, 280);
   };
 
   const selectDealer = (d) => {
@@ -217,7 +246,7 @@ export const NewComplaintModal = ({
     setShowDealerSuggestions(false);
   };
 
-  const autoFetchDealerDetails = useCallback(async (dealerName) => {
+  const autoFetchDealerDetails = useCallback(async (dealerName, forceUpdate = false) => {
     if (!dealerName || !dealerName.trim()) {
       setMatchingDealerOptions([]);
       return;
@@ -227,9 +256,13 @@ export const NewComplaintModal = ({
       if (res?.dealer) {
         setFormData(prev => ({
           ...prev,
-          dealer_contact_person: prev.dealer_contact_person || res.dealer.contact_person || '',
-          dealer_contact: prev.dealer_contact || res.dealer.primary_contact || '',
-          dealer_alternate_contacts: prev.dealer_alternate_contacts || res.dealer.alternate_contacts || ''
+          dealer_contact_person: forceUpdate
+            ? (res.dealer.contact_person || prev.dealer_contact_person || '')
+            : (prev.dealer_contact_person || res.dealer.contact_person || ''),
+          dealer_contact: forceUpdate
+            ? (res.dealer.primary_contact || prev.dealer_contact || '')
+            : (prev.dealer_contact || res.dealer.primary_contact || ''),
+          dealer_alternate_contacts: res.dealer.alternate_contacts || prev.dealer_alternate_contacts || ''
         }));
       }
       if (Array.isArray(res?.matches) && res.matches.length > 0) {
@@ -2468,6 +2501,13 @@ export const NewComplaintModal = ({
                         onChange={(e) => handleDealerNameChange(e.target.value)}
                         onFocus={() => {
                           if (dealerSuggestions.length > 0) setShowDealerSuggestions(true);
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => setShowDealerSuggestions(false), 250);
+                          const name = (formData.dealer_name || '').trim();
+                          if (name.length >= 2) {
+                            autoFetchDealerDetails(name, true);
+                          }
                         }}
                         className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                       />

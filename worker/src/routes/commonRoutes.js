@@ -938,6 +938,29 @@ async function getAllCachedDealers(env, executionCtx) {
   return dealersMemoryCache;
 }
 
+function levenshteinDist(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
 function tokenizeDealerStr(str) {
   if (!str) return [];
   return String(str)
@@ -945,27 +968,29 @@ function tokenizeDealerStr(str) {
     .replace(/[^\w\s]/gi, ' ')
     .split(/\s+/)
     .map(t => t.trim())
-    .filter(t => t.length >= 3 && !['and', 'the', 'pvt', 'ltd'].includes(t));
+    .filter(t => t.length >= 2 && !['and', 'the', 'pvt', 'ltd'].includes(t));
 }
 
 function computeWordSimilarity(w1, w2) {
   if (w1 === w2) return 1.0;
   if (w1.startsWith(w2) || w2.startsWith(w1)) {
     const minLen = Math.min(w1.length, w2.length);
-    if (minLen >= 4) return 0.9;
-    if (minLen >= 3) return 0.8;
+    if (minLen >= 4) return 0.95;
+    if (minLen >= 3) return 0.88;
   }
-  if (w1.length >= 4 && w2.length >= 4 && w1.slice(0, 4) === w2.slice(0, 4)) {
-    return 0.8;
-  }
-  return 0;
+  const maxLen = Math.max(w1.length, w2.length);
+  if (maxLen === 0) return 1.0;
+  const dist = levenshteinDist(w1, w2);
+  const sim = 1 - (dist / maxLen);
+  return sim >= 0.65 ? sim : 0;
 }
 
-function fuzzyMatchDealers(searchTerm, dealersList) {
+export function fuzzyMatchDealers(searchTerm, dealersList) {
   if (!searchTerm || !searchTerm.trim() || !Array.isArray(dealersList) || dealersList.length === 0) {
     return [];
   }
   const qClean = searchTerm.trim().toLowerCase();
+  const qNorm = qClean.replace(/[^a-z0-9]/g, '');
   const qTokens = tokenizeDealerStr(searchTerm);
 
   const scored = [];
@@ -973,29 +998,34 @@ function fuzzyMatchDealers(searchTerm, dealersList) {
   for (const d of dealersList) {
     const dName = (d.dealer_name || '').trim().toLowerCase();
     if (!dName) continue;
+    const dNorm = dName.replace(/[^a-z0-9]/g, '');
 
-    // 1. Exact match (highest priority)
+    // 1. Exact match (case-insensitive)
     if (dName === qClean) {
       scored.push({ dealer: d, score: 100, reason: 'exact' });
       continue;
     }
 
-    // 2. Direct containment (one inside the other)
-    // e.g. 'jog electric - jetpar' includes 'jog electric'
-    if (qClean.includes(dName)) {
-      scored.push({ dealer: d, score: 92, reason: 'q_contains_d' });
-      continue;
-    }
-    // e.g. dealer 'jog electric' includes input 'jog'
-    if (dName.includes(qClean)) {
-      scored.push({ dealer: d, score: 85, reason: 'd_contains_q' });
+    // 2. Exact match on normalized alphanumeric string (e.g. 's.k. enterprises' === 'sk enterprises')
+    if (qNorm.length >= 3 && dNorm === qNorm) {
+      scored.push({ dealer: d, score: 98, reason: 'exact_normalized' });
       continue;
     }
 
-    // 3. Token-based matching
+    // 3. Direct containment (one inside the other)
+    if (qNorm.length >= 3 && dNorm.includes(qNorm)) {
+      scored.push({ dealer: d, score: 92, reason: 'd_contains_q' });
+      continue;
+    }
+    if (dNorm.length >= 3 && qNorm.includes(dNorm)) {
+      scored.push({ dealer: d, score: 88, reason: 'q_contains_d' });
+      continue;
+    }
+
+    // 4. Token-based matching with Levenshtein word similarity
     const dTokens = tokenizeDealerStr(d.dealer_name);
     let matchScore = 0;
-    let matchesCount = 0;
+    let exactMatches = 0;
 
     for (const qt of qTokens) {
       let bestWordScore = 0;
@@ -1005,20 +1035,29 @@ function fuzzyMatchDealers(searchTerm, dealersList) {
       }
       if (bestWordScore > 0) {
         matchScore += bestWordScore;
-        matchesCount++;
+        if (bestWordScore >= 0.95) exactMatches++;
       }
     }
 
-    if (matchesCount > 0) {
-      const finalScore = (matchScore / Math.max(1, Math.min(qTokens.length, dTokens.length))) * 70;
-      if (finalScore >= 30) {
-        scored.push({ dealer: d, score: Math.round(finalScore), reason: 'tokens', matchesCount });
+    if (matchScore > 0 && qTokens.length > 0) {
+      const queryCoverage = matchScore / qTokens.length;
+      const targetCoverage = matchScore / Math.max(1, dTokens.length);
+      const finalScore = (queryCoverage * 55) + (targetCoverage * 30) + (exactMatches * 15);
+      if (finalScore >= 35) {
+        scored.push({ dealer: d, score: Math.round(finalScore), reason: 'tokens', exactMatches });
       }
     }
   }
 
   scored.sort((a, b) => b.score - a.score || a.dealer.dealer_name.localeCompare(b.dealer.dealer_name));
   return scored.map(s => ({ ...s.dealer, _matchScore: s.score, _matchReason: s.reason }));
+}
+
+export async function lookupDealerDetails(dealerName, env, executionCtx) {
+  if (!dealerName || !dealerName.trim()) return null;
+  const allDealers = await getAllCachedDealers(env, executionCtx);
+  const matches = fuzzyMatchDealers(dealerName, allDealers);
+  return matches[0] || null;
 }
 
 // GET /api/dealers - Search, exact lookup, fuzzy matching, or list all dealers

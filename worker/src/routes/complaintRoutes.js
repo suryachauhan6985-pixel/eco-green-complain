@@ -4,6 +4,7 @@ import { authenticateToken, optionalAuth, requireRole } from '../auth.js';
 import { sendWhatsApp } from '../whatsapp.js';
 import { deleteR2Object, moveR2Object, deleteR2Prefix } from '../r2.js';
 import { dispatchPushToRoles, dispatchPushToTechnician } from '../services/webPushService.js';
+import { lookupDealerDetails } from './commonRoutes.js';
 
 const complaintRoutes = new Hono();
 
@@ -620,11 +621,23 @@ async function handleCreateDraftComplaint(c, preParsedBody = null) {
   const canonicalPhone = last10 ? `+91${last10}` : (raw_phone || '');
   const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
   const dealer_name = (body.dealer_name || '').trim();
-  const dealer_contact = (body.dealer_contact || '').trim();
-  const dealer_contact_person = (body.dealer_contact_person || '').trim();
-  const dealer_alternate_contacts = body.dealer_alternate_contacts 
+  let dealer_contact = (body.dealer_contact || '').trim();
+  let dealer_contact_person = (body.dealer_contact_person || '').trim();
+  let dealer_alternate_contacts = body.dealer_alternate_contacts 
     ? (typeof body.dealer_alternate_contacts === 'string' ? body.dealer_alternate_contacts : JSON.stringify(body.dealer_alternate_contacts))
     : null;
+
+  // Auto-enrich dealer details from directory if firm name is provided but contact info is missing
+  if (dealer_name && (!dealer_contact || !dealer_contact_person)) {
+    try {
+      const dInfo = await lookupDealerDetails(dealer_name, c.env, c.executionCtx);
+      if (dInfo) {
+        if (!dealer_contact && dInfo.primary_contact) dealer_contact = dInfo.primary_contact;
+        if (!dealer_contact_person && dInfo.contact_person) dealer_contact_person = dInfo.contact_person;
+        if (!dealer_alternate_contacts && dInfo.alternate_contacts) dealer_alternate_contacts = dInfo.alternate_contacts;
+      }
+    } catch (_) {}
+  }
 
   const ticket_id = await generateNextTicketId(c.env, c.executionCtx);
   const user = c.get('user');
@@ -924,11 +937,23 @@ async function handleCreateComplaint(c, isPublic = false) {
   const last10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
   const product_type = (body.product_type || 'Solar Rooftop Systems').trim();
   const dealer_name = (body.dealer_name || '').trim();
-  const dealer_contact = (body.dealer_contact || '').trim();
-  const dealer_contact_person = (body.dealer_contact_person || '').trim();
-  const dealer_alternate_contacts = body.dealer_alternate_contacts 
+  let dealer_contact = (body.dealer_contact || '').trim();
+  let dealer_contact_person = (body.dealer_contact_person || '').trim();
+  let dealer_alternate_contacts = body.dealer_alternate_contacts 
     ? (typeof body.dealer_alternate_contacts === 'string' ? body.dealer_alternate_contacts : JSON.stringify(body.dealer_alternate_contacts))
     : null;
+
+  // Auto-enrich dealer details from directory if firm name is provided but contact info is missing
+  if (dealer_name && (!dealer_contact || !dealer_contact_person)) {
+    try {
+      const dInfo = await lookupDealerDetails(dealer_name, c.env, c.executionCtx);
+      if (dInfo) {
+        if (!dealer_contact && dInfo.primary_contact) dealer_contact = dInfo.primary_contact;
+        if (!dealer_contact_person && dInfo.contact_person) dealer_contact_person = dInfo.contact_person;
+        if (!dealer_alternate_contacts && dInfo.alternate_contacts) dealer_alternate_contacts = dInfo.alternate_contacts;
+      }
+    } catch (_) {}
+  }
 
   if (!isDraft) {
     if (!customer_name || !last10) {

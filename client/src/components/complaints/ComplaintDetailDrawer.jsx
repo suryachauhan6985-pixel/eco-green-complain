@@ -118,8 +118,12 @@ export const ComplaintDetailDrawer = ({
 
   useEffect(() => {
     let isSubscribed = true;
-    if (ticket?.dealer_name && !ticket?.dealer_contact) {
-      api.findDealerByName(ticket.dealer_name)
+    const cleanDName = (ticket?.dealer_name || '').trim();
+    const hasContact = Boolean((ticket?.dealer_contact || '').trim());
+    const hasPerson = Boolean((ticket?.dealer_contact_person || '').trim());
+
+    if (cleanDName && (!hasContact || !hasPerson)) {
+      api.findDealerByName(cleanDName)
         .then(res => {
           if (isSubscribed && res?.dealer) {
             setFetchedDealer(res.dealer);
@@ -130,7 +134,7 @@ export const ComplaintDetailDrawer = ({
       setFetchedDealer(null);
     }
     return () => { isSubscribed = false; };
-  }, [ticket?.dealer_name, ticket?.dealer_contact]);
+  }, [ticket?.dealer_name, ticket?.dealer_contact, ticket?.dealer_contact_person]);
 
   const currentDealerName = ticket?.dealer_name || fetchedDealer?.dealer_name || '';
   const currentDealerPerson = ticket?.dealer_contact_person || fetchedDealer?.contact_person || '';
