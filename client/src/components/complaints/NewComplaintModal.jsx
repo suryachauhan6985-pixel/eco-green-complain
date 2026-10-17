@@ -221,9 +221,9 @@ export const NewComplaintModal = ({
             if (isMatch) {
               setFormData(prev => ({
                 ...prev,
-                dealer_contact_person: prev.dealer_contact_person || bestDealer.contact_person || '',
-                dealer_contact: prev.dealer_contact || bestDealer.primary_contact || '',
-                dealer_alternate_contacts: prev.dealer_alternate_contacts || bestDealer.alternate_contacts || ''
+                dealer_contact_person: bestDealer.contact_person || '',
+                dealer_contact: bestDealer.primary_contact || '',
+                dealer_alternate_contacts: bestDealer.alternate_contacts || ''
               }));
             }
           }
@@ -257,12 +257,12 @@ export const NewComplaintModal = ({
         setFormData(prev => ({
           ...prev,
           dealer_contact_person: forceUpdate
-            ? (res.dealer.contact_person || prev.dealer_contact_person || '')
-            : (prev.dealer_contact_person || res.dealer.contact_person || ''),
+            ? (res.dealer.contact_person || '')
+            : (res.dealer.contact_person || prev.dealer_contact_person || ''),
           dealer_contact: forceUpdate
-            ? (res.dealer.primary_contact || prev.dealer_contact || '')
-            : (prev.dealer_contact || res.dealer.primary_contact || ''),
-          dealer_alternate_contacts: res.dealer.alternate_contacts || prev.dealer_alternate_contacts || ''
+            ? (res.dealer.primary_contact || '')
+            : (res.dealer.primary_contact || prev.dealer_contact || ''),
+          dealer_alternate_contacts: res.dealer.alternate_contacts || ''
         }));
       }
       if (Array.isArray(res?.matches) && res.matches.length > 0) {

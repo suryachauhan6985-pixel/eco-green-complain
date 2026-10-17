@@ -1000,29 +1000,37 @@ export function fuzzyMatchDealers(searchTerm, dealersList) {
     if (!dName) continue;
     const dNorm = dName.replace(/[^a-z0-9]/g, '');
 
-    // 1. Exact match (case-insensitive)
+    // 1. Exact match (highest priority: 1000)
     if (dName === qClean) {
-      scored.push({ dealer: d, score: 100, reason: 'exact' });
+      scored.push({ dealer: d, score: 1000, reason: 'exact' });
       continue;
     }
 
-    // 2. Exact match on normalized alphanumeric string (e.g. 's.k. enterprises' === 'sk enterprises')
+    // 2. Exact match on normalized alphanumeric string (priority: 950)
     if (qNorm.length >= 3 && dNorm === qNorm) {
-      scored.push({ dealer: d, score: 98, reason: 'exact_normalized' });
+      scored.push({ dealer: d, score: 950, reason: 'exact_normalized' });
       continue;
     }
 
     // 3. Direct containment (one inside the other)
+    if (qNorm.length >= 3 && dNorm.startsWith(qNorm)) {
+      scored.push({ dealer: d, score: 900, reason: 'd_starts_with_q' });
+      continue;
+    }
+    if (qNorm.length >= 3 && qNorm.startsWith(dNorm)) {
+      scored.push({ dealer: d, score: 880, reason: 'q_starts_with_d' });
+      continue;
+    }
     if (qNorm.length >= 3 && dNorm.includes(qNorm)) {
-      scored.push({ dealer: d, score: 92, reason: 'd_contains_q' });
+      scored.push({ dealer: d, score: 850, reason: 'd_contains_q' });
       continue;
     }
     if (dNorm.length >= 3 && qNorm.includes(dNorm)) {
-      scored.push({ dealer: d, score: 88, reason: 'q_contains_d' });
+      scored.push({ dealer: d, score: 820, reason: 'q_contains_d' });
       continue;
     }
 
-    // 4. Token-based matching with Levenshtein word similarity
+    // 4. Token-based matching with Levenshtein word similarity (capped at 85)
     const dTokens = tokenizeDealerStr(d.dealer_name);
     let matchScore = 0;
     let exactMatches = 0;
@@ -1042,9 +1050,10 @@ export function fuzzyMatchDealers(searchTerm, dealersList) {
     if (matchScore > 0 && qTokens.length > 0) {
       const queryCoverage = matchScore / qTokens.length;
       const targetCoverage = matchScore / Math.max(1, dTokens.length);
-      const finalScore = (queryCoverage * 55) + (targetCoverage * 30) + (exactMatches * 15);
+      const rawScore = (queryCoverage * 40) + (targetCoverage * 25) + (exactMatches * 10);
+      const finalScore = Math.min(85, Math.round(rawScore));
       if (finalScore >= 35) {
-        scored.push({ dealer: d, score: Math.round(finalScore), reason: 'tokens', exactMatches });
+        scored.push({ dealer: d, score: finalScore, reason: 'tokens', exactMatches });
       }
     }
   }
