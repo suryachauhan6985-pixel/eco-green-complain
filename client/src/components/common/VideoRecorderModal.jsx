@@ -5,12 +5,13 @@ import {
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
-// 3-Minute 720p HD Optimization:
-// Target: 3 Minutes (~180s) 720p HD Video guaranteed under 50 MB upload limit.
-// 1.85 Mbps video + 64 kbps audio = ~1.91 Mbps total (~14.3 MB/min, ~43 MB for full 3 minutes).
+// High-Efficiency 720p HD Optimization with Zero Lag on Mobile:
+// Target: 3 Minutes (~180s) 720p HD Video guaranteed smooth, stutter-free, and under 50 MB.
+// 1.25 Mbps hardware-accelerated video + 64 kbps audio = ~1.31 Mbps (~9.8 MB/min, ~29.5 MB for full 3 minutes).
+// Leaves generous safety margin under Cloudflare Worker / server 50 MB upload limits.
 const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB server limit
 const MAX_RECORDING_SECONDS = 180; // Exactly 3 minutes
-const TARGET_VIDEO_BITRATE = 1_850_000; // 1.85 Mbps 720p HD
+const TARGET_VIDEO_BITRATE = 1_250_000; // 1.25 Mbps (optimized for smooth hardware encoding without frame drops)
 const TARGET_AUDIO_BITRATE = 64_000; // 64 kbps clear audio
 
 export function VideoRecorderModal({
@@ -49,6 +50,8 @@ export function VideoRecorderModal({
   const playbackVideoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const currentBytesAccumulatorRef = useRef(0);
+  const lastZoomUpdateRef = useRef(0);
   const timerIntervalRef = useRef(null);
   const fileFallbackInputRef = useRef(null);
   const previewUrlRef = useRef(null);
@@ -69,11 +72,23 @@ export function VideoRecorderModal({
   // Pick optimal supported container format
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
+    // Priority: Hardware-accelerated H.264/AVC (avc1/mp4) first.
+    // Why: Android devices (Snapdragon, MediaTek, Exynos, Unisoc) and iPhones (iOS)
+    // have dedicated silicon hardware encoders for H.264/AVC.
+    // In contrast, VP8/VP9 often falls back to software encoding (libvpx) on Android,
+    // which consumes 100% CPU and causes stuttering, frame drops, and severe lag while recording.
     const candidates = [
-      'video/webm;codecs=vp8,opus',
-      'video/webm',
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
       'video/mp4;codecs=avc1,mp4a',
-      'video/mp4'
+      'video/mp4;codecs=avc1',
+      'video/mp4',
+      'video/webm;codecs=h264,opus',
+      'video/webm;codecs=h264',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=vp8',
+      'video/webm'
     ];
     for (const type of candidates) {
       if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
@@ -113,6 +128,7 @@ export function VideoRecorderModal({
     setRecordingSeconds(0);
     setCurrentSizeBytes(0);
     recordedChunksRef.current = [];
+    currentBytesAccumulatorRef.current = 0;
     setCapturedPhotos(prev => {
       prev.forEach(p => {
         try { URL.revokeObjectURL(p.preview); } catch (_) {}
@@ -189,10 +205,15 @@ export function VideoRecorderModal({
       return;
     }
 
-    // Standard natural camera constraints
-    const videoConstraints = deviceId
-      ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-      : { facingMode: { ideal: desiredFacing }, width: { ideal: 1280 }, height: { ideal: 720 } };
+    // Strict 720p maximum resolution & 24-30 FPS bounds:
+    // Without frameRate max, mobile cameras often stream 60 FPS uncompressed frames,
+    // bottlenecking mobile GPU/CPU encoders and causing the viewfinder to lag/stutter.
+    const videoConstraints = {
+      ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: desiredFacing } }),
+      width: { ideal: 1280, max: 1280 },
+      height: { ideal: 720, max: 720 },
+      frameRate: { ideal: 24, max: 30 }
+    };
 
     const baseConstraints = {
       video: videoConstraints,
@@ -208,22 +229,38 @@ export function VideoRecorderModal({
     } catch (primaryErr) {
       console.warn('[VideoRecorder] Primary getUserMedia failed, trying fallback:', primaryErr);
       try {
-        // Fallback 1: basic video + audio
+        // Fallback 1: basic video + audio with frameRate cap
         newStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: desiredFacing } },
+          video: {
+            facingMode: { ideal: desiredFacing },
+            width: { ideal: 1280, max: 1280 },
+            height: { ideal: 720, max: 720 },
+            frameRate: { ideal: 24, max: 30 }
+          },
           audio: true
         });
       } catch (audioErr) {
         console.warn('[VideoRecorder] Audio request failed, trying video only:', audioErr);
         try {
-          // Fallback 2: video only
+          // Fallback 2: video only with frameRate cap
           newStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: desiredFacing } }
+            video: {
+              facingMode: { ideal: desiredFacing },
+              width: { ideal: 1280, max: 1280 },
+              height: { ideal: 720, max: 720 },
+              frameRate: { ideal: 24, max: 30 }
+            }
           });
         } catch (videoOnlyErr) {
           try {
-            // Fallback 3: generic video
-            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            // Fallback 3: generic video with frameRate cap
+            newStream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                width: { ideal: 1280, max: 1280 },
+                height: { ideal: 720, max: 720 },
+                frameRate: { ideal: 24, max: 30 }
+              }
+            });
           } catch (finalErr) {
             console.error('[VideoRecorder] All getUserMedia attempts failed:', finalErr);
             let msg = 'Could not access device camera. Please check camera permissions in your browser settings.';
@@ -372,13 +409,19 @@ export function VideoRecorderModal({
 
   const handleTouchMove = (e) => {
     if (e.touches.length === 2 && touchStartDistRef.current) {
+      const now = Date.now();
+      if (now - lastZoomUpdateRef.current < 120) return; // Prevent flooding camera track with constraints
+      lastZoomUpdateRef.current = now;
+
       const currentDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
       const scale = currentDist / touchStartDistRef.current;
       const newZoom = Math.max(0.5, Math.min(5, Number((touchStartZoomRef.current * scale).toFixed(1))));
-      applyZoom(newZoom);
+      if (Math.abs(newZoom - zoomLevel) >= 0.2) {
+        applyZoom(newZoom);
+      }
     }
   };
 
@@ -427,6 +470,7 @@ export function VideoRecorderModal({
 
     try {
       recordedChunksRef.current = [];
+      currentBytesAccumulatorRef.current = 0;
       setRecordingSeconds(0);
       setCurrentSizeBytes(0);
 
@@ -443,18 +487,15 @@ export function VideoRecorderModal({
 
       const recorder = new MediaRecorder(stream, recorderOptions);
 
-      // Collect data every 1 second (1000ms) for smooth recording without lag
+      // Collect data every 2 seconds (2000ms) for smooth encoding without keyframe stalls
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           recordedChunksRef.current.push(e.data);
-          let total = 0;
-          for (const chunk of recordedChunksRef.current) {
-            total += chunk.size;
-          }
-          setCurrentSizeBytes(total);
+          currentBytesAccumulatorRef.current += e.data.size;
+          setCurrentSizeBytes(currentBytesAccumulatorRef.current);
 
           // Auto-stop safety if nearing 48 MB
-          if (total >= 48 * 1024 * 1024) {
+          if (currentBytesAccumulatorRef.current >= 48 * 1024 * 1024) {
             handleStopRecording('size_limit');
           }
         }
@@ -482,7 +523,7 @@ export function VideoRecorderModal({
         setIsRecording(false);
       };
 
-      recorder.start(1000);
+      recorder.start(2000);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
 
@@ -577,7 +618,7 @@ export function VideoRecorderModal({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Live Viewfinder (Natural edge-to-edge object-cover filling entire screen) */}
+          {/* Live Viewfinder (Natural edge-to-edge object-cover filling entire screen with GPU layer promotion) */}
           {!recordedBlob && !cameraError && (
             <video
               ref={videoPreviewRef}
@@ -585,6 +626,11 @@ export function VideoRecorderModal({
               playsInline
               muted
               className="w-full h-full object-cover bg-black"
+              style={{
+                transform: 'translateZ(0)',
+                WebkitTransform: 'translateZ(0)',
+                willChange: 'transform'
+              }}
             />
           )}
 
@@ -610,7 +656,7 @@ export function VideoRecorderModal({
           {/* Zoom notification banner */}
           {zoomNotification && (
             <div className="absolute top-16 inset-x-4 max-w-sm mx-auto flex justify-center pointer-events-none z-40 animate-in fade-in">
-              <div className="px-4 py-2 rounded-xl bg-black/85 backdrop-blur-md border border-teal-400/60 text-teal-300 text-xs font-semibold shadow-2xl flex items-center gap-2">
+              <div className="px-4 py-2 rounded-xl bg-slate-900/95 border border-teal-400/60 text-teal-300 text-xs font-semibold shadow-2xl flex items-center gap-2">
                 <Camera className="w-4 h-4 text-teal-400 shrink-0" />
                 <span>{zoomNotification}</span>
               </div>
@@ -652,10 +698,9 @@ export function VideoRecorderModal({
             {/* Status / Live Telemetry */}
             <div className="pointer-events-auto flex items-center gap-2">
               {isRecording ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-red-500/60 shadow-lg text-white">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/90 border border-red-500/70 shadow-lg text-white">
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 animate-pulse"></span>
                   </span>
                   <span className="text-xs font-bold font-mono tracking-wider">
                     {formatTime(recordingSeconds)} / 03:00
@@ -665,14 +710,14 @@ export function VideoRecorderModal({
                   </span>
                 </div>
               ) : recordedBlob ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-emerald-500/60 text-white text-xs">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/90 border border-emerald-500/70 text-white text-xs">
                   <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                   <span className="font-bold font-mono">
                     {formatTime(recordingSeconds)} • {formatMB(recordedBlob.size)} MB (720p HD)
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white text-xs shadow-md">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/85 border border-white/20 text-white text-xs shadow-md">
                   <span className="w-2 h-2 rounded-full bg-teal-400"></span>
                   <span className="font-semibold text-[11px]">720p HD • Max 3 Min • 50 MB</span>
                 </div>
@@ -684,7 +729,7 @@ export function VideoRecorderModal({
               <button
                 type="button"
                 onClick={handleClose}
-                className="p-2 bg-black/50 hover:bg-black/75 backdrop-blur-md rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md"
+                className="p-2 bg-slate-900/85 hover:bg-slate-800 rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-md"
                 title="Close Camera (Esc)"
               >
                 <X className="w-5 h-5" />
@@ -695,7 +740,7 @@ export function VideoRecorderModal({
           {/* FLOATING ZOOM PRESET CONTROLS (Vertical Pill on the Right Side) */}
           {!recordedBlob && !cameraError && (
             <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-35 pointer-events-none">
-              <div className="pointer-events-auto flex flex-col items-center gap-1.5 p-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 shadow-2xl">
+              <div className="pointer-events-auto flex flex-col items-center gap-1.5 p-1.5 rounded-full bg-slate-950/90 border border-white/20 shadow-2xl">
                 {[0.5, 1, 2, 3, 5].map((preset) => (
                   <button
                     key={preset}
