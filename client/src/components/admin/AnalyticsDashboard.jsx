@@ -232,18 +232,41 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       
-      // 1. Detect dealer sheet if present
-      const dealerSheetName = workbook.SheetNames.find(s => {
+      // 1. Detect if this is a dealer workbook or has a dealer sheet
+      const fileNameLower = (file.name || '').toLowerCase();
+      const isDealerFileName = fileNameLower.includes('dealer');
+      
+      let dealerSheetName = workbook.SheetNames.find(s => {
         const n = s.trim().toLowerCase();
         return n.includes('dealer') || n === 'dealers';
       });
 
+      // If filename suggests dealer or not found by sheet name, check content of sheets
+      if (!dealerSheetName && isDealerFileName) {
+        dealerSheetName = workbook.SheetNames[0];
+      } else if (!dealerSheetName) {
+        for (const sName of workbook.SheetNames) {
+          const s = workbook.Sheets[sName];
+          const raw = XLSX.utils.sheet_to_json(s, { header: 1 });
+          if (raw && raw.length > 0) {
+            const firstRowStr = (raw[0] || []).join(' ').toLowerCase();
+            if (firstRowStr.includes('dealer') || firstRowStr.includes('firm') || String(raw[0]?.[1] || '').includes('MO.:')) {
+              dealerSheetName = sName;
+              break;
+            }
+          }
+        }
+      }
+
       // 2. Detect customer sheet (skip dealer sheet)
-      const customerSheetName = workbook.SheetNames.find(s => {
-        if (s === dealerSheetName) return false;
-        const n = s.trim().toUpperCase();
-        return n === 'ALL CUSTOMER' || n === 'ALL CUSTOMERS' || n === 'CUSTOMERS' || n === 'CUSTOMER' || n === 'SHEET1' || n === 'PART' || n.includes('REGISTER');
-      }) || workbook.SheetNames.find(s => s !== dealerSheetName) || (!dealerSheetName ? workbook.SheetNames[0] : null);
+      let customerSheetName = null;
+      if (!isDealerFileName || workbook.SheetNames.length > 1) {
+        customerSheetName = workbook.SheetNames.find(s => {
+          if (s === dealerSheetName) return false;
+          const n = s.trim().toUpperCase();
+          return n === 'ALL CUSTOMER' || n === 'ALL CUSTOMERS' || n === 'CUSTOMERS' || n === 'CUSTOMER' || n === 'SHEET1' || n === 'PART' || n.includes('REGISTER');
+        }) || workbook.SheetNames.find(s => s !== dealerSheetName);
+      }
 
       if (!dealerSheetName && !customerSheetName) {
         throw new Error('No valid customer or dealer sheet found in uploaded Excel workbook');
@@ -383,18 +406,24 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       // 1. Process Dealer Directory Sheet if present
       if (dealerSheetName && workbook.Sheets[dealerSheetName]) {
         const dealerSheet = workbook.Sheets[dealerSheetName];
-        const dealerRows = XLSX.utils.sheet_to_json(dealerSheet, { defval: '' });
-        for (const r of dealerRows) {
-          const dealerName = String(getExcelVal(r, ['DEALER NAME', 'Dealer Name', 'Dealer', 'Firm Name', 'Firm', 'Agency'])).trim();
-          if (!dealerName) continue;
-          const contactPerson = String(getExcelVal(r, ['CONTACT PERSON', 'Contact Person', 'Person Name', 'Person', 'Representative'])).trim();
-          const contactNo = String(getExcelVal(r, ['CONTACT NO.', 'Contact No.', 'Contact No', 'Mobile No', 'Phone', 'Mobile', 'Contact'])).trim();
+        const rawGrid = XLSX.utils.sheet_to_json(dealerSheet, { header: 1 });
+        if (Array.isArray(rawGrid) && rawGrid.length > 0) {
+          const firstRow = (rawGrid[0] || []).map(c => String(c || '').trim().toLowerCase());
+          const hasExplicitHeaders = firstRow.some(c => c.includes('dealer name') || c.includes('contact person') || c.includes('firm'));
+          const dataRows = hasExplicitHeaders ? rawGrid.slice(1) : rawGrid;
 
-          mappedDealers.push({
-            dealer_name: dealerName,
-            contact_person: contactPerson || null,
-            contact_no: contactNo || null
-          });
+          for (const r of dataRows) {
+            const dealerName = String(r[0] || '').trim();
+            if (!dealerName || dealerName.length < 2) continue;
+            const contactNo = String(r[1] || '').trim();
+            const contactPerson = String(r[2] || '').trim();
+
+            mappedDealers.push({
+              dealer_name: dealerName,
+              contact_person: contactPerson || null,
+              contact_no: contactNo || null
+            });
+          }
         }
       }
 

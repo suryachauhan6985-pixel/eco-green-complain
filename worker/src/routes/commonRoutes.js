@@ -1134,30 +1134,76 @@ commonRoutes.post('/dealers/sync', authenticateToken, requireRole('admin', 'staf
       return c.json({ success: true, count: 0, message: 'No dealer rows provided' });
     }
 
-    // Comprehensive helper to parse 10-digit Indian phone numbers
-    const parsePhones = (rawStr) => {
-      if (!rawStr) return [];
-      const s = String(rawStr).replace(/mo\.?:?/gi, ' ').replace(/phone:?/gi, ' ').replace(/mobile:?/gi, ' ');
-      const parts = s.split(/[,;\/|&\n]|(?:\band\b)/i);
-      const phones = [];
-      for (const part of parts) {
-        const digits = part.replace(/\D/g, '');
-        if (digits.length >= 10) {
-          if (digits.length === 12 && digits.startsWith('91')) {
-            phones.push(digits.slice(2));
-          } else if (digits.length === 11 && digits.startsWith('0')) {
-            phones.push(digits.slice(1));
-          } else if (digits.length === 10) {
-            phones.push(digits);
-          } else if (digits.length > 10) {
-            for (let i = 0; i <= digits.length - 10; i += 10) {
-              const sub = digits.slice(i, i + 10);
-              if (sub.length === 10) phones.push(sub);
-            }
+    // Advanced helper to extract 10-digit Indian mobile numbers and contact person from Column B
+    const extractContactInfo = (rawStr, existingPerson = null) => {
+      if (!rawStr || !String(rawStr).trim()) {
+        return { person: existingPerson, primary: null, alternates: null, raw: rawStr || '' };
+      }
+      const orig = String(rawStr).trim();
+      let text = orig;
+      let contactPerson = existingPerson;
+
+      if (!contactPerson) {
+        const parenMatch = text.match(/\(([^)]+)\)/);
+        if (parenMatch && /[a-zA-Z]{2,}/.test(parenMatch[1])) {
+          contactPerson = parenMatch[1].replace(/^mr\.?\s*|^mrs\.?\s*|^shri\s*/i, '').trim();
+          text = text.replace(parenMatch[0], ' ');
+        }
+      }
+
+      let cleaned = text.replace(/^(?:MO\.?|MO\.NO\.?|MOBILE|PHONE|PH\.?|M\.?|CONTECT(?:\s+NO\.?)?|CONTACT(?:\s+NO\.?)?)\s*[:.\-]?\s*/gi, ' ');
+      cleaned = cleaned.replace(/\b(?:MO\.?|MO\.NO\.?|MOBILE|PHONE|PH\.?|CONTECT|CONTACT)\s*[:.\-]?\s*/gi, ' ');
+
+      if (!contactPerson) {
+        const prefixMatch = cleaned.match(/^([A-Za-z\s.]{3,30})\s*[-:]\s*(?:\d|\+)/);
+        if (prefixMatch && !/^(?:mo|mobile|phone|call|whatsapp|no)$/i.test(prefixMatch[1].trim())) {
+          contactPerson = prefixMatch[1].trim();
+          cleaned = cleaned.slice(prefixMatch[0].length - 1);
+        } else {
+          const suffixMatch = cleaned.match(/(?:[-:,]\s*)?([A-Za-z\s.]{3,35})\s*[-:]*$/);
+          if (suffixMatch && !/^(?:mo|mobile|phone|call|whatsapp|etc|no)$/i.test(suffixMatch[1].trim())) {
+            contactPerson = suffixMatch[1].replace(/[-:]+$/, '').trim();
+            cleaned = cleaned.slice(0, suffixMatch.index);
           }
         }
       }
-      return Array.from(new Set(phones));
+
+      if (contactPerson) {
+        contactPerson = contactPerson.replace(/^[-:,\s]+|[-:,\s]+$/g, '').trim();
+        if (contactPerson.length < 2 || /^(?:mo|mobile|phone|null|na|no|no\.)$/i.test(contactPerson)) {
+          contactPerson = null;
+        }
+      }
+
+      const segments = cleaned.split(/[,;\/|]|\band\b/i);
+      const mobiles = [];
+      const landlines = [];
+      for (const seg of segments) {
+        const d = seg.replace(/\D/g, '');
+        if (/^[6-9]\d{9}$/.test(d)) mobiles.push(d);
+        else if (/^0[6-9]\d{9}$/.test(d)) mobiles.push(d.slice(1));
+        else if (/^91[6-9]\d{9}$/.test(d)) mobiles.push(d.slice(2));
+        else if (d.length > 10) {
+          const m = d.match(/[6-9]\d{9}/g);
+          if (m && m.length > 0) m.forEach(x => mobiles.push(x));
+          else landlines.push(d);
+        } else if (d.length >= 6) {
+          landlines.push(d);
+        }
+      }
+
+      const uMobiles = Array.from(new Set(mobiles));
+      const uLandlines = Array.from(new Set(landlines));
+      const primary = uMobiles.length > 0 ? uMobiles[0] : (uLandlines.length > 0 ? uLandlines[0] : null);
+      const alts = uMobiles.slice(1);
+      if (uMobiles.length > 0 && uLandlines.length > 0) alts.push(...uLandlines);
+
+      return {
+        person: contactPerson,
+        primary,
+        alternates: alts.length > 0 ? JSON.stringify(alts) : null,
+        raw: orig
+      };
     };
 
     if (isFirstBatch || (batchIndex === 0 && !body.append)) {
@@ -1192,14 +1238,12 @@ commonRoutes.post('/dealers/sync', authenticateToken, requireRole('admin', 'staf
       for (const d of chunk) {
         const name = String(d.dealer_name || d['DEALER NAME'] || d.name || '').trim();
         if (!name) continue;
-        const person = String(d.contact_person || d['CONTACT PERSON'] || d.person || '').trim() || null;
+        const initialPerson = String(d.contact_person || d['CONTACT PERSON'] || d.person || '').trim() || null;
         const rawContact = String(d.contact_no || d['CONTACT NO.'] || d.phone || d.mobile || '').trim() || null;
-        const phones = parsePhones(rawContact);
-        const primary = phones.length > 0 ? phones[0] : (rawContact ? rawContact.slice(0, 50) : null);
-        const alternates = phones.length > 1 ? JSON.stringify(phones.slice(1)) : null;
+        const info = extractContactInfo(rawContact, initialPerson);
 
         valueClauses.push(`($${pIdx}, $${pIdx+1}, $${pIdx+2}, $${pIdx+3}, $${pIdx+4})`);
-        values.push(name, person, primary, alternates, rawContact);
+        values.push(name, info.person, info.primary, info.alternates, info.raw);
         pIdx += 5;
         inserted++;
       }
