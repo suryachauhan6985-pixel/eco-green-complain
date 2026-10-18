@@ -1707,7 +1707,9 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
     const body = await c.req.json().catch(() => ({}));
-    const { payment_collected, payment_mode, payment_notes, collection_reason } = body;
+    const { payment_collected, payment_mode, payment_method, payment_notes, notes, collection_reason } = body;
+    const finalPaymentMode = (payment_mode || payment_method || 'Cash').trim();
+    const finalPaymentNotes = (payment_notes || notes || '').trim();
 
     const compRes = await query('SELECT * FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1', [id], c.env, c.executionCtx);
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
@@ -1747,11 +1749,11 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
            payment_mode = $3,
            payment_notes = $4,
            collection_reason = $5,
-           company_settlement_status = 'Pending Settlement',
+           company_settlement_status = CASE WHEN company_settlement_status = 'Settled with Company' THEN 'Settled with Company' ELSE 'Pending Settlement' END,
            payment_collected_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $6`,
-      [collectedAmt, status, payment_mode || 'Cash', payment_notes || '', collection_reason || '', complaint.id],
+      [collectedAmt, status, finalPaymentMode, finalPaymentNotes, collection_reason || '', complaint.id],
       c.env,
       c.executionCtx
     );
@@ -1765,16 +1767,16 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
     let noteText = '';
     if (isAdjustment) {
       actionName = 'Payment Record Adjusted';
-      noteText = `Payment record adjusted by Admin (${collector}) from ₹${prevAmt} to ₹${collectedAmt} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+      noteText = `Payment record adjusted by Admin (${collector}) from ₹${prevAmt} to ₹${collectedAmt} via ${finalPaymentMode}.${collection_reason ? ` Reason: ${collection_reason}` : ''}${finalPaymentNotes ? ` Note: ${finalPaymentNotes}` : ''}`;
     } else if (isReentry) {
       actionName = 'Corrected Payment Recorded';
-      noteText = `Corrected payment collection of ₹${collectedAmt} recorded via ${payment_mode || 'Cash'} by ${collector}.${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+      noteText = `Corrected payment collection of ₹${collectedAmt} recorded via ${finalPaymentMode} by ${collector}.${finalPaymentNotes ? ` Note: ${finalPaymentNotes}` : ''}`;
     } else if (isDirectOffice) {
       actionName = 'Office Payment Collected';
-      noteText = `Direct office payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'} by ${collector}.`;
+      noteText = `Direct office payment of ₹${collectedAmt} collected via ${finalPaymentMode} by ${collector}.${finalPaymentNotes ? ` Note: ${finalPaymentNotes}` : ''}`;
     } else {
       actionName = 'Payment Collected';
-      noteText = `Payment of ₹${collectedAmt} collected via ${payment_mode || 'Cash'}.${collection_reason ? ` (${collection_reason})` : ''}`;
+      noteText = `Payment of ₹${collectedAmt} collected via ${finalPaymentMode}.${collection_reason ? ` (${collection_reason})` : ''}${finalPaymentNotes ? ` Note: ${finalPaymentNotes}` : ''}`;
     }
 
     await query(
@@ -1784,9 +1786,21 @@ complaintRoutes.post('/:id/payment', authenticateToken, async (c) => {
       c.executionCtx
     );
 
+    const updatedRes = await query(
+      `SELECT c.*, t.name as technician_name, t.phone as technician_phone 
+       FROM complaints c 
+       LEFT JOIN technicians t ON c.assigned_technician_id = t.id 
+       WHERE c.id = $1`,
+      [complaint.id],
+      c.env,
+      c.executionCtx
+    );
+    const updatedComplaint = updatedRes.rows[0] || null;
+
     return c.json({
       success: true,
-      message: isAdjustment ? 'Payment record adjusted successfully' : 'Payment recorded successfully'
+      message: isAdjustment ? 'Payment record adjusted successfully' : 'Payment recorded successfully',
+      complaint: updatedComplaint
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);

@@ -1617,9 +1617,23 @@ export const ComplaintDetailDrawer = ({
         return;
       }
     }
+    const rawMode = String(ticket.payment_mode || ticket.payment_method || '').trim();
+    let normalizedMethod = 'Cash';
+    if (rawMode.toLowerCase().includes('upi')) {
+      normalizedMethod = 'UPI';
+    } else if (rawMode.toLowerCase().includes('bank') || rawMode.toLowerCase().includes('neft') || rawMode.toLowerCase().includes('imps')) {
+      normalizedMethod = 'Bank Transfer';
+    } else if (rawMode.toLowerCase().includes('cheque')) {
+      normalizedMethod = 'Cheque';
+    } else if (rawMode.toLowerCase().includes('cash')) {
+      normalizedMethod = 'Cash';
+    } else if (rawMode) {
+      normalizedMethod = rawMode;
+    }
+
     setPaymentData({
       payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
-      payment_method: ticket.payment_mode || 'Cash',
+      payment_method: normalizedMethod,
       payment_notes: ticket.payment_notes || '',
       collection_reason: ticket.collection_reason || ''
     });
@@ -1673,7 +1687,12 @@ export const ComplaintDetailDrawer = ({
     try {
       setSavingPayment(true);
       const wasAlreadyCollected = isPaymentFullyCollected;
-      await api.recordPayment(ticket.id, paymentData);
+      await api.recordPayment(ticket.id, {
+        ...paymentData,
+        payment_mode: paymentData.payment_method,
+        payment_method: paymentData.payment_method,
+        payment_notes: paymentData.payment_notes
+      });
       await fetchTicketDetails();
       setIsRecordingPayment(false);
       setShowUnderpaidWarning(false);
@@ -2291,6 +2310,21 @@ export const ComplaintDetailDrawer = ({
                           <span className="text-[11px] text-slate-500 block">Payment Collected:</span>
                           <strong className="text-base font-black text-emerald-700">₹{ticket.payment_collected || 0}</strong>
                           <span className="text-[10px] text-slate-500 block">Status: {ticket.payment_status || 'Unpaid'}</span>
+                          {Number(ticket.payment_collected || 0) > 0 && (
+                            <div className="mt-1 space-y-1">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                                {ticket.payment_mode?.toLowerCase().includes('upi') ? '📱 UPI / QR Code' :
+                                 ticket.payment_mode?.toLowerCase().includes('bank') ? '🏦 Bank Transfer' :
+                                 ticket.payment_mode?.toLowerCase().includes('cheque') ? '📜 Cheque' :
+                                 '💵 ' + (ticket.payment_mode === 'Cash' ? 'Cash to Technician' : (ticket.payment_mode || 'Cash to Technician'))}
+                              </span>
+                              {ticket.payment_notes && (
+                                <span className="text-[10px] text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 block truncate" title={ticket.payment_notes}>
+                                  📝 {ticket.payment_notes}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {ticket.collection_reason && (
                             <span className="text-[10px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block mt-1 truncate" title={ticket.collection_reason}>
                               Reason: {ticket.collection_reason}

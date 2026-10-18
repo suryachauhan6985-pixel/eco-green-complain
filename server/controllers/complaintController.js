@@ -892,13 +892,14 @@ async function recordPayment(req, res) {
         payment_collected_at = CURRENT_TIMESTAMP,
         payment_mode = ?,
         payment_status = ?,
+        payment_notes = ?,
         company_settlement_status = ?,
         company_settled_at = ?,
         company_settled_by = ?,
         collection_reason = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(amount, finalPaymentMode, paymentStatus, settlementStatus, settledAt, settledBy, finalReason || complaint.collection_reason || null, id);
+    `).run(amount, finalPaymentMode, paymentStatus, finalNotes || null, settlementStatus, settledAt, settledBy, finalReason || complaint.collection_reason || null, id);
 
     const noteTextParts = [
       `Payment of ₹${amount} recorded via ${finalPaymentMode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''}`,

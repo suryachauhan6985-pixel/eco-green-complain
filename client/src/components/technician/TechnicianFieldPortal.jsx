@@ -571,9 +571,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         const status = String(c.company_settlement_status || '').toLowerCase();
         const city = String(c.city || '').toLowerCase();
         const address = String(c.customer_address || '').toLowerCase();
+        const payMode = String(c.payment_mode || '').toLowerCase();
+        const payNotes = String(c.payment_notes || '').toLowerCase();
+        const collReason = String(c.collection_reason || '').toLowerCase();
         return ticketId.includes(q) || custName.includes(q) || custPhone.includes(q) ||
                fault.includes(q) || prod.includes(q) || amt.includes(q) ||
-               settledBy.includes(q) || status.includes(q) || city.includes(q) || address.includes(q);
+               settledBy.includes(q) || status.includes(q) || city.includes(q) || address.includes(q) ||
+               payMode.includes(q) || payNotes.includes(q) || collReason.includes(q);
       });
     }
 
@@ -987,9 +991,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                   const status = String(comp.company_settlement_status || '').toLowerCase();
                   const city = String(comp.city || '').toLowerCase();
                   const address = String(comp.customer_address || '').toLowerCase();
+                  const payMode = String(comp.payment_mode || '').toLowerCase();
+                  const payNotes = String(comp.payment_notes || '').toLowerCase();
+                  const collReason = String(comp.collection_reason || '').toLowerCase();
                   return ticketId.includes(q) || custName.includes(q) || custPhone.includes(q) ||
                          fault.includes(q) || prod.includes(q) || amt.includes(q) ||
-                         settledBy.includes(q) || status.includes(q) || city.includes(q) || address.includes(q);
+                         settledBy.includes(q) || status.includes(q) || city.includes(q) || address.includes(q) ||
+                         payMode.includes(q) || payNotes.includes(q) || collReason.includes(q);
                 });
 
                 // Skip tech card if search term is active and there are no matches for this tech
@@ -1131,20 +1139,60 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                                       <span className="text-[10px] text-slate-400 block">{comp.product_type}</span>
                                     </td>
                                     <td className="py-2.5 px-3 font-mono">
-                                      <strong className="text-slate-900 text-xs font-black">₹{comp.payment_collected || 0}</strong>
-                                      <span className="text-[10px] text-slate-400 block">({comp.payment_status || 'Paid'})</span>
+                                      <div className="flex items-center gap-1.5">
+                                        <strong className="text-slate-900 text-xs font-black">₹{comp.payment_collected || 0}</strong>
+                                        <span className="text-[10px] text-slate-400">({comp.payment_status || 'Paid'})</span>
+                                      </div>
+
+                                      {/* Payment Method Badge */}
+                                      <div className="mt-1">
+                                        {comp.payment_mode?.toLowerCase().includes('upi') ? (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 font-sans">
+                                            <span>📱 UPI / QR Code</span>
+                                          </span>
+                                        ) : comp.payment_mode?.toLowerCase().includes('bank') ? (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 font-sans">
+                                            <span>🏦 Bank Transfer</span>
+                                          </span>
+                                        ) : comp.payment_mode?.toLowerCase().includes('cheque') ? (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 font-sans">
+                                            <span>📜 Cheque</span>
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 font-sans">
+                                            <span>💵 {comp.payment_mode === 'Cash' ? 'Cash to Tech' : (comp.payment_mode || 'Cash to Tech')}</span>
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Payment Notes / Reference No */}
+                                      {comp.payment_notes && (
+                                        <span 
+                                          className="text-[10px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-sans font-medium block mt-1 break-words max-w-[200px]" 
+                                          title={comp.payment_notes}
+                                        >
+                                          📝 {comp.payment_notes}
+                                        </span>
+                                      )}
+
+                                      {/* Reason if applicable */}
                                       {comp.collection_reason && (
-                                        <span className="text-[10px] text-amber-900 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 font-sans font-semibold block mt-0.5 truncate max-w-[160px]" title={comp.collection_reason}>
+                                        <span 
+                                          className="text-[10px] text-amber-900 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 font-sans font-semibold block mt-0.5 break-words max-w-[200px]" 
+                                          title={comp.collection_reason}
+                                        >
                                           📋 {comp.collection_reason}
                                         </span>
                                       )}
+
+                                      {/* Timestamp */}
                                       {comp.payment_collected_at ? (
-                                        <span className="text-[9px] text-slate-600 font-sans block mt-0.5" title="Customer Payment Collection Date & Timestamp">
+                                        <span className="text-[9px] text-slate-600 font-sans block mt-1" title="Customer Payment Collection Date & Timestamp">
                                           📅 {formatIndianDateOnly(comp.payment_collected_at)}{' '}
                                           ⏰ {formatIndianTimeOnly(comp.payment_collected_at)}
                                         </span>
                                       ) : (
-                                        <span className="text-[9px] text-slate-400 font-sans block mt-0.5">Date recorded</span>
+                                        <span className="text-[9px] text-slate-400 font-sans block mt-1">Date recorded</span>
                                       )}
                                     </td>
                                     <td className="py-2.5 px-3">

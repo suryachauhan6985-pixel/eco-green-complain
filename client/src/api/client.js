@@ -508,14 +508,14 @@ class LocalMockStore {
     return comp;
   }
 
-  recordPayment(id, { payment_collected, payment_notes, payment_method, collection_reason }) {
+  recordPayment(id, { payment_collected, payment_notes, payment_method, payment_mode, collection_reason }) {
     const list = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
     const comp = list.find(c => String(c.id) === String(id));
     if (comp) {
       comp.payment_collected = Number(payment_collected || 0);
       if (collection_reason) comp.collection_reason = collection_reason;
-      if (payment_method) comp.payment_mode = payment_method;
-      if (payment_notes) comp.payment_notes = payment_notes;
+      comp.payment_mode = payment_mode || payment_method || comp.payment_mode || 'Cash';
+      if (payment_notes !== undefined) comp.payment_notes = payment_notes;
       const est = Number(comp.estimated_charges || 0);
       if (comp.payment_collected >= est && est > 0) {
         comp.payment_status = 'Collected';
@@ -1581,9 +1581,15 @@ export const api = {
     return res;
   },
   recordPayment: async (id, paymentData) => {
+    const payload = {
+      ...paymentData,
+      payment_mode: paymentData.payment_mode || paymentData.payment_method || 'Cash',
+      payment_method: paymentData.payment_method || paymentData.payment_mode || 'Cash',
+      payment_notes: paymentData.payment_notes !== undefined ? paymentData.payment_notes : ''
+    };
     const res = await request(`/complaints/${id}/payment`, {
       method: 'POST',
-      body: JSON.stringify(paymentData)
+      body: JSON.stringify(payload)
     });
     if (res && res.complaint) {
       saveComplaintPermanently(res.complaint);
