@@ -532,7 +532,6 @@ function AppContent() {
           <div key={currentTab} className="tab-content-enter flex-1 min-h-0 w-full flex flex-col">
             {currentTab === 'complaints' && (
               <ComplaintList
-                key={`comp-${refreshKey}`}
                 refreshKey={refreshKey}
                 initialFilters={complaintFilters}
                 onSelectComplaint={handleSelectComplaint}

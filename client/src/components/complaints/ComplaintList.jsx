@@ -83,6 +83,10 @@ export const ComplaintList = ({
 
   const getInitialStatusFilter = () => {
     if (initialFilters?.status !== undefined) return initialFilters.status;
+    try {
+      const savedStatus = sessionStorage.getItem('egs_complaints_active_status');
+      if (savedStatus) return savedStatus;
+    } catch (_) {}
     return 'Unassigned';
   };
 
@@ -97,6 +101,9 @@ export const ComplaintList = ({
   // Manual filter handlers - Only change when explicitly clicked/selected by user
   const handleStatusFilterChange = (st) => {
     setStatusFilter(st);
+    try {
+      sessionStorage.setItem('egs_complaints_active_status', st);
+    } catch (_) {}
   };
 
   const handleProductFilterChange = (prod) => {
@@ -120,7 +127,12 @@ export const ComplaintList = ({
   // Only apply initialFilters when explicitly passed from an external caller
   useEffect(() => {
     if (initialFilters) {
-      if (initialFilters.status !== undefined) setStatusFilter(initialFilters.status);
+      if (initialFilters.status !== undefined) {
+        setStatusFilter(initialFilters.status);
+        try {
+          sessionStorage.setItem('egs_complaints_active_status', initialFilters.status);
+        } catch (_) {}
+      }
       if (initialFilters.product_type !== undefined) setProductFilter(initialFilters.product_type);
       if (initialFilters.priority !== undefined) setPriorityFilter(initialFilters.priority);
       if (initialFilters.search !== undefined) setSearch(initialFilters.search);
@@ -194,6 +206,16 @@ export const ComplaintList = ({
       setIsRefreshing(false);
     }
   };
+
+  const prevRefreshKeyRef = useRef(refreshKey);
+  useEffect(() => {
+    if (prevRefreshKeyRef.current !== refreshKey) {
+      prevRefreshKeyRef.current = refreshKey;
+      fetchComplaints(true);
+      fetchTechnicians(true);
+      fetchProducts(true);
+    }
+  }, [refreshKey]);
 
   useEffect(() => {
     fetchComplaints();
