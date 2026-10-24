@@ -126,7 +126,8 @@ async function handleIncomingWebhook(req, res) {
             const newStatus = st.status;
             const recipientPhone = st.recipient_id ? normalizePhone(st.recipient_id) : null;
             const errCode = st.errors?.[0]?.code ? String(st.errors[0].code) : null;
-            const errMsg = st.errors?.[0]?.message || st.errors?.[0]?.title || null;
+            const errDetail = st.errors?.[0]?.error_data?.details;
+            const errMsg = errDetail || st.errors?.[0]?.message || st.errors?.[0]?.title || null;
 
             // Raw Event Audit Log
             try {
@@ -148,6 +149,16 @@ async function handleIncomingWebhook(req, res) {
             } catch (e) {
               // Ignore if not present
             }
+
+            try {
+              notificationService.emit('whatsapp_status_update', {
+                wam_id: wamId,
+                status: newStatus,
+                failure_reason: errMsg,
+                error_code: errCode,
+                phone: recipientPhone
+              });
+            } catch (sseErr) {}
 
             if (newStatus === 'failed') {
               const isNotOnWa = (st.errors || []).some(err => err.code === 131026 || String(err.message || '').toLowerCase().includes('not a valid whatsapp user'));

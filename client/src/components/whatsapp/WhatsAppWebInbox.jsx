@@ -33,7 +33,8 @@ import {
   Users, Sparkles, Settings, MessageSquare, Radio, Copy,
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
   Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera,
-  Share2, Reply, MapPin, Star, Archive, WifiOff, Zap, Upload
+  Share2, Reply, MapPin, Star, Archive, WifiOff, Zap, Upload,
+  CreditCard, AlertTriangle
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
@@ -131,6 +132,48 @@ function isUnsupportedOrInteractiveMessage(msg) {
     body.includes('interactive item') ||
     body.includes('interactive reply')
   );
+}
+
+// Official Meta Business Billing Hub Wizard URL for settling overdue payments
+export const META_BILLING_PAY_URL = 'https://business.facebook.com/billing_hub/accounts/details/?business_id=771578932694732&asset_id=1015283491554000&wizard_name=PAY_NOW&account_type=whatsapp-business-account';
+
+export function getFailedMessageErrorInfo(msg) {
+  const reason = String(msg?.failure_reason || '').toLowerCase();
+  const isBillingIssue = reason.includes('payment') || reason.includes('unsettled') || reason.includes('business eligibility') || reason.includes('131042') || reason.includes('billing');
+  const isInvalidUser = reason.includes('131026') || reason.includes('not a valid whatsapp user');
+  const is24hWindow = reason.includes('131047') || reason.includes('24h') || reason.includes('window') || reason.includes('re-engagement');
+
+  if (isBillingIssue) {
+    return {
+      type: 'billing',
+      title: 'Meta WhatsApp Business Billing Issue (Unsettled Payment)',
+      detail: 'Meta Cloud API has paused automated template delivery due to an unsettled payment on your WhatsApp Business Account. Settle your outstanding balance on Meta Billing Hub, or use 1-Click WhatsApp Web below to send immediately.',
+      payUrl: META_BILLING_PAY_URL,
+      isBilling: true
+    };
+  }
+  if (isInvalidUser) {
+    return {
+      type: 'invalid_user',
+      title: 'Recipient Phone Not on WhatsApp (Meta 131026)',
+      detail: 'This customer phone number is not registered on WhatsApp.',
+      isBilling: false
+    };
+  }
+  if (is24hWindow) {
+    return {
+      type: 'window_expired',
+      title: 'Meta 24h Customer Window Expired',
+      detail: 'The customer 24-hour reply window has expired. Use 1-Click WhatsApp Web to bypass Meta restrictions.',
+      isBilling: false
+    };
+  }
+  return {
+    type: 'meta_error',
+    title: msg?.failure_reason ? `Meta Delivery Failed: ${msg.failure_reason}` : 'Meta Cloud API Delivery Unsuccessful',
+    detail: msg?.failure_reason || 'Message was rejected or could not be delivered by Meta Cloud API.',
+    isBilling: false
+  };
 }
 
 const EMOJI_CATEGORIES = {
@@ -2592,42 +2635,65 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* 1-Click WhatsApp Web / App Dispatch & Retry Action Bar for Failed Messages */}
-                {msg.status === 'failed' && !isCustomer && (
-                  <div className="mt-2.5 pt-2 border-t border-rose-200/90 clear-both flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between gap-1 text-[10px] text-rose-700 font-semibold">
-                      <span className="flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                        Meta 24h Window Expired / Template Restriction
-                      </span>
+                {msg.status === 'failed' && !isCustomer && (() => {
+                  const errInfo = getFailedMessageErrorInfo(msg);
+                  return (
+                    <div className={`mt-2.5 pt-2 border-t ${errInfo.isBilling ? 'border-amber-300/90' : 'border-rose-200/90'} clear-both flex flex-col gap-1.5`}>
+                      <div className={`flex flex-col gap-0.5 text-[10px] ${errInfo.isBilling ? 'text-amber-800' : 'text-rose-700'} font-semibold`}>
+                        <span className="flex items-center gap-1 font-bold">
+                          {errInfo.isBilling ? (
+                            <CreditCard className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          )}
+                          <span>{errInfo.title}</span>
+                        </span>
+                        <p className={`text-[9.5px] font-normal leading-snug ${errInfo.isBilling ? 'text-amber-700' : 'text-rose-600'}`}>
+                          {errInfo.detail}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        {errInfo.payUrl && (
+                          <a
+                            href={errInfo.payUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded-md flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+                            title="Open Meta Business Billing Hub to settle overdue payment"
+                          >
+                            <CreditCard className="w-3 h-3 text-white" />
+                            <span>Pay on Meta Billing Hub</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenInWhatsAppWeb(msg);
+                          }}
+                          className="px-2.5 py-1 bg-[#25D366] hover:bg-[#20bd5a] text-white text-[10px] font-bold rounded-md flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+                          title="Open WhatsApp Web or App with this text prefilled and send in 1 click without Meta API restrictions"
+                        >
+                          <ExternalLink className="w-3 h-3 text-white" />
+                          <span>Send via WhatsApp Web (1-Click)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRetryMessage(msg);
+                          }}
+                          className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-md border border-slate-300 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Retry sending via Meta Cloud API"
+                        >
+                          <RotateCcw className="w-3 h-3 text-slate-600" />
+                          <span>Retry API</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenInWhatsAppWeb(msg);
-                        }}
-                        className="px-2.5 py-1 bg-[#25D366] hover:bg-[#20bd5a] text-white text-[10px] font-bold rounded-md flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
-                        title="Open WhatsApp Web or App with this text prefilled and send in 1 click without Meta API restrictions"
-                      >
-                        <ExternalLink className="w-3 h-3 text-white" />
-                        <span>Send via WhatsApp Web (1-Click)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRetryMessage(msg);
-                        }}
-                        className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-md border border-slate-300 flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Retry sending via Meta Cloud API"
-                      >
-                        <RotateCcw className="w-3 h-3 text-slate-600" />
-                        <span>Retry API</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Reaction Pill Badge at bottom of bubble */}
                 <WhatsAppReactionPill
@@ -3379,6 +3445,32 @@ export const WhatsAppWebInbox = ({
                 )}
               </div>
             </div>
+
+            {/* Meta Billing Alert Notice for Conversation */}
+            {messages.some(m => {
+              const r = String(m?.failure_reason || '').toLowerCase();
+              return m?.status === 'failed' && (r.includes('payment') || r.includes('unsettled') || r.includes('business eligibility') || r.includes('131042') || r.includes('billing'));
+            }) && (
+              <div className="bg-amber-100/95 border-b border-amber-300 px-4 py-2 flex items-center justify-between text-xs text-amber-950 shrink-0 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CreditCard className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span className="truncate sm:whitespace-normal font-medium">
+                    <strong>Meta Billing Action Required:</strong> Meta Cloud API has paused automatic message delivery due to an unsettled payment on your WhatsApp Business Account.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <a
+                    href={META_BILLING_PAY_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white font-bold rounded flex items-center gap-1 text-[11px] shadow-xs cursor-pointer"
+                  >
+                    <CreditCard className="w-3.5 h-3.5 text-white" />
+                    <span>Pay Bill on Meta</span>
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* Context Bar: Technician Dispatch Channel OR Customer Inquiry Ticket Bar */}
             {(contactInfo?.is_technician || selectedConv?.is_technician) ? (

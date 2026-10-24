@@ -81,12 +81,17 @@ async function sendWhatsAppMessage({ to, message, templateName, metaStatus, vari
     // Primary: Check if template exists in DB with dynamic components synced from Meta
     let dynamicPayloadBuilt = false;
     try {
-      const tmplRes = await db.query(
-        'SELECT * FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1',
-        [templateName]
-      );
-      if (tmplRes?.rows?.[0]?.components_json) {
-        const dynamicTmpl = tmplRes.rows[0];
+      let dynamicTmpl = null;
+      if (typeof db.query === 'function') {
+        const tmplRes = await db.query(
+          'SELECT * FROM notification_templates WHERE template_key = $1 OR meta_template_name = $1 LIMIT 1',
+          [templateName]
+        );
+        dynamicTmpl = tmplRes?.rows?.[0];
+      } else if (typeof db.prepare === 'function') {
+        dynamicTmpl = db.prepare('SELECT * FROM notification_templates WHERE template_key = ? OR meta_template_name = ? LIMIT 1').get(templateName, templateName);
+      }
+      if (dynamicTmpl?.components_json) {
         const dynamicPayload = buildDynamicPayload(dynamicTmpl, formattedPhone, {
           ...variables,
           customer_name: cleanParam(variables.customer_name, 'Valued Customer'),
