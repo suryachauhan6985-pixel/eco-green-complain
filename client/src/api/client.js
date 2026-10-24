@@ -1525,6 +1525,23 @@ export const api = {
     }
     return res;
   },
+  sendWhatsAppTemplate: async (phone, templateName, variables = {}, complaintId = null) => {
+    try {
+      const res = await request('/whatsapp/send-template', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone,
+          template_name: templateName,
+          variables,
+          complaint_id: complaintId
+        })
+      });
+      return res;
+    } catch (e) {
+      console.warn('sendWhatsAppTemplate error:', e.message);
+      return { success: false, error: e.message };
+    }
+  },
   getComplaint: (id) => request(`/complaints/${id}`),
   getCustomerHistory: (phone) => request(`/complaints/customer-history?phone=${encodeURIComponent(phone)}`),
   checkActiveComplaint: (phone, name, product_type) => 

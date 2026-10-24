@@ -2081,6 +2081,51 @@ app.post('/api/whatsapp/direct-reply', authenticateToken, requireRole('admin', '
   }
 });
 
+
+// Send approved Meta Template directly
+app.post('/api/whatsapp/send-template', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { phone, template_name, variables = {}, complaint_id } = req.body;
+    if (!phone || !template_name) {
+      return res.status(400).json({ error: 'phone and template_name are required' });
+    }
+
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    let complaint = null;
+    if (complaint_id) {
+      complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(complaint_id);
+    }
+    if (!complaint) {
+      complaint = db.prepare(`SELECT * FROM complaints WHERE REPLACE(REPLACE(customer_phone, ' ', ''), '+', '') LIKE ? ORDER BY id DESC LIMIT 1`).get(`%${last10}%`);
+    }
+
+    const { sendWhatsAppMessage } = require('./services/whatsappProvider');
+    const sendRes = await sendWhatsAppMessage({
+      to: formattedPhone,
+      templateName: template_name,
+      variables: {
+        ...variables,
+        customer_name: variables.customer_name || complaint?.customer_name || 'Valued Customer',
+        complaint_id: complaint?.ticket_id || variables.complaint_id || 'Ticket'
+      },
+      recipient_name: variables.customer_name || complaint?.customer_name || 'Valued Customer',
+      ticket_id: complaint?.ticket_id || null
+    });
+
+    res.json({
+      success: sendRes.success,
+      wamid: sendRes.messageId,
+      error: sendRes.error
+    });
+  } catch (err) {
+    console.error('Error sending WhatsApp template:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 8. Smart Retry failed WhatsApp message (re-dispatches using approved Meta template if template was used)
 app.post('/api/whatsapp/retry-message/:id', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
   try {

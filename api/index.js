@@ -6489,6 +6489,52 @@ app.post('/api/whatsapp/set-number-status', authenticateToken, async (req, res) 
 });
 
 // Retry failed WhatsApp message
+
+// Send approved Meta Template directly
+app.post('/api/whatsapp/send-template', authenticateToken, async (req, res) => {
+  try {
+    const { phone, template_name, variables = {}, complaint_id } = req.body || {};
+    if (!phone || !template_name) {
+      return res.status(400).json({ error: 'phone and template_name are required' });
+    }
+
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('91') ? cleanPhone : (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone);
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    let complaint = null;
+    if (complaint_id) {
+      const cRes = await query('SELECT * FROM complaints WHERE id = $1', [complaint_id]);
+      complaint = cRes.rows[0] || null;
+    }
+    if (!complaint) {
+      const cRes = await query(`SELECT * FROM complaints WHERE RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', '', 'g'), 10) = $1 ORDER BY id DESC LIMIT 1`, [last10]);
+      complaint = cRes.rows[0] || null;
+    }
+
+    const waRes = await sendWhatsApp({
+      to: formattedPhone,
+      templateName: template_name,
+      variables: {
+        ...variables,
+        customer_name: variables.customer_name || complaint?.customer_name || 'Valued Customer',
+        complaint_id: complaint?.ticket_id || variables.complaint_id || 'Ticket',
+        ticket_id: complaint?.ticket_id || variables.ticket_id || 'Ticket'
+      },
+      senderName: req.user?.name || 'Eco Green Staff'
+    });
+
+    return res.json({
+      success: waRes.success,
+      wamid: waRes.wamid,
+      error: waRes.error
+    });
+  } catch (err) {
+    console.error('Error sending WhatsApp template:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/whatsapp/retry-message/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;

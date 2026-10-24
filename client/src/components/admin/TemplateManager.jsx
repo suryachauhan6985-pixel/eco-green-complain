@@ -37,6 +37,7 @@ export const TRIGGER_OPTIONS = [
   { id: 'site_survey_work_order', label: 'Site Survey Work Order (Technician Dispatch)', audience: 'technician', desc: 'Fires to technician/engineer with site location, roof feasibility instructions' },
   { id: 'site_survey_resolved', label: 'Site Survey Completed / Feasibility Done (Customer)', audience: 'customer', desc: 'Fires to customer when survey engineer completes measurements and report' },
   { id: 'site_survey_reach_out', label: 'Site Survey WhatsApp Reachout (Technician Quick Chat)', audience: 'customer', desc: 'Pre-fills surveyor message when contacting customer before site visit' },
+  { id: 'customer_support_greeting', label: 'Customer Support Greeting & Connect (New Chat)', audience: 'customer', desc: 'Official Meta template sent to initiate contact with customer so they can send fault photos & details' },
   { id: 'custom_trigger', label: 'Custom Outbound Trigger', audience: 'all', desc: 'Triggered via custom API or manual supervisor broadcast' }
 ];
 
