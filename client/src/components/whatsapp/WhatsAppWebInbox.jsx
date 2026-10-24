@@ -1293,7 +1293,8 @@ export const WhatsAppWebInbox = ({
       }
       if (res && (res.success || res.status === 'sent')) {
         showToast('Message retried & delivered to Meta Cloud API!', 'success');
-        fetchChatHistory(targetPhone);
+        loadMessages(targetPhone);
+        loadConversations(true);
       } else {
         showToast('Retry failed: ' + (res?.error || res?.failure_reason || 'Rejected by Meta'), 'error');
       }
