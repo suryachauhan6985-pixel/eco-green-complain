@@ -416,7 +416,7 @@ export const ComplaintList = ({
       return nonStatusFilteredComplaints.filter(c => c.status === 'Draft').length;
     }
     if (st === 'Unassigned') {
-      return nonStatusFilteredComplaints.filter(c => (c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id) && c.status !== 'Draft').length;
+      return nonStatusFilteredComplaints.filter(c => (!c.status || c.status === 'Unassigned' || c.status === 'Registered') && c.status !== 'Draft').length;
     }
     return nonStatusFilteredComplaints.filter(c => c.status === st).length;
   };
@@ -743,7 +743,7 @@ export const ComplaintList = ({
             } else if (statusFilter.toLowerCase() === 'draft') {
               if (c.status !== 'Draft') return false;
             } else if (statusFilter.toLowerCase() === 'unassigned') {
-              const isUnassigned = (c.status === 'Unassigned' || c.status === 'Registered' || !c.assigned_technician_id) && c.status !== 'Draft';
+              const isUnassigned = (!c.status || c.status === 'Unassigned' || c.status === 'Registered') && c.status !== 'Draft';
               if (!isUnassigned) return false;
             } else if (c.status !== statusFilter) {
               return false;

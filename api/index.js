@@ -2484,7 +2484,7 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
 
     if (status && status !== 'all') {
       if (status.toLowerCase() === 'unassigned') {
-        whereClauses.push("(c.status = 'Unassigned' OR c.status = 'Registered' OR c.assigned_technician_id IS NULL)");
+        whereClauses.push("((c.status = 'Unassigned' OR c.status = 'Registered' OR c.status IS NULL) AND (c.status != 'Draft' OR c.status IS NULL))");
       } else {
         params.push(status);
         whereClauses.push(`c.status = $${params.length}`);
