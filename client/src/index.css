@@ -26,6 +26,9 @@
 
 /* ================= Butter-Smooth UI Animation & Transition Engine ================= */
 :root {
+  --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-apple-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-apple-bounce: cubic-bezier(0.34, 1.3, 0.64, 1);
   --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quad: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -34,18 +37,19 @@
 /* 1. Universal Tactile Micro-Interactions for Buttons & Interactive Controls */
 button:not(:disabled):not(.no-press-feedback),
 [role="button"]:not([aria-disabled="true"]):not(.no-press-feedback) {
-  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1),
-              background-color 140ms ease,
-              border-color 140ms ease,
-              opacity 140ms ease,
-              color 140ms ease;
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 160ms ease,
+              color 160ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:not(:disabled):not(.no-press-feedback):active,
 [role="button"]:not([aria-disabled="true"]):not(.no-press-feedback):active {
-  transform: scale(0.968) !important;
+  transform: scale(0.965) translateZ(0) !important;
 }
 
 /* 2. Keyframes for Hardware-Accelerated Transforms and Opacity */
@@ -116,12 +120,12 @@ button:not(:disabled):not(.no-press-feedback):active,
 
 @keyframes tabContentEnter {
   0% {
-    opacity: 0.88;
-    transform: translateY(3px);
+    opacity: 0;
+    transform: scale(0.995) translateY(4px) translateZ(0);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1) translateY(0) translateZ(0);
   }
 }
 
@@ -234,8 +238,34 @@ button:not(:disabled):not(.no-press-feedback):active,
 
 /* 4. Dedicated Enterprise Smooth Classes */
 .tab-content-enter {
-  animation: tabContentEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabContentEnter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Apple Segmented Pills (Fast, bouncy, spring tactile feedback) */
+.apple-segmented-pill {
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+.apple-segmented-pill:active {
+  transform: scale(0.95) translateZ(0) !important;
+}
+
+/* Apple Card Interactive Micro-Animations */
+.apple-card-interactive {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 200ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform, box-shadow;
+  transform: translateZ(0);
+}
+.apple-card-interactive:hover {
+  transform: translateY(-1.5px) translateZ(0);
+}
+.apple-card-interactive:active {
+  transform: scale(0.985) translateZ(0) !important;
 }
 
 .drawer-enter-right {

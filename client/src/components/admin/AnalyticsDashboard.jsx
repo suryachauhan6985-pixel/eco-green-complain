@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { 
   BarChart3, CheckCircle2, Clock, Wrench, Download, Calendar, Filter, X, Tag, Layers, 
-  TrendingUp, Users, AlertCircle, RefreshCw, Star, Sun, Droplets, Wind,
+  TrendingUp, Users, AlertCircle, Info, RefreshCw, Star, Sun, Droplets, Wind,
   Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload
 } from 'lucide-react';
 import { AnalyticsDashboardSkeleton } from '../common/SkeletonLoader';
@@ -205,6 +205,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [customEndDate, setCustomEndDate] = useState(''); // 'YYYY-MM-DD'
   const [syncingExcel, setSyncingExcel] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [syncToast, setSyncToast] = useState(null);
   const [isExcelDragging, setIsExcelDragging] = useState(false);
 
@@ -222,9 +223,13 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
 
     try {
       setUploadingExcel(true);
-      setSyncToast({
-        type: 'info',
-        message: 'Reading and validating Excel workbook...'
+      setUploadProgress({
+        current: 0,
+        total: 100,
+        percent: 0,
+        phase: 'Reading and validating Excel workbook...',
+        batchIndex: 0,
+        totalBatches: 0
       });
 
       // Parse Excel file in browser memory via SheetJS
@@ -509,14 +514,19 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
 
       // 3. Sync Dealer Directory to Database
       if (mappedDealers.length > 0) {
-        setSyncToast({
-          type: 'info',
-          message: `Saving ${mappedDealers.length.toLocaleString()} dealer directory records to database...`
-        });
         const DEALER_BATCH = 100;
         const totalDealerBatches = Math.ceil(mappedDealers.length / DEALER_BATCH);
         for (let db = 0; db < totalDealerBatches; db++) {
-          const dChunk = mappedDealers.slice(db * DEALER_BATCH, (db + 1) * DEALER_BATCH);
+          const endD = Math.min((db + 1) * DEALER_BATCH, mappedDealers.length);
+          const dChunk = mappedDealers.slice(db * DEALER_BATCH, endD);
+          setUploadProgress({
+            current: endD,
+            total: mappedDealers.length,
+            percent: Math.round((endD / mappedDealers.length) * 100),
+            phase: 'Saving dealer records',
+            batchIndex: db + 1,
+            totalBatches: totalDealerBatches
+          });
           await api.syncDealersBatch({
             isFirstBatch: db === 0,
             isLastBatch: db === totalDealerBatches - 1,
@@ -541,9 +551,13 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           const isLastBatch = b === totalBatches - 1;
 
           const progressPercent = Math.round((end / mappedCustomers.length) * 100);
-          setSyncToast({
-            type: 'info',
-            message: `Saving to database: ${end.toLocaleString()} / ${mappedCustomers.length.toLocaleString()} customer records (${progressPercent}%)...`
+          setUploadProgress({
+            current: end,
+            total: mappedCustomers.length,
+            percent: progressPercent,
+            phase: 'Saving customer records & warranty dates',
+            batchIndex: b + 1,
+            totalBatches
           });
 
           await api.syncCustomersBatch({
@@ -590,6 +604,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       setTimeout(() => setSyncToast(null), 6000);
     } finally {
       setUploadingExcel(false);
+      setUploadProgress(null);
     }
   };
 
@@ -853,16 +868,24 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
     <div className="space-y-6">
       {/* Toast Notification */}
       {syncToast && (
-        <div className={`p-4 rounded-2xl flex items-center justify-between shadow-lg text-xs font-bold animate-in fade-in slide-in-from-top-4 ${
+        <div className={`p-4 rounded-2xl flex items-center justify-between shadow-lg text-xs font-bold transition-all duration-200 ${
           syncToast.type === 'success' 
-            ? 'bg-emerald-800 text-emerald-100 border border-emerald-600' 
-            : 'bg-rose-800 text-rose-100 border border-rose-600'
+            ? 'bg-emerald-900 text-emerald-100 border border-emerald-600/80' 
+            : syncToast.type === 'info'
+            ? 'bg-slate-900 text-slate-100 border border-slate-700'
+            : 'bg-rose-900 text-rose-100 border border-rose-600/80'
         }`}>
           <div className="flex items-center gap-2">
-            {syncToast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-300" /> : <AlertCircle className="w-4 h-4 text-rose-300" />}
+            {syncToast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0" />
+            ) : syncToast.type === 'info' ? (
+              <Info className="w-4 h-4 text-sky-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-300 shrink-0" />
+            )}
             <span>{syncToast.message}</span>
           </div>
-          <button onClick={() => setSyncToast(null)} className="text-white/80 hover:text-white">✕</button>
+          <button onClick={() => setSyncToast(null)} className="text-white/80 hover:text-white ml-3">✕</button>
         </div>
       )}
 
@@ -1030,6 +1053,53 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
             <div className="text-[11px] text-slate-400 mt-1">Paid visit & component replacement rates</div>
           </div>
         </div>
+
+        {/* Apple-Grade Non-Flicker Live Upload & Sync Progress HUD */}
+        {uploadProgress && (
+          <div className="relative z-20 mt-4 p-4 rounded-2xl bg-white/10 backdrop-blur-md border border-emerald-400/30 shadow-xl animate-in fade-in duration-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs mb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
+                <span className="font-bold text-white tracking-wide">
+                  {uploadProgress.phase}
+                </span>
+                {uploadProgress.totalBatches > 0 && (
+                  <span className="text-emerald-300/80 font-mono text-[11px]">
+                    • Batch {uploadProgress.batchIndex} of {uploadProgress.totalBatches}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 font-mono font-bold self-end sm:self-auto">
+                <span className="text-slate-300 text-xs">
+                  {uploadProgress.current.toLocaleString()} / {uploadProgress.total.toLocaleString()} records
+                </span>
+                <span className="text-emerald-300 bg-emerald-500/25 px-2.5 py-0.5 rounded-full border border-emerald-400/40 text-xs shadow-xs">
+                  {uploadProgress.percent}%
+                </span>
+              </div>
+            </div>
+
+            {/* Apple Smooth Spring Animated Progress Bar */}
+            <div className="w-full h-2.5 rounded-full bg-slate-950/40 p-0.5 overflow-hidden border border-white/10">
+              <div 
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-300 shadow-sm"
+                style={{ 
+                  width: `${Math.max(3, Math.min(100, uploadProgress.percent))}%`,
+                  transition: 'width 240ms cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-300 mt-2">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-emerald-400 shrink-0" />
+                Saving directly to cloud database with zero screen flicker and uninterrupted UI.
+              </span>
+              <span className="font-semibold text-emerald-300">
+                Live Background Stream
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Date Range & Time Period Filter Bar */}

@@ -2084,22 +2084,28 @@ export const api = {
     const cached = JSON.parse(localStorage.getItem('egs_customer_stats') || 'null');
     return cached || { totalCustomers: 0, inWarrantyCount: 0, outWarrantyCount: 0 };
   },
-  syncCustomersBatch: (data) => {
+  syncCustomersBatch: (data, options = {}) => {
     return request('/customers/sync', {
       method: 'POST',
-      body: JSON.stringify(data || {})
+      body: JSON.stringify(data || {}),
+      noOverlay: true,
+      ...options
     });
   },
-  syncCustomersFromExcel: (data) => {
+  syncCustomersFromExcel: (data, options = {}) => {
     if (data instanceof FormData) {
       return request('/customers/sync', {
         method: 'POST',
-        body: data
+        body: data,
+        noOverlay: true,
+        ...options
       });
     }
     return request('/customers/sync', {
       method: 'POST',
-      body: JSON.stringify(data || {})
+      body: JSON.stringify(data || {}),
+      noOverlay: true,
+      ...options
     });
   },
 
@@ -2114,10 +2120,12 @@ export const api = {
   findDealerByName: (name) => {
     return request('/dealers?name=' + encodeURIComponent(name || ''));
   },
-  syncDealersBatch: (data) => {
+  syncDealersBatch: (data, options = {}) => {
     return request('/dealers/sync', {
       method: 'POST',
-      body: JSON.stringify(data || {})
+      body: JSON.stringify(data || {}),
+      noOverlay: true,
+      ...options
     });
   },
 

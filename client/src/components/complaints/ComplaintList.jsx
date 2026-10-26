@@ -695,7 +695,7 @@ export const ComplaintList = ({
                 key={st}
                 type="button"
                 onClick={() => handleStatusFilterChange(st)}
-                className={`px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                className={`apple-segmented-pill px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 cursor-pointer select-none ${
                   statusFilter === st
                     ? 'bg-emerald-700 text-white shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
@@ -1059,7 +1059,7 @@ export const ComplaintList = ({
                 <div
                   key={c.id}
                   onClick={() => onSelectComplaint(c.ticket_id || c.id)}
-                  className={`bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden border-t-4 sm:border-t-0 sm:border-l-4 ${getStageBorderClass(displayStatus)} p-4`}
+                  className={`apple-card-interactive bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-md cursor-pointer flex flex-col justify-between gap-3 group relative overflow-hidden border-t-4 sm:border-t-0 sm:border-l-4 ${getStageBorderClass(displayStatus)} p-4`}
                 >
                   {/* Top: Ticket ID, Stage Badge, Priority */}
                   <div>
