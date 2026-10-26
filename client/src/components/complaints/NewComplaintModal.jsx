@@ -1088,17 +1088,12 @@ export const NewComplaintModal = ({
 
   const processFiles = async (selected) => {
     if (!selected || selected.length === 0) return;
-    const oversized = selected.filter(f => f.size > 250 * 1024 * 1024);
+    const oversized = selected.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds the 250MB maximum limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds the 50MB maximum limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
     }
-    const validFiles = selected.filter(f => f.size <= 250 * 1024 * 1024);
+    const validFiles = selected.filter(f => f.size <= 50 * 1024 * 1024);
     if (validFiles.length === 0) return;
-
-    const largeVideos = validFiles.filter(f => f.size > 50 * 1024 * 1024 && (f.type?.startsWith('video/') || f.name?.match(/\.(mp4|webm|mov|3gp|mkv)$/i)));
-    if (largeVideos.length > 0) {
-      showToast(`Large video "${largeVideos[0].name}" (${(largeVideos[0].size / (1024 * 1024)).toFixed(1)} MB) will be uploaded in fast 5MB parts.`, 'info');
-    }
 
     const newItems = await Promise.all(
       validFiles.map(async (file) => {
@@ -3061,14 +3056,14 @@ export const NewComplaintModal = ({
                         <Upload className="w-5 h-5" />
                       </div>
                       <p className="text-xs font-bold text-emerald-800">Drop files here to upload</p>
-                      <p className="text-[10px] text-emerald-600">Supports photos, PDF documents & videos up to 250MB (uploaded in 5MB parts)</p>
+                      <p className="text-[10px] text-emerald-600">Supports photos, PDF documents & videos up to 50MB (uploaded in 5MB parts)</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-white hover:bg-emerald-50/40 transition-colors">
                         <Upload className="w-5 h-5 text-slate-400 mb-1" />
                         <span className="text-xs text-slate-700 font-semibold">Browse Gallery / Files</span>
-                        <span className="text-[10px] text-slate-400">Drag & drop or click (Up to 250MB)</span>
+                        <span className="text-[10px] text-slate-400">Drag & drop or click (Up to 50MB)</span>
                         <input
                           type="file"
                           multiple

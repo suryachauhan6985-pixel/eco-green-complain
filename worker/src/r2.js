@@ -16,7 +16,7 @@ export const DANGEROUS_EXTENSIONS = new Set([
   'html', 'htm', 'svg', 'js', 'exe', 'bat', 'cmd', 'sh', 'php', 'py', 'pl', 'jsp', 'cgi', 'vbs'
 ]);
 
-export const MAX_FILE_SIZE = 250 * 1024 * 1024; // 250MB
+export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export function validateFileMetadata(filename = '', mimetype = '', size = 0) {
   const ext = (filename.split('.').pop() || '').toLowerCase();
@@ -31,7 +31,7 @@ export function validateFileMetadata(filename = '', mimetype = '', size = 0) {
   }
 
   if (size > MAX_FILE_SIZE) {
-    throw new Error(`File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds the 250MB maximum limit.`);
+    throw new Error(`File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds the 50MB maximum limit.`);
   }
 
   return { ext, mime };

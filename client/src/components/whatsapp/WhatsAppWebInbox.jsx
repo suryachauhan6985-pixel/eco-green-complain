@@ -989,13 +989,9 @@ export const WhatsAppWebInbox = ({
   const processWhatsAppFile = (file) => {
     if (!file) return;
 
-    if (file.size > 250 * 1024 * 1024) {
-      showToast(`File size exceeds 250MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
-      return;
-    }
-
     if (file.size > 50 * 1024 * 1024) {
-      showToast(`Large file (${(file.size / (1024 * 1024)).toFixed(1)} MB) will be uploaded in 5MB parts.`, 'info');
+      showToast(`File size exceeds 50MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
+      return;
     }
 
     setSelectedFile(file);
@@ -3243,7 +3239,7 @@ export const WhatsAppWebInbox = ({
               <Upload className="w-8 h-8 text-white" />
             </div>
             <p className="text-base font-bold">Drop file to attach to WhatsApp</p>
-            <p className="text-xs text-white/85">Supports photos, videos & PDF documents up to 250MB (uploaded in 5MB parts)</p>
+            <p className="text-xs text-white/85">Supports photos, videos & PDF documents up to 50MB (uploaded in 5MB parts)</p>
           </div>
         )}
         {selectedPhone ? (

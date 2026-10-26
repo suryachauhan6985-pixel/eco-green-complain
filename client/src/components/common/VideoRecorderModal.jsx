@@ -715,8 +715,8 @@ export function VideoRecorderModal({
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    if (file.size > 250 * 1024 * 1024) {
-      alert(`Selected file (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 250 MB maximum limit.`);
+    if (file.size > 50 * 1024 * 1024) {
+      alert(`Selected file (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 50 MB maximum limit.`);
       e.target.value = '';
       return;
     }

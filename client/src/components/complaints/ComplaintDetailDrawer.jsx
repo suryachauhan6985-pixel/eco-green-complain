@@ -464,14 +464,10 @@ export const ComplaintDetailDrawer = ({
       showToast('Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.', 'error');
       return;
     }
-    const oversized = files.filter(f => f.size > 250 * 1024 * 1024);
+    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 250MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
       return;
-    }
-    const largeFiles = files.filter(f => f.size > 50 * 1024 * 1024);
-    if (largeFiles.length > 0) {
-      showToast(`Uploading ${largeFiles.length} file(s) in 5MB parts via chunked upload...`, 'info');
     }
     try {
       setUploadingAtt(true);
@@ -590,12 +586,12 @@ export const ComplaintDetailDrawer = ({
   const processResolutionFiles = (files) => {
     if (!files || files.length === 0) return;
 
-    const oversized = files.filter(f => f.size > 250 * 1024 * 1024);
+    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 250MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
     }
 
-    const validFiles = files.filter(f => f.size <= 250 * 1024 * 1024);
+    const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
     if (validFiles.length === 0) return;
 
     const newItems = validFiles.map((file) => {
@@ -1427,11 +1423,11 @@ export const ComplaintDetailDrawer = ({
 
   const processEditFiles = async (files) => {
     if (!files || files.length === 0) return;
-    const oversized = files.filter(f => f.size > 250 * 1024 * 1024);
+    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 250MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 250MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
     }
-    const validFiles = files.filter(f => f.size <= 250 * 1024 * 1024);
+    const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
     if (validFiles.length === 0) return;
 
     const newItems = await Promise.all(
@@ -2634,7 +2630,7 @@ export const ComplaintDetailDrawer = ({
                                     <Upload className="w-4 h-4" />
                                   </div>
                                   <p className="text-xs font-bold text-emerald-800">Drop files here to attach to complaint</p>
-                                  <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 250MB (uploaded in 5MB parts)</p>
+                                  <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 50MB (uploaded in 5MB parts)</p>
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-center gap-2 text-slate-500 py-0.5">
@@ -3585,7 +3581,7 @@ export const ComplaintDetailDrawer = ({
                                       <Upload className="w-4 h-4" />
                                     </div>
                                     <p className="text-xs font-bold text-emerald-800">Drop resolution proofs here</p>
-                                    <p className="text-[10px] text-emerald-600">Supports photos, videos, and PDF documents up to 250MB (uploaded in 5MB parts)</p>
+                                    <p className="text-[10px] text-emerald-600">Supports photos, videos, and PDF documents up to 50MB (uploaded in 5MB parts)</p>
                                   </div>
                                 ) : (
                                   <div className="space-y-2">

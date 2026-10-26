@@ -318,9 +318,9 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
 export async function uploadFileToSupabase(file, identifier = 'temp', uploadType = 'complaint', onProgress = null) {
   if (!file) return null;
 
-  // Files up to 250MB are supported via chunked multipart upload (sliced into 5MB parts)
-  if (file.size > 250 * 1024 * 1024) {
-    throw new Error(`File "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 250MB maximum limit.`);
+  // Files up to 50MB are supported (chunked multipart upload slices files > 5MB into 5MB parts)
+  if (file.size > 50 * 1024 * 1024) {
+    throw new Error(`File "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 50MB maximum limit.`);
   }
 
   // Pre-compress smartphone camera photos (reduces 12MB -> 350KB in ~60ms)
