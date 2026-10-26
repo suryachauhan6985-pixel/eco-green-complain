@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Download, ExternalLink, ChevronLeft, ChevronRight, 
   ZoomIn, ZoomOut, RotateCw, FileText, 
-  Loader2, AlertCircle, Printer, Layers, ScrollText, Monitor
+  Loader2, AlertCircle, Printer, Layers, ScrollText, Monitor, ArrowLeft
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -221,10 +221,19 @@ export default function PdfViewerModal({ url, title, onClose, onDownload }) {
         onClick={e => e.stopPropagation()}
       >
         {/* Top App Header Toolbar */}
-        <div className="px-3 sm:px-4 py-2.5 bg-slate-800/95 border-b border-slate-700/80 flex items-center justify-between text-white shrink-0 gap-2 sm:gap-3">
-          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg shrink-0">
-              <FileText className="w-5 h-5" />
+        <div className="px-2 sm:px-4 py-2 bg-slate-800/95 border-b border-slate-700/80 flex items-center justify-between text-white shrink-0 gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 min-w-0 pr-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-2.5 py-1.5 rounded-full bg-slate-700/90 hover:bg-slate-600 active:scale-95 text-white flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0 transition-all border border-slate-600/60 shadow-xs"
+              title="Back to Chat (Esc)"
+            >
+              <ArrowLeft className="w-4 h-4 text-white" />
+              <span>Back</span>
+            </button>
+            <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg shrink-0 hidden sm:flex">
+              <FileText className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <h4 className="font-bold text-sm truncate text-white max-w-[160px] sm:max-w-md" title={title}>

@@ -2270,7 +2270,11 @@ export const WhatsAppWebInbox = ({
                     }
 
                     return (
-                      <div className={`rounded-lg overflow-hidden relative group max-w-md bg-black/5 shadow-2xs flex items-center justify-center ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}>
+                      <div
+                        onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption, msg })}
+                        className={`rounded-lg overflow-hidden relative group max-w-md bg-black/5 shadow-2xs flex items-center justify-center cursor-pointer select-none active:opacity-90 transition-opacity ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}
+                        title="Click to view full photo"
+                      >
                         <img
                           src={mediaUrl}
                           alt="WhatsApp photo"
@@ -2281,30 +2285,33 @@ export const WhatsAppWebInbox = ({
                           onError={() => {
                             setFailedImageIds(prev => new Set(prev).add(msg.id));
                           }}
-                          className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
-                          onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption })}
+                          className="w-full max-h-72 object-cover rounded-lg hover:opacity-95 transition-opacity pointer-events-none"
                         />
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-2">
+                        {/* Desktop Mouse Hover Action Buttons (Hidden on mobile touch to allow instant 1-tap open) */}
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="hidden sm:flex absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity items-center justify-center gap-2 z-2 pointer-events-none group-hover:pointer-events-auto"
+                        >
                           <button
                             type="button"
-                            onClick={() => openAttachMediaModal(msg)}
-                            className="p-2 bg-emerald-600 rounded-full text-white hover:bg-emerald-700 shadow-md transition-colors cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); openAttachMediaModal(msg); }}
+                            className="p-2 bg-emerald-600 rounded-full text-white hover:bg-emerald-700 shadow-md transition-colors cursor-pointer pointer-events-auto"
                             title="Attach Photo to Complaint / Ticket"
                           >
                             <Paperclip className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
-                            onClick={() => setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption, msg })}
-                            className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); setPreviewMedia({ url: mediaUrl, type: 'image', caption: msg.media_caption, msg }); }}
+                            className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer pointer-events-auto"
                             title="View Full Size"
                           >
                             <Maximize2 className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDownloadFile(mediaUrl, `whatsapp_${msg.id || 'photo'}.jpg`)}
-                            className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); handleDownloadFile(mediaUrl, `whatsapp_${msg.id || 'photo'}.jpg`); }}
+                            className="p-2 bg-white/90 rounded-full text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer pointer-events-auto"
                             title="Download Photo"
                           >
                             <Download className="w-4 h-4" />
@@ -2338,17 +2345,30 @@ export const WhatsAppWebInbox = ({
                     }
                     return (
                       <div className={`rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}>
-                        <video
-                          src={videoUrl}
-                          controls
-                          playsInline
-                          preload="metadata"
-                          className="w-full max-h-72 rounded-t-lg object-contain bg-black"
-                        />
+                        <div
+                          onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
+                          className="relative cursor-pointer group/vid select-none"
+                          title="Click to play video in full player"
+                        >
+                          <video
+                            src={videoUrl}
+                            playsInline
+                            preload="metadata"
+                            className="w-full max-h-72 rounded-t-lg object-contain bg-black pointer-events-none"
+                          />
+                          <div className="absolute inset-0 bg-black/25 group-hover/vid:bg-black/40 flex items-center justify-center transition-colors">
+                            <div className="w-12 h-12 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all ring-2 ring-white/30">
+                              <Play className="w-6 h-6 ml-0.5 fill-white" />
+                            </div>
+                          </div>
+                        </div>
                         <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
-                          <span className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300">
+                          <span
+                            onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
+                            className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300 cursor-pointer hover:text-white"
+                          >
                             <Video className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span className="truncate">{msg.media_caption || 'WhatsApp Video'}</span>
+                            <span className="truncate">{msg.media_caption || 'WhatsApp Video (Tap to play)'}</span>
                           </span>
                           <div className="flex items-center gap-1 shrink-0">
                             <button
@@ -2362,10 +2382,11 @@ export const WhatsAppWebInbox = ({
                             <button
                               type="button"
                               onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
-                              className="p-1.5 hover:bg-white/20 rounded-md text-slate-200 hover:text-white transition-colors cursor-pointer"
+                              className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded-md text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
                               title="Open Full Player"
                             >
                               <Maximize2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Play</span>
                             </button>
                             <button
                               type="button"

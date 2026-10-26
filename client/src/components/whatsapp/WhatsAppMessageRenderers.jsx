@@ -3,7 +3,7 @@ import {
   Play, Pause, Download, Maximize2, RotateCw, ZoomIn, ZoomOut,
   FileText, ExternalLink, MapPin, Copy, Phone, User, Check,
   CheckCheck, Clock, AlertCircle, Eye, RefreshCw, X, Mic,
-  FileSpreadsheet, Archive, File, Star, Smile, Plus, Paperclip
+  FileSpreadsheet, Archive, File, Star, Smile, Plus, Paperclip, ArrowLeft
 } from 'lucide-react';
 
 /**
@@ -946,23 +946,33 @@ export function WhatsAppMediaLightbox({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-between p-4 backdrop-enter-fade select-none"
+      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-enter-fade select-none"
     >
-      {/* Lightbox Top Navigation Bar */}
+      {/* Lightbox Top Navigation Bar with Dedicated Mobile Back Button */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-5xl flex items-center justify-between text-white py-2 z-10"
+        className="w-full max-w-5xl flex items-center justify-between text-white py-1.5 px-1 sm:px-2 z-20 gap-2 shrink-0"
       >
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm truncate max-w-md">
+        {/* Left Side: Mobile & Desktop Back Button + Media Title */}
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center gap-1.5 transition-all cursor-pointer text-xs font-bold shrink-0 shadow-md ring-1 ring-white/25"
+            title="Back to Chat (Esc)"
+          >
+            <ArrowLeft className="w-4 h-4 text-white" />
+            <span>Back</span>
+          </button>
+          <span className="font-semibold text-xs sm:text-sm truncate max-w-[130px] sm:max-w-md text-white/90">
             {media.title || (isVideo ? 'WhatsApp Video' : 'WhatsApp Photo')}
           </span>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Right Side: Desktop Controls & Mobile Actions */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {!isVideo && (
-            <>
+            <div className="hidden sm:flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => adjustZoom(-0.25)}
@@ -1005,18 +1015,30 @@ export function WhatsAppMediaLightbox({
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
-            </>
+            </div>
+          )}
+
+          {/* Quick Rotate button on mobile */}
+          {!isVideo && (
+            <button
+              type="button"
+              onClick={() => setRotation(r => (r + 90) % 360)}
+              className="p-2 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white transition-all cursor-pointer sm:hidden"
+              title="Rotate 90°"
+            >
+              <RotateCw className="w-4 h-4" />
+            </button>
           )}
 
           {onAttachToComplaint && (
             <button
               type="button"
               onClick={onAttachToComplaint}
-              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer mr-1"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
               title="Attach to Complaint / Ticket"
             >
               <Paperclip className="w-3.5 h-3.5" />
-              <span>Attach to Ticket</span>
+              <span className="hidden sm:inline">Attach</span>
             </button>
           )}
 
@@ -1024,7 +1046,7 @@ export function WhatsAppMediaLightbox({
             <button
               type="button"
               onClick={() => onDownload(rotation)}
-              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white transition-all cursor-pointer"
               title={rotation ? `Download Media (Rotated ${rotation}°)` : 'Download Media'}
             >
               <Download className="w-4 h-4" />
@@ -1034,7 +1056,7 @@ export function WhatsAppMediaLightbox({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer ml-2"
+            className="p-2 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white transition-all cursor-pointer ml-1"
             title="Close (Esc)"
           >
             <X className="w-5 h-5" />
@@ -1054,7 +1076,7 @@ export function WhatsAppMediaLightbox({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className={`flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-2 modal-enter-scale select-none ${
+        className={`flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-1 sm:my-2 modal-enter-scale select-none ${
           !isVideo && zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
         }`}
       >
@@ -1064,7 +1086,7 @@ export function WhatsAppMediaLightbox({
             controls
             autoPlay
             playsInline
-            className="max-h-[82vh] max-w-full rounded-lg object-contain shadow-2xl bg-black"
+            className="max-h-[76vh] sm:max-h-[82vh] max-w-full rounded-lg object-contain shadow-2xl bg-black"
           />
         ) : (
           <img
@@ -1076,16 +1098,17 @@ export function WhatsAppMediaLightbox({
               transition: isDragging ? 'none' : 'transform 0.15s ease-out',
               willChange: 'transform',
             }}
-            className="max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl select-none"
+            className="max-h-[76vh] sm:max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl select-none"
           />
         )}
       </div>
 
       {/* Lightbox Footer Caption & Interaction Tip */}
-      <div className="w-full max-w-2xl flex flex-col items-center gap-1.5 z-10">
+      <div className="w-full max-w-2xl flex flex-col items-center gap-1.5 z-10 shrink-0">
         {!isVideo && (
-          <div className="text-[11px] text-white/50 tracking-wide font-medium">
-            Scroll mouse wheel to zoom • Drag to pan • Double click to toggle
+          <div className="text-[11px] text-white/50 tracking-wide font-medium text-center">
+            <span className="hidden sm:inline">Scroll mouse wheel to zoom • Drag to pan • Double click to toggle</span>
+            <span className="sm:hidden">Pinch to zoom • Double tap to toggle</span>
           </div>
         )}
         {media.caption && (
