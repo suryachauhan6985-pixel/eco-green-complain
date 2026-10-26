@@ -16,9 +16,9 @@ async function login(req, res) {
     const cleanDigits = rawIdentifier.replace(/\D/g, '');
     const last10Phone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
 
-    // Secure System Super Admin login loaded from environment variables
-    const systemPhone = String(process.env.SYSTEM_LOGIN_PHONE || '6352454247').trim();
-    const systemPassword = String(process.env.SYSTEM_LOGIN_PASSWORD || 'admin3636').trim();
+    // Secure System Super Admin login loaded from environment variables (No hardcoded fallback)
+    const systemPhone = String(process.env.SYSTEM_LOGIN_PHONE || '').trim();
+    const systemPassword = String(process.env.SYSTEM_LOGIN_PASSWORD || '').trim();
     const systemName = String(process.env.SYSTEM_LOGIN_NAME || 'System').trim();
     const systemRole = String(process.env.SYSTEM_LOGIN_ROLE || 'admin').trim();
 

@@ -1,7 +1,10 @@
 import { Client } from 'pg';
 
 export async function query(sql, params = [], env = {}, ctx = null) {
-  const connStr = env?.HYPERDRIVE?.connectionString || env?.DATABASE_URL || 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+  const connStr = env?.HYPERDRIVE?.connectionString || env?.DATABASE_URL;
+  if (!connStr) {
+    throw new Error('Database connection configuration (HYPERDRIVE or DATABASE_URL) is required.');
+  }
   const client = new Client({ connectionString: connStr });
   await client.connect();
   try {

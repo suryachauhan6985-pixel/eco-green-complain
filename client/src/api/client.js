@@ -1395,45 +1395,15 @@ function fallbackHandler(endpoint, options) {
   }
 
   if (endpoint === '/auth/login' && method === 'POST') {
-    const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
-    const identifier = String(body.identifier || body.email || '').trim();
-    const password = String(body.password || '').trim();
-    const savedAdminPass = localStorage.getItem('egs_admin_password');
-    const savedAdminProfile = JSON.parse(localStorage.getItem('egs_admin_profile') || 'null');
-
-    if (savedAdminPass && password === savedAdminPass) {
-      return {
-        token: 'admin-live-session-token',
-        user: savedAdminProfile || {
-          id: 1,
-          name: 'System',
-          username: 'system',
-          email: 'system@ecogreensolar.co.in',
-          role: 'admin',
-          phone: identifier
-        }
-      };
-    }
-    const users = mockStore.getUsers();
-    const matchingUsers = users.filter(u => (u.phone === identifier || u.email === identifier || u.name === identifier || u.username === identifier));
-    const foundWithPass = matchingUsers.find(u => (password === u.password || (u.role === 'admin' && savedAdminPass && password === savedAdminPass)));
-    if (foundWithPass) {
-      return {
-        token: `session-token-${foundWithPass.id}`,
-        user: foundWithPass
-      };
-    }
-    const err = new Error('Invalid mobile number or password. Please verify your credentials.');
-    err.status = 401;
+    const err = new Error('Authentication requires an active server connection. Offline login is disabled.');
+    err.status = 503;
     throw err;
   }
 
   if (endpoint === '/auth/change-my-password' && method === 'POST') {
-    const body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
-    if (body?.newPassword) {
-      localStorage.setItem('egs_admin_password', body.newPassword.trim());
-    }
-    return { success: true, message: 'Password updated successfully' };
+    const err = new Error('Password updates require an active server connection.');
+    err.status = 503;
+    throw err;
   }
 
   if (endpoint === '/auth/profile' && method === 'PUT') {

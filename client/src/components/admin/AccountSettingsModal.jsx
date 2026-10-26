@@ -135,10 +135,6 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
         newPassword: newPassword.trim()
       });
 
-      // Also ensure fallback mock store stays in sync if admin
-      if (currentUser?.role === 'admin') {
-        localStorage.setItem('egs_admin_password', newPassword.trim());
-      }
 
       if (showToast) showToast('Password changed successfully! Use your new password on next login.', 'success');
       setCurrentPassword('');

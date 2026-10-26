@@ -19,8 +19,9 @@ app.use('*', cors({
       'http://localhost:5000',
       'http://localhost:3000'
     ];
-    if (!origin || allowed.includes(origin) || origin.endsWith('.vercel.app')) {
-      return origin || '*';
+    const isAllowedVercel = origin && /^https:\/\/eco-green-[a-z0-9-]+\.vercel\.app$/.test(origin);
+    if (!origin || allowed.includes(origin) || isAllowedVercel) {
+      return origin || 'https://complain.ecogreensolar.co.in';
     }
     return 'https://complain.ecogreensolar.co.in';
   },

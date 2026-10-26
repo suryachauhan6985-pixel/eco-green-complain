@@ -46,8 +46,8 @@ function searchCustomers(req, res) {
     const querySql = `
       SELECT *,
         CASE 
-          WHEN consumer_mobile = '${exactMobile}' THEN 1
-          WHEN customer_name LIKE '${prefixName}' THEN 2
+          WHEN consumer_mobile = ? THEN 1
+          WHEN customer_name LIKE ? THEN 2
           ELSE 3
         END as match_priority
       FROM installed_customers
@@ -56,7 +56,7 @@ function searchCustomers(req, res) {
       LIMIT 25
     `;
 
-    const results = db.prepare(querySql).all(...params);
+    const results = db.prepare(querySql).all(exactMobile, prefixName, ...params);
 
     // Compute live age and friendly warranty text
     const today = new Date();

@@ -445,7 +445,15 @@ complaintRoutes.get('/track/:query', async (c) => {
       resolved_at: complaint.resolved_at,
       rating: complaint.rating,
       feedback_comments: complaint.feedback_comments,
-      attachments: attRes.rows,
+      attachments: attRes.rows
+        .filter(a => a.attachment_type === 'closing' || a.attachment_type === 'public_registration')
+        .map(a => ({
+          id: a.id,
+          file_name: a.file_name,
+          file_url: a.file_url,
+          file_type: a.file_type,
+          attachment_type: a.attachment_type
+        })),
       timeline: tlRes.rows
     };
 

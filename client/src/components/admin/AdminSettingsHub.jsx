@@ -254,9 +254,9 @@ export const AdminSettingsHub = ({ initialTab = 'account' }) => {
         newPassword: newPassword.trim()
       });
 
-      if (currentUser?.role === 'admin') {
-        localStorage.setItem('egs_admin_password', newPassword.trim());
-      }
+
+
+
       showToast('Password changed successfully! Remember to use your new password on next login.', 'success');
       setCurrentPassword('');
       setNewPassword('');

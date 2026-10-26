@@ -90,8 +90,8 @@ const pincodeLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, message
 
 // Supabase PostgreSQL Connection Pool (Serverless-optimized with PgBouncer transaction pooling)
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres',
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 6000
@@ -101,8 +101,8 @@ const pool = new Pool({
 const JWT_SECRET = process.env.JWT_SECRET || 'ecogreen_solar_cms_secret_key_2026';
 const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || '1387211441132836';
 const META_WABA_ID = process.env.META_WABA_ID || '1015283491554000';
-const DEFAULT_META_ACCESS_TOKEN = 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+const DEFAULT_META_ACCESS_TOKEN = '';
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || '';
 const getMetaAccessToken = () => META_ACCESS_TOKEN;
 const APP_URL = process.env.APP_URL || 'https://complain.ecogreensolar.co.in';
 
@@ -116,7 +116,10 @@ async function query(text, params) {
 // Authentication Middleware
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
+  let token = authHeader && authHeader.split(' ')[1];
+  if (!token && (req.path.includes('/export-csv') || req.path.includes('/attachments/'))) {
+    token = req.query.token;
+  }
   if (!token) return res.status(401).json({ error: 'Access token required' });
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -1159,9 +1162,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
     const cleanDigits = loginId.replace(/[^0-9]/g, '');
 
-    // Secure System Super Admin login loaded from environment variables
-    const systemPhone = String(process.env.SYSTEM_LOGIN_PHONE || '6352454247').trim();
-    const systemPassword = String(process.env.SYSTEM_LOGIN_PASSWORD || 'admin3636').trim();
+    // Secure System Super Admin login loaded from environment variables (No hardcoded fallback)
+    const systemPhone = String(process.env.SYSTEM_LOGIN_PHONE || '').trim();
+    const systemPassword = String(process.env.SYSTEM_LOGIN_PASSWORD || '').trim();
     const systemName = String(process.env.SYSTEM_LOGIN_NAME || 'System').trim();
     const systemRole = String(process.env.SYSTEM_LOGIN_ROLE || 'admin').trim();
 
@@ -7268,7 +7271,10 @@ app.get('/api/reports/export-csv', authenticateToken, async (req, res) => {
 
     const escapeCsv = (val) => {
       if (val === null || val === undefined) return '""';
-      const str = String(val).replace(/"/g, '""');
+      let str = String(val).replace(/"/g, '""');
+      if (/^[=+-@\t\r]/.test(str)) {
+        str = `'${str}`;
+      }
       return `"${str}"`;
     };
 

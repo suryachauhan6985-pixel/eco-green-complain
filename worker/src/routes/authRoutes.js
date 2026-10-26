@@ -6,9 +6,30 @@ import { authenticateToken, requireRole, JWT_SECRET } from '../auth.js';
 
 const authRoutes = new Hono();
 
+// In-Memory Rate Limiting for Login Protection (10 attempts per minute per IP)
+const loginRateLimitMap = new Map();
+function checkLoginRateLimit(ip) {
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxAttempts = 10;
+  const record = loginRateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
+  if (now > record.resetTime) {
+    record.count = 0;
+    record.resetTime = now + windowMs;
+  }
+  record.count += 1;
+  loginRateLimitMap.set(ip, record);
+  return record.count <= maxAttempts;
+}
+
 // POST /api/auth/login
 authRoutes.post('/login', async (c) => {
   try {
+    const clientIp = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'default-ip';
+    if (!checkLoginRateLimit(clientIp)) {
+      return c.json({ error: 'Too many login attempts. Please wait 1 minute before trying again.' }, 429);
+    }
+
     const body = await c.req.json().catch(() => ({}));
     const { identifier, email, username, phone, password } = body;
     const loginId = (identifier || username || email || phone || '').trim();
@@ -18,9 +39,9 @@ authRoutes.post('/login', async (c) => {
 
     const cleanDigits = loginId.replace(/[^0-9]/g, '');
 
-    // Secure System Super Admin login loaded from environment variables
-    const systemPhone = String(c.env?.SYSTEM_LOGIN_PHONE || process.env?.SYSTEM_LOGIN_PHONE || '6352454247').trim();
-    const systemPassword = String(c.env?.SYSTEM_LOGIN_PASSWORD || process.env?.SYSTEM_LOGIN_PASSWORD || 'admin3636').trim();
+    // Secure System Super Admin login loaded from environment variables (No hardcoded fallback)
+    const systemPhone = String(c.env?.SYSTEM_LOGIN_PHONE || process.env?.SYSTEM_LOGIN_PHONE || '').trim();
+    const systemPassword = String(c.env?.SYSTEM_LOGIN_PASSWORD || process.env?.SYSTEM_LOGIN_PASSWORD || '').trim();
     const systemName = String(c.env?.SYSTEM_LOGIN_NAME || process.env?.SYSTEM_LOGIN_NAME || 'System').trim();
     const systemRole = String(c.env?.SYSTEM_LOGIN_ROLE || process.env?.SYSTEM_LOGIN_ROLE || 'admin').trim();
 
@@ -451,8 +472,8 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
     const technicianId = body.technicianId || body.technician_id;
     const newPassword = (body.newPassword || body.new_password || '').trim();
 
-    if (!newPassword || newPassword.length < 4) {
-      return c.json({ error: 'New password must be at least 4 characters long' }, 400);
+    if (!newPassword || newPassword.length < 6) {
+      return c.json({ error: 'New password must be at least 6 characters long' }, 400);
     }
 
     let targetUserId = userId;
@@ -489,7 +510,7 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
         } else {
           const username = cleanPhone ? `${cleanPhone}_tech` : (tech.name ? tech.name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '.' + tech.id : 'tech_' + Date.now());
           const email = tech.email || `${cleanPhone ? cleanPhone + '_tech' : 'tech_' + tech.id}@ecogreensolar.internal`;
-          const hash = await bcrypt.hash(newPassword, 8);
+          const hash = await bcrypt.hash(newPassword, 10);
           const created = await query(
             'INSERT INTO users (name, username, email, password_hash, role, phone, is_active, created_at) VALUES ($1, $2, $3, $4, $5, $6, 1, CURRENT_TIMESTAMP) RETURNING id',
             [tech.name, username, email, hash, 'technician', cleanPhone || null],
@@ -510,7 +531,7 @@ authRoutes.post('/admin-reset-password', authenticateToken, requireRole('admin')
       return c.json({ error: 'Target user ID or technician ID is required' }, 400);
     }
 
-    const hash = await bcrypt.hash(newPassword, 8);
+    const hash = await bcrypt.hash(newPassword, 10);
     const updRes = await query(
       'UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id, name, username, phone',
       [hash, targetUserId],
@@ -546,8 +567,8 @@ authRoutes.post('/change-my-password', authenticateToken, async (c) => {
     if (!currentPassword) {
       return c.json({ error: 'Current password is required' }, 400);
     }
-    if (!newPassword || newPassword.length < 4) {
-      return c.json({ error: 'New password must be at least 4 characters long' }, 400);
+    if (!newPassword || newPassword.length < 6) {
+      return c.json({ error: 'New password must be at least 6 characters long' }, 400);
     }
     if (currentPassword === newPassword) {
       return c.json({ error: 'New password must be different from current password' }, 400);
@@ -559,7 +580,7 @@ authRoutes.post('/change-my-password', authenticateToken, async (c) => {
     const valid = await bcrypt.compare(currentPassword, r.rows[0].password_hash);
     if (!valid) return c.json({ error: 'Current password is incorrect' }, 400);
 
-    const hash = await bcrypt.hash(newPassword, 8);
+    const hash = await bcrypt.hash(newPassword, 10);
     await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, user.id], c.env, c.executionCtx);
     return c.json({ success: true, message: 'Password changed successfully' });
   } catch (err) {

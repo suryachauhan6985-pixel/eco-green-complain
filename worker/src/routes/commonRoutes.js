@@ -50,8 +50,8 @@ commonRoutes.get('/version', (c) => {
 const pincodeMemoryCache = new Map();
 const postOfficeMemoryCache = new Map();
 
-// Government of India Open Data API Key
-const DATA_GOV_IN_API_KEY = '579b464db66ec23bdd0000012c27c3f7e3374a84564790b8ff6603c3';
+// Government of India Open Data API Key helper (configured via DATA_GOV_IN_API_KEY)
+const getDataGovApiKey = (env) => (env && env.DATA_GOV_IN_API_KEY) || (typeof process !== 'undefined' && process.env && process.env.DATA_GOV_IN_API_KEY) || '';
 
 // Curated Local Directory for Gujarat & Saurashtra Villages, Towns & Talukas
 const LOCAL_VILLAGE_DIRECTORY = [
@@ -101,9 +101,11 @@ const LOCAL_VILLAGE_DIRECTORY = [
 ];
 
 // Helper: Query data.gov.in Pincode API with timeout
-async function fetchFromDataGovIn(filterParam) {
+async function fetchFromDataGovIn(filterParam, env) {
   try {
-    const url = `https://api.data.gov.in/resource/6176ee09-3d56-4a3b-8115-21841576b2f6?api-key=${DATA_GOV_IN_API_KEY}&format=json&limit=25&${filterParam}`;
+    const apiKey = getDataGovApiKey(env);
+    if (!apiKey) return [];
+    const url = `https://api.data.gov.in/resource/6176ee09-3d56-4a3b-8115-21841576b2f6?api-key=${apiKey}&format=json&limit=25&${filterParam}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2500);
     const resp = await fetch(url, { signal: controller.signal });
@@ -556,7 +558,7 @@ const handleLocationSearch = async (c) => {
     });
 
     // Tier 4: Concurrently check data.gov.in API with user's key
-    const govPromise = fetchFromDataGovIn(`filters%5Bofficename%5D=${encodeURIComponent(rawQuery)}`);
+    const govPromise = fetchFromDataGovIn(`filters%5Bofficename%5D=${encodeURIComponent(rawQuery)}`, c.env);
 
     const [postalOfficesLists, govRecords] = await Promise.all([
       Promise.all(postalPromises),
@@ -633,7 +635,7 @@ commonRoutes.get('/location/search', handleLocationSearch);
 commonRoutes.get('/location/postoffice/:query', handleLocationSearch);
 
 // GET /api/customers/search
-commonRoutes.get('/customers/search', optionalAuth, async (c) => {
+commonRoutes.get('/customers/search', authenticateToken, async (c) => {
   try {
     const q = (c.req.query('q') || c.req.query('query') || c.req.query('search') || '').trim();
     if (!q || q.length < 2) {
@@ -764,7 +766,7 @@ commonRoutes.get('/customers/search', optionalAuth, async (c) => {
 });
 
 // GET /api/customers/stats
-commonRoutes.get('/customers/stats', optionalAuth, async (c) => {
+commonRoutes.get('/customers/stats', authenticateToken, async (c) => {
   try {
     const r = await query(`
       SELECT 

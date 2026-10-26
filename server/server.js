@@ -2414,8 +2414,8 @@ app.get('/api/reports/metrics', authenticateToken, requireRole('admin', 'staff')
 app.get('/api/reports/export-csv', authenticateToken, requireRole('admin', 'staff'), reportController.exportComplaintsCsv);
 
 // ================= CUSTOMER DIRECTORY (EXCEL SYNC & SEARCH) =================
-app.get('/api/customers/search', customerDirectoryController.searchCustomers);
-app.get('/api/customers/stats', customerDirectoryController.getCustomerStats);
+app.get('/api/customers/search', authenticateToken, customerDirectoryController.searchCustomers);
+app.get('/api/customers/stats', authenticateToken, customerDirectoryController.getCustomerStats);
 app.post('/api/customers/sync', authenticateToken, (req, res, next) => {
   upload.any()(req, res, (err) => {
     if (err) return next(err);
