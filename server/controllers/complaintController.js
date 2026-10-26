@@ -49,7 +49,7 @@ function listComplaints(req, res) {
       from_date,
       to_date,
       page = 1,
-      limit = 50
+      limit
     } = req.query;
 
     let query = `
@@ -123,9 +123,13 @@ function listComplaints(req, res) {
       params.push(to_date);
     }
 
-    query += ` ORDER BY c.created_at DESC LIMIT ? OFFSET ? `;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    params.push(parseInt(limit), offset);
+    if (limit && limit !== 'all') {
+      query += ` ORDER BY c.created_at DESC LIMIT ? OFFSET ? `;
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+      params.push(parseInt(limit), offset);
+    } else {
+      query += ` ORDER BY c.created_at DESC `;
+    }
 
     const complaints = db.prepare(query).all(...params);
 
