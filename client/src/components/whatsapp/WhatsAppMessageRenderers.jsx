@@ -1023,9 +1023,9 @@ export function WhatsAppMediaLightbox({
           {onDownload && (
             <button
               type="button"
-              onClick={onDownload}
+              onClick={() => onDownload(rotation)}
               className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-              title="Download Media"
+              title={rotation ? `Download Media (Rotated ${rotation}°)` : 'Download Media'}
             >
               <Download className="w-4 h-4" />
             </button>

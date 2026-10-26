@@ -7,12 +7,13 @@ import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 // High-Efficiency 720p HD Optimization with Zero Lag on Mobile:
 // Target: 3 Minutes (~180s) 720p HD Video guaranteed smooth, stutter-free, and under 50 MB.
-// 1.25 Mbps hardware-accelerated video + 64 kbps audio = ~1.31 Mbps (~9.8 MB/min, ~29.5 MB for full 3 minutes).
-// Leaves generous safety margin under Cloudflare Worker / server 50 MB upload limits.
-const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB server limit
-const MAX_RECORDING_SECONDS = 180; // Exactly 3 minutes
-const TARGET_VIDEO_BITRATE = 1_250_000; // 1.25 Mbps (optimized for smooth hardware encoding without frame drops)
-const TARGET_AUDIO_BITRATE = 64_000; // 64 kbps clear audio
+// High-Efficiency 720p HD Optimization with Crystal-Clear Audio:
+// 2.5 Mbps video + 128 kbps audio for razor-sharp panels & zero speech clipping.
+// Seamless automatic multi-part splitting keeps each video part safely under 50 MB.
+const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB threshold per part
+const MAX_RECORDING_SECONDS = 300; // Up to 5 minutes total recording
+const TARGET_VIDEO_BITRATE = 2_500_000; // 2.5 Mbps crisp HD without frame drops
+const TARGET_AUDIO_BITRATE = 128_000; // 128 kbps full-fidelity voice
 
 export function VideoRecorderModal({
   isOpen,
@@ -20,20 +21,22 @@ export function VideoRecorderModal({
   onRecordingComplete,
   maxSizeBytes = MAX_LIMIT_BYTES,
   title = 'Record Site Video',
-  subtitle = '3-minute 720p HD recording under 50 MB'
+  subtitle = 'Crisp 720p HD recording with automatic multi-part split under 50 MB'
 }) {
   const [stream, setStream] = useState(null);
   const [facingMode, setFacingMode] = useState('environment'); // Default to rear camera
   const [isInitializing, setIsInitializing] = useState(false);
   const [cameraError, setCameraError] = useState(null);
 
-  // Recording State
+  // Recording State & Multi-Part Auto-Split
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [currentSizeBytes, setCurrentSizeBytes] = useState(0);
   const [recordedBlob, setRecordedBlob] = useState(null);
+  const [recordedParts, setRecordedParts] = useState([]);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [recordedMimeType, setRecordedMimeType] = useState('video/webm');
+  const [partNotification, setPartNotification] = useState(null);
 
   // Photo snapshots taken during session
   const [capturedPhotos, setCapturedPhotos] = useState([]);
@@ -50,6 +53,10 @@ export function VideoRecorderModal({
   const playbackVideoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const recordedPartsRef = useRef([]);
+  const currentPartIndexRef = useRef(1);
+  const isSplittingRef = useRef(false);
+  const isRecordingRef = useRef(false);
   const currentBytesAccumulatorRef = useRef(0);
   const lastZoomUpdateRef = useRef(0);
   const timerIntervalRef = useRef(null);
@@ -72,24 +79,21 @@ export function VideoRecorderModal({
   // Pick optimal supported container format
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
-    // Priority: Hardware-accelerated H.264/AVC (avc1/mp4) first.
-    // Why: Android devices (Snapdragon, MediaTek, Exynos, Unisoc) and iPhones (iOS)
-    // have dedicated silicon hardware encoders for H.264/AVC.
-    // In contrast, VP8/VP9 often falls back to software encoding (libvpx) on Android,
-    // which consumes 100% CPU and causes stuttering, frame drops, and severe lag while recording.
-    const candidates = [
-      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    const isSafariOrIOS = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '') || /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+    const safariCandidates = [
       'video/mp4;codecs=avc1,mp4a',
-      'video/mp4;codecs=avc1',
       'video/mp4',
-      'video/webm;codecs=h264,opus',
-      'video/webm;codecs=h264',
-      'video/webm;codecs=vp9,opus',
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8,opus',
-      'video/webm;codecs=vp8',
       'video/webm'
     ];
+    const standardCandidates = [
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=h264,opus',
+      'video/mp4;codecs=avc1,mp4a',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm'
+    ];
+    const candidates = isSafariOrIOS ? safariCandidates : standardCandidates;
     for (const type of candidates) {
       if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
         return type;
@@ -124,6 +128,12 @@ export function VideoRecorderModal({
       try { URL.revokeObjectURL(previewUrl); } catch (_) {}
     }
     setRecordedBlob(null);
+    setRecordedParts([]);
+    recordedPartsRef.current = [];
+    currentPartIndexRef.current = 1;
+    isSplittingRef.current = false;
+    isRecordingRef.current = false;
+    setPartNotification(null);
     setPreviewUrl(null);
     setRecordingSeconds(0);
     setCurrentSizeBytes(0);
@@ -205,21 +215,26 @@ export function VideoRecorderModal({
       return;
     }
 
-    // Strict 720p maximum resolution & 24-30 FPS bounds:
-    // Without frameRate max, mobile cameras often stream 60 FPS uncompressed frames,
-    // bottlenecking mobile GPU/CPU encoders and causing the viewfinder to lag/stutter.
+    // Strict 720p maximum resolution & stable 30 FPS bounds:
+    // Prevents frame drops, lag, and viewfinder stuttering on mobile GPU/CPU.
     const videoConstraints = {
       ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: desiredFacing } }),
       width: { ideal: 1280, max: 1280 },
       height: { ideal: 720, max: 720 },
-      frameRate: { ideal: 24, max: 30 }
+      frameRate: { ideal: 30, max: 30 }
     };
 
+    // Full-fidelity voice configuration:
+    // Disable aggressive echoCancellation and noiseSuppression to prevent voice cutting/clipping
+    // when technicians speak near solar inverters and outdoor environmental sounds.
     const baseConstraints = {
       video: videoConstraints,
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000
       }
     };
 
@@ -235,7 +250,7 @@ export function VideoRecorderModal({
             facingMode: { ideal: desiredFacing },
             width: { ideal: 1280, max: 1280 },
             height: { ideal: 720, max: 720 },
-            frameRate: { ideal: 24, max: 30 }
+            frameRate: { ideal: 30, max: 30 }
           },
           audio: true
         });
@@ -457,21 +472,14 @@ export function VideoRecorderModal({
     }, 'image/jpeg', 0.92);
   };
 
-  // Start 3-minute 720p HD recording
-  const handleStartRecording = () => {
-    if (!stream) {
-      if (!isInitializing) initializeCamera(facingMode);
-      return;
-    }
-    if (typeof MediaRecorder === 'undefined') {
-      alert('MediaRecorder is not supported in this browser. Please use the device file picker.');
-      return;
-    }
+  // Start recorder slice with continuous auto-split when nearing 46 MB
+  const startRecorderSession = useCallback((partIndex = 1) => {
+    if (!activeStreamRef.current && !stream) return;
+    const liveStream = activeStreamRef.current || stream;
 
     try {
       recordedChunksRef.current = [];
       currentBytesAccumulatorRef.current = 0;
-      setRecordingSeconds(0);
       setCurrentSizeBytes(0);
 
       const mimeType = getOptimalMimeType();
@@ -485,62 +493,111 @@ export function VideoRecorderModal({
         recorderOptions.mimeType = mimeType;
       }
 
-      const recorder = new MediaRecorder(stream, recorderOptions);
+      let recorder;
+      try {
+        recorder = new MediaRecorder(liveStream, recorderOptions);
+      } catch (_) {
+        // Fallback without explicit bitrate constraints if mobile hardware rejects
+        recorder = new MediaRecorder(liveStream, mimeType ? { mimeType } : undefined);
+      }
 
-      // Collect data every 2 seconds (2000ms) for smooth encoding without keyframe stalls
+      // Collect data every 1000ms (1 second) for smooth keyframe encoding and zero frame lag
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           recordedChunksRef.current.push(e.data);
           currentBytesAccumulatorRef.current += e.data.size;
           setCurrentSizeBytes(currentBytesAccumulatorRef.current);
 
-          // Auto-stop safety if nearing 48 MB
-          if (currentBytesAccumulatorRef.current >= 48 * 1024 * 1024) {
-            handleStopRecording('size_limit');
+          // Auto-split safety when approaching 46 MB:
+          // Smoothly rolls over to Part 2 without abruptly stopping or dropping recordings
+          if (currentBytesAccumulatorRef.current >= 46 * 1024 * 1024 && !isSplittingRef.current) {
+            isSplittingRef.current = true;
+            recorder.stop();
           }
         }
       };
 
       recorder.onstop = () => {
         const chunks = recordedChunksRef.current;
-        const finalMime = recorderOptions.mimeType || recordedMimeType || 'video/webm';
+        const finalMime = recorder.mimeType || mimeType || 'video/webm';
         if (chunks.length > 0) {
           const blob = new Blob(chunks, { type: finalMime });
           const ext = finalMime.includes('mp4') ? 'mp4' : 'webm';
           const now = new Date();
           const pad = (n) => String(n).padStart(2, '0');
           const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-          const finalFile = new File([blob], `VID_${ts}_site_hd.${ext}`, {
+          const currentPartNum = currentPartIndexRef.current;
+          const partFilename = `VID_${ts}_site_part${currentPartNum}.${ext}`;
+          const partFile = new File([blob], partFilename, {
             type: finalMime,
             lastModified: Date.now()
           });
 
-          const url = URL.createObjectURL(finalFile);
+          recordedPartsRef.current.push(partFile);
+          setRecordedParts([...recordedPartsRef.current]);
+
+          const url = URL.createObjectURL(partFile);
           previewUrlRef.current = url;
-          setRecordedBlob(finalFile);
+          setRecordedBlob(partFile);
           setPreviewUrl(url);
         }
-        setIsRecording(false);
+
+        // If auto-splitting to next part while recording is active
+        if (isSplittingRef.current && isRecordingRef.current) {
+          isSplittingRef.current = false;
+          currentPartIndexRef.current += 1;
+          setPartNotification(`Part ${currentPartIndexRef.current - 1} saved under 50MB. Now recording Part ${currentPartIndexRef.current}...`);
+          setTimeout(() => setPartNotification(null), 4000);
+
+          startRecorderSession(currentPartIndexRef.current);
+        } else {
+          setIsRecording(false);
+          isRecordingRef.current = false;
+        }
       };
 
-      recorder.start(2000);
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
-
-      // Timer tick (Max 180 seconds = 3 minutes)
-      timerIntervalRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => {
-          const next = prev + 1;
-          if (next >= MAX_RECORDING_SECONDS) {
-            handleStopRecording('time_limit');
-          }
-          return next;
-        });
-      }, 1000);
+      isRecordingRef.current = true;
     } catch (err) {
-      console.error('[VideoRecorder] Failed to start recording:', err);
+      console.error('[VideoRecorder] Failed to start recorder slice:', err);
+      setIsRecording(false);
+      isRecordingRef.current = false;
       alert('Could not start recording: ' + err.message);
     }
+  }, [stream]);
+
+  // Start 720p HD recording with multi-part support
+  const handleStartRecording = () => {
+    if (!stream) {
+      if (!isInitializing) initializeCamera(facingMode);
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      alert('MediaRecorder is not supported in this browser. Please use the device file picker.');
+      return;
+    }
+
+    recordedPartsRef.current = [];
+    setRecordedParts([]);
+    currentPartIndexRef.current = 1;
+    isSplittingRef.current = false;
+    setRecordingSeconds(0);
+
+    startRecorderSession(1);
+
+    // Timer tick (Max 300 seconds = 5 minutes)
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    timerIntervalRef.current = setInterval(() => {
+      setRecordingSeconds((prev) => {
+        const next = prev + 1;
+        if (next >= MAX_RECORDING_SECONDS) {
+          handleStopRecording('time_limit');
+        }
+        return next;
+      });
+    }, 1000);
   };
 
   // Stop recording
@@ -549,6 +606,8 @@ export function VideoRecorderModal({
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+    isRecordingRef.current = false;
+    isSplittingRef.current = false;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
@@ -566,7 +625,9 @@ export function VideoRecorderModal({
 
   // Confirm and finish recording session
   const handleUseVideo = () => {
-    const videoFiles = recordedBlob ? [recordedBlob] : [];
+    const videoFiles = recordedPartsRef.current.length > 0
+      ? recordedPartsRef.current
+      : (recordedBlob ? [recordedBlob] : []);
     const photoFiles = capturedPhotos.map(p => p.file);
     const allFiles = [...videoFiles, ...photoFiles];
 
@@ -583,8 +644,8 @@ export function VideoRecorderModal({
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    if (file.size > maxSizeBytes) {
-      alert(`Selected file (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 50 MB limit.`);
+    if (file.size > 250 * 1024 * 1024) {
+      alert(`Selected file (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 250 MB maximum limit.`);
       e.target.value = '';
       return;
     }
@@ -648,6 +709,16 @@ export function VideoRecorderModal({
             </div>
           )}
 
+          {/* Part auto-split notification banner */}
+          {partNotification && (
+            <div className="absolute top-16 inset-x-4 max-w-sm mx-auto flex justify-center pointer-events-none z-45 animate-in fade-in">
+              <div className="px-4 py-2.5 rounded-xl bg-emerald-950/95 border border-emerald-400 text-emerald-300 text-xs font-semibold shadow-2xl flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{partNotification}</span>
+              </div>
+            </div>
+          )}
+
           {/* Shutter Flash Animation */}
           {photoFlash && (
             <div className="absolute inset-0 bg-white z-50 pointer-events-none animate-out fade-out duration-200" />
@@ -703,7 +774,8 @@ export function VideoRecorderModal({
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 animate-pulse"></span>
                   </span>
                   <span className="text-xs font-bold font-mono tracking-wider">
-                    {formatTime(recordingSeconds)} / 03:00
+                    {recordedPartsRef.current.length > 0 ? `Part ${currentPartIndexRef.current} • ` : ''}
+                    {formatTime(recordingSeconds)} / 05:00
                   </span>
                   <span className="text-[11px] text-teal-300 font-mono font-bold border-l border-white/20 pl-2">
                     {formatMB(currentSizeBytes)} MB / 50 MB
@@ -713,13 +785,16 @@ export function VideoRecorderModal({
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/90 border border-emerald-500/70 text-white text-xs">
                   <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                   <span className="font-bold font-mono">
-                    {formatTime(recordingSeconds)} • {formatMB(recordedBlob.size)} MB (720p HD)
+                    {recordedParts.length > 1
+                      ? `${recordedParts.length} Parts (${formatMB(recordedParts.reduce((acc, p) => acc + p.size, 0))} MB, each <50MB)`
+                      : `${formatTime(recordingSeconds)} • ${formatMB(recordedBlob.size)} MB (720p HD)`
+                    }
                   </span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/85 border border-white/20 text-white text-xs shadow-md">
                   <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-                  <span className="font-semibold text-[11px]">720p HD • Max 3 Min • 50 MB</span>
+                  <span className="font-semibold text-[11px]">720p HD • Auto Split &lt; 50 MB</span>
                 </div>
               )}
             </div>
@@ -856,7 +931,9 @@ export function VideoRecorderModal({
                 className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-900/30"
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />
-                <span>Use Video {capturedPhotos.length > 0 ? `+ ${capturedPhotos.length} Photos` : ''}</span>
+                <span>
+                  Use Video {recordedParts.length > 1 ? `(${recordedParts.length} Parts <50MB)` : ''} {capturedPhotos.length > 0 ? `+ ${capturedPhotos.length} Photos` : ''}
+                </span>
               </button>
             </div>
           )}

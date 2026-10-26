@@ -22,6 +22,7 @@ import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import { ZoomableImageViewer } from '../common/ZoomableImageViewer';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
+import { downloadFileSafely } from '../../utils/videoUtils';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -414,24 +415,20 @@ export const ComplaintDetailDrawer = ({
     return url.includes('?') ? `${url}&stream=1&_cb=2` : `${url}?stream=1&_cb=2`;
   };
 
-  const handleDownloadFile = async (url, filename) => {
+  const handleDownloadFile = async (url, filename, rotation = 0) => {
     if (!url) return;
     try {
-      showToast('Starting file download...', 'info');
-      const dlUrl = getDownloadUrl(url);
-      const res = await fetch(dlUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename || 'downloaded_file';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
-      showToast('File downloaded successfully!', 'success');
+      showToast(rotation ? `Preparing rotated download (${rotation}°)...` : 'Starting file download...', 'info');
+      await downloadFileSafely(url, filename || 'downloaded_file', {
+        rotation,
+        onProgress: (pct) => {
+          if (pct === 100) {
+            showToast('File downloaded successfully!', 'success');
+          }
+        }
+      });
     } catch (err) {
+      console.error('Safe download error:', err);
       const a = document.createElement('a');
       a.href = getDownloadUrl(url);
       a.download = filename || 'downloaded_file';
@@ -467,10 +464,14 @@ export const ComplaintDetailDrawer = ({
       showToast('Unauthorized: Only Admin and Staff can attach documents to Issue Description & Diagnostics.', 'error');
       return;
     }
-    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
+    const oversized = files.filter(f => f.size > 250 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Please record via In-App HD Camera for automatic multi-part split under 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 250MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
       return;
+    }
+    const largeFiles = files.filter(f => f.size > 50 * 1024 * 1024);
+    if (largeFiles.length > 0) {
+      showToast(`Uploading ${largeFiles.length} file(s) in 5MB parts via chunked upload...`, 'info');
     }
     try {
       setUploadingAtt(true);
@@ -589,12 +590,12 @@ export const ComplaintDetailDrawer = ({
   const processResolutionFiles = (files) => {
     if (!files || files.length === 0) return;
 
-    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
+    const oversized = files.filter(f => f.size > 250 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Please record via In-App HD Camera for automatic multi-part split under 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 250MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
     }
 
-    const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
+    const validFiles = files.filter(f => f.size <= 250 * 1024 * 1024);
     if (validFiles.length === 0) return;
 
     const newItems = validFiles.map((file) => {
@@ -1426,11 +1427,11 @@ export const ComplaintDetailDrawer = ({
 
   const processEditFiles = async (files) => {
     if (!files || files.length === 0) return;
-    const oversized = files.filter(f => f.size > 50 * 1024 * 1024);
+    const oversized = files.filter(f => f.size > 250 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds 250MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Upload limit is 250MB.`, 'error');
     }
-    const validFiles = files.filter(f => f.size <= 50 * 1024 * 1024);
+    const validFiles = files.filter(f => f.size <= 250 * 1024 * 1024);
     if (validFiles.length === 0) return;
 
     const newItems = await Promise.all(
@@ -2633,7 +2634,7 @@ export const ComplaintDetailDrawer = ({
                                     <Upload className="w-4 h-4" />
                                   </div>
                                   <p className="text-xs font-bold text-emerald-800">Drop files here to attach to complaint</p>
-                                  <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 50MB</p>
+                                  <p className="text-[10px] text-emerald-600">Supports photos, videos & documents up to 250MB (uploaded in 5MB parts)</p>
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-center gap-2 text-slate-500 py-0.5">
@@ -3584,7 +3585,7 @@ export const ComplaintDetailDrawer = ({
                                       <Upload className="w-4 h-4" />
                                     </div>
                                     <p className="text-xs font-bold text-emerald-800">Drop resolution proofs here</p>
-                                    <p className="text-[10px] text-emerald-600">Supports photos, videos, and PDF documents (Max 50MB)</p>
+                                    <p className="text-[10px] text-emerald-600">Supports photos, videos, and PDF documents up to 250MB (uploaded in 5MB parts)</p>
                                   </div>
                                 ) : (
                                   <div className="space-y-2">
@@ -4887,10 +4888,16 @@ export const ComplaintDetailDrawer = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                    onClick={() => handleDownloadFile(
+                      previewDocModal.url, 
+                      previewDocModal.name, 
+                      previewDocModal.isVideo ? previewVideoMeta.rotation : 0
+                    )}
                     className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                    title={previewDocModal.isVideo && previewVideoMeta.rotation ? `Download video rotated by ${previewVideoMeta.rotation}°` : 'Download file'}
                   >
-                    <Download className="w-3.5 h-3.5" /> Download File
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download{previewDocModal.isVideo && previewVideoMeta.rotation ? ` (${previewVideoMeta.rotation}°)` : ' File'}</span>
                   </button>
                   <button 
                     type="button" 
@@ -4926,10 +4933,15 @@ export const ComplaintDetailDrawer = ({
                         <p className="text-[11px] text-slate-500 mt-0.5 mb-3">If inline playback cannot start, download the full original video:</p>
                         <button
                           type="button"
-                          onClick={() => handleDownloadFile(previewDocModal.url, previewDocModal.name)}
+                          onClick={() => handleDownloadFile(
+                            previewDocModal.url, 
+                            previewDocModal.name,
+                            previewVideoMeta.rotation
+                          )}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                         >
-                          <Download className="w-3.5 h-3.5" /> Download Video
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download Video{previewVideoMeta.rotation ? ` (${previewVideoMeta.rotation}°)` : ''}</span>
                         </button>
                       </div>
                     ) : (

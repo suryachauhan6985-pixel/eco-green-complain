@@ -24,6 +24,7 @@ import {
 } from './WhatsAppMessageRenderers';
 import { WhatsAppVoiceRecorderBar } from './WhatsAppVoiceRecorderBar';
 import { WhatsAppQuickTemplatesModal, DEFAULT_WHATSAPP_TEMPLATES } from './WhatsAppQuickTemplatesModal';
+import { downloadFileSafely } from '../../utils/videoUtils';
 import { 
   Search, Send, FileText, Paperclip, Bell, 
   CheckCheck, Check, Clock, Phone, User, Ticket,
@@ -988,9 +989,13 @@ export const WhatsAppWebInbox = ({
   const processWhatsAppFile = (file) => {
     if (!file) return;
 
-    if (file.size > 50 * 1024 * 1024) {
-      showToast('File size exceeds 50MB limit. Use In-App HD Camera for automatic split under 50MB.', 'error');
+    if (file.size > 250 * 1024 * 1024) {
+      showToast(`File size exceeds 250MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
       return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      showToast(`Large file (${(file.size / (1024 * 1024)).toFixed(1)} MB) will be uploaded in 5MB parts.`, 'info');
     }
 
     setSelectedFile(file);
@@ -1102,26 +1107,22 @@ export const WhatsAppWebInbox = ({
     if (mediaInputRef.current) mediaInputRef.current.value = '';
   };
 
-  // Direct in-app media & document download helper (Blob streaming forces direct save)
-  const handleDownloadFile = async (url, filename) => {
+  // Direct in-app media & document download helper (Blob streaming forces direct save with optional rotation)
+  const handleDownloadFile = async (url, filename, rotation = 0) => {
     if (!url) return;
     try {
-      showToast('Downloading file...', 'info');
-      const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
-      const res = await fetch(downloadUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename || 'whatsapp_file';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
-      showToast('File downloaded directly to your device', 'success');
+      showToast(rotation ? `Preparing rotated download (${rotation}°)...` : 'Downloading file...', 'info');
+      await downloadFileSafely(url, filename || 'whatsapp_file', {
+        rotation,
+        onProgress: (pct) => {
+          if (pct === 100) {
+            showToast('File downloaded successfully!', 'success');
+          }
+        }
+      });
     } catch (e) {
-      // Direct anchor download without _blank navigation
+      console.error('Safe download error:', e);
+      // Direct anchor download without _blank navigation fallback
       const a = document.createElement('a');
       a.href = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
       a.download = filename || 'whatsapp_file';
@@ -1183,7 +1184,7 @@ export const WhatsAppWebInbox = ({
       let mediaData = null;
       if (currentFile) {
         try {
-          showToast(`Uploading ${currentFile.name} (up to 50MB)...`, 'info');
+          showToast(`Uploading ${currentFile.name}...`, 'info');
           mediaData = await uploadFileToSupabase(currentFile, selectedPhone, 'whatsapp');
         } catch (storageErr) {
           console.warn('Direct upload warning, falling back:', storageErr.message);
@@ -3242,7 +3243,7 @@ export const WhatsAppWebInbox = ({
               <Upload className="w-8 h-8 text-white" />
             </div>
             <p className="text-base font-bold">Drop file to attach to WhatsApp</p>
-            <p className="text-xs text-white/85">Supports photos, videos & PDF documents up to 50MB</p>
+            <p className="text-xs text-white/85">Supports photos, videos & PDF documents up to 250MB (uploaded in 5MB parts)</p>
           </div>
         )}
         {selectedPhone ? (
@@ -4682,9 +4683,10 @@ export const WhatsAppWebInbox = ({
           <WhatsAppMediaLightbox
             media={previewMedia}
             onClose={() => setPreviewMedia(null)}
-            onDownload={() => handleDownloadFile(
+            onDownload={(rotation) => handleDownloadFile(
               previewMedia.url,
-              previewMedia.type === 'video' ? 'whatsapp_video.mp4' : 'whatsapp_photo.jpg'
+              previewMedia.type === 'video' ? 'whatsapp_video.mp4' : 'whatsapp_photo.jpg',
+              rotation
             )}
             onAttachToComplaint={() => {
               const targetMsg = previewMedia.msg || messages.find(m => getWhatsAppMediaUrl(m) === previewMedia.url) || {

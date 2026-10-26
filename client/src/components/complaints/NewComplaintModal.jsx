@@ -5,6 +5,7 @@ import { useDialog } from '../../context/DialogContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import { uploadFileToSupabase, uploadMultipleFilesWithProgress } from '../../utils/storageUpload';
+import { downloadFileSafely } from '../../utils/videoUtils';
 import { ProcessingProgressModal } from '../common/ProcessingProgressModal';
 import { broadcastComplaintsUpdate } from '../../utils/liveSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
@@ -12,7 +13,7 @@ import { VideoRecorderModal } from '../common/VideoRecorderModal';
 import { ZoomableImageViewer } from '../common/ZoomableImageViewer';
 import { buildComplaintRegisteredWhatsApp } from '../../utils/templateUtils';
 import { 
-  X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, 
+  X, Sun, Droplets, Wind, AlertTriangle, AlertCircle, Upload, Download, Loader2,
   CheckCircle2, Copy, Send, Sparkles, Phone, Mail, MapPin,
   Search, RefreshCw, ShieldCheck, ShieldAlert, Award, Calendar, Check,
   Link, IndianRupee, Trash2, FileText, MessageCircle, ExternalLink, Eye,
@@ -1087,12 +1088,17 @@ export const NewComplaintModal = ({
 
   const processFiles = async (selected) => {
     if (!selected || selected.length === 0) return;
-    const oversized = selected.filter(f => f.size > 50 * 1024 * 1024);
+    const oversized = selected.filter(f => f.size > 250 * 1024 * 1024);
     if (oversized.length > 0) {
-      showToast(`File "${oversized[0].name}" exceeds 50MB limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB). Please record via In-App HD Camera for automatic multi-part split under 50MB.`, 'error');
+      showToast(`File "${oversized[0].name}" exceeds the 250MB maximum limit (${(oversized[0].size / (1024 * 1024)).toFixed(1)} MB).`, 'error');
     }
-    const validFiles = selected.filter(f => f.size <= 50 * 1024 * 1024);
+    const validFiles = selected.filter(f => f.size <= 250 * 1024 * 1024);
     if (validFiles.length === 0) return;
+
+    const largeVideos = validFiles.filter(f => f.size > 50 * 1024 * 1024 && (f.type?.startsWith('video/') || f.name?.match(/\.(mp4|webm|mov|3gp|mkv)$/i)));
+    if (largeVideos.length > 0) {
+      showToast(`Large video "${largeVideos[0].name}" (${(largeVideos[0].size / (1024 * 1024)).toFixed(1)} MB) will be uploaded in fast 5MB parts.`, 'info');
+    }
 
     const newItems = await Promise.all(
       validFiles.map(async (file) => {
@@ -3055,14 +3061,14 @@ export const NewComplaintModal = ({
                         <Upload className="w-5 h-5" />
                       </div>
                       <p className="text-xs font-bold text-emerald-800">Drop files here to upload</p>
-                      <p className="text-[10px] text-emerald-600">Supports images, videos, and PDF documents (Max 50MB)</p>
+                      <p className="text-[10px] text-emerald-600">Supports photos, PDF documents & videos up to 250MB (uploaded in 5MB parts)</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <label className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-white hover:bg-emerald-50/40 transition-colors">
                         <Upload className="w-5 h-5 text-slate-400 mb-1" />
                         <span className="text-xs text-slate-700 font-semibold">Browse Gallery / Files</span>
-                        <span className="text-[10px] text-slate-400">Drag & drop or click (Max 5)</span>
+                        <span className="text-[10px] text-slate-400">Drag & drop or click (Up to 250MB)</span>
                         <input
                           type="file"
                           multiple
@@ -3087,11 +3093,11 @@ export const NewComplaintModal = ({
                         type="button"
                         onClick={() => setIsVideoRecorderOpen(true)}
                         className="border-2 border-dashed border-teal-300 hover:border-teal-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-teal-50/40 hover:bg-teal-50/70 transition-colors"
-                        title="Record live video with camera (50 MB limit, auto-compressed 720p HD)"
+                        title="Record live HD video (Auto-split under 50 MB, crisp 720p HD)"
                       >
                         <Video className="w-5 h-5 text-teal-600 mb-1" />
                         <span className="text-xs text-teal-800 font-bold">Record Live Video</span>
-                        <span className="text-[10px] text-teal-600/80">Auto-compressed • Max 50 MB</span>
+                        <span className="text-[10px] text-teal-600/80">720p HD • Auto-Split &lt; 50 MB</span>
                       </button>
                     </div>
                   )}
@@ -3270,6 +3276,28 @@ export const NewComplaintModal = ({
                   >
                     <RotateCw className="w-3.5 h-3.5" />
                     <span>Rotate{previewVideoMeta.rotation ? ` ${previewVideoMeta.rotation}°` : ''}</span>
+                  </button>
+                )}
+                {previewItem.isVideo && previewItem.preview && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        showToast(previewVideoMeta.rotation ? `Transforming video to ${previewVideoMeta.rotation}° for download...` : 'Starting video download...', 'info');
+                        await downloadFileSafely(previewItem.preview, previewItem.name, {
+                          rotation: previewVideoMeta.rotation,
+                          onProgress: (p) => showToast(p.stage, 'info')
+                        });
+                        showToast('Video downloaded successfully!', 'success');
+                      } catch (dlErr) {
+                        showToast(`Download failed: ${dlErr.message}`, 'error');
+                      }
+                    }}
+                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                    title={previewVideoMeta.rotation ? `Download video rotated by ${previewVideoMeta.rotation}°` : 'Download video'}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download{previewVideoMeta.rotation ? ` (${previewVideoMeta.rotation}°)` : ''}</span>
                   </button>
                 )}
                 <button 

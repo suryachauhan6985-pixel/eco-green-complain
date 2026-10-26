@@ -454,9 +454,9 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
     const rangeHeader = c.req.header('range');
     const isDownload = c.req.query('download') === '1';
 
-    // If explicit download is requested, serve full content unless range is specifically required
+    // Support HTTP Range headers for both streaming and resumable downloads
     let getOptions = {};
-    if (rangeHeader && !isDownload) {
+    if (rangeHeader) {
       const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
       if (match) {
         const start = match[1] !== '' ? parseInt(match[1], 10) : undefined;
@@ -517,7 +517,7 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
     headers.set('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
 
     // If partial range response
-    if (rangeHeader && object.range && !isDownload) {
+    if (rangeHeader && object.range) {
       // CRITICAL: 206 Partial Content must never be cached with public TTL by edge proxies/CDNs (like Vercel)
       headers.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
       headers.set('Pragma', 'no-cache');
