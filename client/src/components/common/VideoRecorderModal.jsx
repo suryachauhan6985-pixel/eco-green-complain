@@ -27,6 +27,8 @@ export function VideoRecorderModal({
   const [facingMode, setFacingMode] = useState('environment'); // Default to rear camera
   const [isInitializing, setIsInitializing] = useState(false);
   const [cameraError, setCameraError] = useState(null);
+  // Permission Dialog State: 'checking' | 'prompt' | 'granted' | 'denied' | 'insecure_context'
+  const [permissionStatus, setPermissionStatus] = useState('checking');
 
   // Recording State & Multi-Part Auto-Split
   const [isRecording, setIsRecording] = useState(false);
@@ -195,8 +197,9 @@ export function VideoRecorderModal({
   }, []);
 
   // Initialize native camera feed
+  // Initialize native camera feed
   const initializeCamera = useCallback(async (desiredFacing = facingMode, deviceId = null) => {
-    if (!isOpen) return;
+    if (!isOpen) return null;
     setIsInitializing(true);
     setCameraError(null);
     setZoomLevel(1);
@@ -210,9 +213,9 @@ export function VideoRecorderModal({
     }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError('Camera access is not supported by your browser. Please use the device camera or file selector below.');
+      setPermissionStatus('insecure_context');
       setIsInitializing(false);
-      return;
+      return null;
     }
 
     // Strict 720p maximum resolution & stable 30 FPS bounds:
@@ -278,15 +281,17 @@ export function VideoRecorderModal({
             });
           } catch (finalErr) {
             console.error('[VideoRecorder] All getUserMedia attempts failed:', finalErr);
-            let msg = 'Could not access device camera. Please check camera permissions in your browser settings.';
             if (finalErr.name === 'NotAllowedError' || finalErr.name === 'PermissionDeniedError') {
-              msg = 'Camera permission was denied. Please allow camera access in your browser settings to record video.';
-            } else if (finalErr.name === 'NotReadableError') {
-              msg = 'Camera is currently locked by another app or phone call. Please close other camera apps and try again.';
+              setPermissionStatus('denied');
+            } else {
+              let msg = 'Could not access device camera. Please check camera permissions in your browser settings.';
+              if (finalErr.name === 'NotReadableError') {
+                msg = 'Camera is currently locked by another app or phone call. Please close other camera apps and try again.';
+              }
+              setCameraError(msg);
             }
-            setCameraError(msg);
             setIsInitializing(false);
-            return;
+            return null;
           }
         }
       }
@@ -294,6 +299,8 @@ export function VideoRecorderModal({
 
     activeStreamRef.current = newStream;
     setStream(newStream);
+    setPermissionStatus('granted');
+    setCameraError(null);
     attachStreamToVideo(newStream);
 
     // Track active device ID
@@ -313,20 +320,82 @@ export function VideoRecorderModal({
     // Refresh devices list
     detectCameras();
     setIsInitializing(false);
+    return newStream;
   }, [isOpen, facingMode, attachStreamToVideo, recordedBlob, detectCameras]);
 
-  // Initialize camera whenever modal opens
+  // Check permission status and initialize if already granted
+  const checkPermissionAndInit = useCallback(async () => {
+    // 1. Check if the environment is a secure context or localhost
+    const isSecure = Boolean(
+      window.isSecureContext ||
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    );
+
+    if (!isSecure && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)) {
+      setPermissionStatus('insecure_context');
+      return;
+    }
+
+    // 2. Query browser camera permission if supported
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const queryRes = await navigator.permissions.query({ name: 'camera' });
+        if (queryRes.state === 'granted') {
+          await initializeCamera(facingMode);
+          return;
+        } else if (queryRes.state === 'denied') {
+          setPermissionStatus('denied');
+          return;
+        } else {
+          // 'prompt' state: show the native Android-style permission dialog
+          setPermissionStatus('prompt');
+          return;
+        }
+      } catch (e) {
+        console.warn('[VideoRecorder] navigator.permissions.query failed or not supported:', e);
+      }
+    }
+
+    // 3. Fallback: prompt dialog first
+    setPermissionStatus('prompt');
+  }, [facingMode, initializeCamera]);
+
+  // User explicitly clicks "Enable Camera" button from the Android permission card
+  const handleRequestPermission = async () => {
+    setIsInitializing(true);
+    setCameraError(null);
+    try {
+      const liveStream = await initializeCamera(facingMode);
+      if (liveStream) {
+        setPermissionStatus('granted');
+      }
+    } catch (err) {
+      console.warn('[VideoRecorder] Permission request failed:', err);
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        setPermissionStatus('denied');
+      } else {
+        setCameraError(err?.message || 'Could not access device camera.');
+      }
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  // Initialize camera or check permission whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      initializeCamera(facingMode);
+      checkPermissionAndInit();
     } else {
       stopStream();
       resetRecording();
+      setPermissionStatus('checking');
+      setCameraError(null);
     }
     return () => {
       stopStream();
     };
-  }, [isOpen]);
+  }, [isOpen, checkPermissionAndInit, stopStream, resetRecording]);
 
   // Keep video preview attached if video element re-mounts
   useEffect(() => {
@@ -618,8 +687,10 @@ export function VideoRecorderModal({
   // Retake video
   const handleRetake = () => {
     resetRecording();
-    if (!stream) {
+    if (permissionStatus === 'granted') {
       initializeCamera(facingMode);
+    } else {
+      checkPermissionAndInit();
     }
   };
 
@@ -651,9 +722,15 @@ export function VideoRecorderModal({
     }
 
     stopStream();
-    resetRecording();
-    onRecordingComplete(file);
-    onClose();
+    const url = URL.createObjectURL(file);
+    previewUrlRef.current = url;
+    setRecordedBlob(file);
+    setPreviewUrl(url);
+    setRecordedParts([file]);
+    recordedPartsRef.current = [file];
+    setCurrentSizeBytes(file.size);
+    setPermissionStatus('granted'); // Move cleanly into review mode
+    e.target.value = '';
   };
 
   if (!isOpen) return null;
@@ -734,31 +811,203 @@ export function VideoRecorderModal({
             </div>
           )}
 
-          {/* Camera Error Screen with One-Click Fallback */}
-          {cameraError && !recordedBlob && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center bg-slate-900 text-white">
-              <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mb-4">
-                <AlertCircle className="w-8 h-8" />
-              </div>
-              <h4 className="text-lg font-bold mb-2">Camera Unavailable</h4>
-              <p className="text-xs text-slate-300 max-w-sm mb-6 leading-relaxed">
-                {cameraError}
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
-                <button
-                  type="button"
-                  onClick={() => initializeCamera(facingMode)}
-                  className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" /> Try Again
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileFallbackInputRef.current?.click()}
-                  className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-2 border border-slate-700"
-                >
-                  <Upload className="w-4 h-4" /> Use Device Camera
-                </button>
+          {/* NATIVE ANDROID-STYLE PERMISSION SHEET / DIALOG */}
+          {!recordedBlob && (permissionStatus !== 'granted' || (cameraError && !stream)) && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center p-4 sm:p-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
+              <div className="w-full max-w-sm bg-slate-900/95 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+                
+                {/* 1. STATE: INSECURE HTTP CONTEXT (Local IP Address over HTTP) */}
+                {permissionStatus === 'insecure_context' && (
+                  <>
+                    <div className="w-16 h-16 rounded-2xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center mb-4 ring-4 ring-teal-500/10 shadow-inner">
+                      <Camera className="w-8 h-8 text-teal-400" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Camera on Local Network</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed mb-5">
+                      Mobile Chrome requires HTTPS for live in-app camera streaming over local network IP addresses. You can record high-definition video directly using your phone's native camera.
+                    </p>
+                    
+                    <div className="w-full bg-slate-950/60 rounded-2xl p-3 border border-slate-800/80 mb-6 text-left flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2.5 text-xs text-slate-300">
+                        <span className="w-5 h-5 rounded-md bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
+                          <Check className="w-3.5 h-3.5" />
+                        </span>
+                        <span>Full HD video quality supported natively</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-xs text-slate-300">
+                        <span className="w-5 h-5 rounded-md bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
+                          <Check className="w-3.5 h-3.5" />
+                        </span>
+                        <span>Auto-split under 50 MB ready for instant upload</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2.5 w-full">
+                      <button
+                        type="button"
+                        onClick={() => fileFallbackInputRef.current?.click()}
+                        className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-teal-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>Use Device Camera</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClose}
+                        className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700/80 active:scale-[0.98] text-slate-300 hover:text-white font-medium text-xs transition-all cursor-pointer border border-slate-700/60"
+                      >
+                        Later
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* 2. STATE: CAMERA PERMISSION BLOCKED / DENIED */}
+                {permissionStatus === 'denied' && (
+                  <>
+                    <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center mb-4 ring-4 ring-amber-500/10 shadow-inner">
+                      <AlertCircle className="w-8 h-8 text-amber-400" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Camera Permission Blocked</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed mb-5">
+                      Camera permission was denied in your browser settings. You can record using your device camera below, or allow camera access in Chrome site settings.
+                    </p>
+
+                    <div className="flex flex-col gap-2.5 w-full">
+                      <button
+                        type="button"
+                        onClick={() => fileFallbackInputRef.current?.click()}
+                        className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-teal-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Use Device Camera</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRequestPermission}
+                        disabled={isInitializing}
+                        className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-slate-200 font-medium text-xs transition-all cursor-pointer border border-slate-700 flex items-center justify-center gap-2"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isInitializing ? 'animate-spin' : ''}`} />
+                        <span>Try Again</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClose}
+                        className="w-full py-2.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                      >
+                        Later
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* 3. STATE: INITIAL PERMISSION PROMPT ("Enable Camera" / "Later" / "Use Device Camera") */}
+                {permissionStatus !== 'insecure_context' && permissionStatus !== 'denied' && !cameraError && (
+                  <>
+                    <div className="w-16 h-16 rounded-2xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center mb-4 ring-4 ring-teal-500/10 shadow-inner">
+                      <Camera className="w-8 h-8 text-teal-400" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Allow Camera Access?</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed mb-5">
+                      Eco Green Support needs access to your camera and microphone to record high-definition site inspections and capture voice diagnostic notes.
+                    </p>
+
+                    <div className="w-full bg-slate-950/60 rounded-2xl p-3 border border-slate-800/80 mb-6 text-left flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2.5 text-xs text-slate-300">
+                        <span className="w-5 h-5 rounded-md bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
+                          <Video className="w-3.5 h-3.5" />
+                        </span>
+                        <span>Live 720p HD recording with auto-splitting</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-xs text-slate-300">
+                        <span className="w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                          <Check className="w-3.5 h-3.5" />
+                        </span>
+                        <span>Spoken notes & audio fault diagnostics</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2.5 w-full">
+                      <button
+                        type="button"
+                        onClick={handleRequestPermission}
+                        disabled={isInitializing}
+                        className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-teal-500/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isInitializing ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Requesting Access...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Camera className="w-4 h-4" />
+                            <span>Enable Camera</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleClose}
+                        disabled={isInitializing}
+                        className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700/80 active:scale-[0.98] text-slate-300 hover:text-white font-medium text-xs transition-all cursor-pointer border border-slate-700/60"
+                      >
+                        Later
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => fileFallbackInputRef.current?.click()}
+                        className="pt-1 text-[11px] text-teal-400 hover:text-teal-300 underline underline-offset-2 transition-colors cursor-pointer"
+                      >
+                        Or use device camera app
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* 4. STATE: CAMERA HARDWARE ERROR / BUSY */}
+                {cameraError && permissionStatus === 'granted' && (
+                  <>
+                    <div className="w-16 h-16 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center mb-4 ring-4 ring-red-500/10 shadow-inner">
+                      <AlertCircle className="w-8 h-8 text-red-400" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Camera Unavailable</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed mb-5">
+                      {cameraError}
+                    </p>
+
+                    <div className="flex flex-col gap-2.5 w-full">
+                      <button
+                        type="button"
+                        onClick={() => initializeCamera(facingMode)}
+                        disabled={isInitializing}
+                        className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-teal-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isInitializing ? 'animate-spin' : ''}`} />
+                        <span>Try Again</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileFallbackInputRef.current?.click()}
+                        className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-slate-200 font-medium text-xs transition-all cursor-pointer border border-slate-700 flex items-center justify-center gap-2"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Use Device Camera</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClose}
+                        className="w-full py-2.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                      >
+                        Later
+                      </button>
+                    </div>
+                  </>
+                )}
+
               </div>
             </div>
           )}
@@ -813,7 +1062,7 @@ export function VideoRecorderModal({
           </div>
 
           {/* FLOATING ZOOM PRESET CONTROLS (Vertical Pill on the Right Side) */}
-          {!recordedBlob && !cameraError && (
+          {!recordedBlob && !cameraError && permissionStatus === 'granted' && (
             <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-35 pointer-events-none">
               <div className="pointer-events-auto flex flex-col items-center gap-1.5 p-1.5 rounded-full bg-slate-950/90 border border-white/20 shadow-2xl">
                 {[0.5, 1, 2, 3, 5].map((preset) => (
@@ -857,7 +1106,7 @@ export function VideoRecorderModal({
         <div className="absolute bottom-0 inset-x-0 p-3 sm:p-5 landscape:p-2 pb-safe bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col items-center justify-center gap-1.5 z-30 pointer-events-none">
           
           {/* Main Shutter & Actions Row */}
-          {!recordedBlob ? (
+          {!recordedBlob && permissionStatus === 'granted' ? (
             <div className="pointer-events-auto w-full flex items-center justify-around max-w-sm">
               
               {/* Snapshot Photo Button */}
@@ -913,7 +1162,7 @@ export function VideoRecorderModal({
                 <FlipHorizontal className="w-6 h-6 text-white" />
               </button>
             </div>
-          ) : (
+          ) : recordedBlob ? (
             /* REVIEW MODE CONTROLS: Retake vs Use Video */
             <div className="pointer-events-auto w-full flex items-center justify-center gap-3 max-w-sm">
               <button
@@ -936,10 +1185,10 @@ export function VideoRecorderModal({
                 </span>
               </button>
             </div>
-          )}
+          ) : null}
 
           {/* Secondary Device File Fallback Link */}
-          {!isRecording && !recordedBlob && (
+          {!isRecording && !recordedBlob && permissionStatus === 'granted' && (
             <button
               type="button"
               onClick={() => fileFallbackInputRef.current?.click()}
