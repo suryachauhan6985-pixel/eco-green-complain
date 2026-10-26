@@ -2971,7 +2971,7 @@ async function handleExpressCreateComplaint(req, res) {
     console.error('Create complaint error:', err);
     return res.status(500).json({ error: err.message });
   }
-});
+}
 
 // Public Customer Self-Registration
 app.post('/api/complaints/public-register', publicComplaintLimiter, upload.array('attachments', 5), async (req, res) => {
@@ -3577,7 +3577,7 @@ async function handleExpressUpdateComplaint(req, res) {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-});
+}
 
 // Assign Technician
 app.post('/api/complaints/:id/assign', authenticateToken, async (req, res) => {
