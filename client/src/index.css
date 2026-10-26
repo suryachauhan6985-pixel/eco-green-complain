@@ -121,11 +121,11 @@ button:not(:disabled):not(.no-press-feedback):active,
 @keyframes tabContentEnter {
   0% {
     opacity: 0;
-    transform: scale(0.995) translateY(4px) translateZ(0);
+    transform: translate3d(0, 8px, 0);
   }
   100% {
     opacity: 1;
-    transform: scale(1) translateY(0) translateZ(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -238,9 +238,10 @@ button:not(:disabled):not(.no-press-feedback):active,
 
 /* 4. Dedicated Enterprise Smooth Classes */
 .tab-content-enter {
-  animation: tabContentEnter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabContentEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
-  transform: translateZ(0);
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 
 /* Apple Segmented Pills (Fast, bouncy, spring tactile feedback) */

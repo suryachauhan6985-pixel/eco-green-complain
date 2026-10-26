@@ -14,6 +14,9 @@ import { subscribeLiveSync, broadcastComplaintsUpdate, broadcastLedgerUpdate, br
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
+import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
+
+const STATUS_PILLS = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
 
 export const ComplaintList = ({ 
   onSelectComplaint, 
@@ -207,6 +210,14 @@ export const ComplaintList = ({
     }
   };
 
+  const {
+    containerRef: statusContainerRef,
+    getButtonRef: getStatusButtonRef,
+    indicator: statusIndicator,
+    updateIndicator: updateStatusIndicator,
+    onTabClick: onStatusTabClick
+  } = useSlidingIndicator(statusFilter);
+
   const prevRefreshKeyRef = useRef(refreshKey);
   useEffect(() => {
     if (prevRefreshKeyRef.current !== refreshKey) {
@@ -358,7 +369,7 @@ export const ComplaintList = ({
   };
 
   // Standard status pills restored to original order and items
-  const statusPills = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
+  const statusPills = STATUS_PILLS;
 
   // Dynamically compute tickets matching all non-status filters (Product, Priority, Technician, Search)
   // so that status tab badges update dynamically whenever any filter is applied!
@@ -686,24 +697,42 @@ export const ComplaintList = ({
           )}
         </div>
 
-        {/* Status Pills Ribbon */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
+        {/* Status Pills Ribbon with Apple Sliding Capsule Indicator */}
+        <div 
+          ref={statusContainerRef}
+          onScroll={updateStatusIndicator}
+          className="relative flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none p-1 bg-slate-100/80 rounded-full border border-slate-200/60 isolate"
+        >
+          {/* Apple Sliding Pill Background Highlight */}
+          <div
+            className="absolute top-1 bottom-1 rounded-full bg-emerald-700 shadow-xs pointer-events-none z-0"
+            style={{
+              transform: `translate3d(${statusIndicator.left}px, 0, 0)`,
+              width: `${statusIndicator.width}px`,
+              opacity: statusIndicator.opacity,
+              transition: 'transform 260ms cubic-bezier(0.16, 1, 0.3, 1), width 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease',
+              willChange: 'transform, width'
+            }}
+          />
+
           {statusPills.map((st) => {
             const count = getStatusCount(st);
+            const isActive = statusFilter === st;
             return (
               <button
                 key={st}
+                ref={getStatusButtonRef(st)}
                 type="button"
-                onClick={() => handleStatusFilterChange(st)}
-                className={`apple-segmented-pill px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 cursor-pointer select-none ${
-                  statusFilter === st
-                    ? 'bg-emerald-700 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                onClick={() => onStatusTabClick(st, () => handleStatusFilterChange(st))}
+                className={`relative z-10 px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 cursor-pointer select-none transition-colors duration-200 ${
+                  isActive
+                    ? 'text-white'
+                    : 'text-slate-700 hover:text-slate-900'
                 }`}
               >
                 <span>{st === 'all' ? 'All Tasks' : st}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                  statusFilter === st ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors duration-200 ${
+                  isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
                 }`}>
                   {count}
                 </span>

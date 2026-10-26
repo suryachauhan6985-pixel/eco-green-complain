@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { AccountSettingsModal } from '../admin/AccountSettingsModal';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
 
 export const Navbar = ({ 
   currentTab, 
@@ -88,6 +89,44 @@ export const Navbar = ({
 
   const currentRoleConfig = roles.find(r => r.id === currentUser?.role) || roles[0];
 
+  const navTabs = React.useMemo(() => {
+    const role = currentUser?.role;
+    if (role === 'customer') {
+      return [
+        { id: 'customer', label: 'Track & Raise Complaints', icon: Search, badge: 'Public' }
+      ];
+    }
+    if (role === 'technician') {
+      return [
+        { id: 'technician', label: 'My Field Workspace', icon: Wrench }
+      ];
+    }
+    if (role === 'staff') {
+      return [
+        { id: 'complaints', label: 'Complaints Desk', icon: Users },
+        { id: 'technician', label: 'Field Operations', icon: Wrench },
+        { id: 'whatsapp-inbox', label: 'WhatsApp Web', icon: MessageCircle }
+      ];
+    }
+    // Admin role
+    return [
+      { id: 'complaints', label: 'Complaints', icon: Users },
+      { id: 'technician', label: 'Field View', icon: Wrench },
+      { id: 'whatsapp-inbox', label: 'WhatsApp Web', icon: MessageCircle },
+      { id: 'team', label: 'Staff & Techs', icon: Shield },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+      { id: 'settings', label: 'Settings', icon: Settings }
+    ];
+  }, [currentUser?.role]);
+
+  const activeTabId = (currentTab === 'templates') ? 'settings' : currentTab;
+  const {
+    containerRef: navContainerRef,
+    getButtonRef: getNavButtonRef,
+    indicator: navIndicator,
+    onTabClick: onNavTabClick
+  } = useSlidingIndicator(activeTabId);
+
   return (
     <header 
       className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs"
@@ -129,168 +168,49 @@ export const Navbar = ({
               </span>
             </div>
 
-            {/* Desktop Navigation Tabs - Dynamically Filtered by Active Role */}
-            <nav className="hidden md:flex items-center space-x-1 pl-3 border-l border-slate-200">
-              {/* Customer View */}
-              {currentUser?.role === 'customer' && (
-                <button
-                  onClick={() => setCurrentTab('customer')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                    currentTab === 'customer'
-                      ? 'bg-emerald-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <Search className={`w-3.5 h-3.5 ${currentTab === 'customer' ? 'text-white' : 'text-slate-500'}`} />
-                  <span>Track & Raise Complaints</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                    currentTab === 'customer' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
-                  }`}>Public</span>
-                </button>
-              )}
+            {/* Desktop Navigation Tabs - Apple Sliding Capsule Segmented Control */}
+            <nav 
+              ref={navContainerRef}
+              className="relative hidden md:flex items-center p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 shadow-2xs isolate ml-3 select-none"
+            >
+              {/* Apple Sliding Green Pill Highlight with left-0 anchor */}
+              <div
+                className="absolute left-0 top-1 bottom-1 rounded-lg bg-emerald-600 shadow-sm pointer-events-none z-0"
+                style={{
+                  transform: `translate3d(${navIndicator.left}px, 0, 0)`,
+                  width: `${navIndicator.width}px`,
+                  opacity: navIndicator.opacity,
+                  transition: 'transform 260ms cubic-bezier(0.16, 1, 0.3, 1), width 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease',
+                  willChange: 'transform, width'
+                }}
+              />
 
-              {/* Technician View */}
-              {currentUser?.role === 'technician' && (
-                <button
-                  onClick={() => setCurrentTab('technician')}
-                  style={currentTab === 'technician' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                    currentTab === 'technician'
-                      ? 'bg-emerald-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <Wrench className={`w-3.5 h-3.5 ${currentTab === 'technician' ? 'text-white' : 'text-slate-500'}`} />
-                  <span>My Field Workspace</span>
-                </button>
-              )}
-
-              {/* Staff View */}
-              {currentUser?.role === 'staff' && (
-                <>
+              {navTabs.map((tab) => {
+                const isActive = activeTabId === tab.id;
+                const Icon = tab.icon;
+                return (
                   <button
-                    onClick={() => setCurrentTab('complaints')}
-                    style={currentTab === 'complaints' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'complaints'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    key={tab.id}
+                    ref={getNavButtonRef(tab.id)}
+                    onClick={() => onNavTabClick(tab.id, () => setCurrentTab(tab.id))}
+                    className={`relative z-10 px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer select-none transition-colors duration-200 ${
+                      isActive
+                        ? 'text-white'
+                        : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <Users className={`w-3.5 h-3.5 ${currentTab === 'complaints' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Complaints Desk</span>
+                    <Icon className={`w-3.5 h-3.5 transition-colors duration-200 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                    <span>{tab.label}</span>
+                    {tab.badge && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full transition-colors duration-200 ${
+                        isActive ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {tab.badge}
+                      </span>
+                    )}
                   </button>
-
-                  <button
-                    onClick={() => setCurrentTab('technician')}
-                    style={currentTab === 'technician' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'technician'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Wrench className={`w-3.5 h-3.5 ${currentTab === 'technician' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Field Operations</span>
-                  </button>
-
-                  <button
-                    onClick={() => setCurrentTab('whatsapp-inbox')}
-                    style={currentTab === 'whatsapp-inbox' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'whatsapp-inbox'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <MessageCircle className={`w-3.5 h-3.5 ${currentTab === 'whatsapp-inbox' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>WhatsApp Web</span>
-                  </button>
-                </>
-              )}
-
-              {/* Admin View */}
-              {currentUser?.role === 'admin' && (
-                <>
-                  <button
-                    onClick={() => setCurrentTab('complaints')}
-                    style={currentTab === 'complaints' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'complaints'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Users className={`w-3.5 h-3.5 ${currentTab === 'complaints' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Complaints</span>
-                  </button>
-
-                  <button
-                    onClick={() => setCurrentTab('technician')}
-                    style={currentTab === 'technician' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'technician'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Wrench className={`w-3.5 h-3.5 ${currentTab === 'technician' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Field View</span>
-                  </button>
-
-                  <button
-                    onClick={() => setCurrentTab('whatsapp-inbox')}
-                    style={currentTab === 'whatsapp-inbox' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'whatsapp-inbox'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <MessageCircle className={`w-3.5 h-3.5 ${currentTab === 'whatsapp-inbox' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>WhatsApp Web</span>
-                  </button>
-
-                  <button
-                    onClick={() => setCurrentTab('team')}
-                    style={currentTab === 'team' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'team'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Shield className={`w-3.5 h-3.5 ${currentTab === 'team' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Staff & Techs</span>
-                  </button>
-
-                  <button
-                    onClick={() => setCurrentTab('analytics')}
-                    style={currentTab === 'analytics' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'analytics'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <BarChart3 className={`w-3.5 h-3.5 ${currentTab === 'analytics' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Analytics</span>
-                  </button>
-
-                  <button
-                    onClick={() => setCurrentTab('settings')}
-                    style={currentTab === 'settings' || currentTab === 'templates' ? { backgroundColor: '#059669', color: '#ffffff' } : {}}
-                    className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      currentTab === 'settings' || currentTab === 'templates'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Settings className={`w-3.5 h-3.5 ${currentTab === 'settings' || currentTab === 'templates' ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Settings</span>
-                  </button>
-                </>
-              )}
+                );
+              })}
             </nav>
           </div>
 

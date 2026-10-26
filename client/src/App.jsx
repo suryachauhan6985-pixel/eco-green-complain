@@ -202,7 +202,11 @@ function AppContent() {
   const handleTabChange = (tab, sec = null, keepFilters = false) => {
     const normalized = normalizeTab(tab) || tab;
     const isSameTab = normalized === currentTab;
-    setCurrentTab(normalized);
+
+    // Wrap in startTransition so tab switching remains silky smooth without animation hitching
+    React.startTransition(() => {
+      setCurrentTab(normalized);
+    });
     try {
       localStorage.setItem('egs_active_tab', normalized);
 
@@ -361,9 +365,23 @@ function AppContent() {
     }
   }, [currentUser?.id]);
 
-  // Preload notification templates so getTemplateSync has latest custom templates from DB
+  // Preload notification templates and secondary tabs in background for instant zero-wait tab switches
   useEffect(() => {
     getNotificationTemplates(true).catch(() => {});
+
+    const preloadTabs = () => {
+      import('./components/admin/AnalyticsDashboard');
+      import('./components/whatsapp/WhatsAppWebInbox');
+      import('./components/admin/StaffTechnicianManager');
+      import('./components/admin/AdminSettingsHub');
+      import('./components/technician/TechnicianFieldPortal');
+    };
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      window.requestIdleCallback(preloadTabs, { timeout: 2000 });
+    } else {
+      setTimeout(preloadTabs, 1000);
+    }
   }, []);
 
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);

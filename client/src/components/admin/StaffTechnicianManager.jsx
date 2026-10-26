@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { StaffTeamSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync, broadcastTechniciansUpdate, broadcastCatalogUpdate } from '../../utils/liveSync';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
+import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
 
 export const StaffTechnicianManager = () => {
   const { confirm, alert, showToast: showGlobalToast } = useDialog();
@@ -25,6 +26,12 @@ export const StaffTechnicianManager = () => {
   })();
 
   const [activeTab, setActiveTab] = useState(initialSubTab); // 'technicians' | 'staff' | 'catalog'
+  const {
+    containerRef: subTabsContainerRef,
+    getButtonRef: getSubTabButtonRef,
+    indicator: subTabIndicator,
+    onTabClick: onSubTabClick
+  } = useSlidingIndicator(activeTab);
   const [technicians, setTechnicians] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);

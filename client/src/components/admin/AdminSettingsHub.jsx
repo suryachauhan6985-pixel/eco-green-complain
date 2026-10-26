@@ -15,6 +15,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { TemplateManager } from './TemplateManager';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
 
 // Default Tour Expense Categories
 const DEFAULT_EXPENSE_CATEGORIES = [

@@ -16,6 +16,7 @@ import { subscribeLiveSync, broadcastTechniciansUpdate } from '../../utils/liveS
 import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
+import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
 
 const checkHasLocation = (job) => {
   if (!job) return false;
