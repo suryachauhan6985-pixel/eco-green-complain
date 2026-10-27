@@ -10,6 +10,7 @@ import {
 import { AccountSettingsModal } from '../admin/AccountSettingsModal';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
+import { preloadComponent } from '../../utils/routePreload';
 
 export const Navbar = ({ 
   currentTab, 
@@ -193,6 +194,8 @@ export const Navbar = ({
                     key={tab.id}
                     ref={getNavButtonRef(tab.id)}
                     onClick={() => onNavTabClick(tab.id, () => setCurrentTab(tab.id))}
+                    onMouseEnter={() => preloadComponent(tab.id)}
+                    onTouchStart={() => preloadComponent(tab.id)}
                     className={`relative z-10 px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer select-none transition-colors duration-200 ${
                       isActive
                         ? 'text-white'

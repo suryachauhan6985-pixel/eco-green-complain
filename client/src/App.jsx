@@ -19,6 +19,8 @@ import { initGlobalEscapeListener, useEscapeHandler, ESCAPE_PRIORITY } from './u
 initGlobalEscapeListener();
 
 
+import { preloadAllSecondaryTabs } from './utils/routePreload';
+
 // Code-split heavy secondary tabs and dialogs for lightning-fast initial load
 const CustomerHistoryModal = React.lazy(() => import('./components/complaints/CustomerHistoryModal').then(m => ({ default: m.CustomerHistoryModal })));
 const CustomerSearchModal = React.lazy(() => import('./components/customer/CustomerSearchModal').then(m => ({ default: m.CustomerSearchModal })));
@@ -148,6 +150,12 @@ function AppContent() {
     setSplashComplete(true);
   }, []);
   const [trackingInfo, setTrackingInfo] = useState(() => getTrackingInfoFromUrl());
+
+  useEffect(() => {
+    if (currentUser) {
+      preloadAllSecondaryTabs();
+    }
+  }, [currentUser]);
 
   const getTabFromLocation = () => {
     // 1. Check path (e.g. /complaints, /technician, /analytics, /team, /templates, /whatsapp-inbox)

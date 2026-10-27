@@ -518,11 +518,7 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
 
     // If partial range response
     if (rangeHeader && object.range) {
-      // CRITICAL: 206 Partial Content must never be cached with public TTL by edge proxies/CDNs (like Vercel)
-      headers.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
-      headers.set('Pragma', 'no-cache');
-      headers.set('Expires', '0');
-
+      headers.set('Cache-Control', 'private, max-age=86400');
       const offset = object.range.offset ?? 0;
       const length = object.range.length ?? (object.size - offset);
       headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
@@ -530,13 +526,11 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
       return new Response(object.body, { headers, status: 206 });
     }
 
-    // Full 200 response
-    if (isDownload || mimeType.startsWith('video/')) {
-      // Force private no-store so CDNs never cache incomplete byte streams
-      headers.set('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0');
-      headers.set('Pragma', 'no-cache');
+    // Full 200 response: Cache media files (videos, photos, documents) for instant playback
+    if (isDownload) {
+      headers.set('Cache-Control', 'private, max-age=86400');
     } else {
-      headers.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+      headers.set('Cache-Control', 'public, max-age=2592000, stale-while-revalidate=604800, immutable');
     }
 
     headers.set('Content-Length', String(object.size));

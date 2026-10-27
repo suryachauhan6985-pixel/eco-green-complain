@@ -23,6 +23,7 @@ import { ZoomableImageViewer } from '../common/ZoomableImageViewer';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 import { downloadFileSafely } from '../../utils/videoUtils';
+import { getOrCacheMediaUrl, getInMemoryMediaUrl, preloadComplaintAttachments } from '../../utils/mediaCache';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -185,6 +186,7 @@ export const ComplaintDetailDrawer = ({
   const [savingPayment, setSavingPayment] = useState(false);
   const [revertingPayment, setRevertingPayment] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
+  const [cachedVideoUrl, setCachedVideoUrl] = useState('');
   const [previewVideoMeta, setPreviewVideoMeta] = useState({ isLandscape: false, rotation: 0, isFullscreen: false });
   const [videoPlaybackError, setVideoPlaybackError] = useState(false);
   const videoContainerRef = useRef(null);
@@ -192,7 +194,29 @@ export const ComplaintDetailDrawer = ({
 
   useEffect(() => {
     setVideoPlaybackError(false);
-  }, [previewDocModal?.url]);
+    if (!previewDocModal?.url || !previewDocModal?.isVideo) {
+      setCachedVideoUrl('');
+      return;
+    }
+    // WhatsApp-style instant video playback from memory or CacheStorage
+    const memUrl = getInMemoryMediaUrl(previewDocModal.url);
+    if (memUrl) {
+      setCachedVideoUrl(memUrl);
+      return;
+    }
+    let isMounted = true;
+    getOrCacheMediaUrl(previewDocModal.url)
+      .then((cached) => {
+        if (isMounted && cached) {
+          setCachedVideoUrl(cached);
+        }
+      })
+      .catch((e) => console.warn('Media cache lookup error:', e));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [previewDocModal?.url, previewDocModal?.isVideo]);
   const [uploadingAtt, setUploadingAtt] = useState(false);
   const [deletingAttId, setDeletingAttId] = useState(null);
   const [isDiagnosticsDragging, setIsDiagnosticsDragging] = useState(false);
@@ -713,7 +737,10 @@ export const ComplaintDetailDrawer = ({
         if (typeof markTicketAsRead === 'function' && data.complaint.ticket_id && String(data.complaint.ticket_id) !== String(complaintId)) {
           markTicketAsRead(data.complaint.ticket_id);
         }
-        setAttachments(data.attachments || data.complaint.attachments || data.ticket?.attachments || []);
+        const ticketAttachments = data.attachments || data.complaint.attachments || data.ticket?.attachments || [];
+        setAttachments(ticketAttachments);
+        // Pre-warm video and media cache in background so modal previews load in 0ms
+        preloadComplaintAttachments(ticketAttachments, data.complaint?.closing_photo_url);
         setTimeline(data.timeline || data.complaint.timeline || data.ticket?.timeline || []);
         setNotifications(data.notifications || []);
         if (data.complaint.assigned_technician_id) {
@@ -4942,12 +4969,12 @@ export const ComplaintDetailDrawer = ({
                       </div>
                     ) : (
                       <video 
-                        key={previewDocModal.url}
-                        src={previewDocModal.url}
+                        key={cachedVideoUrl || previewDocModal.url}
+                        src={cachedVideoUrl || previewDocModal.url}
                         controls 
                         autoPlay 
                         playsInline
-                        preload="metadata"
+                        preload="auto"
                         onLoadedMetadata={(e) => {
                           const w = e.target.videoWidth || 0;
                           const h = e.target.videoHeight || 0;

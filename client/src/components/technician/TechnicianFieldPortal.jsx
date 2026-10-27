@@ -29,8 +29,13 @@ const checkHasLocation = (job) => {
 
 export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'field_ops', onSectionChange }) => {
   const { currentUser } = useAuth();
-  const { showToast, confirm } = useDialog();
-  const [complaints, setComplaints] = useState([]);
+  const [complaints, setComplaints] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      if (Array.isArray(saved) && saved.length > 0) return saved;
+    } catch (_) {}
+    return [];
+  });
   const [technicians, setTechnicians] = useState(() => {
     try {
       const cached = JSON.parse(localStorage.getItem('egs_cached_technicians') || '[]');
@@ -38,7 +43,14 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     } catch (_) {}
     return [];
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      return !(Array.isArray(saved) && saved.length > 0);
+    } catch (_) {
+      return true;
+    }
+  });
 
   const getInitialSection = () => {
     const s = (getUrlParam('section') || activeSection || 'field_ops').toLowerCase();
@@ -253,7 +265,8 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   };
 
   useEffect(() => {
-    fetchMyJobs();
+    const hasInitialData = complaints.length > 0;
+    fetchMyJobs(hasInitialData);
     fetchTechniciansList();
     fetchProductsList();
 
