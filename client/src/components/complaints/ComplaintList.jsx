@@ -108,7 +108,6 @@ export const ComplaintList = ({
   const [productFilter, setProductFilter] = useState(() => initialFilters?.product_type || 'all');
   const [priorityFilter, setPriorityFilter] = useState(() => initialFilters?.priority || 'all');
   const [technicianFilter, setTechnicianFilter] = useState(() => initialFilters?.technician_id || '');
-  const [recordTypeFilter, setRecordTypeFilter] = useState(() => initialFilters?.record_type || 'all');
 
   // Manual filter handlers - Only change when explicitly clicked/selected by user
   const handleStatusFilterChange = (st) => {
@@ -149,7 +148,6 @@ export const ComplaintList = ({
       if (initialFilters.priority !== undefined) setPriorityFilter(initialFilters.priority);
       if (initialFilters.search !== undefined) setSearch(initialFilters.search);
       if (initialFilters.technician_id !== undefined) setTechnicianFilter(initialFilters.technician_id);
-      if (initialFilters.record_type !== undefined) setRecordTypeFilter(initialFilters.record_type);
     }
   }, [initialFilters]);
 
@@ -386,17 +384,13 @@ export const ComplaintList = ({
   // Standard status pills restored to original order and items
   const statusPills = STATUS_PILLS;
 
-  // Dynamically compute tickets matching all non-status filters (Record Type, Product, Priority, Technician, Search)
+  // Dynamically compute tickets matching all non-status filters (Product, Priority, Technician, Search)
   // so that status tab badges update dynamically whenever any filter is applied!
   const nonStatusFilteredComplaints = React.useMemo(() => {
     const listToFilter = allComplaints.length > 0 ? allComplaints : complaints;
     const q = (search || '').trim().toLowerCase();
 
     return listToFilter.filter(c => {
-      // 0. Record Type Filter (Complaints Only vs Site Surveys Only)
-      if (recordTypeFilter === 'complaints' && isSiteSurvey(c)) return false;
-      if (recordTypeFilter === 'surveys' && !isSiteSurvey(c)) return false;
-
       // 1. Product Filter
       if (productFilter !== 'all' && c.product_type !== productFilter) return false;
 
@@ -434,7 +428,7 @@ export const ComplaintList = ({
 
       return true;
     });
-  }, [allComplaints, complaints, recordTypeFilter, productFilter, priorityFilter, technicianFilter, search, technicians]);
+  }, [allComplaints, complaints, productFilter, priorityFilter, technicianFilter, search, technicians]);
 
   const draftCount = React.useMemo(() => {
     return nonStatusFilteredComplaints.filter(c => c.status === 'Draft').length;
@@ -672,23 +666,6 @@ export const ComplaintList = ({
           <span className="text-slate-500 font-semibold flex items-center gap-1 text-[11px]">
             <Filter className="w-3 h-3" /> Filters:
           </span>
-
-          <select
-            aria-label="Filter by Record Type"
-            value={recordTypeFilter}
-            onChange={(e) => setRecordTypeFilter(e.target.value)}
-            className={`border rounded-lg px-2.5 py-1.5 font-medium text-xs transition-all ${
-              recordTypeFilter === 'surveys'
-                ? 'bg-purple-50 text-purple-800 border-purple-300 font-bold'
-                : recordTypeFilter === 'complaints'
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
-                : 'bg-slate-50 border-slate-200 text-slate-700'
-            }`}
-          >
-            <option value="all">All Types</option>
-            <option value="complaints">Complaints Only</option>
-            <option value="surveys">Site Surveys Only</option>
-          </select>
 
           <select
             aria-label="Filter by Product Category"

@@ -1416,10 +1416,9 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
       {/* KPI Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div 
-          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ 
-            status: 'all',
-            record_type: viewScope === 'surveys' ? 'surveys' : (viewScope === 'complaints' ? 'complaints' : 'all')
-          })}
+          onClick={() => onNavigateToComplaints && onNavigateToComplaints(
+            viewScope === 'surveys' ? { status: 'all', product_type: 'SITE SURVEY' } : { status: 'all' }
+          )}
           className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group"
           title={viewScope === 'surveys' ? "Click to view all site surveys" : "Click to view all customer complaints"}
         >
@@ -1439,10 +1438,9 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         </div>
 
         <div 
-          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ 
-            status: 'In Progress',
-            record_type: viewScope === 'surveys' ? 'surveys' : (viewScope === 'complaints' ? 'complaints' : 'all')
-          })}
+          onClick={() => onNavigateToComplaints && onNavigateToComplaints(
+            viewScope === 'surveys' ? { status: 'In Progress', product_type: 'SITE SURVEY' } : { status: 'In Progress' }
+          )}
           className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-amber-500 hover:shadow-md transition-all cursor-pointer group"
           title="Click to view active tickets"
         >
