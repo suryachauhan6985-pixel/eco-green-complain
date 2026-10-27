@@ -2017,11 +2017,11 @@ app.get('/api/tour-ledger', authenticateToken, async (req, res) => {
     const approvedExpenses = expenses.filter(e => (e.status || '').toLowerCase() === 'approved').reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const totalReturned = settlements.reduce((sum, s) => sum + parseFloat(s.returned_amount || s.amount || 0), 0);
-    const totalReimbursed = settlements.reduce((sum, s) => sum + parseFloat(s.reimbursed_amount || 0), 0);
-    const currentBalance = (totalAdvance + totalReimbursed) - (approvedExpenses + totalReturned);
-
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
     return res.json({
       success: true,
+      technician_id: targetTechId,
       advances,
       expenses,
       settlements,

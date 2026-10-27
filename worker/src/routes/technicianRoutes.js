@@ -1128,6 +1128,8 @@ technicianRoutes.put('/tour-vouchers/:voucherNo/status', authenticateToken, requ
 // GET /api/tour-ledger - Unified Ledger, Account Balance, Statements & Reconciliation
 technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
   try {
+    c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    c.header('Pragma', 'no-cache');
     const { 
       technician_id, 
       from_date, 
@@ -1437,6 +1439,7 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
 
     return c.json({
       success: true,
+      technician_id: targetTechId,
       technician: targetTechnician,
       advances: activeAdvances,
       expenses,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -104,11 +104,18 @@ export const TourLedgerSection = ({
     }
   }, [complaints]);
 
-  // Selected technician filter: default to scoped tech if technician, or activeTechId, or first loaded tech
+  // Selected technician filter: default to scoped tech if technician, or activeTechId, or saved tech, or tech with active jobs
   const [internalTechId, setInternalTechId] = useState(() => {
     if (!isAdminOrStaff && scopedTechProfile?.id) return String(scopedTechProfile.id);
     if (activeTechId && activeTechId !== 'all') return String(activeTechId);
-    if (allTechnicians && allTechnicians.length > 0) return String(allTechnicians[0].id);
+    try {
+      const saved = localStorage.getItem('egs_selected_tour_tech_id');
+      if (saved && saved !== 'all') return String(saved);
+    } catch (_) {}
+    if (allTechnicians && allTechnicians.length > 0) {
+      const withJobs = allTechnicians.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
+      return String(withJobs ? withJobs.id : allTechnicians[0].id);
+    }
     return '';
   });
 
@@ -117,9 +124,17 @@ export const TourLedgerSection = ({
       if (activeTechId && activeTechId !== 'all') {
         setInternalTechId(String(activeTechId));
       } else if (loadedTechs.length > 0 && (!internalTechId || internalTechId === 'all')) {
-        const firstId = String(loadedTechs[0].id);
-        setInternalTechId(firstId);
-        if (onTechChange) onTechChange(firstId);
+        let preferredId = null;
+        try {
+          const saved = localStorage.getItem('egs_selected_tour_tech_id');
+          if (saved && saved !== 'all' && loadedTechs.some(t => String(t.id) === String(saved))) {
+            preferredId = String(saved);
+          }
+        } catch (_) {}
+        const techWithJobs = loadedTechs.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
+        const chosenId = preferredId || (techWithJobs ? String(techWithJobs.id) : String(loadedTechs[0].id));
+        setInternalTechId(chosenId);
+        if (onTechChange) onTechChange(chosenId);
       }
     } else if (scopedTechProfile?.id) {
       setInternalTechId(String(scopedTechProfile.id));
@@ -129,9 +144,12 @@ export const TourLedgerSection = ({
   const selectedTechId = internalTechId || (loadedTechs[0]?.id ? String(loadedTechs[0].id) : '');
 
   const handleTechChange = (newId) => {
-  setInternalTechId(newId);
-  if (onTechChange) onTechChange(newId);
-};
+    setInternalTechId(newId);
+    try {
+      if (newId) localStorage.setItem('egs_selected_tour_tech_id', String(newId));
+    } catch (_) {}
+    if (onTechChange) onTechChange(newId);
+  };
 
   // Admin Password Protected Tour Ledger Reset States
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
@@ -981,24 +999,47 @@ export const TourLedgerSection = ({
     } catch (_) {}
   };
 
+  const activeFetchReqIdRef = useRef(0);
+
   const fetchLedger = async (silent = false) => {
+    const requestedTechId = selectedTechId;
+    if (!requestedTechId) {
+      return;
+    }
+    const currentReqId = ++activeFetchReqIdRef.current;
     try {
       if (!silent) setLoading(true);
       const params = {};
-      if (selectedTechId && selectedTechId !== 'all') params.technician_id = selectedTechId;
+      if (requestedTechId && requestedTechId !== 'all') params.technician_id = requestedTechId;
       if (statementFromDate) params.from_date = statementFromDate;
       if (statementToDate) params.to_date = statementToDate;
       if (statementTicketId && statementTicketId !== 'all') params.ticket_id = statementTicketId;
       if (statementTxType && statementTxType !== 'all') params.tx_type = statementTxType;
 
       const res = await api.getTourLedger(params);
+
+      // Discard stale response if a newer request was dispatched
+      if (currentReqId !== activeFetchReqIdRef.current) {
+        return;
+      }
+      // Discard response if it belongs to a different technician
+      if (res && res.technician_id && requestedTechId && requestedTechId !== 'all' && String(res.technician_id) !== String(requestedTechId)) {
+        return;
+      }
+      if (res && res.technician?.id && requestedTechId && requestedTechId !== 'all' && String(res.technician.id) !== String(requestedTechId)) {
+        return;
+      }
+
       if (res && (res.summary || res.statement)) {
         setLedgerData(res);
       }
     } catch (err) {
+      if (currentReqId !== activeFetchReqIdRef.current) return;
       if (!silent) console.error('Failed to load tour ledger:', err);
     } finally {
-      if (!silent) setLoading(false);
+      if (currentReqId === activeFetchReqIdRef.current && !silent) {
+        setLoading(false);
+      }
     }
   };
 

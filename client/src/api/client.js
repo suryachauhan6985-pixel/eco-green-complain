@@ -1681,8 +1681,8 @@ export const api = {
 
   // Tour Ledger & Voucher System
   getTourLedger: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/tour-ledger${query ? `?${query}` : ''}`);
+    const query = new URLSearchParams({ ...params, _t: Date.now() }).toString();
+    return request(`/tour-ledger${query ? `?${query}` : ''}`, { cache: 'no-store' });
   },
   allocateTourAdvance: (data) => request('/tour-advances', {
     method: 'POST',

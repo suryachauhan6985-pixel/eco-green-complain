@@ -59,8 +59,13 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     const urlId = getUrlParam('tech_id');
     if (urlId && urlId !== 'all') return urlId;
     try {
+      const saved = localStorage.getItem('egs_selected_tour_tech_id');
+      if (saved && saved !== 'all') return String(saved);
       const cached = JSON.parse(localStorage.getItem('egs_cached_technicians') || '[]');
-      if (Array.isArray(cached) && cached.length > 0) return String(cached[0].id);
+      if (Array.isArray(cached) && cached.length > 0) {
+        const withJobs = cached.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
+        return String(withJobs ? withJobs.id : cached[0].id);
+      }
     } catch (_) {}
     return '';
   };
@@ -139,6 +144,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   const handleAdminTechSelect = (id) => {
     if (!id) return;
     setSelectedAdminTechId(id);
+    try {
+      localStorage.setItem('egs_selected_tour_tech_id', String(id));
+    } catch (_) {}
     updateUrlParams({ tech_id: id });
   };
 
@@ -197,7 +205,14 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
           if (prev && prev !== 'all' && techs.some(t => String(t.id) === String(prev))) {
             return String(prev);
           }
-          return String(techs[0].id);
+          try {
+            const saved = localStorage.getItem('egs_selected_tour_tech_id');
+            if (saved && saved !== 'all' && techs.some(t => String(t.id) === String(saved))) {
+              return String(saved);
+            }
+          } catch (_) {}
+          const techWithJobs = techs.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
+          return String(techWithJobs ? techWithJobs.id : techs[0].id);
         });
       }
       const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);
