@@ -4,6 +4,7 @@ import { useState, useRef, useLayoutEffect, useCallback } from 'react';
  * Enterprise Apple Segmented Control Sliding Indicator Hook
  * Provides fluid, hardware-accelerated gliding highlight for tabs, pills, and segmented bars.
  * Ensures pixel-perfect alignment without clipping, text overflow, or disappearance.
+ * Guaranteed safe from React Error #185 infinite loops via strict state deduplication.
  * 
  * @param {string|number} activeKey - Currently active tab key
  * @returns {object} { containerRef, getButtonRef, indicator, updateIndicator, onTabClick }
@@ -34,17 +35,22 @@ export function useSlidingIndicator(activeKey) {
       }
 
       if (width > 0) {
-        setIndicator({
-          left,
-          width,
-          opacity: 1
+        setIndicator(prev => {
+          // Strictly deduplicate to prevent infinite re-renders
+          if (
+            Math.abs(prev.left - left) < 0.5 &&
+            Math.abs(prev.width - width) < 0.5 &&
+            prev.opacity === 1
+          ) {
+            return prev;
+          }
+          return { left, width, opacity: 1 };
         });
         return true;
       }
     }
 
-    // Do not zero out dimensions if previously valid; keep last known width during quick re-renders
-    setIndicator(prev => (prev.width > 0 ? { ...prev, opacity: 0 } : prev));
+    setIndicator(prev => (prev.opacity === 0 ? prev : { ...prev, opacity: 0 }));
     return false;
   }, [activeKey]);
 
@@ -56,7 +62,7 @@ export function useSlidingIndicator(activeKey) {
     const tryUpdate = () => {
       if (cancel) return;
       const success = updateIndicator();
-      if (!success && attempts < 10) {
+      if (!success && attempts < 5) {
         attempts++;
         retryRafRef.current = requestAnimationFrame(tryUpdate);
       }
@@ -64,7 +70,7 @@ export function useSlidingIndicator(activeKey) {
 
     tryUpdate();
 
-    // ResizeObserver: auto-updates whenever button or container size changes (e.g. ticket counts loaded, font rendered)
+    // ResizeObserver: auto-updates whenever button or container size changes
     let ro = null;
     if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
       ro = new ResizeObserver(() => {
@@ -73,15 +79,6 @@ export function useSlidingIndicator(activeKey) {
       ro.observe(containerRef.current);
       const activeBtn = buttonRefs.current[activeKey];
       if (activeBtn) ro.observe(activeBtn);
-    }
-
-    // MutationObserver: detects text, badge, or child count changes inside the tabs container
-    let mo = null;
-    if (typeof MutationObserver !== 'undefined' && containerRef.current) {
-      mo = new MutationObserver(() => {
-        if (!cancel) updateIndicator();
-      });
-      mo.observe(containerRef.current, { childList: true, subtree: true, characterData: true });
     }
 
     const handleResize = () => {
@@ -93,7 +90,6 @@ export function useSlidingIndicator(activeKey) {
       cancel = true;
       if (retryRafRef.current) cancelAnimationFrame(retryRafRef.current);
       if (ro) ro.disconnect();
-      if (mo) mo.disconnect();
       window.removeEventListener('resize', handleResize);
     };
   }, [activeKey, updateIndicator]);
@@ -106,16 +102,14 @@ export function useSlidingIndicator(activeKey) {
     }
   }, [updateIndicator]);
 
+  // Ref callback must be pure and never invoke setState directly to prevent React Error #185
   const getButtonRef = useCallback((key) => (el) => {
     if (el) {
       buttonRefs.current[key] = el;
-      if (String(key) === String(activeKey)) {
-        updateIndicator(key);
-      }
     } else {
       delete buttonRefs.current[key];
     }
-  }, [activeKey, updateIndicator]);
+  }, []);
 
   return {
     containerRef,
