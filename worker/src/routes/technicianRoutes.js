@@ -586,8 +586,10 @@ technicianRoutes.get('/technicians', authenticateToken, async (c) => {
   try {
     const res = await query(
       `SELECT t.*, 
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status = 'On Hold') as on_hold_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as total_open_count,
         (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count
        FROM technicians t
        ORDER BY t.name ASC`,
@@ -599,6 +601,8 @@ technicianRoutes.get('/technicians', authenticateToken, async (c) => {
       ...r,
       active_tickets_count: parseInt(r.active_tickets_count || 0, 10),
       active_jobs_count: parseInt(r.active_jobs_count || 0, 10),
+      on_hold_count: parseInt(r.on_hold_count || 0, 10),
+      total_open_count: parseInt(r.total_open_count || 0, 10),
       resolved_tickets_count: parseInt(r.resolved_tickets_count || 0, 10)
     }));
     return c.json({ technicians: mapped });

@@ -1567,8 +1567,10 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
   try {
     const r = await query(`
       SELECT t.*, 
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_tickets_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'Reopened')) as active_tickets_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'Reopened')) as active_jobs_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status = 'On Hold') as on_hold_count,
+        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as total_open_count,
         (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
         ROUND((SELECT AVG(c.rating) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.rating IS NOT NULL)::numeric, 1) as average_rating,
         COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id), 0) as total_collected,
@@ -1581,6 +1583,8 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
       ...row,
       active_tickets_count: parseInt(row.active_tickets_count || 0, 10),
       active_jobs_count: parseInt(row.active_jobs_count || 0, 10),
+      on_hold_count: parseInt(row.on_hold_count || 0, 10),
+      total_open_count: parseInt(row.total_open_count || 0, 10),
       resolved_tickets_count: parseInt(row.resolved_tickets_count || 0, 10)
     }));
     return res.json({ technicians: mapped });

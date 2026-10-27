@@ -750,10 +750,14 @@ export const StaffTechnicianManager = () => {
                 </div>
 
                 {/* Performance Stats */}
-                <div className="grid grid-cols-3 gap-2 text-center mt-2 py-1.5 bg-slate-50/50 rounded-lg">
+                <div className="grid grid-cols-4 gap-1.5 text-center mt-2 py-1.5 bg-slate-50/50 rounded-lg">
                   <div>
                     <span className="block text-xs font-bold text-amber-600">{t.active_tickets_count ?? t.active_jobs_count ?? 0}</span>
-                    <span className="text-[10px] text-slate-400">Assigned</span>
+                    <span className="text-[10px] text-slate-400">Active</span>
+                  </div>
+                  <div>
+                    <span className="block text-xs font-bold text-blue-600">{t.on_hold_count || 0}</span>
+                    <span className="text-[10px] text-slate-400">On Hold</span>
                   </div>
                   <div>
                     <span className="block text-xs font-bold text-emerald-600">{t.resolved_tickets_count ?? 0}</span>

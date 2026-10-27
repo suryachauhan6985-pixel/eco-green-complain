@@ -4,64 +4,91 @@
  */
 
 /**
- * Calculates total active/assigned jobs currently with a technician.
- * Excludes 'Resolved', 'Closed', 'Unassigned', and 'Registered'.
- * Includes 'Assigned', 'In Progress', 'On Hold', 'Reopened'.
+ * Calculates detailed workload metrics for a technician:
+ * - activeCount: tickets in 'Assigned', 'In Progress', 'Reopened' (active work currently ongoing)
+ * - onHoldCount: tickets in 'On Hold' (waiting for parts, customer reschedule, etc.)
+ * - totalOpenCount: activeCount + onHoldCount
+ * - isFree: true if activeCount === 0 (technician has capacity to take active new field tasks)
+ *
+ * Excludes 'Resolved', 'Closed', 'Unassigned', 'Registered', and 'Draft'.
  *
  * @param {Object} tech - Technician object from API
  * @param {Array} [complaintsList] - Optional active complaints list from state for live real-time accuracy
- * @returns {number}
+ * @returns {{ activeCount: number, onHoldCount: number, totalOpenCount: number, isFree: boolean }}
  */
-export function getTechnicianAssignedCount(tech, complaintsList = null) {
-  if (!tech) return 0;
+export function getTechnicianWorkload(tech, complaintsList = null) {
+  if (!tech) return { activeCount: 0, onHoldCount: 0, totalOpenCount: 0, isFree: true };
+
+  const techId = String(tech.id);
 
   // If live complaints list is provided, calculate dynamically in real-time
   if (Array.isArray(complaintsList) && complaintsList.length > 0) {
-    const techId = String(tech.id);
-    const liveCount = complaintsList.filter(c => {
+    let activeCount = 0;
+    let onHoldCount = 0;
+
+    complaintsList.forEach(c => {
       const matchAssigned = String(c.assigned_technician_id) === techId;
       const matchSecondary = String(c.secondary_technician_id) === techId;
-      const isAssigned = matchAssigned || matchSecondary;
-      const isActive =
-        c.status &&
-        !['Resolved', 'Closed', 'Unassigned', 'Registered'].includes(c.status);
-      return isAssigned && isActive;
-    }).length;
-    return liveCount;
+      if (!matchAssigned && !matchSecondary) return;
+
+      const st = (c.status || '').trim();
+      // Resolved, Closed, Unassigned, Registered, and Draft are not active open tickets
+      if (['Resolved', 'Closed', 'Unassigned', 'Registered', 'Draft'].includes(st)) return;
+
+      if (st === 'On Hold') {
+        onHoldCount++;
+      } else if (['Assigned', 'In Progress', 'Reopened'].includes(st)) {
+        activeCount++;
+      } else {
+        // Any other non-resolved status counts as active
+        activeCount++;
+      }
+    });
+
+    return {
+      activeCount,
+      onHoldCount,
+      totalOpenCount: activeCount + onHoldCount,
+      isFree: activeCount === 0
+    };
   }
 
-  // Fallback to API-provided counts
-  const raw =
-    tech.active_tickets_count ??
-    tech.active_jobs_count ??
-    tech.pending_count ??
-    null;
+  // Fallback to API-provided counts on tech object
+  const activeCount = parseInt(tech.active_jobs_count ?? tech.active_tickets_count ?? 0, 10) || 0;
+  const onHoldCount = parseInt(tech.on_hold_count ?? 0, 10) || 0;
+  const totalOpenCount = parseInt(tech.total_open_count ?? (activeCount + onHoldCount), 10) || (activeCount + onHoldCount);
 
-  if (raw !== null && raw !== undefined) {
-    return parseInt(raw, 10) || 0;
-  }
+  return {
+    activeCount,
+    onHoldCount,
+    totalOpenCount,
+    isFree: activeCount === 0
+  };
+}
 
-  // Fallback to local storage complaints if raw count is not on object
-  try {
-    const cached = JSON.parse(
-      localStorage.getItem('egs_permanent_complaints') ||
-      localStorage.getItem('egs_mock_complaints') ||
-      '[]'
-    );
-    if (Array.isArray(cached) && cached.length > 0) {
-      return getTechnicianAssignedCount(tech, cached);
-    }
-  } catch (_) {}
-
-  return 0;
+/**
+ * Calculates total assigned/active jobs currently with a technician.
+ * Maintained for backward compatibility.
+ *
+ * @param {Object} tech
+ * @param {Array} [complaintsList]
+ * @returns {number}
+ */
+export function getTechnicianAssignedCount(tech, complaintsList = null) {
+  const { activeCount } = getTechnicianWorkload(tech, complaintsList);
+  return activeCount;
 }
 
 /**
  * Formats standard label for technician in select dropdowns.
- * Example:
- *   "🟢 Hardevsinh Vaghela (General Zone) — 2 Assigned"
- *   "🟢 Dhaval Makwana (General Zone) — 0 Assigned (Free)"
- *   "🔴 Test Tech (General Zone) — OFF-DUTY (0 Assigned)"
+ * Separates Active working jobs from On Hold jobs, giving dispatchers instant clarity on availability.
+ *
+ * Examples:
+ *   "🟢 Milan Makwana (General Zone) — 0 Active (Free)"
+ *   "🟢 Mishal Makwana (General Zone) — 1 Active"
+ *   "🟢 Dhaval Makwana (General Zone) — 1 Active • 2 On Hold (3 Total)"
+ *   "🟢 Hardevsinh Vaghela (General Zone) — 0 Active (Free) • 3 On Hold"
+ *   "🔴 Test Tech (General Zone) — OFF-DUTY (0 Active)"
  *
  * @param {Object} tech
  * @param {Array} [complaintsList]
@@ -70,14 +97,24 @@ export function getTechnicianAssignedCount(tech, complaintsList = null) {
 export function formatTechnicianOptionLabel(tech, complaintsList = null) {
   if (!tech) return '';
 
-  const count = getTechnicianAssignedCount(tech, complaintsList);
+  const { activeCount, onHoldCount, totalOpenCount } = getTechnicianWorkload(tech, complaintsList);
   const zone = tech.area_zone ? ` (${tech.area_zone})` : '';
   const statusIcon = tech.is_available ? '🟢' : '🔴';
-  const assignedLabel = count === 0 ? '0 Assigned (Free)' : `${count} Assigned`;
 
-  if (!tech.is_available) {
-    return `${statusIcon} ${tech.name}${zone} — OFF-DUTY (${assignedLabel})`;
+  let workloadText = '';
+  if (activeCount === 0 && onHoldCount === 0) {
+    workloadText = '0 Active (Free)';
+  } else if (activeCount > 0 && onHoldCount === 0) {
+    workloadText = `${activeCount} Active`;
+  } else if (activeCount === 0 && onHoldCount > 0) {
+    workloadText = `0 Active (Free) • ${onHoldCount} On Hold`;
+  } else {
+    workloadText = `${activeCount} Active • ${onHoldCount} On Hold (${totalOpenCount} Total)`;
   }
 
-  return `${statusIcon} ${tech.name}${zone} — ${assignedLabel}`;
+  if (!tech.is_available) {
+    return `${statusIcon} ${tech.name}${zone} — OFF-DUTY (${workloadText})`;
+  }
+
+  return `${statusIcon} ${tech.name}${zone} — ${workloadText}`;
 }

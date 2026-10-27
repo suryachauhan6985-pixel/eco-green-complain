@@ -754,7 +754,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             >
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {formatTechnicianOptionLabel(t)}
+                  {formatTechnicianOptionLabel(t, complaints)}
                 </option>
               ))}
             </select>
@@ -841,7 +841,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                 >
                   {technicians.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {formatTechnicianOptionLabel(t)}
+                      {formatTechnicianOptionLabel(t, complaints)}
                     </option>
                   ))}
                 </select>
