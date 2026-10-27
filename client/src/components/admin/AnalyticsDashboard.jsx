@@ -3,40 +3,85 @@ import { api } from '../../api/client';
 import { 
   BarChart3, CheckCircle2, Clock, Wrench, Download, Calendar, Filter, X, Tag, Layers, 
   TrendingUp, Users, AlertCircle, Info, RefreshCw, Star, Sun, Droplets, Wind,
-  Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload
+  Database, ShieldCheck, FileSpreadsheet, HardDrive, Sparkles, Upload, ClipboardCheck, ShieldAlert
 } from 'lucide-react';
 import { AnalyticsDashboardSkeleton } from '../common/SkeletonLoader';
 import { subscribeLiveSync } from '../../utils/liveSync';
 import { formatIndianDateOnly, formatIndianDateTime, formatIndianTimeOnly, parseDateSafe } from '../common/TicketAgeBadge';
 
 
-// Client-side metrics calculation from live complaints list & technicians
-function computeMetricsFromComplaints(complaintsList = [], techsList = [], serverMetrics = null) {
-  const total = complaintsList.length;
-  const registeredCount = complaintsList.filter(c => ['Registered', 'Unassigned', 'New', 'Open'].includes(c.status)).length;
-  const assignedCount = complaintsList.filter(c => c.status === 'Assigned').length;
-  const inProgressCount = complaintsList.filter(c => c.status === 'In Progress').length;
-  const onHoldCount = complaintsList.filter(c => c.status === 'On Hold').length;
-  const resolvedCount = complaintsList.filter(c => c.status === 'Resolved').length;
-  const closedCount = complaintsList.filter(c => c.status === 'Closed').length;
-  const reopenedCount = complaintsList.filter(c => c.status === 'Reopened').length;
+// Helper to detect if a ticket is a Site Survey (feasibility request, not a customer defect/complaint)
+export const isSiteSurvey = (ticket) => {
+  if (!ticket) return false;
+  const p = String(ticket.product_type || '').toUpperCase();
+  const c = String(ticket.issue_category || '').toUpperCase();
+  return p.includes('SURVEY') || c.includes('SURVEY');
+};
+
+// Client-side metrics calculation from live complaints list & technicians with strict separation of surveys
+function computeMetricsFromComplaints(recordsList = [], techsList = [], serverMetrics = null, viewScope = 'complaints') {
+  // Separate pure complaints from pre-installation site surveys
+  const complaintsOnly = recordsList.filter(c => !isSiteSurvey(c));
+  const surveysOnly = recordsList.filter(c => isSiteSurvey(c));
+
+  // Determine active dataset based on viewScope:
+  // 'complaints' (default): Pure customer defect/service complaints
+  // 'surveys': Pre-installation site feasibility audits
+  // 'all': Combined overview
+  const activeList = viewScope === 'surveys' 
+    ? surveysOnly 
+    : (viewScope === 'all' ? recordsList : complaintsOnly);
+
+  const total = activeList.length;
+  const registeredCount = activeList.filter(c => ['Registered', 'Unassigned', 'New', 'Open'].includes(c.status)).length;
+  const assignedCount = activeList.filter(c => c.status === 'Assigned').length;
+  const inProgressCount = activeList.filter(c => c.status === 'In Progress').length;
+  const onHoldCount = activeList.filter(c => c.status === 'On Hold').length;
+  const resolvedCount = activeList.filter(c => c.status === 'Resolved').length;
+  const closedCount = activeList.filter(c => c.status === 'Closed').length;
+  const reopenedCount = activeList.filter(c => c.status === 'Reopened').length;
   const activeCount = Math.max(0, total - (resolvedCount + closedCount));
 
-  // Product distribution WITH per-product issue categories
+  // Dedicated Site Survey Feasibility Metrics (Always accurately tracked)
+  const totalSurveys = surveysOnly.length;
+  const completedSurveys = surveysOnly.filter(c => ['Resolved', 'Closed'].includes(c.status)).length;
+  const activeSurveys = Math.max(0, totalSurveys - completedSurveys);
+  const onHoldSurveys = surveysOnly.filter(c => c.status === 'On Hold').length;
+  const assignedSurveys = surveysOnly.filter(c => c.status === 'Assigned').length;
+  const inProgressSurveys = surveysOnly.filter(c => c.status === 'In Progress').length;
+  const openSurveys = surveysOnly.filter(c => ['Registered', 'Unassigned', 'New', 'Open'].includes(c.status)).length;
+
+  const surveyCategoriesMap = {};
+  surveysOnly.forEach(s => {
+    const cat = s.issue_category || 'General Site Survey & Feasibility';
+    surveyCategoriesMap[cat] = (surveyCategoriesMap[cat] || 0) + 1;
+  });
+  const surveyCategories = Object.entries(surveyCategoriesMap)
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Dedicated Pure Complaints Counts (always available for reference)
+  const pureComplaintsTotal = complaintsOnly.length;
+  const pureComplaintsActive = Math.max(0, pureComplaintsTotal - complaintsOnly.filter(c => ['Resolved', 'Closed'].includes(c.status)).length);
+  const pureComplaintsResolved = complaintsOnly.filter(c => ['Resolved', 'Closed'].includes(c.status)).length;
+
+  // Product distribution (EXCLUSIVELY for actual solar products unless viewing surveys)
   const productMap = {};
   const standardProducts = ['Solar Rooftop Systems', 'Solar Water Heaters', 'Heat Pumps'];
-  standardProducts.forEach(p => {
-    productMap[p] = {
-      product_type: p,
-      count: 0,
-      active_count: 0,
-      resolved_count: 0,
-      issueCategories: {}
-    };
-  });
+  if (viewScope !== 'surveys') {
+    standardProducts.forEach(p => {
+      productMap[p] = {
+        product_type: p,
+        count: 0,
+        active_count: 0,
+        resolved_count: 0,
+        issueCategories: {}
+      };
+    });
+  }
 
-  complaintsList.forEach(c => {
-    const pType = c.product_type || 'Solar Rooftop Systems';
+  activeList.forEach(c => {
+    const pType = c.product_type || (isSiteSurvey(c) ? 'SITE SURVEY' : 'Solar Rooftop Systems');
     if (!productMap[pType]) {
       productMap[pType] = {
         product_type: pType,
@@ -53,11 +98,12 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
       productMap[pType].active_count++;
     }
 
-    const cat = c.issue_category || 'General Service & Maintenance';
+    const cat = c.issue_category || (isSiteSurvey(c) ? 'Site Survey Feasibility' : 'General Service & Maintenance');
     productMap[pType].issueCategories[cat] = (productMap[pType].issueCategories[cat] || 0) + 1;
   });
 
   const productStats = Object.values(productMap)
+    .filter(prod => prod.count > 0 || (viewScope !== 'surveys' && standardProducts.includes(prod.product_type)))
     .map(prod => {
       const categories = Object.entries(prod.issueCategories)
         .map(([issue_category, count]) => ({
@@ -74,10 +120,10 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
     })
     .sort((a, b) => b.count - a.count);
 
-  // Overall Issue category distribution
+  // Overall Issue Category distribution for active scope
   const issueMap = {};
-  complaintsList.forEach(c => {
-    const cat = c.issue_category || 'General Service & Maintenance';
+  activeList.forEach(c => {
+    const cat = c.issue_category || (isSiteSurvey(c) ? 'Site Survey Feasibility' : 'General Service & Maintenance');
     issueMap[cat] = (issueMap[cat] || 0) + 1;
   });
   const issueCategoryStats = Object.entries(issueMap)
@@ -86,7 +132,7 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
 
   // Priority distribution
   const priorityMap = {};
-  complaintsList.forEach(c => {
+  activeList.forEach(c => {
     const pri = c.priority || 'Medium';
     priorityMap[pri] = (priorityMap[pri] || 0) + 1;
   });
@@ -95,7 +141,7 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
   // Average Resolution Hours
   let totalHours = 0;
   let resolvedWithDates = 0;
-  complaintsList.forEach(c => {
+  activeList.forEach(c => {
     if (c.resolved_at && c.created_at) {
       const hrs = (new Date(c.resolved_at) - new Date(c.created_at)) / (1000 * 60 * 60);
       if (hrs >= 0 && hrs < 2000) {
@@ -109,7 +155,7 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
   // Customer satisfaction
   let ratingSum = 0;
   let ratingCount = 0;
-  complaintsList.forEach(c => {
+  activeList.forEach(c => {
     const r = Number(c.rating);
     if (r > 0) {
       ratingSum += r;
@@ -118,7 +164,7 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
   });
   const averageRating = ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : (serverMetrics?.customerSatisfaction?.averageRating || 0);
 
-  // Technician leaderboard
+  // Technician scoreboard (separating complaints and surveys)
   const techMap = {};
   techsList.forEach(t => {
     techMap[t.id] = {
@@ -129,24 +175,34 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
       total_assigned: 0,
       resolved_count: 0,
       pending_count: 0,
+      surveys_count: 0,
+      surveys_completed: 0,
       ratings: [],
       resolution_hours: []
     };
   });
 
-  complaintsList.forEach(c => {
+  recordsList.forEach(c => {
     const tId = c.assigned_technician_id || c.technician_id;
     if (tId && techMap[tId]) {
-      techMap[tId].total_assigned++;
-      if (['Resolved', 'Closed'].includes(c.status)) {
-        techMap[tId].resolved_count++;
+      const isSurv = isSiteSurvey(c);
+      if (isSurv) {
+        techMap[tId].surveys_count++;
+        if (['Resolved', 'Closed'].includes(c.status)) {
+          techMap[tId].surveys_completed++;
+        }
       } else {
-        techMap[tId].pending_count++;
-      }
-      if (c.rating && Number(c.rating) > 0) techMap[tId].ratings.push(Number(c.rating));
-      if (c.resolved_at && c.created_at) {
-        const h = (new Date(c.resolved_at) - new Date(c.created_at)) / (1000 * 60 * 60);
-        if (h >= 0 && h < 2000) techMap[tId].resolution_hours.push(h);
+        techMap[tId].total_assigned++;
+        if (['Resolved', 'Closed'].includes(c.status)) {
+          techMap[tId].resolved_count++;
+        } else {
+          techMap[tId].pending_count++;
+        }
+        if (c.rating && Number(c.rating) > 0) techMap[tId].ratings.push(Number(c.rating));
+        if (c.resolved_at && c.created_at) {
+          const h = (new Date(c.resolved_at) - new Date(c.created_at)) / (1000 * 60 * 60);
+          if (h >= 0 && h < 2000) techMap[tId].resolution_hours.push(h);
+        }
       }
     }
   });
@@ -162,6 +218,8 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
       total_assigned: t.total_assigned,
       resolved_count: t.resolved_count,
       pending_count: t.pending_count,
+      surveys_count: t.surveys_count,
+      surveys_completed: t.surveys_completed,
       avg_rating: avgR,
       avg_resolution_hours: avgH
     };
@@ -178,6 +236,21 @@ function computeMetricsFromComplaints(complaintsList = [], techsList = [], serve
       closed_count: closedCount,
       reopened_count: reopenedCount,
       active_count: activeCount
+    },
+    pureComplaints: {
+      total: pureComplaintsTotal,
+      active: pureComplaintsActive,
+      resolved: pureComplaintsResolved
+    },
+    surveys: {
+      total: totalSurveys,
+      completed: completedSurveys,
+      active: activeSurveys,
+      on_hold: onHoldSurveys,
+      assigned: assignedSurveys,
+      in_progress: inProgressSurveys,
+      open: openSurveys,
+      categories: surveyCategories
     },
     avg_resolution_hours: avgResolutionHours,
     resolved_total: resolvedCount + closedCount,
@@ -203,6 +276,7 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const [filterYear, setFilterYear] = useState('all'); // 'all', '2026', '2025'
   const [customStartDate, setCustomStartDate] = useState(''); // 'YYYY-MM-DD'
   const [customEndDate, setCustomEndDate] = useState(''); // 'YYYY-MM-DD'
+  const [viewScope, setViewScope] = useState('complaints'); // 'complaints' (Default: true customer defects only), 'surveys', 'all'
   const [syncingExcel, setSyncingExcel] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -804,11 +878,12 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   }, [allComplaints, isFilterActive, filterPreset, filterMonth, filterYear, customStartDate, customEndDate]);
 
   const activeMetrics = React.useMemo(() => {
-    if (isFilterActive || (allComplaints.length > 0 && (!metrics?.productStats || metrics.productStats.length === 0))) {
-      return computeMetricsFromComplaints(filteredComplaints, allTechs, metrics);
+    if (allComplaints.length > 0) {
+      const targetList = isFilterActive ? filteredComplaints : allComplaints;
+      return computeMetricsFromComplaints(targetList, allTechs, metrics, viewScope);
     }
-    return metrics || computeMetricsFromComplaints(allComplaints, allTechs, null);
-  }, [isFilterActive, filteredComplaints, allComplaints, allTechs, metrics]);
+    return metrics;
+  }, [isFilterActive, filteredComplaints, allComplaints, allTechs, metrics, viewScope]);
 
   const getProductIcon = (productType) => {
     const p = String(productType || '').toLowerCase();
@@ -862,6 +937,15 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
   const resolvedTotal = Number(activeMetrics?.resolved_total || counts.resolved_count || 0);
   const csatRating = Number(activeMetrics?.customerSatisfaction?.averageRating || 0);
   const csatReviews = Number(activeMetrics?.customerSatisfaction?.totalReviews || 0);
+
+  // Dedicated Site Survey Feasibility Metrics
+  const surveys = activeMetrics?.surveys || {};
+  const surveysTotal = Number(surveys.total || 0);
+  const surveysCompleted = Number(surveys.completed || 0);
+  const surveysActive = Number(surveys.active || 0);
+  const surveysOnHold = Number(surveys.on_hold || 0);
+  const surveysAssigned = Number(surveys.assigned || 0);
+  const surveysInProgress = Number(surveys.in_progress || 0);
 
 
   return (
@@ -1274,28 +1358,93 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
         </div>
       </div>
 
+      {/* Analytics Scope Filter: Pure Complaints vs Site Feasibility Surveys vs Combined */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Analytics Scope:</span>
+          <span className="text-[11px] text-slate-500">
+            {viewScope === 'complaints' 
+              ? 'Displaying genuine customer defect complaints only (Site surveys excluded).'
+              : viewScope === 'surveys'
+              ? 'Displaying pre-installation site feasibility engineering audits.'
+              : 'Displaying all combined CMS tickets.'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewScope('complaints')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              viewScope === 'complaints'
+                ? 'bg-white text-emerald-800 shadow-xs border border-emerald-200 ring-1 ring-emerald-500/20'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Complaints Only ({activeMetrics?.pureComplaints?.total ?? (allComplaints.filter(c => !isSiteSurvey(c)).length)})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewScope('surveys')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              viewScope === 'surveys'
+                ? 'bg-white text-purple-800 shadow-xs border border-purple-200 ring-1 ring-purple-500/20'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ClipboardCheck className="w-3.5 h-3.5 text-purple-600" />
+            <span>Site Surveys ({surveysTotal})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewScope('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              viewScope === 'all'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-300 ring-1 ring-slate-400/20'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-slate-500" />
+            <span>Combined ({filteredComplaints.length})</span>
+          </button>
+        </div>
+      </div>
+
       {/* KPI Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div 
-          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ status: 'all' })}
+          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ 
+            status: 'all',
+            record_type: viewScope === 'surveys' ? 'surveys' : (viewScope === 'complaints' ? 'complaints' : 'all')
+          })}
           className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group"
-          title="Click to view all complaints"
+          title={viewScope === 'surveys' ? "Click to view all site surveys" : "Click to view all customer complaints"}
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold group-hover:text-emerald-700 transition-colors">Total Complaints</span>
+            <span className="text-xs font-semibold group-hover:text-emerald-700 transition-colors">
+              {viewScope === 'surveys' ? 'Total Site Surveys' : (viewScope === 'all' ? 'Total Tickets' : 'Total Complaints')}
+            </span>
             <BarChart3 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-emerald-800 transition-colors">{totalCount}</div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-            <span>All registered tickets</span>
+            <span>
+              {viewScope === 'surveys' ? 'Feasibility audits' : (viewScope === 'all' ? 'All registered tickets' : 'True customer defects')}
+            </span>
             <span className="text-emerald-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
           </div>
         </div>
 
         <div 
-          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ status: 'In Progress' })}
+          onClick={() => onNavigateToComplaints && onNavigateToComplaints({ 
+            status: 'In Progress',
+            record_type: viewScope === 'surveys' ? 'surveys' : (viewScope === 'complaints' ? 'complaints' : 'all')
+          })}
           className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-amber-500 hover:shadow-md transition-all cursor-pointer group"
-          title="Click to view active complaints"
+          title="Click to view active tickets"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-semibold group-hover:text-amber-700 transition-colors">Active In-Pipeline</span>
@@ -1334,6 +1483,76 @@ export const AnalyticsDashboard = ({ onNavigateToComplaints }) => {
           </div>
         </div>
       </div>
+
+      {/* Dedicated Site Feasibility Surveys Section (Cleanly separated from complaints) */}
+      {viewScope !== 'surveys' && (
+        <div className="bg-gradient-to-r from-purple-900/5 via-indigo-900/5 to-slate-900/5 border border-purple-200/80 rounded-2xl p-5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold shadow-xs">
+                <ClipboardCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    Pre-Installation Site Feasibility Surveys
+                  </h3>
+                  <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">
+                    Non-Complaint Operations
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Pre-installation feasibility surveys are tracked independently and excluded from customer defect complaint counts.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setViewScope('surveys')}
+                className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition-all cursor-pointer"
+              >
+                Survey Analytics Focus
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigateToComplaints && onNavigateToComplaints({ record_type: 'surveys', product_type: 'SITE SURVEY' })}
+                className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <span>View In Table</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+            <div className="bg-white/90 backdrop-blur-xs p-3.5 rounded-xl border border-purple-100 shadow-2xs">
+              <div className="text-[11px] font-semibold text-slate-500 mb-1">Total Surveys</div>
+              <div className="text-xl sm:text-2xl font-black text-purple-900">{surveysTotal}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Engineering feasibility audits</div>
+            </div>
+
+            <div className="bg-white/90 backdrop-blur-xs p-3.5 rounded-xl border border-emerald-100 shadow-2xs">
+              <div className="text-[11px] font-semibold text-slate-500 mb-1">Completed Audits</div>
+              <div className="text-xl sm:text-2xl font-black text-emerald-600">{surveysCompleted}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Resolved & closed</div>
+            </div>
+
+            <div className="bg-white/90 backdrop-blur-xs p-3.5 rounded-xl border border-amber-100 shadow-2xs">
+              <div className="text-[11px] font-semibold text-slate-500 mb-1">Active In-Field</div>
+              <div className="text-xl sm:text-2xl font-black text-amber-600">{surveysActive}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{surveysInProgress} In Progress • {surveysAssigned} Assigned</div>
+            </div>
+
+            <div className="bg-white/90 backdrop-blur-xs p-3.5 rounded-xl border border-blue-100 shadow-2xs">
+              <div className="text-[11px] font-semibold text-slate-500 mb-1">On Hold / Follow-up</div>
+              <div className="text-xl sm:text-2xl font-black text-blue-600">{surveysOnHold}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Awaiting customer access</div>
+            </div>
+          </div>
+        </div>
+      )}
 
             {/* Product-Wise Linked Issue Categories */}
       <div className="space-y-6">

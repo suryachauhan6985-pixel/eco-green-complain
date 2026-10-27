@@ -5096,14 +5096,19 @@ app.get('/api/reports/metrics', authenticateToken, async (req, res) => {
           COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
           COUNT(*) FILTER (WHERE status = 'Reopened') as reopened_count
         FROM complaints
+        WHERE UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%'
       `),
       query(`
         SELECT product_type, COUNT(*) as count
-        FROM complaints GROUP BY product_type ORDER BY count DESC
+        FROM complaints 
+        WHERE UPPER(product_type) NOT LIKE '%SURVEY%' 
+        GROUP BY product_type ORDER BY count DESC
       `),
       query(`
         SELECT issue_category, COUNT(*) as count
-        FROM complaints GROUP BY issue_category ORDER BY count DESC LIMIT 5
+        FROM complaints 
+        WHERE UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%'
+        GROUP BY issue_category ORDER BY count DESC LIMIT 5
       `),
       query(`
         SELECT t.id, t.name, t.phone, t.area_zone, t.specialization, t.is_available,

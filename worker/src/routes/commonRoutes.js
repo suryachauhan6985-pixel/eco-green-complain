@@ -1278,16 +1278,20 @@ commonRoutes.get('/reports/metrics', authenticateToken, async (c) => {
     const [compCombined, techStats] = await Promise.all([
       query(`
         SELECT 
-          COUNT(*) as total_tickets,
-          COUNT(CASE WHEN status = 'Unassigned' THEN 1 END) as unassigned_count,
-          COUNT(CASE WHEN status = 'Assigned' THEN 1 END) as assigned_count,
-          COUNT(CASE WHEN status = 'In Progress' THEN 1 END) as in_progress_count,
-          COUNT(CASE WHEN status = 'On Hold' THEN 1 END) as on_hold_count,
-          COUNT(CASE WHEN status = 'Resolved' THEN 1 END) as resolved_count,
-          COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_count,
-          COUNT(CASE WHEN status = 'Reopened' THEN 1 END) as reopened_count,
-          COALESCE(SUM(estimated_charges), 0) as total_estimated,
-          COALESCE(SUM(payment_collected), 0) as total_collected
+          COUNT(CASE WHEN UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%' THEN 1 END) as total_tickets,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'Unassigned' THEN 1 END) as unassigned_count,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'Assigned' THEN 1 END) as assigned_count,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'In Progress' THEN 1 END) as in_progress_count,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'On Hold' THEN 1 END) as on_hold_count,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'Resolved' THEN 1 END) as resolved_count,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'Closed' THEN 1 END) as closed_count,
+          COUNT(CASE WHEN (UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%') AND status = 'Reopened' THEN 1 END) as reopened_count,
+          COALESCE(SUM(CASE WHEN UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%' THEN estimated_charges ELSE 0 END), 0) as total_estimated,
+          COALESCE(SUM(payment_collected), 0) as total_collected,
+          -- Dedicated Site Survey Metrics (Separated from Complaints)
+          COUNT(CASE WHEN UPPER(product_type) LIKE '%SURVEY%' OR UPPER(COALESCE(issue_category, '')) LIKE '%SURVEY%' THEN 1 END) as total_surveys,
+          COUNT(CASE WHEN (UPPER(product_type) LIKE '%SURVEY%' OR UPPER(COALESCE(issue_category, '')) LIKE '%SURVEY%') AND status IN ('Resolved', 'Closed') THEN 1 END) as completed_surveys,
+          COUNT(CASE WHEN (UPPER(product_type) LIKE '%SURVEY%' OR UPPER(COALESCE(issue_category, '')) LIKE '%SURVEY%') AND status NOT IN ('Resolved', 'Closed') THEN 1 END) as active_surveys
         FROM complaints
       `, [], c.env, c.executionCtx),
       query('SELECT COUNT(*) as total_technicians, COUNT(CASE WHEN is_available = 1 THEN 1 END) as active_technicians FROM technicians', [], c.env, c.executionCtx)
@@ -1304,6 +1308,11 @@ commonRoutes.get('/reports/metrics', authenticateToken, async (c) => {
         resolved_count: compRow.resolved_count,
         closed_count: compRow.closed_count,
         reopened_count: compRow.reopened_count
+      },
+      surveys: {
+        total_surveys: compRow.total_surveys || 0,
+        completed_surveys: compRow.completed_surveys || 0,
+        active_surveys: compRow.active_surveys || 0
       },
       technicians: techStats.rows[0] || {},
       finances: {

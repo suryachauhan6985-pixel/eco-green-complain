@@ -14,7 +14,18 @@ function getDashboardMetrics(req, res) {
         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed_count,
         SUM(CASE WHEN status = 'Reopened' THEN 1 ELSE 0 END) as reopened_count
       FROM complaints
+      WHERE UPPER(product_type) NOT LIKE '%SURVEY%' AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%'
     `).get();
+
+    // Site Surveys counts
+    const surveys = db.prepare(`
+      SELECT 
+        COUNT(*) as total_surveys,
+        SUM(CASE WHEN status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as completed_surveys,
+        SUM(CASE WHEN status NOT IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as active_surveys
+      FROM complaints
+      WHERE UPPER(product_type) LIKE '%SURVEY%' OR UPPER(COALESCE(issue_category, '')) LIKE '%SURVEY%'
+    `).get() || { total_surveys: 0, completed_surveys: 0, active_surveys: 0 };
 
     // Average Resolution Time (in hours) for resolved/closed complaints
     // Using sqlite julianday
@@ -24,6 +35,8 @@ function getDashboardMetrics(req, res) {
         COUNT(resolved_at) as resolved_total
       FROM complaints 
       WHERE resolved_at IS NOT NULL
+        AND UPPER(product_type) NOT LIKE '%SURVEY%' 
+        AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%'
     `).get();
 
     // Product-wise distribution
@@ -34,6 +47,7 @@ function getDashboardMetrics(req, res) {
         SUM(CASE WHEN status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as resolved_count,
         SUM(CASE WHEN status NOT IN ('Resolved', 'Closed', 'Cancelled') THEN 1 ELSE 0 END) as active_count
       FROM complaints
+      WHERE UPPER(product_type) NOT LIKE '%SURVEY%'
       GROUP BY product_type
       ORDER BY count DESC
     `).all();
@@ -44,6 +58,8 @@ function getDashboardMetrics(req, res) {
         issue_category,
         COUNT(*) as count
       FROM complaints
+      WHERE UPPER(product_type) NOT LIKE '%SURVEY%' 
+        AND UPPER(COALESCE(issue_category, '')) NOT LIKE '%SURVEY%'
       GROUP BY issue_category
       ORDER BY count DESC
       LIMIT 6
@@ -87,6 +103,7 @@ function getDashboardMetrics(req, res) {
 
     res.json({
       counts,
+      surveys,
       avg_resolution_hours: avgRes.avg_resolution_hours || 0,
       resolved_total: avgRes.resolved_total || 0,
       productStats,
