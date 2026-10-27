@@ -109,7 +109,7 @@ export function formatTechnicianOptionLabel(tech, complaintsList = null) {
   } else if (activeCount === 0 && onHoldCount > 0) {
     workloadText = `0 Active (Free) • ${onHoldCount} On Hold`;
   } else {
-    workloadText = `${activeCount} Active • ${onHoldCount} On Hold (${totalOpenCount} Total)`;
+    workloadText = `${activeCount} Active • ${onHoldCount} On Hold`;
   }
 
   if (!tech.is_available) {

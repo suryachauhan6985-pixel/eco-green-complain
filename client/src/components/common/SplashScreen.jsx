@@ -22,16 +22,20 @@ export const SplashScreen = ({ minDuration = 500, onComplete }) => {
   };
 
   useEffect(() => {
-    // Fast minimum duration timer
+    // If browser already spent time downloading assets on a slow connection, dismiss quickly
+    const initialStart = typeof window !== 'undefined' ? window.__INITIAL_SPLASH_START : null;
+    const elapsed = initialStart ? (Date.now() - initialStart) : 0;
+    const effectiveDuration = elapsed > 800 ? 150 : minDuration;
+
     const timer = setTimeout(() => {
       dismiss();
-    }, minDuration);
+    }, effectiveDuration);
 
     // Hard safety fallback: guaranteed dismissal under any network or rendering conditions
     const safetyTimer = setTimeout(() => {
       setVisible(false);
       if (onCompleteRef.current) onCompleteRef.current();
-    }, 1500);
+    }, 1200);
 
     return () => {
       clearTimeout(timer);
@@ -59,41 +63,42 @@ export const SplashScreen = ({ minDuration = 500, onComplete }) => {
     >
       {/* Top spacer */}
       <div className="w-full flex justify-center pt-2">
-        <span className="text-[10px] sm:text-xs font-bold tracking-widest text-emerald-300/70 uppercase">
+        <span className="text-[11px] font-bold tracking-widest text-emerald-300/75 uppercase">
           Solar Service Portal
         </span>
       </div>
 
       {/* Center Brand Identity */}
       <div className="flex flex-col items-center justify-center text-center px-4 max-w-sm">
-        <div className="relative mb-6">
+        <div className="relative mb-5">
           {/* Subtle Ambient Pulse Halo */}
-          <div className="absolute -inset-4 bg-emerald-400/20 rounded-full blur-2xl animate-pulse pointer-events-none" />
+          <div className="absolute -inset-4 bg-emerald-400/25 rounded-full blur-2xl animate-pulse pointer-events-none" />
           
           <img
             src="/support-icon-192.png"
             srcSet="/support-icon-192.png 192w, /support-icon-512.png 512w"
-            sizes="160px"
-            width="160"
-            height="160"
+            sizes="140px"
+            width="140"
+            height="140"
             alt="Eco Green Support"
-            className="relative w-36 h-36 sm:w-44 sm:h-44 object-contain drop-shadow-2xl animate-in zoom-in-95 duration-500"
+            className="relative w-36 h-36 object-contain drop-shadow-2xl animate-in zoom-in-95 duration-500"
           />
         </div>
 
         <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
           Eco Green Support
         </h1>
-        <p className="text-xs sm:text-sm text-emerald-200/80 mt-1 font-medium tracking-wide">
+        <p className="text-xs sm:text-sm text-emerald-200/85 mt-1 font-medium tracking-wide">
           Solar Systems &amp; Field Operations Hub
         </p>
 
         {/* Minimalist Smooth Loading Indicator */}
-        <div className="mt-8 flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" style={{ animationDuration: '1.2s' }} />
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-pulse" />
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-200 animate-pulse" style={{ animationDelay: '200ms' }} />
+        <div className="mt-5 w-36 h-1 bg-white/15 rounded-full overflow-hidden relative">
+          <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-300 rounded-full animate-pulse" />
         </div>
+        <p className="text-[11px] text-emerald-300 font-semibold mt-2.5">
+          Loading Eco Green Portal...
+        </p>
       </div>
 
       {/* Bottom Footer Info */}

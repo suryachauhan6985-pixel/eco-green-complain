@@ -32,23 +32,129 @@
     <link rel="preload" as="image" href="/support-icon-192.png" type="image/png" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" /></noscript>
+    <script>
+      window.__INITIAL_SPLASH_START = Date.now();
+    </script>
   </head>
   <body class="bg-slate-50 text-slate-900 selection:bg-emerald-100 selection:text-emerald-900">
     <div id="root">
-      <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #085235;">
-        <img 
-          src="/support-icon-192.png" 
-          srcset="/support-icon-192.png 192w, /support-icon-512.png 512w" 
-          sizes="220px"
-          width="220" 
-          height="220" 
-          alt="Eco Green Support" 
-          fetchpriority="high"
-          style="width: 220px; max-width: 80vw; height: auto; object-fit: contain;" 
-        />
+      <div id="html-splash-screen" style="position: fixed; inset: 0; z-index: 9999999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; background-color: #085235; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding-top: max(2rem, env(safe-area-inset-top, 0px)); padding-bottom: max(2.5rem, env(safe-area-inset-bottom, 0px)); padding-left: max(1.5rem, env(safe-area-inset-left, 0px)); padding-right: max(1.5rem, env(safe-area-inset-right, 0px)); box-sizing: border-box; user-select: none;">
+        <style>
+          @keyframes splash-pulse-glow {
+            0%, 100% { opacity: 0.35; transform: scale(1); }
+            50% { opacity: 0.75; transform: scale(1.12); }
+          }
+          @keyframes splash-loader-slide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(250%); }
+          }
+          .splash-glow {
+            position: absolute;
+            inset: -16px;
+            background: radial-gradient(circle, rgba(52, 211, 153, 0.4) 0%, rgba(5, 150, 105, 0) 70%);
+            border-radius: 9999px;
+            filter: blur(14px);
+            animation: splash-pulse-glow 2.4s ease-in-out infinite;
+            pointer-events: none;
+          }
+          .splash-bar-track {
+            width: 140px;
+            height: 3.5px;
+            background: rgba(255, 255, 255, 0.16);
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+            margin-top: 18px;
+          }
+          .splash-bar-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 50%;
+            background: linear-gradient(90deg, #10b981, #34d399, #6ee7b7);
+            border-radius: 9999px;
+            animation: splash-loader-slide 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          }
+        </style>
+
+        <!-- Top Header -->
+        <div style="width: 100%; text-align: center; padding-top: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: rgba(110, 231, 183, 0.75); text-transform: uppercase;">
+            Solar Service Portal
+          </span>
+        </div>
+
+        <!-- Center Brand & Progress -->
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 16px; max-width: 360px;">
+          <div style="position: relative; margin-bottom: 20px;">
+            <div class="splash-glow"></div>
+            <img 
+              src="/support-icon-192.png" 
+              srcset="/support-icon-192.png 192w, /support-icon-512.png 512w" 
+              sizes="140px"
+              width="140" 
+              height="140" 
+              alt="Eco Green Support" 
+              fetchpriority="high"
+              style="position: relative; width: 140px; height: 140px; object-fit: contain; filter: drop-shadow(0 12px 24px rgba(0,0,0,0.35));" 
+            />
+          </div>
+
+          <h1 style="font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: -0.025em; margin: 0; line-height: 1.2;">
+            Eco Green Support
+          </h1>
+          <p style="font-size: 13px; color: rgba(167, 243, 208, 0.85); margin-top: 6px; margin-bottom: 0; font-weight: 500; letter-spacing: 0.01em;">
+            Solar Systems &amp; Field Operations Hub
+          </p>
+
+          <!-- Animated Loading Bar -->
+          <div class="splash-bar-track">
+            <div class="splash-bar-fill"></div>
+          </div>
+
+          <!-- Live Network Status Message -->
+          <p id="splash-status-text" style="font-size: 11px; color: #6ee7b7; margin-top: 12px; margin-bottom: 0; font-weight: 600; min-height: 16px; transition: opacity 0.2s;">
+            Loading Eco Green Portal...
+          </p>
+
+          <button id="splash-retry-btn" type="button" onclick="window.location.reload()" style="display: none; margin-top: 14px; padding: 6px 14px; background-color: rgba(255, 255, 255, 0.15); border: 1px solid rgba(110, 231, 183, 0.5); border-radius: 8px; color: #ffffff; font-size: 11px; font-weight: 700; cursor: pointer;">
+            🔄 Tap to Reload
+          </button>
+        </div>
+
+        <!-- Bottom Footer Info -->
+        <div style="text-align: center;">
+          <p style="font-size: 11px; font-weight: 600; color: rgba(110, 231, 183, 0.85); margin: 0;">
+            Eco Green Solar CMS
+          </p>
+          <p style="font-size: 10px; color: rgba(52, 211, 153, 0.55); font-family: monospace; margin-top: 2px; margin-bottom: 0;">
+            v2.6 • complain.ecogreensolar.co.in
+          </p>
+        </div>
       </div>
     </div>
     <script>
+      // Slow connection adaptive status updates
+      (function() {
+        var t1 = setTimeout(function() {
+          var el = document.getElementById('splash-status-text');
+          if (el) el.textContent = 'Connecting over slow connection...';
+        }, 3000);
+
+        var t2 = setTimeout(function() {
+          var el = document.getElementById('splash-status-text');
+          if (el) el.textContent = 'Optimizing portal resources...';
+        }, 6000);
+
+        var t3 = setTimeout(function() {
+          var el = document.getElementById('splash-status-text');
+          var btn = document.getElementById('splash-retry-btn');
+          if (el) el.textContent = 'Connection is taking longer than expected.';
+          if (btn) btn.style.display = 'inline-block';
+        }, 10000);
+      })();
+
       // Automatic recovery if code-split bundle chunk fails after new deployment
       window.addEventListener('vite:preloadError', function () {
         console.warn('Vite preload error detected, refreshing for latest release...');
