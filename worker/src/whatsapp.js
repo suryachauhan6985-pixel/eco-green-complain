@@ -2,7 +2,7 @@ import { query } from './db.js';
 
 export const META_PHONE_NUMBER_ID = '1387211441132836';
 export const META_WABA_ID = '1015283491554000';
-export const DEFAULT_META_ACCESS_TOKEN = '';
+export const DEFAULT_META_ACCESS_TOKEN = 'EAAeu6xsMl2sBSUlmL0tvSALfdQ39gr2g6cu86UfSZAJFf0ml2NvIrgxBZCrClykIx7fZATeANImtUraemtzYplsBFGWgMSCJZBT5JKRlZBAogI9IFf6BtfW8w3JPRBZB17RZBlFAxM1EXrywEDpFdHcn1Ub8PQaYEjBLhkhwYDMkqMJhYfU8QKegqSN2mu66N7hpwZDZD';
 export const WEBHOOK_VERIFY_TOKEN = 'ecogreen_verify_token';
 export const APP_URL = 'https://complain.ecogreensolar.co.in';
 

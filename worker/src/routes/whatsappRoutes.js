@@ -1481,8 +1481,8 @@ whatsappRoutes.post('/messages/:id/react', authenticateToken, async (c) => {
     // If message has wam_id, dispatch reaction to Meta Cloud API in background
     if (msg.wam_id) {
       try {
-        const phoneId = c.env?.META_PHONE_NUMBER_ID || '1046485925206307';
-        const token = c.env?.META_ACCESS_TOKEN;
+        const phoneId = c.env?.META_PHONE_NUMBER_ID || META_PHONE_NUMBER_ID;
+        const token = c.env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
         if (token && phoneId) {
           const cleanDigits = (msg.phone || '').replace(/\D/g, '');
           const formattedPhone = cleanDigits.startsWith('91') ? cleanDigits : `91${cleanDigits.slice(-10)}`;
