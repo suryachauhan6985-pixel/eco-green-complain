@@ -218,6 +218,11 @@ export const ComplaintList = ({
     onTabClick: onStatusTabClick
   } = useSlidingIndicator(statusFilter);
 
+  // Keep indicator perfectly sized when complaints array loads or changes
+  useEffect(() => {
+    updateStatusIndicator();
+  }, [complaints.length, statusFilter, updateStatusIndicator]);
+
   const prevRefreshKeyRef = useRef(refreshKey);
   useEffect(() => {
     if (prevRefreshKeyRef.current !== refreshKey) {
@@ -703,9 +708,9 @@ export const ComplaintList = ({
           onScroll={updateStatusIndicator}
           className="relative flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none p-1 bg-slate-100/80 rounded-full border border-slate-200/60 isolate"
         >
-          {/* Apple Sliding Pill Background Highlight */}
+          {/* Apple Sliding Pill Background Highlight with left-0 anchor */}
           <div
-            className="absolute top-1 bottom-1 rounded-full bg-emerald-700 shadow-xs pointer-events-none z-0"
+            className="absolute left-0 top-1 bottom-1 rounded-full bg-emerald-700 shadow-xs pointer-events-none z-0"
             style={{
               transform: `translate3d(${statusIndicator.left}px, 0, 0)`,
               width: `${statusIndicator.width}px`,
@@ -726,12 +731,12 @@ export const ComplaintList = ({
                 onClick={() => onStatusTabClick(st, () => handleStatusFilterChange(st))}
                 className={`relative z-10 px-3.5 py-1.5 min-h-[34px] rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 cursor-pointer select-none transition-colors duration-200 ${
                   isActive
-                    ? 'text-white'
+                    ? (statusIndicator.opacity > 0 ? 'text-white' : 'bg-emerald-700 text-white shadow-xs')
                     : 'text-slate-700 hover:text-slate-900'
                 }`}
               >
-                <span>{st === 'all' ? 'All Tasks' : st}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors duration-200 ${
+                <span className="shrink-0">{st === 'all' ? 'All Tasks' : st}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors duration-200 shrink-0 ${
                   isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
                 }`}>
                   {count}
