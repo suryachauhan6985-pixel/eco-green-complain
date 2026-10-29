@@ -36,7 +36,7 @@ import {
   Volume2, VolumeX, Plus, CheckCircle2, Wrench, ShieldCheck,
   Edit2, Trash2, ChevronDown, RotateCcw, Eye, Image, Camera,
   Share2, Reply, MapPin, Star, Archive, WifiOff, Zap, Upload,
-  CreditCard, AlertTriangle
+  CreditCard, AlertTriangle, Play, Pause
 } from 'lucide-react';
 import { WhatsAppChatListSkeleton } from '../common/SkeletonLoader';
 
