@@ -1733,6 +1733,7 @@ export const api = {
     const query = new URLSearchParams({ ...params, _t: Date.now() }).toString();
     return request(`/tour-ledger${query ? `?${query}` : ''}`, { cache: 'no-store' });
   },
+  getTourVoucherReceipts: (voucherNo) => request(`/tour-vouchers/${encodeURIComponent(voucherNo)}/receipts`),
   allocateTourAdvance: (data) => request('/tour-advances', {
     method: 'POST',
     body: JSON.stringify(data)

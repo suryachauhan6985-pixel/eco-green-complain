@@ -75,8 +75,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       if (saved && saved !== 'all') return String(saved);
       const cached = JSON.parse(localStorage.getItem('egs_cached_technicians') || '[]');
       if (Array.isArray(cached) && cached.length > 0) {
-        const withJobs = cached.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
-        return String(withJobs ? withJobs.id : cached[0].id);
+        return String(cached[0].id);
       }
     } catch (_) {}
     return '';
@@ -223,8 +222,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
               return String(saved);
             }
           } catch (_) {}
-          const techWithJobs = techs.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
-          return String(techWithJobs ? techWithJobs.id : techs[0].id);
+          return String(techs[0].id);
         });
       }
       const userPhoneClean = (currentUser?.phone || '').replace(/[^0-9]/g, '').slice(-10);

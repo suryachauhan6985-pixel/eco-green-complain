@@ -1204,7 +1204,7 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
     const expWhere = `WHERE e.technician_id::text = $1`;
     const stlWhere = `WHERE s.technician_id::text = $1`;
 
-    const [advRes, expRes, stlRes, allTechsRes] = await Promise.all([
+    const [advRes, expRes, stlRes, allTechsRes, allAdvsSumRes, allExpsSumRes, allStlsSumRes] = await Promise.all([
       query(`
         SELECT a.*, a.allocated_by as allocated_by_name, t.name as technician_name, t.phone as technician_phone
         FROM technician_tour_advances a
@@ -1213,7 +1213,20 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
         ORDER BY a.allocated_at DESC, a.id DESC
       `, advParams, c.env, c.executionCtx),
       query(`
-        SELECT e.*, t.name as technician_name, t.phone as technician_phone
+        SELECT 
+          e.id, e.technician_id, e.tour_advance_id, e.voucher_no, e.expense_date, e.category, e.amount, e.description,
+          e.receipt_name, e.ticket_id, e.complaint_id, e.status, e.created_by, e.approved_by_name, e.created_at, e.approved_at, e.rejection_reason,
+          t.name as technician_name, t.phone as technician_phone,
+          CASE
+            WHEN e.receipt_url IS NOT NULL AND e.receipt_url != '' THEN true
+            ELSE false
+          END as has_receipt,
+          CASE
+            WHEN e.receipt_url IS NULL OR e.receipt_url = '' THEN NULL
+            WHEN e.receipt_url LIKE '/api/%' OR e.receipt_url LIKE 'http%' THEN e.receipt_url
+            WHEN length(e.receipt_url) < 2000 THEN e.receipt_url
+            ELSE CONCAT('/api/tour-vouchers/', e.voucher_no, '/receipts')
+          END as receipt_url
         FROM technician_tour_expenses e
         LEFT JOIN technicians t ON t.id::text = e.technician_id::text
         ${expWhere}
@@ -1226,7 +1239,31 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
         ${stlWhere}
         ORDER BY s.settled_at DESC, s.id DESC
       `, stlParams, c.env, c.executionCtx),
-      query(`SELECT id, name, phone, area_zone FROM technicians ORDER BY name ASC`, [], c.env, c.executionCtx)
+      query(`SELECT id, name, phone, area_zone FROM technicians ORDER BY name ASC`, [], c.env, c.executionCtx),
+      query(`
+        SELECT 
+          technician_id::text AS tech_id,
+          COALESCE(SUM(amount), 0) AS total_advance
+        FROM technician_tour_advances 
+        WHERE LOWER(status) != 'cancelled'
+        GROUP BY technician_id
+      `, [], c.env, c.executionCtx),
+      query(`
+        SELECT 
+          technician_id::text AS tech_id,
+          COALESCE(SUM(amount), 0) AS total_expenses,
+          COALESCE(SUM(amount) FILTER (WHERE LOWER(status) IN ('approved', 'verified')), 0) AS approved_expenses
+        FROM technician_tour_expenses
+        GROUP BY technician_id
+      `, [], c.env, c.executionCtx),
+      query(`
+        SELECT 
+          technician_id::text AS tech_id,
+          COALESCE(SUM(returned_amount) FILTER (WHERE LOWER(status) != 'reversed' AND LOWER(status) != 'cancelled'), 0) AS total_returned,
+          COALESCE(SUM(reimbursed_amount) FILTER (WHERE LOWER(status) != 'reversed' AND LOWER(status) != 'cancelled'), 0) AS total_reimbursed
+        FROM technician_tour_settlements
+        GROUP BY technician_id
+      `, [], c.env, c.executionCtx)
     ]);
 
     const advances = advRes.rows || [];
@@ -1375,28 +1412,21 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
       };
     });
 
-    // Consolidated Per-Technician Summary (for Admin view)
+    // Consolidated Per-Technician Summary (100% accurate company-wide map across all technicians)
+    const allAdvsMap = new Map((allAdvsSumRes.rows || []).map(r => [String(r.tech_id), parseFloat(r.total_advance || 0)]));
+    const allExpsMap = new Map((allExpsSumRes.rows || []).map(r => [String(r.tech_id), { total: parseFloat(r.total_expenses || 0), approved: parseFloat(r.approved_expenses || 0) }]));
+    const allStlsMap = new Map((allStlsSumRes.rows || []).map(r => [String(r.tech_id), { returned: parseFloat(r.total_returned || 0), reimbursed: parseFloat(r.total_reimbursed || 0) }]));
+
     const techniciansSummary = allTechnicians.map(t => {
       const techIdStr = String(t.id);
-      const tAdvs = activeAdvances.filter(a => String(a.technician_id) === techIdStr);
-      const tExps = expenses.filter(e => String(e.technician_id) === techIdStr);
-      const tStls = activeSettlements.filter(s => String(s.technician_id) === techIdStr);
+      const advSum = allAdvsMap.get(techIdStr) || 0;
+      const expData = allExpsMap.get(techIdStr) || { total: 0, approved: 0 };
+      const stlData = allStlsMap.get(techIdStr) || { returned: 0, reimbursed: 0 };
 
-      const advSum = tAdvs.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
-      const expApproved = tExps
-        .filter(e => ['approved', 'verified'].includes((e.status || '').toLowerCase()))
-        .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-      const expTotal = tExps.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-
-      const retSum = tStls.reduce((sum, s) => {
-        const isReversed = (s.status || '').toLowerCase() === 'reversed';
-        return sum + (isReversed ? 0 : parseFloat(s.returned_amount || 0));
-      }, 0);
-
-      const reimSum = tStls.reduce((sum, s) => {
-        const isReversed = (s.status || '').toLowerCase() === 'reversed';
-        return sum + (isReversed ? 0 : parseFloat(s.reimbursed_amount || 0));
-      }, 0);
+      const expApproved = expData.approved;
+      const expTotal = expData.total;
+      const retSum = stlData.returned;
+      const reimSum = stlData.reimbursed;
 
       const tNet = (advSum + reimSum) - (expApproved + retSum);
       let tStatus = 'Settled';
@@ -1493,6 +1523,37 @@ technicianRoutes.get('/tour-ledger', authenticateToken, async (c) => {
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/tour-vouchers/:voucherNo/receipts - Fetch receipt images on demand for a voucher
+technicianRoutes.get('/tour-vouchers/:voucherNo/receipts', authenticateToken, async (c) => {
+  try {
+    const voucherNo = c.req.param('voucherNo');
+    const res = await query(
+      `SELECT receipt_url, receipt_name FROM technician_tour_expenses 
+       WHERE voucher_no = $1 AND receipt_url IS NOT NULL AND receipt_url != '' 
+       ORDER BY id ASC LIMIT 1`,
+      [voucherNo], c.env, c.executionCtx
+    );
+    if (!res.rows || res.rows.length === 0 || !res.rows[0].receipt_url) {
+      return c.json({ success: false, error: 'Receipt not found' }, 404);
+    }
+    const raw = res.rows[0].receipt_url;
+    let urls = [];
+    if (typeof raw === 'string' && raw.startsWith('[')) {
+      try { urls = JSON.parse(raw); } catch (_) { urls = [raw]; }
+    } else {
+      urls = [raw];
+    }
+    return c.json({ 
+      success: true, 
+      voucher_no: voucherNo, 
+      urls, 
+      name: res.rows[0].receipt_name || voucherNo 
+    });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
   }
 });
 
@@ -1742,9 +1803,19 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
       const bucketItems = buckets[bIdx];
       const assignedVoucherNo = allAssignedVouchers[bIdx];
 
+      let isFirstItemOfVoucher = true;
       for (const it of bucketItems) {
         const itAmt = parseFloat(it.amount || 0);
         if (itAmt <= 0) continue;
+
+        // Only store receipt on the primary item of the voucher to prevent duplicating megabytes across items
+        const itemReceiptUrl = isFirstItemOfVoucher
+          ? (it.receipt_url !== undefined ? it.receipt_url : (receipt_url || null))
+          : (it.receipt_url && it.receipt_url !== receipt_url ? it.receipt_url : null);
+        const itemReceiptName = isFirstItemOfVoucher
+          ? (it.receipt_name !== undefined ? it.receipt_name : (receipt_name || null))
+          : null;
+        isFirstItemOfVoucher = false;
 
         const r = await query(`
           INSERT INTO technician_tour_expenses (
@@ -1759,9 +1830,9 @@ technicianRoutes.post('/tour-expenses', authenticateToken, async (c) => {
           it.category || category || 'Travel',
           itAmt,
           it.description || it.title || description || '',
-          it.receipt_url !== undefined ? it.receipt_url : (receipt_url || null),
+          itemReceiptUrl,
           receipt_data || null,
-          it.receipt_name !== undefined ? it.receipt_name : (receipt_name || null),
+          itemReceiptName,
           it.ticket_id || ticket_id || null,
           assignedVoucherNo,
           user.name || 'Technician'

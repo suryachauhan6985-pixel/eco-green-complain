@@ -66,6 +66,27 @@ export function numberToIndianWords(amount) {
   return (result.trim() + ' Rupees Only').replace(/\s+/g, ' ');
 }
 
+export const createEmptyLedgerData = () => ({
+  advances: [],
+  expenses: [],
+  settlements: [],
+  summary: {
+    total_advance: 0,
+    approved_expenses: 0,
+    total_returned: 0,
+    total_reimbursed: 0,
+    net_balance: 0,
+    net_recoverable: 0,
+    net_payable: 0,
+    status_label: 'Settled'
+  },
+  statement: null,
+  complaint_settlements: [],
+  technicians_summary: [],
+  company_kpis: null,
+  reconciliation: null
+});
+
 export const TourLedgerSection = ({ 
   scopedTechProfile, 
   allTechnicians = [], 
@@ -104,7 +125,7 @@ export const TourLedgerSection = ({
     }
   }, [complaints]);
 
-  // Selected technician filter: default to scoped tech if technician, or activeTechId, or saved tech, or tech with active jobs
+  // Selected technician filter: default to scoped tech if technician, or activeTechId, or saved tech, or first loaded tech
   const [internalTechId, setInternalTechId] = useState(() => {
     if (!isAdminOrStaff && scopedTechProfile?.id) return String(scopedTechProfile.id);
     if (activeTechId && activeTechId !== 'all') return String(activeTechId);
@@ -113,16 +134,24 @@ export const TourLedgerSection = ({
       if (saved && saved !== 'all') return String(saved);
     } catch (_) {}
     if (allTechnicians && allTechnicians.length > 0) {
-      const withJobs = allTechnicians.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
-      return String(withJobs ? withJobs.id : allTechnicians[0].id);
+      return String(allTechnicians[0].id);
     }
     return '';
   });
 
+  const selectedTechId = internalTechId || (loadedTechs[0]?.id ? String(loadedTechs[0].id) : '');
+
+  const [ledgerData, setLedgerData] = useState(() => createEmptyLedgerData());
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     if (isAdminOrStaff) {
       if (activeTechId && activeTechId !== 'all') {
-        setInternalTechId(String(activeTechId));
+        if (String(activeTechId) !== internalTechId) {
+          setLedgerData(createEmptyLedgerData());
+          setLoading(true);
+          setInternalTechId(String(activeTechId));
+        }
       } else if (loadedTechs.length > 0 && (!internalTechId || internalTechId === 'all')) {
         let preferredId = null;
         try {
@@ -131,8 +160,7 @@ export const TourLedgerSection = ({
             preferredId = String(saved);
           }
         } catch (_) {}
-        const techWithJobs = loadedTechs.find(t => (t.active_jobs_count > 0 || t.active_tickets_count > 0));
-        const chosenId = preferredId || (techWithJobs ? String(techWithJobs.id) : String(loadedTechs[0].id));
+        const chosenId = preferredId || String(loadedTechs[0].id);
         setInternalTechId(chosenId);
         if (onTechChange) onTechChange(chosenId);
       }
@@ -141,9 +169,11 @@ export const TourLedgerSection = ({
     }
   }, [activeTechId, isAdminOrStaff, scopedTechProfile, loadedTechs]);
 
-  const selectedTechId = internalTechId || (loadedTechs[0]?.id ? String(loadedTechs[0].id) : '');
-
   const handleTechChange = (newId) => {
+    if (newId && newId !== selectedTechId) {
+      setLedgerData(createEmptyLedgerData());
+      setLoading(true);
+    }
     setInternalTechId(newId);
     try {
       if (newId) localStorage.setItem('egs_selected_tour_tech_id', String(newId));
@@ -157,28 +187,6 @@ export const TourLedgerSection = ({
   const [resettingLedger, setResettingLedger] = useState(false);
   const [resetError, setResetError] = useState('');
   const [showAdminPassword, setShowAdminPassword] = useState(false);
-
-  const [ledgerData, setLedgerData] = useState({
-    advances: [],
-    expenses: [],
-    settlements: [],
-    summary: {
-      total_advance: 0,
-      approved_expenses: 0,
-      total_returned: 0,
-      total_reimbursed: 0,
-      net_balance: 0,
-      net_recoverable: 0,
-      net_payable: 0,
-      status_label: 'Settled'
-    },
-    statement: null,
-    complaint_settlements: [],
-    technicians_summary: [],
-    company_kpis: null,
-    reconciliation: null
-  });
-  const [loading, setLoading] = useState(true);
 
   const getInitialSubTab = () => {
     const raw = (getUrlParam('subtab') || getUrlParam('tab') || '').toLowerCase();
@@ -671,6 +679,56 @@ export const TourLedgerSection = ({
   }, []);
 
   const [receiptLightbox, setReceiptLightbox] = useState(null);
+  const [loadingReceiptVoucher, setLoadingReceiptVoucher] = useState(null);
+
+  const handleOpenReceiptLightbox = async (grp, e) => {
+    if (e) e.stopPropagation();
+    if (!grp || !grp.receipt_url) return;
+
+    // Check if receipt is an on-demand endpoint URL
+    if (typeof grp.receipt_url === 'string' && (grp.receipt_url.includes('/receipts') || grp.receipt_url.startsWith('/api/tour-vouchers/'))) {
+      try {
+        setLoadingReceiptVoucher(grp.voucher_no || grp.key);
+        const res = await api.getTourVoucherReceipts(grp.voucher_no);
+        if (res && res.urls && res.urls.length > 0) {
+          setReceiptLightbox({
+            urls: res.urls,
+            url: res.urls[0],
+            index: 0,
+            name: res.name || `${grp.voucher_no} Bill Proofs`
+          });
+        } else {
+          showToast('No bill receipt image found for this voucher', 'info');
+        }
+      } catch (err) {
+        showToast('Failed to load bill receipt: ' + err.message, 'error');
+      } finally {
+        setLoadingReceiptVoucher(null);
+      }
+      return;
+    }
+
+    let receiptUrls = [];
+    try {
+      if (typeof grp.receipt_url === 'string' && grp.receipt_url.startsWith('[')) {
+        receiptUrls = JSON.parse(grp.receipt_url);
+      } else {
+        receiptUrls = [grp.receipt_url];
+      }
+    } catch (_) {
+      receiptUrls = [grp.receipt_url];
+    }
+
+    if (receiptUrls.length > 0) {
+      setReceiptLightbox({
+        urls: receiptUrls,
+        url: receiptUrls[0],
+        index: 0,
+        name: grp.receipt_name || `${grp.voucher_no} Bill Proofs`
+      });
+    }
+  };
+
   const [copiedWord, setCopiedWord] = useState(false);
   const [startingVoucherNo, setStartingVoucherNo] = useState(341);
   const [selectedVoucherKeys, setSelectedVoucherKeys] = useState(new Set());
@@ -1043,7 +1101,14 @@ export const TourLedgerSection = ({
     }
   };
 
+  const lastFetchedTechIdRef = useRef(null);
+
   useEffect(() => {
+    if (selectedTechId && lastFetchedTechIdRef.current !== selectedTechId) {
+      lastFetchedTechIdRef.current = selectedTechId;
+      setLedgerData(createEmptyLedgerData());
+      setLoading(true);
+    }
     fetchLedger();
 
     // Live sync polling: resilient heartbeat refresh silently every 30s when document is visible
@@ -2629,19 +2694,24 @@ export const TourLedgerSection = ({
                             </td>
 
                             <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
-                              {receiptUrls.length > 0 ? (
+                              {grp.receipt_url ? (
                                 <button
                                   type="button"
-                                  onClick={() => setReceiptLightbox({
-                                    urls: receiptUrls,
-                                    url: receiptUrls[0],
-                                    index: 0,
-                                    name: grp.receipt_name || `${grp.voucher_no} Bill Proofs`
-                                  })}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition-colors cursor-pointer shadow-2xs"
+                                  disabled={loadingReceiptVoucher === (grp.voucher_no || grp.key)}
+                                  onClick={(e) => handleOpenReceiptLightbox(grp, e)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-200 transition-colors cursor-pointer shadow-2xs"
                                 >
-                                  <ImageIcon className="w-3 h-3 text-emerald-600" />
-                                  <span>View Bill{receiptUrls.length > 1 ? ` (${receiptUrls.length})` : ''}</span>
+                                  {loadingReceiptVoucher === (grp.voucher_no || grp.key) ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />
+                                      <span>Loading...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ImageIcon className="w-3 h-3 text-emerald-600" />
+                                      <span>View Bill</span>
+                                    </>
+                                  )}
                                 </button>
                               ) : (
                                 <span className="text-[10px] text-slate-400 italic">Self-Voucher</span>
