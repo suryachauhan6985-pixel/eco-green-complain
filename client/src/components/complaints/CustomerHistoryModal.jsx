@@ -1,8 +1,9 @@
 import { formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
-import { X, Phone, History, Calendar, Wrench, ChevronRight } from 'lucide-react';
-import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { X, History, ChevronRight } from 'lucide-react';
+import { ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { ModalWrapper } from '../common/ModalWrapper';
 
 export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket }) => {
   const [history, setHistory] = useState([]);
@@ -25,29 +26,16 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
     }
   }, [isOpen, phone]);
 
-  // Close modal on Escape key
-  useEscapeHandler(() => {
-    onClose();
-    return true;
-  }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.DRAWER });
-
-  if (!isOpen) return null;
-
   return (
-    <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade flex items-center justify-center p-4 cursor-pointer"
-      style={{
-        paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))',
-        paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <ModalWrapper
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidth="max-w-xl"
+      priority={ESCAPE_PRIORITY.DRAWER}
+      ariaLabel="Customer Complaint History"
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 cursor-default modal-enter-scale"
+        className="bg-white rounded-2xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
@@ -58,25 +46,28 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
               <p className="text-xs text-slate-400">Phone: {phone}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white">
+          <button 
+            onClick={onClose}
+            className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1 space-y-3">
+        <div className="p-6 overflow-y-auto divide-y divide-slate-100 flex-1">
           {loading ? (
-            <p className="text-xs text-center text-slate-400 py-10">Loading customer history...</p>
+            <div className="text-center py-8 text-sm text-slate-500">Loading history...</div>
           ) : history.length === 0 ? (
-            <p className="text-xs text-center text-slate-500 py-10">No past complaints found for this phone number.</p>
+            <div className="text-center py-8 text-sm text-slate-500">No past complaints found for this customer.</div>
           ) : (
             history.map((c) => (
               <div 
                 key={c.id} 
+                className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between hover:bg-slate-50 p-2 rounded-xl transition-colors cursor-pointer"
                 onClick={() => {
-                  if (onSelectTicket) onSelectTicket(c.id);
+                  onSelectTicket(c.id);
                   onClose();
                 }}
-                className="bg-slate-50 hover:bg-emerald-50/50 p-3.5 rounded-xl border border-slate-200 hover:border-emerald-300 transition-all cursor-pointer flex items-center justify-between"
               >
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -99,6 +90,6 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
           )}
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };

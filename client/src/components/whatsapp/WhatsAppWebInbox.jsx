@@ -1,6 +1,7 @@
-import PdfViewerModal from './PdfViewerModal';
 import { formatIndianDateOnly, formatIndianTimeOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+
+const PdfViewerModal = lazy(() => import('./PdfViewerModal'));
 import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
@@ -4689,12 +4690,19 @@ export const WhatsAppWebInbox = ({
             onClick={() => setPreviewMedia(null)}
             className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
           >
-            <PdfViewerModal
-              url={previewMedia.url}
-              title={previewMedia.title || 'Document.pdf'}
-              onClose={() => setPreviewMedia(null)}
-              onDownload={(url, filename) => handleDownloadFile(url, filename)}
-            />
+            <Suspense fallback={
+              <div className="flex items-center gap-3 p-6 bg-slate-900 text-white rounded-2xl shadow-2xl">
+                <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold">Loading Secure PDF Engine...</span>
+              </div>
+            }>
+              <PdfViewerModal
+                url={previewMedia.url}
+                title={previewMedia.title || 'Document.pdf'}
+                onClose={() => setPreviewMedia(null)}
+                onDownload={(url, filename) => handleDownloadFile(url, filename)}
+              />
+            </Suspense>
           </div>
         ) : (
           <WhatsAppMediaLightbox

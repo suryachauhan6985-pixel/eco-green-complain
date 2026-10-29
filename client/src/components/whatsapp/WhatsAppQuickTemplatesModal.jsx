@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Sparkles, X, Check, Copy } from 'lucide-react';
+import { ModalWrapper } from '../common/ModalWrapper';
+import { ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 export const DEFAULT_WHATSAPP_TEMPLATES = [
   {
@@ -57,8 +59,6 @@ export function WhatsAppQuickTemplatesModal({ isOpen, onClose, onSelectTemplate 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
-  if (!isOpen) return null;
-
   const categories = ['All', 'General', 'Service', 'Dispatch', 'Technical', 'Resolution', 'Documentation'];
 
   const filtered = DEFAULT_WHATSAPP_TEMPLATES.filter((tpl) => {
@@ -73,13 +73,16 @@ export function WhatsAppQuickTemplatesModal({ isOpen, onClose, onSelectTemplate 
   });
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
-      onClick={onClose}
+    <ModalWrapper
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidth="max-w-lg"
+      priority={ESCAPE_PRIORITY.DRAWER}
+      ariaLabel="Quick Reply Templates"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150"
+        className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]"
       >
         {/* Header */}
         <div className="px-5 py-3.5 bg-[#008069] text-white flex items-center justify-between shadow-xs">
@@ -187,6 +190,6 @@ export function WhatsAppQuickTemplatesModal({ isOpen, onClose, onSelectTemplate 
           )}
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 }

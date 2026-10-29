@@ -8,8 +8,6 @@ import { NotificationPopup } from './components/common/NotificationPopup';
 import { AppUpdateModal } from './components/common/AppUpdateModal';
 import { DevicePermissionsModal } from './components/common/DevicePermissionsModal';
 import { ComplaintList } from './components/complaints/ComplaintList';
-import { NewComplaintModal } from './components/complaints/NewComplaintModal';
-import { ComplaintDetailDrawer } from './components/complaints/ComplaintDetailDrawer';
 import { LoginPage } from './components/auth/LoginPage';
 import { api } from './api/client';
 import { getNotificationTemplates } from './utils/templateUtils';
@@ -17,7 +15,6 @@ import { initGlobalEscapeListener, useEscapeHandler, ESCAPE_PRIORITY } from './u
 
 // Initialize global escape key interception
 initGlobalEscapeListener();
-
 
 import { preloadAllSecondaryTabs } from './utils/routePreload';
 
@@ -32,6 +29,8 @@ const AdminSettingsHub = React.lazy(() => import('./components/admin/AdminSettin
 const StaffTechnicianManager = React.lazy(() => import('./components/admin/StaffTechnicianManager').then(m => ({ default: m.StaffTechnicianManager })));
 const OnboardingTour = React.lazy(() => import('./components/common/OnboardingTour').then(m => ({ default: m.OnboardingTour })));
 const WhatsAppWebInbox = React.lazy(() => import('./components/whatsapp/WhatsAppWebInbox').then(m => ({ default: m.WhatsAppWebInbox })));
+const NewComplaintModal = React.lazy(() => import('./components/complaints/NewComplaintModal').then(m => ({ default: m.NewComplaintModal })));
+const ComplaintDetailDrawer = React.lazy(() => import('./components/complaints/ComplaintDetailDrawer').then(m => ({ default: m.ComplaintDetailDrawer })));
 
 import { AppPageSkeleton, ComplaintGridSkeleton } from './components/common/SkeletonLoader';
 import { GlobalLoadingOverlay } from './components/common/GlobalLoadingOverlay';
@@ -629,30 +628,36 @@ function AppContent() {
       )}
 
       {/* Global Modals & Slide-over Panels */}
-      <NewComplaintModal
-        isOpen={isNewComplaintOpen}
-        initialData={newComplaintInitialData}
-        onClose={handleCloseNewComplaint}
-        onComplaintCreated={(newTicket) => {
-          // Refresh complaints list without popping drawer underneath success modal
-          setRefreshKey(k => k + 1);
-        }}
-        onViewComplaint={(ticketId) => {
-          handleSelectComplaint(ticketId);
-        }}
-      />
+      <React.Suspense fallback={null}>
+        {isNewComplaintOpen && (
+          <NewComplaintModal
+            isOpen={isNewComplaintOpen}
+            initialData={newComplaintInitialData}
+            onClose={handleCloseNewComplaint}
+            onComplaintCreated={(newTicket) => {
+              // Refresh complaints list without popping drawer underneath success modal
+              setRefreshKey(k => k + 1);
+            }}
+            onViewComplaint={(ticketId) => {
+              handleSelectComplaint(ticketId);
+            }}
+          />
+        )}
 
-      <ComplaintDetailDrawer
-        complaintId={selectedComplaintId}
-        isOpen={Boolean(selectedComplaintId)}
-        onClose={() => handleSelectComplaint(null)}
-        onComplaintUpdated={() => setRefreshKey(k => k + 1)}
-        onViewCustomerHistory={(phone) => handleOpenHistory(phone)}
-        onNewComplaintWithData={(data) => {
-          setSelectedComplaintId(null);
-          handleOpenNewComplaint(data);
-        }}
-      />
+        {Boolean(selectedComplaintId) && (
+          <ComplaintDetailDrawer
+            complaintId={selectedComplaintId}
+            isOpen={Boolean(selectedComplaintId)}
+            onClose={() => handleSelectComplaint(null)}
+            onComplaintUpdated={() => setRefreshKey(k => k + 1)}
+            onViewCustomerHistory={(phone) => handleOpenHistory(phone)}
+            onNewComplaintWithData={(data) => {
+              setSelectedComplaintId(null);
+              handleOpenNewComplaint(data);
+            }}
+          />
+        )}
+      </React.Suspense>
 
       {/* Floating Role-Based Notification Popup Toast */}
       <NotificationPopup

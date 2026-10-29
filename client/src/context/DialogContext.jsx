@@ -6,6 +6,7 @@ import {
 import { GlobalLoadingOverlay } from '../components/common/GlobalLoadingOverlay';
 import { subscribeToLoading } from '../api/client';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../utils/escapeManager';
+import { ModalWrapper } from '../components/common/ModalWrapper';
 
 const DialogContext = createContext(null);
 
@@ -156,16 +157,17 @@ export function DialogProvider({ children }) {
         message={loadingState.message} 
       />
 
-      {/* CUSTOM IN-APP DIALOG MODAL */}
-      {dialog && dialog.isOpen && (
-        <div 
-          className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 backdrop-enter-fade"
-          onClick={() => handleCloseDialog(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 modal-enter-scale"
-            onClick={(e) => e.stopPropagation()}
-          >
+      {/* CUSTOM IN-APP DIALOG MODAL WITH HARDWARE-ACCELERATED TRANSITIONS */}
+      <ModalWrapper
+        isOpen={Boolean(dialog && dialog.isOpen)}
+        onClose={() => handleCloseDialog(false)}
+        maxWidth="max-w-md"
+        priority={ESCAPE_PRIORITY.PROMPT}
+        zIndex="z-[100]"
+        ariaLabel={dialog?.title || 'Notice'}
+      >
+        {dialog && (
+          <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden border border-slate-200">
             {/* Header with appropriate icon & color */}
             <div className={`px-5 py-4 flex items-center justify-between border-b ${
               dialog.type === 'danger' ? 'bg-rose-50 border-rose-100 text-rose-950' :
@@ -262,8 +264,8 @@ export function DialogProvider({ children }) {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </ModalWrapper>
 
       {/* TOASTS CONTAINER WITH TAP & SWIPE DISMISS */}
       <div className="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-3 sm:px-0">

@@ -581,18 +581,34 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
   };
 }
 
-// GET /api/technicians
+// GET /api/technicians - High Performance Single Aggregated Query
 technicianRoutes.get('/technicians', authenticateToken, async (c) => {
   try {
     const res = await query(
-      `SELECT t.*, 
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'Reopened')) as active_tickets_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'Reopened')) as active_jobs_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status = 'On Hold') as on_hold_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as total_open_count,
-        (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count
-       FROM technicians t
-       ORDER BY t.name ASC`,
+      `WITH tech_counts AS (
+        SELECT 
+          tech_id,
+          COUNT(*) FILTER (WHERE status IN ('Assigned', 'In Progress', 'Reopened')) AS active_tickets_count,
+          COUNT(*) FILTER (WHERE status = 'On Hold') AS on_hold_count,
+          COUNT(*) FILTER (WHERE status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) AS total_open_count,
+          COUNT(*) FILTER (WHERE status IN ('Resolved', 'Closed')) AS resolved_tickets_count
+        FROM (
+          SELECT assigned_technician_id::text AS tech_id, status FROM complaints WHERE assigned_technician_id IS NOT NULL
+          UNION ALL
+          SELECT secondary_technician_id::text AS tech_id, status FROM complaints WHERE secondary_technician_id IS NOT NULL
+        ) combined
+        GROUP BY tech_id
+      )
+      SELECT 
+        t.*,
+        COALESCE(tc.active_tickets_count, 0) AS active_tickets_count,
+        COALESCE(tc.active_tickets_count, 0) AS active_jobs_count,
+        COALESCE(tc.on_hold_count, 0) AS on_hold_count,
+        COALESCE(tc.total_open_count, 0) AS total_open_count,
+        COALESCE(tc.resolved_tickets_count, 0) AS resolved_tickets_count
+      FROM technicians t
+      LEFT JOIN tech_counts tc ON tc.tech_id = t.id::text
+      ORDER BY t.name ASC`,
       [],
       c.env,
       c.executionCtx

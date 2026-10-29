@@ -237,7 +237,7 @@ export async function runBatchExpiredDocumentsPurge(env, ctx) {
 complaintRoutes.get('/', authenticateToken, async (c) => {
   try {
     const user = c.get('user');
-    const { status, priority, product, technician_id, search } = c.req.query();
+    const { status, priority, product, technician_id, search, limit, offset, page } = c.req.query();
 
     let sql = `
       SELECT 
@@ -309,8 +309,22 @@ complaintRoutes.get('/', authenticateToken, async (c) => {
     }
 
     sql += ' ORDER BY c.created_at DESC';
+
+    if (limit && Number(limit) > 0) {
+      const pageLimit = Math.min(200, Math.max(1, parseInt(limit, 10)));
+      const pageOffset = offset ? Math.max(0, parseInt(offset, 10)) : (page ? Math.max(0, (parseInt(page, 10) - 1) * pageLimit) : 0);
+      params.push(pageLimit);
+      sql += ` LIMIT $${params.length}`;
+      params.push(pageOffset);
+      sql += ` OFFSET $${params.length}`;
+    }
+
     const r = await query(sql, params, c.env, c.executionCtx);
-    return c.json({ complaints: r.rows, tickets: r.rows });
+    return c.json({ 
+      complaints: r.rows, 
+      tickets: r.rows,
+      total: r.rows.length
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

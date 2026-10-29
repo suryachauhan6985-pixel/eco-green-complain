@@ -16,6 +16,8 @@ const tabLoaders = {
   customer: () => import('../components/customer/CustomerPublicPortal'),
   customerSearch: () => import('../components/customer/CustomerSearchModal'),
   customerHistory: () => import('../components/complaints/CustomerHistoryModal'),
+  complaintDrawer: () => import('../components/complaints/ComplaintDetailDrawer'),
+  newComplaint: () => import('../components/complaints/NewComplaintModal'),
 };
 
 export const preloadComponent = (key) => {

@@ -6,6 +6,7 @@ import {
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { ModalWrapper } from '../common/ModalWrapper';
 
 export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
   const { currentUser, setCurrentUser } = useAuth();
@@ -154,19 +155,16 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
     return true;
   }, Boolean(isOpen), { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
-  if (!isOpen) return null;
-
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade cursor-pointer"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <ModalWrapper
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidth="max-w-lg"
+      priority={ESCAPE_PRIORITY.INNER_MODAL}
+      ariaLabel="Account Credentials & Security"
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden modal-enter-scale cursor-default"
+        className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -457,6 +455,6 @@ export const AccountSettingsModal = ({ isOpen, onClose, showToast }) => {
           )}
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };

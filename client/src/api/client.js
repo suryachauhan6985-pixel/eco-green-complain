@@ -5,6 +5,16 @@ import {
   INITIAL_SIMULATED_NOTIFICATIONS, 
   INITIAL_TEMPLATES 
 } from '../data/demoData';
+import { 
+  getEndpointCacheConfig, 
+  buildCacheKey, 
+  getCachedResponse, 
+  setCachedResponse, 
+  getInFlightRequest, 
+  setInFlightRequest, 
+  invalidateOnMutation, 
+  clearApiCache 
+} from './cache';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '') || '/api';
 
@@ -34,6 +44,7 @@ export function setAuthToken(token) {
       sessionStorage.removeItem('egs_token');
       sessionStorage.setItem('egs_tab_logged_out', 'true');
       localStorage.removeItem('egs_token');
+      clearApiCache();
     }
   } catch (_) {}
 }
@@ -1026,99 +1037,137 @@ function notifyLoading(isLoading, message = 'Processing...') {
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
   const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
-  const shouldTrack = (isMutation || options.showOverlay === true) && options.noOverlay !== true;
-  let timerId = null;
-
-  if (shouldTrack) {
-    activeMutationCount++;
-    timerId = setTimeout(() => {
-      notifyLoading(true);
-    }, 90);
-  }
-
   const token = getAuthToken();
-  const headers = { ...options.headers };
 
-  if (token && !headers['Authorization']) {
-    headers['Authorization'] = `Bearer ${token}`;
+  // 1. Safe In-Memory Caching & Request Deduplication
+  const cacheConfig = getEndpointCacheConfig(endpoint, options);
+  let cacheKey = null;
+  if (cacheConfig) {
+    const userContextId = token ? token.slice(-16) : 'anon';
+    cacheKey = buildCacheKey(endpoint, userContextId);
+
+    // Return instant memory cache if valid
+    const cachedData = getCachedResponse(cacheKey);
+    if (cachedData !== null) {
+      return cachedData;
+    }
+
+    // Return in-flight promise if duplicate request is currently executing
+    const inFlight = getInFlightRequest(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
   }
 
-  if (options.body && !(options.body instanceof FormData) && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json';
-  }
+  const executeFetch = async () => {
+    const shouldTrack = (isMutation || options.showOverlay === true) && options.noOverlay !== true;
+    let timerId = null;
 
-  let didTimeout = false;
-  try {
-    const controller = new AbortController();
-    const timeoutMs = options.timeout || (
-      endpoint.includes('/customers/sync') ? 60000 :
-      endpoint.includes('/tour-expenses') ? 60000 :
-      endpoint.includes('/attachments') || endpoint.includes('/upload') ? 60000 :
-      endpoint.startsWith('/auth/me') ? 6000 :
-      endpoint.includes('/meta-status') ? 8000 :
-      25000
-    );
-    const timeoutId = setTimeout(() => {
-      didTimeout = true;
-      try {
-        controller.abort(new Error('Request timed out'));
-      } catch (_) {
-        controller.abort();
-      }
-    }, timeoutMs);
-
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    const contentType = response.headers.get('content-type');
-    let data = null;
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    }
-
-    if (!response.ok) {
-      const errorMsg = data?.error || `Request failed with status ${response.status}`;
-      const err = new Error(errorMsg);
-      err.status = response.status;
-      throw err;
-    }
-
-    return data !== null ? data : response;
-  } catch (err) {
-    if (didTimeout || err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('signal is aborted')) {
-      throw new Error(`Request timed out. Please check your internet connection and try again.`);
-    }
-
-    const method = (options.method || 'GET').toUpperCase();
-    const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
-
-    // Always propagate server HTTP errors and mutation failures directly to caller
-    if (err.status || isMutation) {
-      throw err;
-    }
-
-    // Read-only offline fallback strictly when network disconnects
-    if (endpoint.startsWith('/complaints') && method === 'GET') {
-      const cached = getPermanentComplaints();
-      if (cached && cached.length > 0) {
-        return { complaints: cached, total: cached.length, isOfflineCache: true };
-      }
-    }
-
-    throw err;
-  } finally {
-    if (timerId) clearTimeout(timerId);
     if (shouldTrack) {
-      activeMutationCount = Math.max(0, activeMutationCount - 1);
-      if (activeMutationCount === 0) {
-        notifyLoading(false);
+      activeMutationCount++;
+      timerId = setTimeout(() => {
+        notifyLoading(true);
+      }, 90);
+    }
+
+    const headers = { ...options.headers };
+
+    if (token && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (options.body && !(options.body instanceof FormData) && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    let didTimeout = false;
+    try {
+      const controller = new AbortController();
+      const timeoutMs = options.timeout || (
+        endpoint.includes('/customers/sync') ? 60000 :
+        endpoint.includes('/tour-expenses') ? 60000 :
+        endpoint.includes('/attachments') || endpoint.includes('/upload') ? 60000 :
+        endpoint.startsWith('/auth/me') ? 6000 :
+        endpoint.includes('/meta-status') ? 8000 :
+        25000
+      );
+      const timeoutId = setTimeout(() => {
+        didTimeout = true;
+        try {
+          controller.abort(new Error('Request timed out'));
+        } catch (_) {
+          controller.abort();
+        }
+      }, timeoutMs);
+
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      const contentType = response.headers.get('content-type');
+      let data = null;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      }
+
+      if (!response.ok) {
+        const errorMsg = data?.error || `Request failed with status ${response.status}`;
+        const err = new Error(errorMsg);
+        err.status = response.status;
+        throw err;
+      }
+
+      // Populate safe in-memory cache upon successful GET
+      if (cacheConfig && cacheKey && data !== null) {
+        setCachedResponse(cacheKey, data, cacheConfig.ttl, cacheConfig.tag);
+      }
+
+      // Automatically invalidate dependent cached resources on successful mutation
+      if (isMutation) {
+        invalidateOnMutation(endpoint);
+      }
+
+      return data !== null ? data : response;
+    } catch (err) {
+      if (didTimeout || err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('signal is aborted')) {
+        throw new Error(`Request timed out. Please check your internet connection and try again.`);
+      }
+
+      // Always propagate server HTTP errors and mutation failures directly to caller
+      if (err.status || isMutation) {
+        throw err;
+      }
+
+      // Read-only offline fallback strictly when network disconnects
+      if (endpoint.startsWith('/complaints') && method === 'GET') {
+        const cached = getPermanentComplaints();
+        if (cached && cached.length > 0) {
+          return { complaints: cached, total: cached.length, isOfflineCache: true };
+        }
+      }
+
+      throw err;
+    } finally {
+      if (timerId) clearTimeout(timerId);
+      if (shouldTrack) {
+        activeMutationCount = Math.max(0, activeMutationCount - 1);
+        if (activeMutationCount === 0) {
+          notifyLoading(false);
+        }
       }
     }
+  };
+
+  if (cacheConfig && cacheKey) {
+    const fetchPromise = executeFetch();
+    setInFlightRequest(cacheKey, fetchPromise);
+    return fetchPromise;
   }
+
+  return executeFetch();
 }
 
 function fallbackHandler(endpoint, options) {

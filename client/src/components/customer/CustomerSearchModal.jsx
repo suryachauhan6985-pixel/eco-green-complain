@@ -8,6 +8,7 @@ import {
   Check, Zap, AlertCircle, ArrowRight, ChevronRight, Layers
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { ModalWrapper } from '../common/ModalWrapper';
 
 export const CustomerSearchModal = ({ 
   isOpen, 
@@ -211,21 +212,16 @@ export const CustomerSearchModal = ({
     return true;
   });
 
-  if (!isOpen) return null;
-
   return (
-    <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150"
-      style={{
-        paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))',
-        paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <ModalWrapper
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidth="max-w-5xl"
+      closeOnEscape={false}
+      ariaLabel="Customer Directory & Solar Plant Lookup"
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 modal-enter-scale"
+        className="bg-white rounded-3xl shadow-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Bar */}
@@ -694,6 +690,6 @@ export const CustomerSearchModal = ({
           </div>
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };

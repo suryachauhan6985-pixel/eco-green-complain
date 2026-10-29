@@ -31,13 +31,16 @@ app.use('*', cors({
   maxAge: 86400
 }));
 
-// HTTP Security Headers
+// HTTP Security Headers & Safe Cache-Control
 app.use('*', async (c, next) => {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('X-Frame-Options', 'SAMEORIGIN');
   c.header('X-XSS-Protection', '1; mode=block');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (!c.res.headers.has('Cache-Control')) {
+    c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  }
 });
 
 // Health check endpoint
