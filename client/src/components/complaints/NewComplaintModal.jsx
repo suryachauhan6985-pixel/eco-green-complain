@@ -1629,7 +1629,9 @@ export const NewComplaintModal = ({
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Warranty Status</span>
                     <span className={`font-bold inline-block mt-0.5 ${createdTicket.is_in_warranty ? 'text-emerald-700' : 'text-rose-600'}`}>
-                      {createdTicket.is_in_warranty ? '🟢 In Warranty (Free Service)' : '🔴 Out of Warranty'}
+                      {createdTicket.is_in_warranty 
+                        ? (Number(createdTicket.estimated_charges) > 0 ? `🟢 In Warranty (Charges: ₹${createdTicket.estimated_charges})` : '🟢 In Warranty') 
+                        : '🔴 Out of Warranty'}
                     </span>
                   </div>
                   {createdTicket.city && (
@@ -2807,7 +2809,7 @@ export const NewComplaintModal = ({
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, is_in_warranty: 1 })}
+                        onClick={() => setFormData(prev => ({ ...prev, is_in_warranty: 1 }))}
                         className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
                           formData.is_in_warranty === 1
                             ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-400/40'
@@ -2820,7 +2822,7 @@ export const NewComplaintModal = ({
 
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, is_in_warranty: 0 })}
+                        onClick={() => setFormData(prev => ({ ...prev, is_in_warranty: 0 }))}
                         className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
                           formData.is_in_warranty === 0
                             ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-400/40'
@@ -2939,7 +2941,7 @@ export const NewComplaintModal = ({
                         type="number"
                         min="0"
                         step="any"
-                        placeholder="0 (Free for In-Warranty)"
+                        placeholder="e.g., 500, 1500 (Optional: parts, visit fee, extra scope)"
                         value={formData.estimated_charges}
                         onChange={(e) => {
                           const val = e.target.value;

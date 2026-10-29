@@ -823,6 +823,13 @@ async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBod
       ? ((b.notify_charges === 'true' || b.notify_charges === 1 || b.notify_charges === true || b.notify_charges === '1') ? 1 : 0)
       : (cleanEstimatedCharges > 0 ? 1 : (current.notify_charges ? 1 : 0));
 
+    let newPaymentStatus = current.payment_status;
+    if (cleanEstimatedCharges > 0 && (!current.payment_status || current.payment_status === 'Not Applicable')) {
+      newPaymentStatus = 'Unpaid';
+    } else if (cleanEstimatedCharges === 0 && (!current.payment_status || current.payment_status === 'Unpaid')) {
+      newPaymentStatus = 'Not Applicable';
+    }
+
     const cleanDistrict = b.district !== undefined ? (b.district ? b.district.trim() : null) : null;
     const cleanState = b.state !== undefined ? (b.state ? b.state.trim() : null) : null;
     const cleanPincode = b.pincode !== undefined ? (b.pincode ? b.pincode.trim() : null) : null;
@@ -850,20 +857,21 @@ async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBod
         is_in_warranty = $17,
         estimated_charges = $18,
         notify_charges = $19,
-        invoice_no = COALESCE($20, invoice_no),
-        invoice_date = COALESCE($21, invoice_date),
-        location_url = COALESCE($22, location_url),
-        installation_id = COALESCE($23, installation_id),
-        dealer_name = COALESCE($24, dealer_name),
-        dealer_contact = COALESCE($25, dealer_contact),
-        dealer_contact_person = COALESCE($26, dealer_contact_person),
-        dealer_alternate_contacts = COALESCE($27, dealer_alternate_contacts),
-        pv_capacity = COALESCE($28, pv_capacity),
-        panel_make = COALESCE($29, panel_make),
-        inverter_make = COALESCE($30, inverter_make),
-        scheme = COALESCE($31, scheme),
+        payment_status = $20,
+        invoice_no = COALESCE($21, invoice_no),
+        invoice_date = COALESCE($22, invoice_date),
+        location_url = COALESCE($23, location_url),
+        installation_id = COALESCE($24, installation_id),
+        dealer_name = COALESCE($25, dealer_name),
+        dealer_contact = COALESCE($26, dealer_contact),
+        dealer_contact_person = COALESCE($27, dealer_contact_person),
+        dealer_alternate_contacts = COALESCE($28, dealer_alternate_contacts),
+        pv_capacity = COALESCE($29, pv_capacity),
+        panel_make = COALESCE($30, panel_make),
+        inverter_make = COALESCE($31, inverter_make),
+        scheme = COALESCE($32, scheme),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $32
+      WHERE id = $33
     `, [
       b.customer_name !== undefined ? (b.customer_name ? b.customer_name.trim() : null) : null,
       b.customer_phone !== undefined ? (b.customer_phone ? b.customer_phone.trim() : null) : null,
@@ -884,6 +892,7 @@ async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBod
       cleanIsInWarranty,
       cleanEstimatedCharges,
       cleanNotifyCharges,
+      newPaymentStatus,
       b.invoice_no !== undefined ? (b.invoice_no ? b.invoice_no.trim() : null) : null,
       b.invoice_date !== undefined ? (b.invoice_date ? b.invoice_date.trim() : null) : null,
       b.location_url !== undefined ? (b.location_url ? b.location_url.trim() : null) : null,
