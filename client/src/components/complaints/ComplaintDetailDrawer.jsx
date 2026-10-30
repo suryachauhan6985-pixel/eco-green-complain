@@ -24,6 +24,7 @@ import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 import { downloadFileSafely } from '../../utils/videoUtils';
 import { getOrCacheMediaUrl, getInMemoryMediaUrl, preloadComplaintAttachments } from '../../utils/mediaCache';
+import { GlassSelect } from '../common/GlassSelect';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -63,6 +64,36 @@ export const ComplaintDetailDrawer = ({
   // Actions state
   const [selectedTechId, setSelectedTechId] = useState('');
   const [secondaryTechId, setSecondaryTechId] = useState('');
+
+  // Memoized options for Apple Liquid Glass Select
+  const leadTechOptions = useMemo(() => [
+    { value: '', label: '-- Choose Lead Specialist --' },
+    ...technicians.map((t) => {
+      const rawLabel = formatTechnicianOptionLabel(t);
+      const isAvail = Boolean(t.is_available);
+      const cleanLabel = rawLabel.replace(/^[🟢🔴]\s*/, '');
+      return {
+        value: String(t.id),
+        label: cleanLabel,
+        dotColor: isAvail ? '#10b981' : '#f43f5e'
+      };
+    })
+  ], [technicians]);
+
+  const coTechOptions = useMemo(() => [
+    { value: '', label: '-- No Second Tech (Solo) --' },
+    ...technicians.filter(t => String(t.id) !== String(selectedTechId)).map((t) => {
+      const rawLabel = formatTechnicianOptionLabel(t);
+      const isAvail = Boolean(t.is_available);
+      const cleanLabel = rawLabel.replace(/^[🟢🔴]\s*/, '');
+      return {
+        value: String(t.id),
+        label: cleanLabel,
+        dotColor: isAvail ? '#10b981' : '#f43f5e'
+      };
+    })
+  ], [technicians, selectedTechId]);
+
   const [expectedDate, setExpectedDate] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [assignSuccessModal, setAssignSuccessModal] = useState(null);
@@ -1896,7 +1927,7 @@ export const ComplaintDetailDrawer = ({
 
       <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto max-w-full flex w-full sm:w-auto">
         <div className={`w-full sm:w-screen sm:max-w-2xl apple-glass-drawer flex flex-col h-full overflow-hidden rounded-l-2xl sm:rounded-l-3xl ${
-          isClosing ? 'drawer-exit-right' : 'drawer-enter-right'
+          isClosing ? 'drawer-exit-right' : 'drawer-jelly-enter'
         }`}>
           {/* Header */}
           <div 
@@ -1908,16 +1939,16 @@ export const ComplaintDetailDrawer = ({
             <div className="min-w-0 flex-1">
               {!ticket ? (
                 <div className="flex items-center gap-2 py-0.5">
-                  <div className="flex items-center gap-2 font-mono text-xs font-bold text-emerald-400 bg-emerald-950/90 px-3 py-1.5 rounded-lg border border-emerald-800/80 shadow-xs">
+                  <div className="flex items-center gap-2 font-mono text-xs font-bold text-emerald-400 bg-emerald-950/70 px-3 py-1.5 rounded-lg border border-emerald-800/80 shadow-xs backdrop-blur-xs">
                     <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
                     <span>Loading Ticket Details...</span>
                   </div>
-                  <span className="text-xs text-slate-400 hidden sm:inline font-medium animate-pulse">Syncing live data...</span>
+                  <span className="text-xs text-slate-300 hidden sm:inline font-medium animate-pulse">Syncing live data...</span>
                 </div>
               ) : (
                 <>
                   <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                    <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded">
+                    <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/70 border border-emerald-800/80 px-2 py-0.5 rounded shadow-2xs">
                       {ticket.ticket_id}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold uppercase ${
@@ -1933,14 +1964,14 @@ export const ComplaintDetailDrawer = ({
                       {ticket.status === 'Registered' ? 'Unassigned' : ticket.status}
                     </span>
                     <TicketAgeBadge complaint={ticket} />
-                    <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300 bg-slate-800/90 border border-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
+                    <span className="text-[10px] sm:text-[11px] font-semibold text-slate-200 bg-white/10 border border-white/15 px-2 py-0.5 rounded flex items-center gap-1 backdrop-blur-xs">
                       <Clock className="w-3 h-3 text-emerald-400" />
                       <span>Reg: {formatIndianDateTime(ticket.created_at)}</span>
                     </span>
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                       ticket.priority === 'High' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
                       ticket.priority === 'Medium' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
-                      'bg-slate-800 text-slate-300'
+                      'bg-white/10 text-slate-300 border border-white/10'
                     }`}>
                       {ticket.priority} Priority
                     </span>
@@ -1959,7 +1990,7 @@ export const ComplaintDetailDrawer = ({
                   {!isResolvedOrClosed ? (
                     <button
                       onClick={openEditModal}
-                      className={`px-2.5 py-1.5 ${ticket.status === 'Draft' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'} active:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer`}
+                      className={`px-3 py-1.5 ${ticket.status === 'Draft' ? 'bg-amber-500/85 hover:bg-amber-500' : 'bg-emerald-600/85 hover:bg-emerald-500'} active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md backdrop-blur-md border border-white/20 transition-all cursor-pointer`}
                       title={ticket.status === 'Draft' ? 'Finalize & edit draft ticket' : 'Edit all complaint details'}
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -1967,7 +1998,7 @@ export const ComplaintDetailDrawer = ({
                     </button>
                   ) : (
                     <span 
-                      className="px-2.5 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-not-allowed select-none"
+                      className="px-2.5 py-1.5 bg-white/10 text-slate-300 border border-white/15 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-not-allowed select-none backdrop-blur-md"
                       title="Complaint details editing is locked for Resolved and Closed tickets. Reopen ticket to make edits."
                     >
                       <Lock className="w-3 h-3 text-slate-400" />
@@ -1976,7 +2007,7 @@ export const ComplaintDetailDrawer = ({
                   )}
                   <button
                     onClick={handleDeleteComplaint}
-                    className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                    className="px-3 py-1.5 bg-rose-500/80 hover:bg-rose-500 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md backdrop-blur-md border border-rose-300/30 transition-all cursor-pointer"
                     title="Delete Complaint Permanently"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1987,10 +2018,10 @@ export const ComplaintDetailDrawer = ({
 
               <button 
                 onClick={handleDrawerClose}
-                className="p-1.5 sm:p-2 bg-slate-800 hover:bg-slate-700 active:bg-rose-600 border border-slate-700 rounded-xl text-slate-200 hover:text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                className="px-2.5 sm:px-3 py-1.5 bg-white/10 hover:bg-white/20 active:bg-rose-600/80 border border-white/15 hover:border-white/30 rounded-xl text-white flex items-center gap-1.5 transition-all shadow-md backdrop-blur-md cursor-pointer shrink-0"
                 title="Close Ticket Window"
               >
-                <X className="w-5 h-5 text-rose-400 stroke-[2.5]" />
+                <X className="w-4 h-4 text-rose-300 stroke-[2.5]" />
                 <span className="text-xs font-bold text-white pr-0.5">Close</span>
               </button>
             </div>
@@ -2576,20 +2607,6 @@ export const ComplaintDetailDrawer = ({
                                     )}
                                   </div>
                                 </div>
-
-                                {/* Direct Row Collection Action */}
-                                {p.payment_mode === 'Cash' && p.company_settlement_status !== 'Settled with Company' && isAdminOrStaff && (
-                                  <button
-                                    type="button"
-                                    disabled={settlingCompany}
-                                    onClick={() => handleSettleWithCompany(p)}
-                                    className="px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-all"
-                                    title={`Confirm receipt of ₹${p.amount} from ${p.technician_name || 'technician'}`}
-                                  >
-                                    <IndianRupee className="w-3 h-3" />
-                                    <span>Collect ₹{p.amount} from {p.technician_name || 'Tech'}</span>
-                                  </button>
-                                )}
                               </div>
                             ))}
                           </div>
@@ -2708,14 +2725,14 @@ export const ComplaintDetailDrawer = ({
                         const collectionDate = targetP?.payment_date || targetP?.created_at || ticket.payment_collected_at;
 
                         return (
-                          <div className="mt-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-950 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                            <div className="space-y-0.5 min-w-0 flex-1">
+                          <div className="mt-3 p-3.5 rounded-xl border border-amber-300/80 bg-amber-50/80 apple-glass-card-subtle text-amber-950 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                            <div className="space-y-1 min-w-0 flex-1">
                               <div className="font-bold flex items-center gap-1.5 text-amber-900">
                                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                                <span className="font-extrabold">Cash in Hand with {singleTechName} (Pending Company Deposit)</span>
+                                <span className="font-extrabold">Cash in Hand (Pending Company Deposit)</span>
                               </div>
                               <p className="text-[11px] text-slate-600 leading-relaxed">
-                                ₹<strong>{singleAmount}</strong> was collected by <strong className="text-slate-900 font-extrabold underline decoration-amber-400">{singleTechName}</strong> {collectionDate ? `on ${formatIndianDateTime(collectionDate)}` : ''} and is currently in <strong className="text-slate-900 font-extrabold">{singleTechName}</strong>'s possession.
+                                ₹<strong>{singleAmount}</strong> collected by <strong className="text-slate-900 font-bold">{singleTechName}</strong> {collectionDate ? `on ${formatIndianDateTime(collectionDate)}` : ''} is awaiting deposit into company account.
                               </p>
                             </div>
 
@@ -3334,22 +3351,14 @@ export const ComplaintDetailDrawer = ({
                                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                                   {ticket.assigned_technician_id ? 'Select Primary / Lead Specialist *' : 'Lead Technician *'}
                                 </label>
-                                <select
+                                <GlassSelect
                                   value={selectedTechId}
-                                  onChange={(e) => setSelectedTechId(e.target.value)}
-                                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                                >
-                                  <option value="">-- Choose Lead Specialist --</option>
-                                  {technicians.map((t) => (
-                                    <option 
-                                      key={t.id} 
-                                      value={t.id}
-                                      className={!t.is_available ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
-                                    >
-                                      {formatTechnicianOptionLabel(t)}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={(val) => setSelectedTechId(val)}
+                                  options={leadTechOptions}
+                                  searchable={true}
+                                  placeholder="-- Choose Lead Specialist --"
+                                  aria-label="Lead Technician Selector"
+                                />
 
                                 {/* Warning Banner if selected technician is Off-Duty */}
                                 {(() => {
@@ -3378,22 +3387,14 @@ export const ComplaintDetailDrawer = ({
                                     Team Mode
                                   </span>
                                 </label>
-                                <select
+                                <GlassSelect
                                   value={secondaryTechId}
-                                  onChange={(e) => setSecondaryTechId(e.target.value)}
-                                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                                >
-                                  <option value="">-- No Second Tech (Solo) --</option>
-                                  {technicians.filter(t => String(t.id) !== String(selectedTechId)).map((t) => (
-                                    <option 
-                                      key={t.id} 
-                                      value={t.id}
-                                      className={!t.is_available ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
-                                    >
-                                      {formatTechnicianOptionLabel(t)}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={(val) => setSecondaryTechId(val)}
+                                  options={coTechOptions}
+                                  searchable={true}
+                                  placeholder="-- No Second Tech (Solo) --"
+                                  aria-label="Co-Technician Selector"
+                                />
                                 {secondaryTechId && (
                                   <p className="mt-1 text-[10px] text-blue-700 font-medium leading-tight">
                                     👥 2 Technicians assigned. Both receive WhatsApp team work order with both names.

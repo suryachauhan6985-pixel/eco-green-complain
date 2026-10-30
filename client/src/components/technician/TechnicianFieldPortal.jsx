@@ -17,6 +17,7 @@ import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
+import { GlassSelect } from '../common/GlassSelect';
 
 const checkHasLocation = (job) => {
   if (!job) return false;
@@ -101,6 +102,20 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   });
   const [techProfile, setTechProfile] = useState(null);
   const [selectedAdminTechId, setSelectedAdminTechId] = useState(() => getInitialTechId());
+
+  // Normalized technician options for Apple GlassSelect
+  const techSelectOptions = useMemo(() => {
+    return technicians.map((t) => {
+      const rawLabel = formatTechnicianOptionLabel(t, complaints);
+      const isAvail = Boolean(t.is_available);
+      const cleanLabel = rawLabel.replace(/^[🟢🔴]\s*/, '');
+      return {
+        value: String(t.id),
+        label: cleanLabel,
+        dotColor: isAvail ? '#10b981' : '#f43f5e'
+      };
+    });
+  }, [technicians, complaints]);
 
   // Mobile & Desktop view mode: default 'card'
   const [viewMode, setViewMode] = useState(() => {
@@ -798,22 +813,19 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <select
+          <div className="flex items-center gap-2 w-full sm:w-auto min-w-[280px]">
+            <GlassSelect
               value={selectedAdminTechId || (technicians[0]?.id ? String(technicians[0].id) : '')}
-              onChange={(e) => {
-                const val = e.target.value;
+              onChange={(val) => {
                 handleAdminTechSelect(val);
                 setExpandedTechId(val);
               }}
-              className="w-full sm:w-auto text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
-            >
-              {technicians.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {formatTechnicianOptionLabel(t, complaints)}
-                </option>
-              ))}
-            </select>
+              options={techSelectOptions}
+              searchable={true}
+              className="w-full sm:w-auto min-w-[260px] sm:min-w-[320px]"
+              placeholder="Select Field Specialist..."
+              aria-label="Technician Specialist Filter"
+            />
           </div>
         </div>
       )}
@@ -886,21 +898,18 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
             {currentUser?.role !== 'technician' && (
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-bold text-slate-500">Tech Filter:</span>
-                <select
+                <GlassSelect
                   value={selectedAdminTechId || (technicians[0]?.id ? String(technicians[0].id) : '')}
-                  onChange={(e) => {
-                    const val = e.target.value;
+                  onChange={(val) => {
                     handleAdminTechSelect(val);
                     setExpandedTechId(val);
                   }}
-                  className="text-xs px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
-                >
-                  {technicians.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {formatTechnicianOptionLabel(t, complaints)}
-                    </option>
-                  ))}
-                </select>
+                  options={techSelectOptions}
+                  searchable={true}
+                  className="min-w-[220px]"
+                  placeholder="Select Tech..."
+                  aria-label="Collection Tech Filter"
+                />
               </div>
             )}
             <button

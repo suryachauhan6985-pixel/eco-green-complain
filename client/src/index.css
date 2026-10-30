@@ -508,55 +508,124 @@ input, select, textarea, button, a {
 
 /* ================= Apple Frosted Glass / Vibrancy Material Engine ================= */
 .apple-glass-backdrop {
-  background-color: rgba(15, 23, 42, 0.45) !important;
-  backdrop-filter: blur(10px) !important;
-  -webkit-backdrop-filter: blur(10px) !important;
+  background-color: rgba(15, 23, 42, 0.25) !important;
+  backdrop-filter: blur(8px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
 }
 
 .apple-glass-drawer {
-  background-color: rgba(248, 250, 252, 0.90) !important;
-  backdrop-filter: blur(28px) saturate(190%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.75) !important;
-  box-shadow: -10px 0 40px -5px rgba(0, 0, 0, 0.28) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.82) 0%, rgba(248, 250, 252, 0.74) 100%) !important;
+  backdrop-filter: blur(36px) saturate(220%) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(220%) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.90) !important;
+  box-shadow: -20px 0 60px -10px rgba(15, 23, 42, 0.18), inset 1px 0 0 0 rgba(255, 255, 255, 0.95) !important;
 }
 
 .apple-glass-header {
-  background-color: rgba(15, 23, 42, 0.92) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.72) 0%, rgba(15, 23, 42, 0.65) 100%) !important;
+  backdrop-filter: blur(28px) saturate(210%) brightness(108%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(210%) brightness(108%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 10px 30px -5px rgba(0, 0, 0, 0.35) !important;
 }
 
 .apple-glass-subbar {
-  background-color: rgba(241, 245, 249, 0.85) !important;
-  backdrop-filter: blur(16px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.75) !important;
 }
 
 .apple-glass-card {
-  background-color: rgba(255, 255, 255, 0.88) !important;
-  backdrop-filter: blur(16px) saturate(170%) !important;
-  -webkit-backdrop-filter: blur(16px) saturate(170%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.9) !important;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02) !important;
+  background-color: rgba(255, 255, 255, 0.76) !important;
+  backdrop-filter: blur(18px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.95) !important;
 }
 
 .apple-glass-card-subtle {
-  background-color: rgba(248, 250, 252, 0.85) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  background-color: rgba(248, 250, 252, 0.72) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
 }
 
 .apple-glass-modal {
-  background-color: rgba(255, 255, 255, 0.94) !important;
-  backdrop-filter: blur(24px) saturate(190%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.85) !important;
-  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.3) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.86) 100%) !important;
+  backdrop-filter: blur(32px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(200%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.95) !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 1) !important;
 }
+
+/* Apple Liquid Glass Dropdowns (Mobile & Desktop) */
+.apple-glass-trigger {
+  background: rgba(255, 255, 255, 0.80) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+.apple-glass-trigger:hover {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+}
+
+.apple-glass-trigger-active {
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+
+.apple-glass-dropdown {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.90) 0%, rgba(248, 250, 252, 0.84) 100%) !important;
+  backdrop-filter: blur(32px) saturate(220%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(220%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.95) !important;
+  box-shadow: 0 20px 50px -10px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 1) !important;
+}
+
+/* Apple Jelly / Spring Physics Animations */
+@keyframes drawerSlideRightJelly {
+  0% {
+    transform: translateX(100%);
+    opacity: 0.5;
+  }
+  65% {
+    transform: translateX(-14px);
+    opacity: 1;
+  }
+  85% {
+    transform: translateX(4px);
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes appleJellyDropdownEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(-8px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.025) translateY(2px);
+  }
+  85% {
+    transform: scale(0.99) translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.drawer-jelly-enter {
+  animation: drawerSlideRightJelly 420ms cubic-bezier(0.25, 1, 0.5, 1) both !important;
+}
+
 
 
 

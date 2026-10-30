@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
@@ -15,6 +15,7 @@ import { getUrlParam, updateUrlParams } from '../../utils/urlSync';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
+import { GlassSelect } from '../common/GlassSelect';
 
 const STATUS_PILLS = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
 
@@ -128,6 +129,36 @@ export const ComplaintList = ({
   const handleTechnicianFilterChange = (tid) => {
     setTechnicianFilter(tid);
   };
+
+  // Apple Liquid Glass Select Options
+  const productOptions = useMemo(() => [
+    { value: 'all', label: 'All Products' },
+    ...products.map((prod) => ({
+      value: prod.name,
+      label: prod.name
+    }))
+  ], [products]);
+
+  const priorityOptions = useMemo(() => [
+    { value: 'all', label: 'All Priorities' },
+    { value: 'High', label: 'High Priority', dotColor: '#ef4444' },
+    { value: 'Medium', label: 'Medium Priority', dotColor: '#3b82f6' },
+    { value: 'Low', label: 'Low Priority', dotColor: '#94a3b8' }
+  ], []);
+
+  const technicianOptions = useMemo(() => [
+    { value: '', label: 'All Technicians' },
+    ...technicians.map((t) => {
+      const rawLabel = formatTechnicianOptionLabel(t, allComplaints);
+      const isAvail = Boolean(t.is_available);
+      const cleanLabel = rawLabel.replace(/^[🟢🔴]\s*/, '');
+      return {
+        value: String(t.id),
+        label: cleanLabel,
+        dotColor: isAvail ? '#10b981' : '#f43f5e'
+      };
+    })
+  ], [technicians, allComplaints]);
 
   // Stage: If search text is present on Complaint List, clear search on Escape
   useEscapeHandler(() => {
@@ -667,46 +698,34 @@ export const ComplaintList = ({
             <Filter className="w-3 h-3" /> Filters:
           </span>
 
-          <select
-            aria-label="Filter by Product Category"
+          <GlassSelect
             value={productFilter}
-            onChange={(e) => handleProductFilterChange(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
-          >
-            <option value="all">All Products</option>
-            {products.map((prod) => (
-              <option key={prod.id || prod.name} value={prod.name}>
-                {prod.name}
-              </option>
-            ))}
-          </select>
+            onChange={handleProductFilterChange}
+            options={productOptions}
+            className="w-full sm:w-auto min-w-[150px]"
+            placeholder="All Products"
+            aria-label="Filter by Product Category"
+          />
 
-          <select
-            aria-label="Filter by Priority Level"
+          <GlassSelect
             value={priorityFilter}
-            onChange={(e) => handlePriorityFilterChange(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
-          >
-            <option value="all">All Priorities</option>
-            <option value="High">High Priority</option>
-            <option value="Medium">Medium Priority</option>
-            <option value="Low">Low Priority</option>
-          </select>
+            onChange={handlePriorityFilterChange}
+            options={priorityOptions}
+            className="w-full sm:w-auto min-w-[140px]"
+            placeholder="All Priorities"
+            aria-label="Filter by Priority Level"
+          />
 
           {['admin', 'staff'].includes(currentUser?.role) && (
-            <select
-              aria-label="Filter by Assigned Technician"
+            <GlassSelect
               value={technicianFilter}
-              onChange={(e) => handleTechnicianFilterChange(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 text-xs"
-            >
-              <option value="">All Technicians</option>
-              {technicians.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {formatTechnicianOptionLabel(t, allComplaints)}
-                </option>
-              ))}
-            </select>
+              onChange={handleTechnicianFilterChange}
+              options={technicianOptions}
+              searchable={true}
+              className="w-full sm:w-auto min-w-[200px] sm:min-w-[250px]"
+              placeholder="All Technicians"
+              aria-label="Filter by Assigned Technician"
+            />
           )}
         </div>
 
