@@ -845,7 +845,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       >
         {/* Apple Sliding Pill Indicator with Jelly Physics */}
         <div
-          className="absolute top-1.5 bottom-1.5 rounded-xl bg-emerald-600 shadow-xs pointer-events-none z-0"
+          className="absolute left-0 top-1.5 bottom-1.5 rounded-xl bg-emerald-600 shadow-xs pointer-events-none z-0"
           style={{
             transform: `translate3d(${sectionIndicator.left}px, 0, 0)`,
             width: `${sectionIndicator.width}px`,

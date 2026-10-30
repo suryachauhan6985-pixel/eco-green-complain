@@ -172,7 +172,7 @@ export const GlassSelect = ({
         <div 
           role="listbox"
           aria-labelledby={dropdownId}
-          className={`absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-max min-w-full sm:min-w-[340px] md:min-w-[420px] max-w-[min(650px,94vw)] apple-glass-dropdown z-50 rounded-2xl overflow-hidden shadow-2xl isolate border border-white/80 ${menuClassName}`}
+          className={`absolute left-0 mt-1.5 min-w-full sm:min-w-[280px] max-w-[min(560px,94vw)] apple-glass-dropdown z-50 rounded-2xl overflow-hidden shadow-2xl isolate border border-white/80 ${menuClassName}`}
           style={{
             transformOrigin: 'top center',
             animation: 'appleJellyDropdownEnter 260ms cubic-bezier(0.34, 1.4, 0.64, 1) both'

@@ -71,12 +71,12 @@ export const AppBackground = () => {
         />
       </div>
 
-      {/* Ultra-Subtle Organic Solar Micro-Texture (4-5% opacity, NO dot grids) */}
+      {/* Ultra-Subtle Organic Solar Micro-Texture (No dots, clean solar cell wafer lines at 3% opacity) */}
       <div 
-        className="absolute inset-0 opacity-[0.045] mix-blend-multiply"
+        className="absolute inset-0 opacity-[0.035] mix-blend-multiply"
         style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 60 Q 30 30 60 60 T 120 60' fill='none' stroke='%23064e3b' stroke-width='0.8' stroke-opacity='0.4'/%3E%3Cpath d='M60 0 Q 90 30 60 60 T 60 120' fill='none' stroke='%23064e3b' stroke-width='0.8' stroke-opacity='0.4'/%3E%3Ccircle cx='60' cy='60' r='1.5' fill='%23047857' fill-opacity='0.5'/%3E%3C/svg%3E")`,
-          backgroundSize: '120px 120px'
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='160' height='160' viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='cell' width='80' height='80' patternUnits='userSpaceOnUse'%3E%3Cpath d='M 80 0 L 0 0 0 80' fill='none' stroke='%23047857' stroke-width='0.6' stroke-opacity='0.45'/%3E%3Cpath d='M 0 40 L 80 40' fill='none' stroke='%23047857' stroke-width='0.3' stroke-opacity='0.25' stroke-dasharray='4,4'/%3E%3Cpath d='M 40 0 L 40 80' fill='none' stroke='%23047857' stroke-width='0.3' stroke-opacity='0.25' stroke-dasharray='4,4'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='160' height='160' fill='url(%23cell)'/%3E%3C/svg%3E")`,
+          backgroundSize: '160px 160px'
         }}
       />
     </div>
