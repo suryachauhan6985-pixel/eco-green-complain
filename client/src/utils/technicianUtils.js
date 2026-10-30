@@ -99,7 +99,6 @@ export function formatTechnicianOptionLabel(tech, complaintsList = null) {
 
   const { activeCount, onHoldCount, totalOpenCount } = getTechnicianWorkload(tech, complaintsList);
   const zone = tech.area_zone ? ` (${tech.area_zone})` : '';
-  const statusIcon = tech.is_available ? '🟢' : '🔴';
 
   let workloadText = '';
   if (activeCount === 0 && onHoldCount === 0) {
@@ -113,8 +112,8 @@ export function formatTechnicianOptionLabel(tech, complaintsList = null) {
   }
 
   if (!tech.is_available) {
-    return `${statusIcon} ${tech.name}${zone} — OFF-DUTY (${workloadText})`;
+    return `${tech.name}${zone} — OFF-DUTY (${workloadText})`;
   }
 
-  return `${statusIcon} ${tech.name}${zone} — ${workloadText}`;
+  return `${tech.name}${zone} — ${workloadText}`;
 }

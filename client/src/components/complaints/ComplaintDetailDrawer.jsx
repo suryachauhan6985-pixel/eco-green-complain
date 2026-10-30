@@ -3427,7 +3427,7 @@ export const ComplaintDetailDrawer = ({
 
                             <div className="space-y-3">
                               {/* Specialists Selection (2-Column Spacious Grid) */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                              <div className="grid grid-cols-1 gap-3.5 w-full min-w-0">
                                 <div>
                                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                                     {ticket.assigned_technician_id ? 'Select Primary / Lead Specialist *' : 'Lead Technician *'}
@@ -3439,6 +3439,8 @@ export const ComplaintDetailDrawer = ({
                                     searchable={true}
                                     placeholder="-- Choose Lead Specialist --"
                                     aria-label="Lead Technician Selector"
+                                    className="w-full min-w-0"
+                                    menuClassName="w-full left-0 right-0 max-w-none"
                                   />
 
                                   {/* Warning Banner if selected technician is Off-Duty */}
@@ -3475,6 +3477,8 @@ export const ComplaintDetailDrawer = ({
                                     searchable={true}
                                     placeholder="-- No Second Tech (Solo) --"
                                     aria-label="Co-Technician Selector"
+                                    className="w-full min-w-0"
+                                    menuClassName="w-full left-0 right-0 max-w-none"
                                   />
                                   {secondaryTechId && (
                                     <p className="mt-1 text-[10px] text-blue-700 font-medium leading-tight">

@@ -161,7 +161,7 @@ export const GlassSelect = ({
         >
           {/* Optional Search Filter */}
           {searchable && normalizedOptions.length > 5 && (
-            <div className="p-2 border-b border-slate-200/60 bg-white/50 backdrop-blur-md">
+            <div className="p-2 border-b border-slate-200 bg-slate-50">
               <div className="relative flex items-center">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
                 <input
@@ -170,7 +170,7 @@ export const GlassSelect = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search options..."
-                  className="w-full text-xs pl-8 pr-7 py-1.5 bg-slate-100/80 focus:bg-white rounded-lg border border-slate-200/80 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-slate-800 transition-all placeholder:text-slate-400"
+                  className="w-full text-xs pl-8 pr-7 py-1.5 bg-white rounded-lg border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-slate-800 transition-all placeholder:text-slate-400"
                 />
                 {searchQuery && (
                   <button

@@ -85,27 +85,33 @@ export const formatIndianDateOnly = (dateStr) => {
   }
 };
 
-export const getTicketAgeInfo = (complaint) => {
+export const getTicketAgeInfo = (complaint, mode = 'created') => {
   if (!complaint) {
     return { text: 'Today', days: 0, isOpen: false, isOverdue: false, formattedDateTime: '—' };
   }
-  const dateStr = complaint.created_at || complaint.status_updated_at;
-  if (!dateStr) {
+
+  // When mode === 'assigned', calculate age from when technician was assigned or ticket was transferred
+  const isAssignedMode = mode === 'assigned';
+  const targetDateStr = isAssignedMode
+    ? (complaint.assigned_at || complaint.created_at || complaint.status_updated_at)
+    : (complaint.created_at || complaint.status_updated_at);
+
+  if (!targetDateStr) {
     return { text: 'Today', days: 0, isOpen: false, isOverdue: false, formattedDateTime: '—' };
   }
 
-  const d = parseDateSafe(dateStr);
-  const formattedDateTime = formatIndianDateTime(dateStr);
-  const formattedTime = formatIndianTimeOnly(dateStr);
-  const formattedDate = formatIndianDateOnly(dateStr);
+  const d = parseDateSafe(targetDateStr);
+  const formattedDateTime = formatIndianDateTime(targetDateStr);
+  const formattedTime = formatIndianTimeOnly(targetDateStr);
+  const formattedDate = formatIndianDateOnly(targetDateStr);
 
   if (!d) {
     return { text: 'Today', days: 0, isOpen: false, isOverdue: false, formattedDateTime, formattedTime, formattedDate };
   }
 
-  const createdTime = d.getTime();
+  const baseTime = d.getTime();
   const now = Date.now();
-  const diffMs = Math.max(0, now - createdTime);
+  const diffMs = Math.max(0, now - baseTime);
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
   const days = Math.floor(diffHours / 24);
@@ -119,15 +125,22 @@ export const getTicketAgeInfo = (complaint) => {
 
   const status = complaint.status || 'Unassigned';
   const isOpen = !['Resolved', 'Closed'].includes(status);
-  // User condition: If open for >= 2 days without closure, turn RED
+  // If open/assigned for >= 2 days without closure, turn RED
   const isOverdue = isOpen && days >= 2;
 
-  return { text, days, diffHours, diffMinutes, isOpen, isOverdue, formattedDateTime, formattedTime, formattedDate };
+  const isTransferred = Boolean(
+    complaint.previous_technician_name || 
+    (complaint.assigned_at && complaint.created_at && Math.abs(new Date(complaint.assigned_at).getTime() - new Date(complaint.created_at).getTime()) > 3600000)
+  );
+
+  return { text, days, diffHours, diffMinutes, isOpen, isOverdue, isTransferred, formattedDateTime, formattedTime, formattedDate };
 };
 
-export const TicketAgeBadge = ({ complaint, compact = false, showLabel = true, showTime = false }) => {
-  const { text, days, isOpen, isOverdue, formattedDateTime, formattedTime } = getTicketAgeInfo(complaint);
-  const hoverTitle = `Registered: ${formattedDateTime} (IST)${isOverdue ? ` • Pending for ${days} days without closure!` : ''}`;
+export const TicketAgeBadge = ({ complaint, compact = false, showLabel = true, showTime = false, mode = 'created' }) => {
+  const { text, days, isOpen, isOverdue, isTransferred, formattedDateTime, formattedTime } = getTicketAgeInfo(complaint, mode);
+  const hoverTitle = mode === 'assigned'
+    ? `Assigned: ${formattedDateTime} (IST)${isTransferred ? ' • Transferred Ticket' : ''}${isOverdue ? ` • Assigned for ${days} days without resolution!` : ''}`
+    : `Registered: ${formattedDateTime} (IST)${isOverdue ? ` • Pending for ${days} days without closure!` : ''}`;
 
   if (isOverdue) {
     return (

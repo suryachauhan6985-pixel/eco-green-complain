@@ -531,7 +531,7 @@ function AppContent() {
   }
 
   return (
-    <div className="h-[100dvh] w-full max-w-full min-w-0 flex flex-col overflow-x-hidden overflow-y-hidden bg-slate-50 font-sans">
+    <div className="h-[100dvh] w-full max-w-full min-w-0 flex flex-col overflow-x-hidden overflow-y-hidden bg-transparent font-sans">
       {!splashComplete && <SplashScreen minDuration={500} onComplete={handleSplashComplete} />}
       {/* Top Main Navigation (Sticky Header) */}
       <div className="shrink-0 z-30 w-full max-w-full">

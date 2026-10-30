@@ -83,6 +83,12 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   };
 
   const [section, setSection] = useState(() => getInitialSection());
+  const {
+    containerRef: sectionContainerRef,
+    getButtonRef: getSectionButtonRef,
+    indicator: sectionIndicator,
+    onTabClick: onSectionTabClick
+  } = useSlidingIndicator(section);
   const [jobStatusFilter, setJobStatusFilter] = useState(() => getInitialJobStatus());
   const [productFilter, setProductFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -142,9 +148,11 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   }, [activeSection]);
 
   const handleSectionSwitch = (newSec) => {
-    setSection(newSec);
-    if (onSectionChange) onSectionChange(newSec);
-    updateUrlParams({ section: newSec === 'field_ops' ? null : newSec });
+    onSectionTabClick(newSec, () => {
+      setSection(newSec);
+      if (onSectionChange) onSectionChange(newSec);
+      updateUrlParams({ section: newSec === 'field_ops' ? null : newSec });
+    });
   };
 
   const handleJobStatusFilterChange = (st) => {
@@ -831,15 +839,30 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       )}
 
       {/* Section View Switcher: Field Tasks vs Cash Collection */}
-      <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none w-full max-w-full">
+      <div 
+        ref={sectionContainerRef}
+        className="relative flex items-center p-1.5 bg-slate-100 rounded-2xl border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none w-full max-w-full isolate select-none"
+      >
+        {/* Apple Sliding Pill Indicator with Jelly Physics */}
+        <div
+          className="absolute top-1.5 bottom-1.5 rounded-xl bg-emerald-800 shadow-sm pointer-events-none z-0"
+          style={{
+            transform: `translate3d(${sectionIndicator.left}px, 0, 0)`,
+            width: `${sectionIndicator.width}px`,
+            opacity: sectionIndicator.opacity,
+            transition: 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1), width 320ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 180ms ease',
+            willChange: 'transform, width'
+          }}
+        />
+
         <button
           type="button"
+          ref={getSectionButtonRef('field_ops')}
           onClick={() => handleSectionSwitch('field_ops')}
-          style={section === 'field_ops' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
-          className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+          className={`relative z-10 shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors duration-200 ${
             section === 'field_ops'
-              ? 'bg-emerald-800 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'text-white'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Wrench className="w-4 h-4 shrink-0" />
@@ -847,30 +870,32 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
         </button>
         <button
           type="button"
+          ref={getSectionButtonRef('collection')}
           onClick={() => handleSectionSwitch('collection')}
-          style={section === 'collection' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
-          className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+          className={`relative z-10 shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors duration-200 ${
             section === 'collection'
-              ? 'bg-emerald-800 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'text-white'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <IndianRupee className="w-4 h-4 shrink-0" />
           <span>Collection Register</span>
           {(myTechData?.cashInHandDue || 0) > 0 && (
-            <span className="bg-amber-400 text-amber-950 text-[10px] font-black px-1.5 py-0.5 rounded-full ml-1">
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ml-1 transition-colors ${
+              section === 'collection' ? 'bg-amber-300 text-amber-950' : 'bg-amber-400 text-amber-950'
+            }`}>
               ₹{myTechData.cashInHandDue}
             </span>
           )}
         </button>
         <button
           type="button"
+          ref={getSectionButtonRef('tour_ledger')}
           onClick={() => handleSectionSwitch('tour_ledger')}
-          style={section === 'tour_ledger' ? { backgroundColor: '#064e3b', color: '#ffffff' } : {}}
-          className={`shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+          className={`relative z-10 shrink-0 sm:flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors duration-200 ${
             section === 'tour_ledger'
-              ? 'bg-emerald-800 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'text-white'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <FileText className="w-4 h-4 shrink-0" />
@@ -1611,7 +1636,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                       }`}>
                         {job.priority}
                       </span>
-                      <TicketAgeBadge complaint={job} compact={true} />
+                      <TicketAgeBadge complaint={job} compact={true} mode="assigned" />
                       {job.secondary_technician_name && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-300">
                           <Users className="w-2.5 h-2.5" /> Team: {job.technician_name} + {job.secondary_technician_name}
