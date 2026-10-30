@@ -342,9 +342,12 @@ export const Navbar = ({
                           logout();
                           setRoleMenuOpen(false);
                         }}
-                        className="w-full text-center py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-98"
+                        className="w-full text-center py-2.5 px-3 rounded-2xl text-xs font-black text-rose-700 bg-rose-500/10 hover:bg-rose-600 hover:text-white border border-rose-400/30 hover:border-rose-600 flex items-center justify-center gap-2 shadow-xs transition-all duration-200 cursor-pointer active:scale-98 backdrop-blur-md"
+                        style={{
+                          boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 14px -3px rgba(244, 63, 94, 0.15)'
+                        }}
                       >
-                        <LogOut className="w-3.5 h-3.5" />
+                        <LogOut className="w-3.5 h-3.5 stroke-[2.5]" />
                         <span>Log Out</span>
                       </button>
                     </div>
@@ -359,33 +362,33 @@ export const Navbar = ({
                     />
 
                     {/* Centered Modal Content */}
-                    <div className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-full max-w-sm flex flex-col z-10 animate-in zoom-in-95 duration-150">
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 shrink-0">
+                    <div className="relative apple-glass-modal rounded-3xl shadow-2xl p-5 w-full max-w-sm flex flex-col z-10 animate-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-100/60 mb-3 shrink-0">
                         <div>
-                          <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">
                             Eco Green Support
                           </p>
-                          <p className="text-sm font-bold text-slate-900">
+                          <p className="text-sm font-black text-slate-900">
                             Active User Account
                           </p>
                         </div>
                         <button 
                           onClick={() => setRoleMenuOpen(false)}
-                          className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          className="p-2 rounded-xl bg-slate-100/80 text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                           aria-label="Close"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 mb-3">
+                      <div className="p-4 bg-white/70 rounded-2xl border border-white/80 shadow-2xs backdrop-blur-md mb-3">
                         <div className="flex items-center gap-3 mb-3">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-base shadow-xs shrink-0 ring-2 ring-white">
                             {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <h4 className="text-sm font-bold text-slate-900 truncate">{currentUser?.name || 'User'}</h4>
-                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <h4 className="text-sm font-black text-slate-900 truncate">{currentUser?.name || 'User'}</h4>
+                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
                               {dynamicRoleLabel}
                             </span>
                           </div>
@@ -394,8 +397,8 @@ export const Navbar = ({
                         <div className="space-y-1.5 text-xs border-t border-slate-200/60 pt-2.5">
                           {currentUser?.phone && (
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Mobile Number:</span>
-                              <span className="font-mono font-bold text-slate-800">+91 {currentUser.phone}</span>
+                              <span className="text-slate-500 font-semibold">Mobile Number:</span>
+                              <span className="font-mono font-bold text-slate-900">+91 {currentUser.phone}</span>
                             </div>
                           )}
                         </div>
@@ -407,9 +410,12 @@ export const Navbar = ({
                             logout();
                             setRoleMenuOpen(false);
                           }}
-                          className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
+                          className="w-full py-2.5 px-4 rounded-2xl text-xs font-black text-rose-700 bg-rose-500/10 hover:bg-rose-600 hover:text-white border border-rose-400/30 hover:border-rose-600 flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer backdrop-blur-md"
+                          style={{
+                            boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 14px -3px rgba(244, 63, 94, 0.15)'
+                          }}
                         >
-                          <LogOut className="w-4 h-4" />
+                          <LogOut className="w-4 h-4 stroke-[2.5]" />
                           <span>Log Out</span>
                         </button>
                       </div>
@@ -426,7 +432,7 @@ export const Navbar = ({
       {typeof document !== 'undefined' && ReactDOM.createPortal(
         <>
           <div 
-            className={`fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm transition-opacity duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden ${
+            className={`fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden ${
               mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
             }`}
             onClick={() => setMobileMenuOpen(false)}
@@ -434,16 +440,22 @@ export const Navbar = ({
           />
 
       <aside 
-        className={`fixed top-0 bottom-0 left-0 z-50 w-[84vw] max-w-[325px] glass-overlay rounded-r-2xl sm:rounded-r-3xl shadow-2xl flex flex-col md:hidden transform transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden will-change-transform ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-[86vw] max-w-[335px] rounded-r-3xl shadow-2xl flex flex-col md:hidden transform transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden will-change-transform border-r border-white/80 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
         }`}
+        style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.90)',
+          backdropFilter: 'blur(36px) saturate(190%)',
+          WebkitBackdropFilter: 'blur(36px) saturate(190%)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.95), 20px 0 60px -10px rgba(15,23,42,0.35)'
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Mobile Navigation Menu"
       >
         {/* Drawer Header */}
         <div 
-          className="p-4 border-b border-white/40 flex items-center justify-between glass-subtle shrink-0"
+          className="p-4 border-b border-slate-200/60 flex items-center justify-between bg-white/40 backdrop-blur-md shrink-0"
           style={{
             paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))'
           }}
@@ -454,14 +466,14 @@ export const Navbar = ({
               alt="Eco Green Support" 
               className="h-9 w-auto object-contain" 
             />
-            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider">
+            <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded tracking-wider">
               SUPPORT
             </span>
           </div>
           <button
             type="button"
             onClick={() => setMobileMenuOpen(false)}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 active:scale-95 transition-all cursor-pointer"
+            className="p-1.5 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-200/80 active:scale-95 transition-all cursor-pointer"
             aria-label="Close Navigation Menu"
           >
             <X className="w-5 h-5" />
@@ -478,9 +490,12 @@ export const Navbar = ({
                   setMobileMenuOpen(false);
                   onOpenCustomerSearch();
                 }}
-                className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 border border-slate-200 text-xs font-bold py-2.5 px-3 rounded-xl shadow-2xs transition-all cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 bg-white/80 hover:bg-white text-slate-900 border border-white/90 text-xs font-black py-2.5 px-3 rounded-2xl shadow-xs transition-all cursor-pointer backdrop-blur-md active:scale-98"
+                style={{
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 2px 8px -2px rgba(15, 23, 42, 0.08)'
+                }}
               >
-                <Search className="w-4 h-4 text-emerald-600" />
+                <Search className="w-4 h-4 text-emerald-700 stroke-[2.5]" />
                 <span>Search Customer Directory</span>
               </button>
             )}
@@ -489,9 +504,12 @@ export const Navbar = ({
                 setMobileMenuOpen(false);
                 onOpenNewComplaint();
               }}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold py-2.5 px-3 rounded-xl shadow-xs transition-all cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black py-2.5 px-3 rounded-2xl shadow-md shadow-emerald-700/25 transition-all cursor-pointer"
+              style={{
+                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 4px 14px -2px rgba(5, 150, 105, 0.35)'
+              }}
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <Plus className="w-4 h-4 stroke-[3]" />
               <span>Register New Ticket</span>
             </button>
           </div>
@@ -504,9 +522,9 @@ export const Navbar = ({
                 setMobileMenuOpen(false);
                 onOpenNewComplaint();
               }}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold py-2.5 px-3 rounded-xl shadow-xs transition-all cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black py-2.5 px-3 rounded-2xl shadow-md shadow-emerald-700/25 transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <Plus className="w-4 h-4 stroke-[3]" />
               <span>Raise New Complaint</span>
             </button>
           </div>
@@ -516,7 +534,7 @@ export const Navbar = ({
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-4">
           {/* Main Navigation Group */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-1.5">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 px-3 mb-2">
               Main Navigation
             </p>
             <div className="space-y-1">
@@ -524,23 +542,23 @@ export const Navbar = ({
               {['admin', 'staff'].includes(currentUser?.role) && (
                 <button
                   onClick={() => handleNavClick('complaints')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'complaints'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Users className={`w-4 h-4 shrink-0 ${currentTab === 'complaints' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <Users className={`w-4 h-4 shrink-0 ${currentTab === 'complaints' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'complaints' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Complaints Desk</p>
-                      <p className="text-[10px] text-slate-400 font-normal">All service tickets & status</p>
+                      <p className={currentTab === 'complaints' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>Complaints Desk</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'complaints' ? 'text-emerald-800' : 'text-slate-600'}`}>All service tickets & status</p>
                     </div>
                   </div>
                   {currentTab === 'complaints' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
               )}
@@ -549,25 +567,25 @@ export const Navbar = ({
               {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
                 <button
                   onClick={() => handleNavClick('technician', 'field_ops')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'technician' && techSection === 'field_ops'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Wrench className={`w-4 h-4 shrink-0 ${currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <Wrench className={`w-4 h-4 shrink-0 ${currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>
+                      <p className={currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>
                         {currentUser?.role === 'technician' ? 'My Field Tasks' : 'Field Operations'}
                       </p>
-                      <p className="text-[10px] text-slate-400 font-normal">Technician jobs & dispatch</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'technician' && techSection === 'field_ops' ? 'text-emerald-800' : 'text-slate-600'}`}>Technician jobs & dispatch</p>
                     </div>
                   </div>
                   {currentTab === 'technician' && techSection === 'field_ops' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
               )}
@@ -576,23 +594,23 @@ export const Navbar = ({
               {['admin', 'staff', 'technician'].includes(currentUser?.role) && (
                 <button
                   onClick={() => handleNavClick('technician', 'collection')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'technician' && techSection === 'collection'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <IndianRupee className={`w-4 h-4 shrink-0 ${currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <IndianRupee className={`w-4 h-4 shrink-0 ${currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Cash Collection</p>
-                      <p className="text-[10px] text-slate-400 font-normal">Verify payments & receipts</p>
+                      <p className={currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>Cash Collection</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'technician' && techSection === 'collection' ? 'text-emerald-800' : 'text-slate-600'}`}>Verify payments & receipts</p>
                     </div>
                   </div>
                   {currentTab === 'technician' && techSection === 'collection' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
               )}
@@ -601,23 +619,23 @@ export const Navbar = ({
               {['admin', 'staff'].includes(currentUser?.role) && (
                 <button
                   onClick={() => handleNavClick('whatsapp-inbox')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'whatsapp-inbox'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <MessageCircle className={`w-4 h-4 shrink-0 ${currentTab === 'whatsapp-inbox' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <MessageCircle className={`w-4 h-4 shrink-0 ${currentTab === 'whatsapp-inbox' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'whatsapp-inbox' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>WhatsApp Web</p>
-                      <p className="text-[10px] text-slate-400 font-normal">Live chat & automated alerts</p>
+                      <p className={currentTab === 'whatsapp-inbox' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>WhatsApp Web</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'whatsapp-inbox' ? 'text-emerald-800' : 'text-slate-600'}`}>Live chat & automated alerts</p>
                     </div>
                   </div>
                   {currentTab === 'whatsapp-inbox' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
               )}
@@ -626,23 +644,23 @@ export const Navbar = ({
               {currentUser?.role === 'customer' && (
                 <button
                   onClick={() => handleNavClick('customer')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'customer'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Search className={`w-4 h-4 shrink-0 ${currentTab === 'customer' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <Search className={`w-4 h-4 shrink-0 ${currentTab === 'customer' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'customer' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Track & Raise Complaints</p>
-                      <p className="text-[10px] text-slate-400 font-normal">Public self-service tracking</p>
+                      <p className={currentTab === 'customer' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>Track & Raise Complaints</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'customer' ? 'text-emerald-800' : 'text-slate-600'}`}>Public self-service tracking</p>
                     </div>
                   </div>
                   {currentTab === 'customer' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
               )}
@@ -652,76 +670,76 @@ export const Navbar = ({
           {/* Admin Management & System Group */}
           {currentUser?.role === 'admin' && (
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-1.5">
+              <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 px-3 mb-2">
                 Management & System
               </p>
               <div className="space-y-1">
                 {/* Staff & Technicians */}
                 <button
                   onClick={() => handleNavClick('team')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'team'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Shield className={`w-4 h-4 shrink-0 ${currentTab === 'team' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <Shield className={`w-4 h-4 shrink-0 ${currentTab === 'team' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'team' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Staff & Technicians</p>
-                      <p className="text-[10px] text-slate-400 font-normal">Manage accounts & assignments</p>
+                      <p className={currentTab === 'team' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>Staff & Technicians</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'team' ? 'text-emerald-800' : 'text-slate-600'}`}>Manage accounts & assignments</p>
                     </div>
                   </div>
                   {currentTab === 'team' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
 
                 {/* Analytics */}
                 <button
                   onClick={() => handleNavClick('analytics')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'analytics'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <BarChart3 className={`w-4 h-4 shrink-0 ${currentTab === 'analytics' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <BarChart3 className={`w-4 h-4 shrink-0 ${currentTab === 'analytics' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'analytics' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Analytics & Reports</p>
-                      <p className="text-[10px] text-slate-400 font-normal">KPIs, trends & sync customer data</p>
+                      <p className={currentTab === 'analytics' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>Analytics & Reports</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'analytics' ? 'text-emerald-800' : 'text-slate-600'}`}>KPIs, trends & sync customer data</p>
                     </div>
                   </div>
                   {currentTab === 'analytics' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
 
                 {/* Settings Hub */}
                 <button
                   onClick={() => handleNavClick('settings')}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                     currentTab === 'settings' || currentTab === 'templates'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 font-bold shadow-2xs'
-                      : 'text-slate-700 hover:bg-slate-100 font-medium'
+                      ? 'bg-emerald-500/15 text-emerald-950 border border-emerald-500/35 font-black shadow-xs backdrop-blur-sm'
+                      : 'text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold shadow-2xs'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Settings className={`w-4 h-4 shrink-0 ${currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-700' : 'text-slate-500'}`} />
+                    <Settings className={`w-4 h-4 shrink-0 ${currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-700 stroke-[2.5]' : 'text-slate-600'}`} />
                     <div className="text-left">
-                      <p className={currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-900 font-bold' : 'text-slate-800'}>Settings</p>
-                      <p className="text-[10px] text-slate-400 font-normal">Account, Templates, Items & Voucher</p>
+                      <p className={currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-950 font-black' : 'text-slate-900 font-bold'}>Settings</p>
+                      <p className={`text-[11px] font-medium leading-tight ${currentTab === 'settings' || currentTab === 'templates' ? 'text-emerald-800' : 'text-slate-600'}`}>Account, Templates, Items & Voucher</p>
                     </div>
                   </div>
                   {currentTab === 'settings' || currentTab === 'templates' ? (
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                 </button>
               </div>
@@ -730,7 +748,7 @@ export const Navbar = ({
 
           {/* Quick Shortcuts & Utilities Group */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-1.5">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 px-3 mb-2">
               Utilities
             </p>
             <div className="space-y-1">
@@ -740,24 +758,24 @@ export const Navbar = ({
                   setMobileMenuOpen(false);
                   onToggleNotificationDrawer();
                 }}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl text-xs text-slate-700 hover:bg-slate-100 font-medium transition-all cursor-pointer"
+                className="w-full flex items-center justify-between p-2.5 rounded-2xl text-xs text-slate-800 hover:bg-white/80 active:bg-white/90 border border-transparent hover:border-white/60 font-semibold transition-all cursor-pointer shadow-2xs"
               >
                 <div className="flex items-center gap-3">
                   <div className="relative">
-                    <Bell className="w-4 h-4 text-slate-500" />
+                    <Bell className="w-4 h-4 text-slate-600" />
                     {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full ring-2 ring-white" />
                     )}
                   </div>
                   <div className="text-left">
-                    <p className="text-slate-800 font-semibold">Notification Center</p>
-                    <p className="text-[10px] text-slate-400 font-normal">
+                    <p className="text-slate-900 font-bold">Notification Center</p>
+                    <p className="text-[11px] text-slate-600 font-medium leading-tight">
                       {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'No unread notifications'}
                     </p>
                   </div>
                 </div>
                 {unreadCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
@@ -770,33 +788,41 @@ export const Navbar = ({
                     setMobileMenuOpen(false);
                     onOpenTour();
                   }}
-                  className="w-full flex items-center justify-between p-2.5 rounded-xl text-xs text-amber-800 bg-amber-50/70 hover:bg-amber-100/70 border border-amber-200/60 font-semibold transition-all cursor-pointer"
+                  className="w-full flex items-center justify-between p-2.5 rounded-2xl text-xs bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-950 font-bold transition-all shadow-xs backdrop-blur-sm cursor-pointer active:scale-98"
+                  style={{
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 8px -2px rgba(217, 119, 6, 0.15)'
+                  }}
                 >
                   <div className="flex items-center gap-3">
-                    <Compass className="w-4 h-4 text-amber-600 shrink-0" />
+                    <Compass className="w-4 h-4 text-amber-700 stroke-[2.5] shrink-0" />
                     <div className="text-left">
-                      <p className="text-amber-900 font-bold">Feature Tour Guide</p>
-                      <p className="text-[10px] text-amber-700 font-normal">Interactive step-by-step walkthrough</p>
+                      <p className="text-amber-950 font-black">Feature Tour Guide</p>
+                      <p className="text-[11px] text-amber-900 font-semibold leading-tight">Interactive step-by-step walkthrough</p>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-amber-500 shrink-0" />
+                  <ChevronRight className="w-4 h-4 text-amber-700 shrink-0" />
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Drawer Footer with User Profile & Logout */}
-        <div className="p-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 space-y-2.5">
-          <div className="flex items-center gap-3 px-1">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
+        {/* Drawer Footer with User Profile & Liquid Glass Logout */}
+        <div 
+          className="p-3.5 border-t border-slate-200/80 bg-white/60 backdrop-blur-xl shrink-0 space-y-3 shadow-lg"
+          style={{
+            paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))'
+          }}
+        >
+          <div className="flex items-center gap-3 p-2 rounded-2xl bg-white/80 border border-white shadow-2xs backdrop-blur-md">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-xs shadow-xs ring-2 ring-white shrink-0">
               {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-800 truncate leading-tight">
+              <p className="text-xs font-black text-slate-900 truncate leading-tight">
                 {currentUser?.name || 'Authorized User'}
               </p>
-              <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
+              <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
                 {dynamicRoleLabel}
               </span>
             </div>
@@ -807,9 +833,12 @@ export const Navbar = ({
               setMobileMenuOpen(false);
               logout();
             }}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 transition-all active:scale-98 cursor-pointer shadow-2xs"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-black text-rose-700 bg-rose-500/10 hover:bg-rose-600 hover:text-white border border-rose-400/30 hover:border-rose-600 shadow-xs hover:shadow-md hover:shadow-rose-600/25 transition-all duration-200 active:scale-98 cursor-pointer backdrop-blur-md"
+            style={{
+              boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 14px -3px rgba(244, 63, 94, 0.15)'
+            }}
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-4 h-4 stroke-[2.5]" />
             <span>Log Out</span>
           </button>
         </div>
