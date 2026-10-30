@@ -3794,7 +3794,8 @@ export const TourLedgerSection = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.getElementById("portal-root") || document.body
       )}
 
       {/* ================= MODAL: ADD EXPENSE VOUCHER (MULTI-ITEM BATCH CLAIM) ================= */}
@@ -4212,7 +4213,8 @@ export const TourLedgerSection = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.getElementById("portal-root") || document.body
       )}
 
       {/* ================= MODAL: DEPOSIT / RETURN BALANCE TO COMPANY ================= */}

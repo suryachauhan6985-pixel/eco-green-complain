@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ecogreen-support-v272';
+const CACHE_NAME = 'ecogreen-support-v273';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/support-icon-192.png',
