@@ -2788,6 +2788,121 @@ app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Settle Collected Cash into Company Account
+app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    const user = req.user;
+    const body = req.body || {};
+    const { notes = '', amount_received } = body;
+
+    const compRes = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1
+    `, [id]);
+
+    if (!compRes.rows.length) return res.status(404).json({ error: 'Complaint not found' });
+    const complaint = compRes.rows[0];
+
+    const settledAmt = amount_received !== undefined ? Number(amount_received) : (Number(complaint.payment_collected) || 0);
+    const actorName = user ? (user.name || user.username) : 'Company Finance/Admin';
+    const actorRole = user ? user.role : 'admin';
+
+    const targetPaymentId = body?.payment_id;
+    let targetTechName = body?.technician_name;
+
+    if (targetPaymentId) {
+      const payRes = await query(`
+        SELECT cp.*, t.name as tech_name 
+        FROM complaint_payments cp 
+        LEFT JOIN technicians t ON cp.technician_id = t.id 
+        WHERE cp.id = $1
+      `, [targetPaymentId]);
+      if (payRes.rows.length) {
+        const pr = payRes.rows[0];
+        targetTechName = targetTechName || pr.technician_name || pr.tech_name || pr.collected_by_name;
+      }
+
+      await query(`
+        UPDATE complaint_payments
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [actorName, targetPaymentId]);
+
+      const remRes = await query(`
+        SELECT id FROM complaint_payments
+        WHERE complaint_id = $1 AND (payment_mode = 'Cash' OR payment_mode IS NULL)
+          AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+      `, [complaint.id]);
+
+      if (remRes.rows.length === 0) {
+        await query(`
+          UPDATE complaints
+          SET company_settlement_status = 'Settled with Company',
+              company_settled_at = CURRENT_TIMESTAMP,
+              company_settled_by = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [actorName, complaint.id]);
+      } else {
+        await query(`
+          UPDATE complaints
+          SET company_settlement_status = 'Partially Settled with Company',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [complaint.id]);
+      }
+    } else {
+      await query(`
+        UPDATE complaints
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [actorName, complaint.id]);
+
+      await query(`
+        UPDATE complaint_payments
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE complaint_id = $2
+      `, [actorName, complaint.id]);
+    }
+
+    const techLabel = targetTechName || complaint.technician_name || (complaint.assigned_technician_id ? `Technician #${complaint.assigned_technician_id}` : 'Direct Office Collection');
+    const timelineMsg = `Company confirmed receipt of ₹${settledAmt} collected by ${techLabel} into company account.${notes ? ` • Note: ${notes}` : ''}`;
+
+    await query(`
+      INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
+      VALUES ($1, 'Cash Settled with Company', $2, $3, $4, 0)
+    `, [complaint.id, timelineMsg, actorName, actorRole]);
+
+    const updated = await query(`
+      SELECT c.*, t.name as technician_name, t.phone as technician_phone
+      FROM complaints c
+      LEFT JOIN technicians t ON c.assigned_technician_id = t.id
+      WHERE c.id = $1
+    `, [complaint.id]);
+
+    return res.json({
+      success: true,
+      message: 'Payment settled with company successfully',
+      complaint: updated.rows[0]
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
 // Check if active/open complaint already exists for this customer (prevents duplicate tickets)
 app.get('/api/complaints/check-active', authenticateToken, async (req, res) => {
   try {

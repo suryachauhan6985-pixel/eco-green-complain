@@ -732,7 +732,13 @@ export const ComplaintDetailDrawer = ({
       setLoading(true);
       const data = await api.getComplaint(complaintId);
       if (data && data.complaint) {
-        setTicket(data.complaint);
+        const paymentsList = Array.isArray(data.payments) && data.payments.length > 0
+          ? data.payments
+          : (Array.isArray(data.complaint.payments) ? data.complaint.payments : []);
+        setTicket({
+          ...data.complaint,
+          payments: paymentsList
+        });
         // Also register official ticket_id if different from complaintId
         if (typeof markTicketAsRead === 'function' && data.complaint.ticket_id && String(data.complaint.ticket_id) !== String(complaintId)) {
           markTicketAsRead(data.complaint.ticket_id);
@@ -1787,33 +1793,50 @@ export const ComplaintDetailDrawer = ({
     }
   };
 
-  const handleSettleWithCompany = async () => {
+  const handleSettleWithCompany = async (targetPayment = null) => {
     if (!ticket) return;
-    if (!ticket.assigned_technician_id) {
+
+    // Identify target amount, technician, and payment ID
+    const targetAmount = targetPayment?.amount || ticket.payment_collected;
+    const targetPaymentId = targetPayment?.id || null;
+    let targetTechName = targetPayment?.technician_name || targetPayment?.tech_full_name || targetPayment?.collected_by_name;
+
+    // If not on targetPayment, check if ticket.payments has pending cash payment
+    if (!targetTechName && Array.isArray(ticket.payments) && ticket.payments.length > 0) {
+      const pendingCash = ticket.payments.find(p => (p.payment_mode === 'Cash' || !p.payment_mode) && p.company_settlement_status !== 'Settled with Company');
+      if (pendingCash) {
+        targetTechName = pendingCash.technician_name || pendingCash.tech_full_name || pendingCash.collected_by_name;
+      }
+    }
+
+    if (!targetTechName) {
+      targetTechName = ticket.assigned_tech_name || ticket.technician_name;
+    }
+
+    if (!targetTechName) {
       if (['admin', 'staff'].includes(currentUser?.role)) {
         const ok = await confirm({
           title: 'Confirm Office Payment Settlement',
-          message: `No field technician was assigned to this ticket. Confirm direct settlement of ₹${ticket.payment_collected} into Eco Green Solar Company account?`,
+          message: `No field technician is associated with this payment. Confirm direct settlement of ₹${targetAmount} into Eco Green Solar Company account?`,
           type: 'payment',
-          confirmText: `Settle ₹${ticket.payment_collected}`,
+          confirmText: `Settle ₹${targetAmount}`,
           cancelText: 'Cancel'
         });
         if (!ok) return;
       } else {
         await alert({
-          title: 'Technician Assignment Required',
+          title: 'Technician Information Required',
           message: 'Cannot settle technician cash on an unassigned complaint. Please assign a technician first.',
           type: 'warning'
         });
         return;
       }
     } else {
-      const techName = ticket.assigned_tech_name || ticket.technician_name || 'the technician';
       const ok = await confirm({
-        title: 'Confirm Company Cash Deposit',
-        message: `Confirm cash receipt of ₹${ticket.payment_collected} collected by ${techName} into Eco Green Solar Company account?`,
+        title: `Confirm Company Cash Deposit from ${targetTechName}`,
+        message: `Confirm cash receipt of ₹${targetAmount} collected by ${targetTechName} into Eco Green Solar Company account?`,
         type: 'payment',
-        confirmText: `Receive ₹${ticket.payment_collected}`,
+        confirmText: `Receive ₹${targetAmount} from ${targetTechName}`,
         cancelText: 'Cancel'
       });
       if (!ok) return;
@@ -1821,14 +1844,17 @@ export const ComplaintDetailDrawer = ({
 
     try {
       setSettlingCompany(true);
-      const techName = ticket.assigned_tech_name || ticket.technician_name || 'Direct Office Collection';
+      const collectorName = targetTechName || 'Direct Office Collection';
       await api.settleCompanyPayment(ticket.id, {
-        notes: `Cash received from ${techName} by ${currentUser?.name || 'Staff'}`
+        payment_id: targetPaymentId,
+        technician_name: collectorName,
+        amount_received: targetAmount,
+        notes: `Cash received from ${collectorName} by ${currentUser?.name || 'Staff'}`
       });
       await fetchTicketDetails();
       notifyComplaintChanged({ action: 'settled_company' });
       broadcastLedgerUpdate({ ticketId: ticket?.ticket_id });
-      showToast(`₹${ticket.payment_collected} marked as received & settled with company!`, 'success');
+      showToast(`₹${targetAmount} received from ${collectorName} & settled into company account!`, 'success');
     } catch (err) {
       showToast('Failed to settle payment with company: ' + err.message, 'error');
     } finally {
@@ -1862,19 +1888,19 @@ export const ComplaintDetailDrawer = ({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div 
-        className={`absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity ${
+        className={`absolute inset-0 apple-glass-backdrop transition-opacity ${
           isClosing ? 'backdrop-exit-fade' : 'backdrop-enter-fade'
         }`}
         onClick={handleDrawerClose}
       />
 
       <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto max-w-full flex w-full sm:w-auto">
-        <div className={`w-full sm:w-screen sm:max-w-2xl bg-white shadow-2xl shadow-slate-950/40 flex flex-col h-full overflow-hidden rounded-l-2xl sm:rounded-l-3xl border-l border-slate-200/80 ${
+        <div className={`w-full sm:w-screen sm:max-w-2xl apple-glass-drawer flex flex-col h-full overflow-hidden rounded-l-2xl sm:rounded-l-3xl ${
           isClosing ? 'drawer-exit-right' : 'drawer-enter-right'
         }`}>
           {/* Header */}
           <div 
-            className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2 shrink-0"
+            className="px-3.5 sm:px-6 py-3 sm:py-4 apple-glass-header text-white flex items-center justify-between gap-2 shrink-0"
             style={{
               paddingTop: 'max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.65rem))'
             }}
@@ -1971,7 +1997,7 @@ export const ComplaintDetailDrawer = ({
           </div>
 
           {/* Sub Navigation Tabs */}
-          <div className="px-3.5 sm:px-6 bg-slate-100 border-b border-slate-200 flex items-center justify-between overflow-x-auto shrink-0">
+          <div className="px-3.5 sm:px-6 apple-glass-subbar flex items-center justify-between overflow-x-auto shrink-0">
             <div className="flex gap-2 sm:gap-4 text-xs font-semibold whitespace-nowrap">
               <button
                 onClick={() => setActiveTab('overview')}
@@ -2075,7 +2101,7 @@ export const ComplaintDetailDrawer = ({
                     )}
 
                     {/* Customer Info Card */}
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div className="apple-glass-card rounded-2xl p-4 sm:p-5 border border-white/80 transition-all">
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-emerald-700" />
@@ -2154,7 +2180,7 @@ export const ComplaintDetailDrawer = ({
                     </div>
 
                     {/* System & Warranty Status Card */}
-                    <div className="bg-white rounded-xl p-4 border border-slate-200">
+                    <div className="apple-glass-card rounded-2xl p-4 sm:p-5 border border-white/80 transition-all">
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                           <Tag className="w-3.5 h-3.5 text-emerald-700" />
@@ -2230,7 +2256,7 @@ export const ComplaintDetailDrawer = ({
 
                     {/* Dealer & Channel Partner Information Card */}
                     {currentDealerName && (
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <div className="apple-glass-card rounded-2xl p-4 sm:p-5 border border-white/80 transition-all">
                         <div className="flex items-center justify-between mb-2.5">
                           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                             <Building2 className="w-3.5 h-3.5 text-sky-600" />
@@ -2335,7 +2361,7 @@ export const ComplaintDetailDrawer = ({
                     )}
 
                     {/* Estimated Charges & Payment Collection Card */}
-                    <div className="bg-amber-50/60 rounded-xl p-4 border border-amber-200">
+                    <div className="apple-glass-card rounded-2xl p-4 sm:p-5 border border-amber-200/80 bg-amber-50/75 transition-all">
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
                           <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
@@ -2504,19 +2530,19 @@ export const ComplaintDetailDrawer = ({
 
                       {/* Itemized Payment History Table / Ledger */}
                       {Array.isArray(ticket.payments) && ticket.payments.length > 0 && (
-                        <div className="mt-3 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-                          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                        <div className="mt-3 bg-white/90 backdrop-blur-md rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                          <div className="px-3.5 py-2.5 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between flex-wrap gap-1">
                             <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                               <Receipt className="w-3.5 h-3.5 text-slate-500" />
                               Itemized Payment History ({ticket.payments.length})
                             </span>
-                            <span className="text-[10px] text-slate-500">Collected by assigned staff / technicians</span>
+                            <span className="text-[10px] text-slate-500 font-medium">Recorded per collecting technician</span>
                           </div>
-                          <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                          <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
                             {ticket.payments.map((p, idx) => (
-                              <div key={p.id || idx} className="p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 hover:bg-slate-50/60 transition-colors text-xs">
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-2">
+                              <div key={p.id || idx} className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 hover:bg-slate-50/70 transition-colors text-xs">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-mono text-[10px] font-bold text-slate-400">#{idx + 1}</span>
                                     <strong className="text-emerald-700 font-extrabold text-sm">₹{p.amount}</strong>
                                     <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
@@ -2531,11 +2557,11 @@ export const ComplaintDetailDrawer = ({
                                         ? 'bg-amber-50 text-amber-800 border-amber-200'
                                         : 'bg-slate-50 text-slate-600 border-slate-200'
                                     }`}>
-                                      {p.payment_mode === 'Cash' ? (p.company_settlement_status || 'Cash in Hand') : 'Direct Account'}
+                                      {p.payment_mode === 'Cash' ? (p.company_settlement_status || 'Pending Deposit') : 'Direct Account'}
                                     </span>
                                   </div>
                                   <div className="text-[11px] text-slate-600 flex items-center gap-1.5 flex-wrap">
-                                    <span>Collected by: <strong className="text-slate-800">{p.technician_name || p.collected_by_name || 'Staff'}</strong></span>
+                                    <span>Collected by: <strong className="text-slate-900 font-bold">{p.technician_name || p.collected_by_name || 'Staff'}</strong></span>
                                     {p.payment_date && (
                                       <>
                                         <span className="text-slate-300">•</span>
@@ -2550,6 +2576,20 @@ export const ComplaintDetailDrawer = ({
                                     )}
                                   </div>
                                 </div>
+
+                                {/* Direct Row Collection Action */}
+                                {p.payment_mode === 'Cash' && p.company_settlement_status !== 'Settled with Company' && isAdminOrStaff && (
+                                  <button
+                                    type="button"
+                                    disabled={settlingCompany}
+                                    onClick={() => handleSettleWithCompany(p)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-all"
+                                    title={`Confirm receipt of ₹${p.amount} from ${p.technician_name || 'technician'}`}
+                                  >
+                                    <IndianRupee className="w-3 h-3" />
+                                    <span>Collect ₹{p.amount} from {p.technician_name || 'Tech'}</span>
+                                  </button>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -2578,51 +2618,126 @@ export const ComplaintDetailDrawer = ({
                       )}
 
                       {/* Company Settlement Status Banner */}
-                      {Number(ticket.payment_collected || 0) > 0 && (
-                        <div className={`mt-3 p-3.5 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
-                          ticket.company_settlement_status === 'Settled with Company'
-                            ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                            : 'bg-amber-50/90 border-amber-200 text-amber-950'
-                        }`}>
-                          <div className="space-y-0.5 min-w-0 flex-1">
-                            <div className="font-bold flex items-center gap-1.5">
-                              {ticket.company_settlement_status === 'Settled with Company' ? (
-                                <span className="text-emerald-800 font-extrabold flex items-center gap-1">
-                                  ✓ Received into Company Account (Settled)
-                                </span>
-                              ) : (
-                                <span className="text-amber-800 font-extrabold flex items-center gap-1">
-                                  ⚠️ Cash in Hand with Technician (Pending Company Deposit)
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-600 leading-relaxed">
-                              {ticket.company_settlement_status === 'Settled with Company' ? (
-                                <>Amount ₹<strong>{ticket.payment_collected}</strong> {ticket.payment_collected_at ? `(collected on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)})` : ''} received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
-                              ) : (
-                                <>₹<strong>{ticket.payment_collected}</strong> was collected {ticket.payment_collected_at ? `on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)}` : ''} and is currently in technician's possession.</>
-                              )}
-                            </p>
-                          </div>
+                      {Number(ticket.payment_collected || 0) > 0 && (() => {
+                        const paymentsList = Array.isArray(ticket.payments) ? ticket.payments : [];
+                        const cashPayments = paymentsList.filter(p => (p.payment_mode === 'Cash' || !p.payment_mode) && p.payment_status === 'Collected');
+                        const pendingCash = cashPayments.filter(p => p.company_settlement_status !== 'Settled with Company');
+                        const isFullySettled = ticket.company_settlement_status === 'Settled with Company' || (cashPayments.length > 0 && pendingCash.length === 0);
 
-                          {ticket.company_settlement_status !== 'Settled with Company' && isAdminOrStaff && (
-                            <button
-                              type="button"
-                              disabled={settlingCompany}
-                              onClick={handleSettleWithCompany}
-                              title="Receive cash into company account"
-                              className="px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                            >
-                              <IndianRupee className="w-3.5 h-3.5" />
-                              {settlingCompany ? 'Settling...' : (ticket.assigned_technician_id ? 'Collect from Tech' : 'Settle Office Payment')}
-                            </button>
-                          )}
-                        </div>
-                      )}
+                        if (isFullySettled) {
+                          return (
+                            <div className="mt-3 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/90 text-emerald-950 text-xs">
+                              <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                <span className="font-extrabold">Received into Company Account (Settled)</span>
+                              </div>
+                              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                                Amount ₹<strong>{ticket.payment_collected}</strong> {ticket.payment_collected_at ? `(collected on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)})` : ''} received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        // Pending Cash Settlement Cases
+                        // Case A: Multiple pending cash payments from different technicians or multiple batches
+                        if (pendingCash.length > 1) {
+                          const totalPendingCash = pendingCash.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+                          return (
+                            <div className="mt-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-950 text-xs space-y-2.5">
+                              <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                  <span className="font-extrabold">Cash in Hand with Field Technicians (Pending Deposit)</span>
+                                </div>
+                                {isAdminOrStaff && (
+                                  <button
+                                    type="button"
+                                    disabled={settlingCompany}
+                                    onClick={() => handleSettleWithCompany(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+                                  >
+                                    <IndianRupee className="w-3.5 h-3.5" />
+                                    <span>Collect All (₹{totalPendingCash})</span>
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-600">
+                                Cash payments were collected by individual field technicians. Confirm receipt from each technician below:
+                              </p>
+                              <div className="space-y-2">
+                                {pendingCash.map((p, idx) => {
+                                  const collector = p.technician_name || p.collected_by_name || 'Field Technician';
+                                  return (
+                                    <div key={p.id || idx} className="p-2.5 bg-white rounded-lg border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-2xs">
+                                      <div>
+                                        <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                                          <span className="text-emerald-700 font-black">₹{p.amount}</span>
+                                          <span className="text-slate-300">•</span>
+                                          <span>In possession of: <strong className="text-amber-950 underline decoration-amber-400 font-extrabold">{collector}</strong></span>
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 mt-0.5">
+                                          Collected on {formatIndianDateTime(p.payment_date || p.created_at)}
+                                          {p.collection_reason && <span className="text-amber-800 italic ml-1.5">"{p.collection_reason}"</span>}
+                                        </div>
+                                      </div>
+                                      {isAdminOrStaff && (
+                                        <button
+                                          type="button"
+                                          disabled={settlingCompany}
+                                          onClick={() => handleSettleWithCompany(p)}
+                                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white flex items-center gap-1 shadow-2xs shrink-0 cursor-pointer transition-all"
+                                        >
+                                          <IndianRupee className="w-3 h-3" />
+                                          <span>Collect ₹{p.amount} from {collector}</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // Case B: Single pending cash payment (explicitly identify technician)
+                        const targetP = pendingCash[0];
+                        const singleTechName = targetP
+                          ? (targetP.technician_name || targetP.collected_by_name || 'Field Technician')
+                          : (ticket.assigned_tech_name || ticket.technician_name || 'Field Technician');
+                        const singleAmount = targetP ? targetP.amount : ticket.payment_collected;
+                        const collectionDate = targetP?.payment_date || targetP?.created_at || ticket.payment_collected_at;
+
+                        return (
+                          <div className="mt-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-950 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span className="font-extrabold">Cash in Hand with {singleTechName} (Pending Company Deposit)</span>
+                              </div>
+                              <p className="text-[11px] text-slate-600 leading-relaxed">
+                                ₹<strong>{singleAmount}</strong> was collected by <strong className="text-slate-900 font-extrabold underline decoration-amber-400">{singleTechName}</strong> {collectionDate ? `on ${formatIndianDateTime(collectionDate)}` : ''} and is currently in <strong className="text-slate-900 font-extrabold">{singleTechName}</strong>'s possession.
+                              </p>
+                            </div>
+
+                            {isAdminOrStaff && (
+                              <button
+                                type="button"
+                                disabled={settlingCompany}
+                                onClick={() => handleSettleWithCompany(targetP || null)}
+                                title={`Receive cash into company account from ${singleTechName}`}
+                                className="px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-sm transition-all flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white cursor-pointer"
+                              >
+                                <IndianRupee className="w-3.5 h-3.5" />
+                                <span>{settlingCompany ? 'Settling...' : `Collect ₹${singleAmount} from ${singleTechName}`}</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Issue Description */}
-                    <div className="bg-white rounded-xl p-4 border border-slate-200">
+                    <div className="apple-glass-card rounded-2xl p-4 sm:p-5 border border-white/80 transition-all">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                         <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                           Issue Description & Diagnostics

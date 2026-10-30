@@ -572,18 +572,32 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
       c.executionCtx
     );
 
+    // Fetch itemized payment transactions
+    const paymentsRes = await query(
+      `SELECT cp.*, t.name as technician_name, t.name as tech_full_name, t.phone as tech_phone
+       FROM complaint_payments cp
+       LEFT JOIN technicians t ON cp.technician_id = t.id
+       WHERE cp.complaint_id = $1
+       ORDER BY cp.created_at ASC, cp.id ASC`,
+      [complaint.id],
+      c.env,
+      c.executionCtx
+    );
+
     const fullDetail = {
       ...complaint,
       description: complaint.issue_description,
       attachments: atts.rows,
-      timeline: timeline.rows
+      timeline: timeline.rows,
+      payments: paymentsRes.rows || []
     };
 
     return c.json({
       ticket: fullDetail,
       complaint: fullDetail,
       attachments: atts.rows,
-      timeline: timeline.rows
+      timeline: timeline.rows,
+      payments: paymentsRes.rows || []
     });
   } catch (err) {
     return c.json({ error: err.message }, 500);
@@ -1977,17 +1991,21 @@ complaintRoutes.post('/:id/settle-company', authenticateToken, requireRole('admi
     const actorName = user ? (user.name || user.username) : 'Company Finance/Admin';
     const actorRole = user ? user.role : 'admin';
 
-    await query(`
-      UPDATE complaints
-      SET company_settlement_status = 'Settled with Company',
-          company_settled_at = CURRENT_TIMESTAMP,
-          company_settled_by = $1,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-    `, [actorName, complaint.id], c.env, c.executionCtx);
-
     const targetPaymentId = body?.payment_id;
+    let targetTechName = body?.technician_name;
+
     if (targetPaymentId) {
+      const payRes = await query(`
+        SELECT cp.*, t.name as tech_name 
+        FROM complaint_payments cp 
+        LEFT JOIN technicians t ON cp.technician_id = t.id 
+        WHERE cp.id = $1
+      `, [targetPaymentId], c.env, c.executionCtx);
+      if (payRes.rows.length) {
+        const pr = payRes.rows[0];
+        targetTechName = targetTechName || pr.technician_name || pr.tech_name || pr.collected_by_name;
+      }
+
       await query(`
         UPDATE complaint_payments
         SET company_settlement_status = 'Settled with Company',
@@ -1996,7 +2014,40 @@ complaintRoutes.post('/:id/settle-company', authenticateToken, requireRole('admi
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
       `, [actorName, targetPaymentId], c.env, c.executionCtx);
+
+      const remRes = await query(`
+        SELECT id FROM complaint_payments
+        WHERE complaint_id = $1 AND (payment_mode = 'Cash' OR payment_mode IS NULL)
+          AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+      `, [complaint.id], c.env, c.executionCtx);
+
+      if (remRes.rows.length === 0) {
+        await query(`
+          UPDATE complaints
+          SET company_settlement_status = 'Settled with Company',
+              company_settled_at = CURRENT_TIMESTAMP,
+              company_settled_by = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [actorName, complaint.id], c.env, c.executionCtx);
+      } else {
+        await query(`
+          UPDATE complaints
+          SET company_settlement_status = 'Partially Settled with Company',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [complaint.id], c.env, c.executionCtx);
+      }
     } else {
+      await query(`
+        UPDATE complaints
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [actorName, complaint.id], c.env, c.executionCtx);
+
       await query(`
         UPDATE complaint_payments
         SET company_settlement_status = 'Settled with Company',
@@ -2007,8 +2058,8 @@ complaintRoutes.post('/:id/settle-company', authenticateToken, requireRole('admi
       `, [actorName, complaint.id], c.env, c.executionCtx);
     }
 
-    const techLabel = complaint.technician_name || (complaint.assigned_technician_id ? `Technician #${complaint.assigned_technician_id}` : 'Direct Office Collection');
-    const timelineMsg = `Company confirmed receipt of ₹${settledAmt} (${techLabel}) into company account.${notes ? ` • Note: ${notes}` : ''}`;
+    const techLabel = targetTechName || complaint.technician_name || (complaint.assigned_technician_id ? `Technician #${complaint.assigned_technician_id}` : 'Direct Office Collection');
+    const timelineMsg = `Company confirmed receipt of ₹${settledAmt} collected by ${techLabel} into company account.${notes ? ` • Note: ${notes}` : ''}`;
 
     await query(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
