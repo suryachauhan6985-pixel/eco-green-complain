@@ -2465,6 +2465,7 @@ app.post('/api/customers/sync', authenticateToken, (req, res, next) => {
 const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath, {
+    dotfiles: 'allow',
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -2479,10 +2480,15 @@ if (fs.existsSync(clientDistPath)) {
       if (host.includes('vprotech.online') || host.includes('onrender.com')) {
         return res.redirect(301, `https://complain.ecogreensolar.co.in${req.originalUrl}`);
       }
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      return res.sendFile(path.join(clientDistPath, 'index.html'));
+      const indexPath = path.join(clientDistPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.type('html');
+        return res.send(fs.readFileSync(indexPath, 'utf8'));
+      }
+      return res.sendFile('index.html', { root: clientDistPath, dotfiles: 'allow' });
     }
     next();
   });
