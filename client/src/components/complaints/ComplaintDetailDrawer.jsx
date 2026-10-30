@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { api } from '../../api/client';
+import { api, getPermanentComplaints } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { buildTechnicianAssignedWhatsApp, buildTechnicianWorkOrderWhatsApp, buildTechnicianTeamWorkOrderWhatsApp, buildTechnicianCustomerWhatsApp } from '../../utils/templateUtils';
@@ -762,50 +762,77 @@ export const ComplaintDetailDrawer = ({
     try {
       setLoading(true);
       const data = await api.getComplaint(complaintId);
-      if (data && data.complaint) {
+      const targetComp = data?.complaint || data?.ticket;
+      if (targetComp) {
         const paymentsList = Array.isArray(data.payments) && data.payments.length > 0
           ? data.payments
-          : (Array.isArray(data.complaint.payments) ? data.complaint.payments : []);
+          : (Array.isArray(targetComp.payments) ? targetComp.payments : []);
         setTicket({
-          ...data.complaint,
+          ...targetComp,
           payments: paymentsList
         });
         // Also register official ticket_id if different from complaintId
-        if (typeof markTicketAsRead === 'function' && data.complaint.ticket_id && String(data.complaint.ticket_id) !== String(complaintId)) {
-          markTicketAsRead(data.complaint.ticket_id);
+        if (typeof markTicketAsRead === 'function' && targetComp.ticket_id && String(targetComp.ticket_id) !== String(complaintId)) {
+          markTicketAsRead(targetComp.ticket_id);
         }
-        const ticketAttachments = data.attachments || data.complaint.attachments || data.ticket?.attachments || [];
+        const ticketAttachments = data.attachments || targetComp.attachments || [];
         setAttachments(ticketAttachments);
         // Pre-warm video and media cache in background so modal previews load in 0ms
-        preloadComplaintAttachments(ticketAttachments, data.complaint?.closing_photo_url);
-        setTimeline(data.timeline || data.complaint.timeline || data.ticket?.timeline || []);
+        preloadComplaintAttachments(ticketAttachments, targetComp?.closing_photo_url);
+        setTimeline(data.timeline || targetComp.timeline || []);
         setNotifications(data.notifications || []);
-        if (data.complaint.assigned_technician_id) {
-          setSelectedTechId(String(data.complaint.assigned_technician_id));
+        if (targetComp.assigned_technician_id) {
+          setSelectedTechId(String(targetComp.assigned_technician_id));
         } else {
           setSelectedTechId('');
         }
-        if (data.complaint.secondary_technician_id) {
-          setSecondaryTechId(String(data.complaint.secondary_technician_id));
+        if (targetComp.secondary_technician_id) {
+          setSecondaryTechId(String(targetComp.secondary_technician_id));
         } else {
           setSecondaryTechId('');
         }
-        if (data.complaint.expected_visit_date) {
-          setExpectedDate(String(data.complaint.expected_visit_date).split('T')[0]);
+        if (targetComp.expected_visit_date) {
+          setExpectedDate(String(targetComp.expected_visit_date).split('T')[0]);
         } else {
           setExpectedDate('');
         }
-        if (data.complaint.resolved_by_technician_id) {
-          setResolvedByTechId(String(data.complaint.resolved_by_technician_id));
-        } else if (data.complaint.assigned_technician_id) {
-          setResolvedByTechId(String(data.complaint.assigned_technician_id));
+        if (targetComp.resolved_by_technician_id) {
+          setResolvedByTechId(String(targetComp.resolved_by_technician_id));
+        } else if (targetComp.assigned_technician_id) {
+          setResolvedByTechId(String(targetComp.assigned_technician_id));
         } else {
           setResolvedByTechId('');
         }
-        setFollowUpStatus(data.complaint.status);
+        setFollowUpStatus(targetComp.status);
+      } else {
+        // Fallback to locally cached complaint so user is never stranded
+        const cachedList = getPermanentComplaints();
+        const fallback = cachedList.find(c => String(c.id) === String(complaintId) || String(c.ticket_id) === String(complaintId));
+        if (fallback) {
+          setTicket(fallback);
+          setAttachments(fallback.attachments || []);
+          setTimeline(fallback.timeline || []);
+          if (fallback.assigned_technician_id) setSelectedTechId(String(fallback.assigned_technician_id));
+          if (fallback.secondary_technician_id) setSecondaryTechId(String(fallback.secondary_technician_id));
+          if (fallback.expected_visit_date) setExpectedDate(String(fallback.expected_visit_date).split('T')[0]);
+          setFollowUpStatus(fallback.status);
+        }
       }
     } catch (err) {
       console.error('Failed to load complaint details:', err);
+      try {
+        const cachedList = getPermanentComplaints();
+        const fallback = cachedList.find(c => String(c.id) === String(complaintId) || String(c.ticket_id) === String(complaintId));
+        if (fallback) {
+          setTicket(fallback);
+          setAttachments(fallback.attachments || []);
+          setTimeline(fallback.timeline || []);
+          if (fallback.assigned_technician_id) setSelectedTechId(String(fallback.assigned_technician_id));
+          if (fallback.secondary_technician_id) setSecondaryTechId(String(fallback.secondary_technician_id));
+          if (fallback.expected_visit_date) setExpectedDate(String(fallback.expected_visit_date).split('T')[0]);
+          setFollowUpStatus(fallback.status);
+        }
+      } catch (_) {}
     } finally {
       setLoading(false);
     }
@@ -892,7 +919,22 @@ export const ComplaintDetailDrawer = ({
       if (typeof markTicketAsRead === 'function') {
         markTicketAsRead(complaintId);
       }
-      setTicket(null); // Immediately reset ticket to trigger clean skeleton loader
+      // Optimistically seed ticket from permanent local cache immediately so drawer renders in 0ms without dead-ends
+      try {
+        const cachedList = getPermanentComplaints();
+        const cached = cachedList.find(c => String(c.id) === String(complaintId) || String(c.ticket_id) === String(complaintId));
+        if (cached) {
+          setTicket(cached);
+          if (cached.assigned_technician_id) setSelectedTechId(String(cached.assigned_technician_id));
+          if (cached.secondary_technician_id) setSecondaryTechId(String(cached.secondary_technician_id));
+          if (cached.expected_visit_date) setExpectedDate(String(cached.expected_visit_date).split('T')[0]);
+          setFollowUpStatus(cached.status);
+        } else {
+          setTicket(null);
+        }
+      } catch (_) {
+        setTicket(null);
+      }
       fetchTicketDetails();
       fetchTechs();
 
@@ -1937,13 +1979,21 @@ export const ComplaintDetailDrawer = ({
             }}
           >
             <div className="min-w-0 flex-1">
-              {!ticket ? (
+              {!ticket && loading ? (
                 <div className="flex items-center gap-2 py-0.5">
                   <div className="flex items-center gap-2 font-mono text-xs font-bold text-emerald-400 bg-emerald-950/70 px-3 py-1.5 rounded-lg border border-emerald-800/80 shadow-xs backdrop-blur-xs">
                     <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
                     <span>Loading Ticket Details...</span>
                   </div>
                   <span className="text-xs text-slate-300 hidden sm:inline font-medium animate-pulse">Syncing live data...</span>
+                </div>
+              ) : !ticket ? (
+                <div className="flex items-center gap-2 py-0.5">
+                  <div className="flex items-center gap-2 font-mono text-xs font-bold text-rose-400 bg-rose-950/70 px-3 py-1.5 rounded-lg border border-rose-800/80 shadow-xs backdrop-blur-xs">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Ticket Unavailable</span>
+                  </div>
+                  <span className="text-xs text-slate-300 hidden sm:inline font-medium">Please check ticket ID</span>
                 </div>
               ) : (
                 <>

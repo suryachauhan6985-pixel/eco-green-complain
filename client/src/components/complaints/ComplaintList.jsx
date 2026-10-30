@@ -1093,7 +1093,7 @@ export const ComplaintList = ({
                           )}
                           <button
                             type="button"
-                            onClick={() => onSelectComplaint(c.id)}
+                            onClick={() => onSelectComplaint(c.ticket_id || c.id)}
                             className="p-1.5 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-slate-100 transition-colors"
                             title="Open Details"
                           >

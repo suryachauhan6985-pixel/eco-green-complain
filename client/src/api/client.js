@@ -1145,6 +1145,21 @@ async function request(endpoint, options = {}) {
       if (endpoint.startsWith('/complaints') && method === 'GET') {
         const cached = getPermanentComplaints();
         if (cached && cached.length > 0) {
+          const detailMatch = endpoint.match(/^\/complaints\/([^\/?]+)/);
+          if (detailMatch && detailMatch[1] && !['customer-history', 'check-active', 'draft'].includes(detailMatch[1])) {
+            const matchId = decodeURIComponent(detailMatch[1]);
+            const found = cached.find(c => String(c.id) === String(matchId) || String(c.ticket_id) === String(matchId));
+            if (found) {
+              return {
+                complaint: found,
+                ticket: found,
+                attachments: found.attachments || [],
+                timeline: found.timeline || [],
+                payments: found.payments || [],
+                isOfflineCache: true
+              };
+            }
+          }
           return { complaints: cached, total: cached.length, isOfflineCache: true };
         }
       }
@@ -1561,7 +1576,62 @@ export const api = {
       return { success: false, error: e.message };
     }
   },
-  getComplaint: (id) => request(`/complaints/${id}`),
+  getComplaint: async (id) => {
+    if (!id) return null;
+    try {
+      const res = await request(`/complaints/${encodeURIComponent(id)}`);
+      if (res && (res.complaint || res.ticket)) {
+        const comp = res.complaint || res.ticket;
+        saveComplaintPermanently(comp);
+        return {
+          ...res,
+          complaint: comp,
+          ticket: comp
+        };
+      }
+      if (res && Array.isArray(res.complaints)) {
+        const found = res.complaints.find(c => String(c.id) === String(id) || String(c.ticket_id) === String(id));
+        if (found) {
+          return {
+            complaint: found,
+            ticket: found,
+            attachments: found.attachments || [],
+            timeline: found.timeline || [],
+            payments: found.payments || [],
+            isOfflineCache: true
+          };
+        }
+      }
+      const permList = getPermanentComplaints();
+      const localFound = permList.find(c => String(c.id) === String(id) || String(c.ticket_id) === String(id));
+      if (localFound) {
+        return {
+          complaint: localFound,
+          ticket: localFound,
+          attachments: localFound.attachments || [],
+          timeline: localFound.timeline || [],
+          payments: localFound.payments || [],
+          isOfflineCache: true
+        };
+      }
+      return res;
+    } catch (err) {
+      console.warn(`api.getComplaint error for ID ${id}, using local permanent cache:`, err.message);
+      const permList = getPermanentComplaints();
+      const localFound = permList.find(c => String(c.id) === String(id) || String(c.ticket_id) === String(id));
+      if (localFound) {
+        return {
+          complaint: localFound,
+          ticket: localFound,
+          attachments: localFound.attachments || [],
+          timeline: localFound.timeline || [],
+          payments: localFound.payments || [],
+          isOfflineCache: true
+        };
+      }
+      throw err;
+    }
+  },
   getCustomerHistory: (phone) => request(`/complaints/customer-history?phone=${encodeURIComponent(phone)}`),
   checkActiveComplaint: (phone, name, product_type) => 
     request(`/complaints/check-active?phone=${encodeURIComponent(phone || '')}&name=${encodeURIComponent(name || '')}&product_type=${encodeURIComponent(product_type || '')}`),

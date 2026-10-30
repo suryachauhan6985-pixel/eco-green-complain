@@ -515,8 +515,8 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
         st.name as secondary_technician_name,
         st.phone as secondary_technician_phone
        FROM complaints c
-       LEFT JOIN technicians t ON c.assigned_technician_id = t.id
-       LEFT JOIN technicians st ON c.secondary_technician_id = st.id::text
+       LEFT JOIN technicians t ON c.assigned_technician_id::text = t.id::text
+       LEFT JOIN technicians st ON c.secondary_technician_id::text = st.id::text
        WHERE c.id::text = $1 OR c.ticket_id = $1 LIMIT 1`,
       [id],
       c.env,
@@ -534,8 +534,8 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
     // Documents auto-purge is handled safely by the daily cron batch (runBatchExpiredDocumentsPurge)
 
     const atts = await query(
-      'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(attachment_type, \'registration\') as attachment_type, COALESCE(is_purged, 0) as is_purged, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY created_at ASC',
-      [complaint.id],
+      'SELECT id, file_name, file_url, file_type, uploaded_by, COALESCE(attachment_type, \'registration\') as attachment_type, COALESCE(is_purged, 0) as is_purged, created_at FROM complaint_attachments WHERE complaint_id::text = $1 ORDER BY created_at ASC',
+      [String(complaint.id)],
       c.env,
       c.executionCtx
     );
@@ -552,8 +552,8 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
               const newUrl = `/api/attachments/r2/${newKey}`;
               row.file_url = newUrl;
               await query(
-                'UPDATE complaint_attachments SET file_url = $1, file_data = $1 WHERE id = $2',
-                [newUrl, row.id],
+                'UPDATE complaint_attachments SET file_url = $1, file_data = $1 WHERE id::text = $2',
+                [newUrl, String(row.id)],
                 c.env,
                 c.executionCtx
               ).catch(() => {});
@@ -566,8 +566,8 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
     }
 
     const timeline = await query(
-      'SELECT id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at FROM complaint_timelines WHERE complaint_id = $1 ORDER BY created_at ASC',
-      [complaint.id],
+      'SELECT id, action, notes, performed_by_name, performed_by_role, notify_customer, created_at FROM complaint_timelines WHERE complaint_id::text = $1 ORDER BY created_at ASC',
+      [String(complaint.id)],
       c.env,
       c.executionCtx
     );
@@ -576,10 +576,10 @@ complaintRoutes.get('/:id', authenticateToken, async (c) => {
     const paymentsRes = await query(
       `SELECT cp.*, t.name as technician_name, t.name as tech_full_name, t.phone as tech_phone
        FROM complaint_payments cp
-       LEFT JOIN technicians t ON cp.technician_id = t.id
-       WHERE cp.complaint_id = $1
+       LEFT JOIN technicians t ON cp.technician_id::text = t.id::text
+       WHERE cp.complaint_id::text = $1
        ORDER BY cp.created_at ASC, cp.id ASC`,
-      [complaint.id],
+      [String(complaint.id)],
       c.env,
       c.executionCtx
     );
