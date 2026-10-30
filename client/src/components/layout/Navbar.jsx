@@ -75,10 +75,13 @@ export const Navbar = ({
   const mobileNavContainerRef = React.useRef(null);
   const mobileButtonRefs = React.useRef({});
   const navClickTimeoutRef = React.useRef(null);
+  const isNavigatingRef = React.useRef(false);
 
-  // Sync mobileActiveKey whenever currentMobileKey changes externally
+  // Sync mobileActiveKey whenever currentMobileKey changes externally (when not animating transition)
   React.useEffect(() => {
-    setMobileActiveKey(currentMobileKey);
+    if (!isNavigatingRef.current) {
+      setMobileActiveKey(currentMobileKey);
+    }
   }, [currentMobileKey]);
 
   // Precision measurement of the active item's offsetTop and offsetHeight
@@ -101,6 +104,7 @@ export const Navbar = ({
   // Recalculate indicator position on drawer opening and window resize
   React.useEffect(() => {
     if (mobileMenuOpen) {
+      isNavigatingRef.current = false;
       setMobileActiveKey(currentMobileKey);
       const t1 = setTimeout(() => updateMobileIndicator(currentMobileKey), 30);
       const t2 = setTimeout(() => updateMobileIndicator(currentMobileKey), 150);
@@ -111,7 +115,7 @@ export const Navbar = ({
         clearTimeout(t3);
       };
     }
-  }, [mobileMenuOpen, currentMobileKey, updateMobileIndicator]);
+  }, [mobileMenuOpen, currentMobileKey]);
 
   React.useEffect(() => {
     return () => {
@@ -124,6 +128,8 @@ export const Navbar = ({
       ? 'technician-collection'
       : (tab === 'technician' ? 'technician-field_ops' : (tab === 'templates' ? 'settings' : tab));
 
+    isNavigatingRef.current = true;
+
     // 1. Immediately animate vertical sliding jelly capsule to the clicked tab
     setMobileActiveKey(targetKey);
     updateMobileIndicator(targetKey);
@@ -134,9 +140,10 @@ export const Navbar = ({
       if (section && onSelectTechSection) {
         onSelectTechSection(section);
       }
-      setCurrentTab(tab);
+      setCurrentTab(tab, section);
       setTimeout(() => {
         setMobileMenuOpen(false);
+        isNavigatingRef.current = false;
       }, 70);
     }, 320);
   };

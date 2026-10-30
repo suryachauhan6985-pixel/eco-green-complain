@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useId } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
+import ReactDOM from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
 /**
@@ -24,10 +25,49 @@ export const GlassSelect = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
+  const menuRef = useRef(null);
   const optionsListRef = useRef(null);
   const typeaheadBufferRef = useRef('');
   const typeaheadTimerRef = useRef(null);
   const dropdownId = useId();
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, minWidth: 0, openUpwards: false });
+
+  // Update root portal position based on trigger button bounding rect
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUpwards = spaceBelow < 260 && spaceAbove > spaceBelow;
+
+    const minWidth = Math.max(rect.width, 220);
+    let left = rect.left;
+    const maxViewportWidth = window.innerWidth - 12;
+    if (left + minWidth > maxViewportWidth) {
+      left = Math.max(8, maxViewportWidth - minWidth);
+    }
+
+    setDropdownPosition({
+      top: openUpwards ? Math.max(12, rect.top - 6) : rect.bottom + 6,
+      left: Math.max(8, left),
+      minWidth: Math.min(minWidth, window.innerWidth - 16),
+      openUpwards
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+    const handleScrollOrResize = () => {
+      updatePosition();
+    };
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    return () => {
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+    };
+  }, [isOpen, updatePosition]);
 
   // Normalize options to { value, label, badge, dotColor, sublabel }
   const normalizedOptions = React.useMemo(() => {
@@ -55,11 +95,13 @@ export const GlassSelect = ({
 
   const selectedOption = normalizedOptions.find(opt => String(opt.value) === String(value));
 
-  // Close on outside click
+  // Close on outside click (checks both trigger button and portaled floating menu)
   useEffect(() => {
     if (!isOpen) return;
     const handleOutsideClick = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      const clickedTrigger = containerRef.current && containerRef.current.contains(e.target);
+      const clickedMenu = menuRef.current && menuRef.current.contains(e.target);
+      if (!clickedTrigger && !clickedMenu) {
         setIsOpen(false);
       }
     };
@@ -167,15 +209,21 @@ export const GlassSelect = ({
         />
       </button>
 
-      {/* Apple Frosted Glass Floating Popover (Spring / Jelly Motion) */}
-      {isOpen && (
+      {/* Apple Frosted Glass Floating Popover via Root Portal (Guarantees authentic backdrop blur on all mobile & desktop layers) */}
+      {isOpen && typeof document !== 'undefined' && ReactDOM.createPortal(
         <div 
+          ref={menuRef}
           role="listbox"
           aria-labelledby={dropdownId}
-          className={`absolute left-0 mt-1.5 min-w-full sm:min-w-[280px] max-w-[min(560px,94vw)] apple-glass-dropdown z-50 rounded-2xl overflow-hidden shadow-2xl isolate border border-white/80 ${menuClassName}`}
+          className={`fixed z-[99999] apple-glass-dropdown rounded-2xl overflow-hidden shadow-2xl border border-white/80 ${menuClassName}`}
           style={{
-            transformOrigin: 'top center',
-            animation: 'appleJellyDropdownEnter 260ms cubic-bezier(0.34, 1.4, 0.64, 1) both'
+            top: dropdownPosition.openUpwards ? 'auto' : `${dropdownPosition.top}px`,
+            bottom: dropdownPosition.openUpwards ? `${window.innerHeight - dropdownPosition.top}px` : 'auto',
+            left: `${dropdownPosition.left}px`,
+            minWidth: `${dropdownPosition.minWidth}px`,
+            maxWidth: 'min(580px, calc(100vw - 16px))',
+            transformOrigin: dropdownPosition.openUpwards ? 'bottom center' : 'top center',
+            animation: 'appleJellyDropdownEnter 240ms cubic-bezier(0.34, 1.4, 0.64, 1) both'
           }}
         >
           {/* Options List with Apple Tactile Spring Interaction */}
@@ -241,7 +289,8 @@ export const GlassSelect = ({
               })
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

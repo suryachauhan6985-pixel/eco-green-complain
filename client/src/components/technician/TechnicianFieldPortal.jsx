@@ -144,6 +144,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   useEffect(() => {
     if (activeSection && activeSection !== section) {
       setSection(activeSection);
+      onSectionTabClick(activeSection);
     }
   }, [activeSection]);
 
