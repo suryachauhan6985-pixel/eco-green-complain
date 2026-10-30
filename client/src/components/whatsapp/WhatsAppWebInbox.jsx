@@ -520,6 +520,41 @@ export const WhatsAppWebInbox = ({
     playLoudChime({ volume: 0.95 });
   };
 
+  // Helper to reliably resolve any complaint ID (numeric 343 or string) to official formatted Ticket ID (EGS-2026-000304)
+  const resolveTicketDisplayId = (msg) => {
+    if (!msg) return '';
+    if (msg.attached_ticket_id && String(msg.attached_ticket_id).startsWith('EGS-')) return msg.attached_ticket_id;
+    if (msg.linked_ticket_id && String(msg.linked_ticket_id).startsWith('EGS-')) return msg.linked_ticket_id;
+    
+    const targetId = String(msg.complaint_id || msg.attached_complaint_id || '');
+    if (!targetId) return '';
+
+    if (targetId.startsWith('EGS-')) return targetId;
+
+    if (contactInfo?.ticket_id && (String(contactInfo.complaint_id) === targetId || String(contactInfo.complaint?.id) === targetId)) {
+      return contactInfo.ticket_id;
+    }
+
+    if (Array.isArray(customerComplaintsList)) {
+      const match = customerComplaintsList.find(c => String(c.id) === targetId || c.ticket_id === targetId);
+      if (match?.ticket_id) return match.ticket_id;
+    }
+
+    try {
+      const perm = JSON.parse(localStorage.getItem('egs_permanent_complaints') || '[]');
+      const match = perm.find(c => String(c.id) === targetId || c.ticket_id === targetId);
+      if (match?.ticket_id) return match.ticket_id;
+    } catch (_) {}
+
+    try {
+      const mock = JSON.parse(localStorage.getItem('egs_mock_complaints') || '[]');
+      const match = mock.find(c => String(c.id) === targetId || c.ticket_id === targetId);
+      if (match?.ticket_id) return match.ticket_id;
+    } catch (_) {}
+
+    return targetId.startsWith('#') ? targetId : `#${targetId}`;
+  };
+
   const handleRequestNotificationPermission = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     try {
@@ -1709,12 +1744,14 @@ export const WhatsAppWebInbox = ({
         showToast(`Media attached to ticket #${res.ticket_id || attachTargetComplaintId} successfully!`, 'success');
 
         // Update local messages state so attached badge displays immediately
+        const resolvedTicketCode = res.ticket_id || targetComplaint?.ticket_id;
         setMessages(prev => prev.map(m => {
           if (m.id === attachMediaModal.msg.id) {
             return {
               ...m,
-              complaint_id: res.complaint_id,
-              linked_ticket_id: res.ticket_id
+              complaint_id: res.complaint_id || attachTargetComplaintId,
+              linked_ticket_id: resolvedTicketCode,
+              attached_ticket_id: resolvedTicketCode
             };
           }
           return m;
@@ -2666,14 +2703,17 @@ export const WhatsAppWebInbox = ({
                 </div>
 
                 {/* Attached to Complaint Badge */}
-                {msg.complaint_id && (
-                  <div className="mt-1 pt-1 border-t border-black/5 flex items-center justify-between gap-1 text-[10px] font-bold text-emerald-800">
-                    <span className="flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200/80 rounded px-1.5 py-0.5">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                      <span>Attached to Ticket #{msg.linked_ticket_id || contactInfo?.ticket_id || selectedConv?.ticket_id || msg.complaint_id}</span>
-                    </span>
-                  </div>
-                )}
+                {msg.complaint_id && (() => {
+                  const displayTicket = resolveTicketDisplayId(msg);
+                  return (
+                    <div className="mt-1 pt-1 border-t border-black/5 flex items-center justify-between gap-1 text-[10px] font-bold text-emerald-800">
+                      <span className="flex items-center gap-1 bg-emerald-50/90 backdrop-blur-xs text-emerald-800 border border-emerald-200/90 rounded-md px-2 py-0.5 shadow-2xs">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Attached to Ticket {displayTicket}</span>
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* 1-Click WhatsApp Web / App Dispatch & Retry Action Bar for Failed Messages */}
                 {msg.status === 'failed' && !isCustomer && (() => {

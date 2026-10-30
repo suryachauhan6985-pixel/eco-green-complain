@@ -1663,18 +1663,35 @@ app.get('/api/whatsapp/chats/:phone', authenticateToken, requireRole('admin', 's
     }
 
     const ticketIdMap = new Map();
-    allComplaints.forEach(c => ticketIdMap.set(c.id, c.ticket_id));
+    allComplaints.forEach(c => ticketIdMap.set(Number(c.id), c.ticket_id));
+
+    // Resolve any additional complaint IDs referenced by messages or attachments
+    const referencedComplaintIds = new Set();
+    (rawMessages || []).forEach(m => { if (m.complaint_id) referencedComplaintIds.add(Number(m.complaint_id)); });
+    attachmentMap.forEach(att => { if (att.complaint_id) referencedComplaintIds.add(Number(att.complaint_id)); });
+    
+    const missingComplaintIds = Array.from(referencedComplaintIds).filter(id => !ticketIdMap.has(id));
+    if (missingComplaintIds.length > 0) {
+      try {
+        const placeholders = missingComplaintIds.map(() => '?').join(',');
+        const extraComplaints = db.prepare(`SELECT id, ticket_id FROM complaints WHERE id IN (${placeholders})`).all(...missingComplaintIds);
+        extraComplaints.forEach(c => ticketIdMap.set(Number(c.id), c.ticket_id));
+      } catch (e) {
+        console.warn('Error fetching missing complaint ticket IDs:', e.message);
+      }
+    }
 
     const messages = (rawMessages || []).map(m => {
       const att = attachmentMap.get(Number(m.id));
       const linkedComplaintId = m.complaint_id || att?.complaint_id || null;
-      const linkedTicketId = linkedComplaintId ? ticketIdMap.get(linkedComplaintId) : null;
+      const linkedTicketId = linkedComplaintId ? ticketIdMap.get(Number(linkedComplaintId)) : null;
       return {
         ...m,
         created_at: formatIsoUtc(m.created_at),
         attachment_id: att?.attachment_id || null,
         attached_complaint_id: linkedComplaintId,
-        attached_ticket_id: linkedTicketId
+        attached_ticket_id: linkedTicketId,
+        linked_ticket_id: linkedTicketId
       };
     });
 
