@@ -10,7 +10,7 @@ import {
   Edit3, ExternalLink, IndianRupee, CreditCard, AlertTriangle, ShieldAlert,
   MessageCircle, Copy, Eye, FileText, UserCheck, Trash2, Plus, Loader2,
   Play, Pause, Video, Download, Camera, Upload, Lock, Users, Archive, FileX,
-  ClipboardCheck, Maximize2, Minimize2, Building2
+  ClipboardCheck, Maximize2, Minimize2, Building2, Receipt
 } from 'lucide-react';
 import { TicketAgeBadge, formatIndianDateTime, formatIndianDateOnly, formatIndianTimeOnly } from '../common/TicketAgeBadge';
 import { useDialog } from '../../context/DialogContext';
@@ -1602,8 +1602,20 @@ export const ComplaintDetailDrawer = ({
     }, 100);
   };
 
+  const totalQuotedCharges = Number(ticket?.estimated_charges || 0);
+  const totalCollectedCharges = ticket?.payment_summary?.total_collected !== undefined
+    ? Number(ticket.payment_summary.total_collected)
+    : Number(ticket?.payment_collected || 0);
+  const remainingPaymentBalance = ticket?.payment_summary?.remaining_balance !== undefined
+    ? Number(ticket.payment_summary.remaining_balance)
+    : Math.max(0, totalQuotedCharges - totalCollectedCharges);
+
   const isPaymentFullyCollected = Boolean(
-    ticket && (ticket.payment_status === 'Collected' || (Number(ticket.payment_collected || 0) > 0 && Number(ticket.payment_collected || 0) >= Number(ticket.estimated_charges || 0)))
+    ticket && (
+      ticket.payment_summary?.is_fully_paid ||
+      (totalQuotedCharges > 0 && remainingPaymentBalance <= 0 && totalCollectedCharges >= totalQuotedCharges) ||
+      (totalQuotedCharges === 0 && totalCollectedCharges > 0)
+    )
   );
 
   const openPaymentModal = async () => {
@@ -1616,9 +1628,9 @@ export const ComplaintDetailDrawer = ({
       return;
     }
     if (isResolvedOrClosed && !isAdminOrStaff) {
-      const isRevertedOrUnpaid = ticket?.payment_status === 'Payment Reverted' || ticket?.payment_status === 'Unpaid' || Number(ticket?.payment_collected || 0) === 0;
+      const isRevertedOrUnpaid = ticket?.payment_status === 'Payment Reverted' || ticket?.payment_status === 'Unpaid' || remainingPaymentBalance > 0 || totalCollectedCharges === 0;
       if (!isRevertedOrUnpaid) {
-        showToast('Payment collection is locked on Resolved and Closed complaints. Contact Admin to revert payment for re-entry.', 'warning');
+        showToast('Payment collection is locked on Resolved and Closed complaints with zero outstanding balance. Contact Admin to adjust payment.', 'warning');
         return;
       }
     }
@@ -1655,11 +1667,22 @@ export const ComplaintDetailDrawer = ({
       normalizedMethod = rawMode;
     }
 
+    const totalEst = Number(ticket.estimated_charges || 0);
+    const totalColl = ticket.payment_summary?.total_collected !== undefined
+      ? ticket.payment_summary.total_collected
+      : (Number(ticket.payment_collected) || 0);
+    const remaining = ticket.payment_summary?.remaining_balance !== undefined
+      ? ticket.payment_summary.remaining_balance
+      : Math.max(0, totalEst - totalColl);
+
+    // Pre-fill with outstanding remaining balance if pending, else estimated charges
+    const initialAmount = remaining > 0 ? String(remaining) : (totalEst > 0 ? String(totalEst) : '');
+
     setPaymentData({
-      payment_collected: ticket.payment_collected > 0 ? String(ticket.payment_collected) : (ticket.estimated_charges > 0 ? String(ticket.estimated_charges) : ''),
+      payment_collected: initialAmount,
       payment_method: normalizedMethod,
-      payment_notes: ticket.payment_notes || '',
-      collection_reason: ticket.collection_reason || ''
+      payment_notes: '',
+      collection_reason: ''
     });
     setShowUnderpaidWarning(false);
     setIsRecordingPayment(true);
@@ -1676,10 +1699,18 @@ export const ComplaintDetailDrawer = ({
       setIsRecordingPayment(false);
       return;
     }
+    const totalEst = Number(ticket.estimated_charges || 0);
+    const totalColl = ticket.payment_summary?.total_collected !== undefined
+      ? ticket.payment_summary.total_collected
+      : (Number(ticket.payment_collected) || 0);
+    const remainingBal = ticket.payment_summary?.remaining_balance !== undefined
+      ? ticket.payment_summary.remaining_balance
+      : Math.max(0, totalEst - totalColl);
+
     if (isResolvedOrClosed && !isAdminOrStaff) {
-      const isRevertedOrUnpaid = ticket?.payment_status === 'Payment Reverted' || ticket?.payment_status === 'Unpaid' || Number(ticket?.payment_collected || 0) === 0;
+      const isRevertedOrUnpaid = ticket?.payment_status === 'Payment Reverted' || ticket?.payment_status === 'Unpaid' || remainingBal > 0 || totalColl === 0;
       if (!isRevertedOrUnpaid) {
-        showToast('Payment collection is locked on Resolved and Closed complaints. Contact Admin to revert payment for re-entry.', 'warning');
+        showToast('Payment collection is locked on Resolved and Closed complaints with zero outstanding balance. Contact Admin to adjust payment.', 'warning');
         setIsRecordingPayment(false);
         return;
       }
@@ -1691,9 +1722,9 @@ export const ComplaintDetailDrawer = ({
     }
 
     const entered = Number(paymentData.payment_collected || 0);
-    const expected = Number(ticket.estimated_charges || 0);
+    const expected = remainingBal > 0 ? remainingBal : totalEst;
 
-    const isUnalloc = expected === 0;
+    const isUnalloc = totalEst === 0;
     const isMismatch = expected > 0 && entered > 0 && entered !== expected;
 
     // Mandatory reason / approval check
@@ -1701,9 +1732,9 @@ export const ComplaintDetailDrawer = ({
       if (isUnalloc) {
         showToast('Reason for on-site collection is mandatory when no service charges were allocated.', 'warning');
       } else if (entered < expected) {
-        showToast(`Approval note is mandatory for collecting ₹${expected - entered} less than quoted ₹${expected}.`, 'warning');
+        showToast(`Approval note is mandatory for collecting ₹${expected - entered} less than pending ₹${expected}.`, 'warning');
       } else {
-        showToast(`Approval note is mandatory for collecting ₹${entered - expected} extra above quoted ₹${expected}.`, 'warning');
+        showToast(`Approval note is mandatory for collecting ₹${entered - expected} extra above pending ₹${expected}.`, 'warning');
       }
       return;
     }
@@ -2319,167 +2350,211 @@ export const ComplaintDetailDrawer = ({
                         </span>
                       </div>
 
+                      {/* Service Charges & Payment Collection Banner & Itemized Breakdown */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-800 my-2">
-                        <div className="bg-white p-2.5 rounded-lg border border-amber-100">
-                          <span className="text-[11px] text-slate-500 block">Quoted Service Charge:</span>
-                          <strong className="text-base font-black text-slate-900">₹{ticket.estimated_charges || 0}</strong>
-                          {(ticket.notify_charges === 1 || ticket.notify_charges === '1' || ticket.notify_charges === true) && Number(ticket.estimated_charges || 0) > 0 ? (
-                            <span className="text-[10px] text-emerald-700 block font-semibold">✓ Customer Notified</span>
+                        <div className="bg-white p-3 rounded-xl border border-amber-100 shadow-2xs">
+                          <span className="text-[11px] text-slate-500 block font-medium">Quoted Service Charge:</span>
+                          <strong className="text-lg font-black text-slate-900 block mt-0.5">₹{totalQuotedCharges}</strong>
+                          {(ticket.notify_charges === 1 || ticket.notify_charges === '1' || ticket.notify_charges === true) && totalQuotedCharges > 0 ? (
+                            <span className="text-[10px] text-emerald-700 block font-semibold mt-1">✓ Customer Notified</span>
                           ) : (
-                            <span className="text-[10px] text-slate-400 block font-medium">Customer Not Notified</span>
+                            <span className="text-[10px] text-slate-400 block font-medium mt-1">Customer Not Notified</span>
                           )}
                         </div>
 
-                        <div className="bg-white p-2.5 rounded-lg border border-amber-100">
-                          <span className="text-[11px] text-slate-500 block">Payment Collected:</span>
-                          <strong className="text-base font-black text-emerald-700">₹{ticket.payment_collected || 0}</strong>
-                          <span className="text-[10px] text-slate-500 block">Status: {ticket.payment_status || 'Unpaid'}</span>
-                          {Number(ticket.payment_collected || 0) > 0 && (
-                            <div className="mt-1 space-y-1">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
-                                {ticket.payment_mode?.toLowerCase().includes('upi') ? '📱 UPI / QR Code' :
-                                 ticket.payment_mode?.toLowerCase().includes('bank') ? '🏦 Bank Transfer' :
-                                 ticket.payment_mode?.toLowerCase().includes('cheque') ? '📜 Cheque' :
-                                 '💵 ' + (ticket.payment_mode === 'Cash' ? 'Cash to Technician' : (ticket.payment_mode || 'Cash to Technician'))}
-                              </span>
-                              {ticket.payment_notes && (
-                                <span className="text-[10px] text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 block truncate" title={ticket.payment_notes}>
-                                  📝 {ticket.payment_notes}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {ticket.collection_reason && (
-                            <span className="text-[10px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block mt-1 truncate" title={ticket.collection_reason}>
-                              Reason: {ticket.collection_reason}
+                        <div className="bg-white p-3 rounded-xl border border-amber-100 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-500 block font-medium">Total Collected:</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              totalQuotedCharges > 0 && remainingPaymentBalance === 0 ? 'bg-emerald-100 text-emerald-800' :
+                              totalCollectedCharges > 0 ? 'bg-blue-100 text-blue-800' :
+                              'bg-amber-100 text-amber-900'
+                            }`}>
+                              {totalQuotedCharges > 0 && remainingPaymentBalance === 0 ? 'Paid' :
+                               totalCollectedCharges > 0 ? 'Partially Paid' : 'Unpaid'}
                             </span>
-                          )}
+                          </div>
+                          <strong className="text-lg font-black text-emerald-700 block mt-0.5">₹{totalCollectedCharges}</strong>
+                          <span className="text-[10px] text-slate-500 block mt-1">
+                            {ticket.payments?.length ? `${ticket.payments.length} collection record${ticket.payments.length > 1 ? 's' : ''}` : `Status: ${ticket.payment_status || 'Unpaid'}`}
+                          </span>
                         </div>
 
-                        <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex flex-col justify-center">
-                          {isResolvedOrClosed ? (
-                            <div className="space-y-2 w-full">
-                              <div className="w-full py-1.5 px-2 bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-between border border-slate-200">
-                                <div className="flex items-center gap-1.5">
-                                  {isPaymentFullyCollected ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Lock className="w-3.5 h-3.5 text-slate-400" />}
-                                  <span>{isPaymentFullyCollected ? `Collected: ₹${ticket.payment_collected}` : `Status: ${ticket.payment_status || 'Unpaid'}`}</span>
-                                </div>
-                                <span className="text-[10px] text-slate-400 font-mono">({ticket.status})</span>
-                              </div>
+                        <div className="bg-white p-3 rounded-xl border border-amber-100 shadow-2xs flex flex-col justify-between">
+                          <div>
+                            <span className="text-[11px] text-slate-500 block font-medium">Outstanding Balance:</span>
+                            <strong className={`text-lg font-black block mt-0.5 ${remainingPaymentBalance > 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                              ₹{remainingPaymentBalance}
+                            </strong>
+                          </div>
 
-                              {/* Alert banner if payment was reverted */}
-                              {ticket.payment_status === 'Payment Reverted' && (
-                                <div className="p-2 bg-amber-50 border border-amber-300 rounded-lg text-[10px] text-amber-900 font-semibold flex items-center gap-1.5 leading-tight">
-                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                  <span>Payment collection was reverted by Admin. Ready for technician re-entry.</span>
-                                </div>
-                              )}
-
-                              {/* Admin Action Buttons on Resolved/Closed Tickets */}
-                              {isAdminOrStaff && (
-                                <div className="flex items-center gap-1.5 pt-0.5">
+                          <div className="mt-2 pt-1 border-t border-slate-100">
+                            {isResolvedOrClosed ? (
+                              <div className="space-y-1.5 w-full">
+                                {remainingPaymentBalance > 0 && (
                                   <button
                                     type="button"
                                     onClick={openPaymentModal}
-                                    className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-300 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                    title="Edit or adjust collection amount directly"
+                                    className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition-all cursor-pointer"
                                   >
                                     <CreditCard className="w-3 h-3" />
-                                    <span>Adjust / Edit Amount</span>
+                                    <span>Collect Remaining ₹{remainingPaymentBalance}</span>
                                   </button>
+                                )}
 
-                                  {(Number(ticket.payment_collected || 0) > 0 || ticket.payment_status === 'Collected') && (
+                                {isAdminOrStaff && (
+                                  <div className="flex items-center gap-1 pt-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={openPaymentModal}
+                                      className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-bold border border-emerald-300 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                      title="Add incremental or adjust payment"
+                                    >
+                                      <CreditCard className="w-3 h-3" />
+                                      <span>{remainingPaymentBalance > 0 ? 'Record Additional' : 'Adjust Record'}</span>
+                                    </button>
+
+                                    {totalCollectedCharges > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={handleRevertPayment}
+                                        disabled={revertingPayment}
+                                        className="py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                                        title="Revert latest payment"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                        <span>{revertingPayment ? '...' : 'Revert'}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ) : isSecondaryPartnerOnly ? (
+                              <div className="w-full py-1.5 bg-amber-50 text-amber-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 border border-amber-300 select-none text-center">
+                                <Lock className="w-3 h-3 text-amber-700" />
+                                <span>Co-Partner View Only</span>
+                              </div>
+                            ) : remainingPaymentBalance > 0 ? (
+                              <button
+                                type="button"
+                                onClick={openPaymentModal}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer animate-pulse"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Collect Remaining ₹{remainingPaymentBalance}</span>
+                              </button>
+                            ) : isPaymentFullyCollected ? (
+                              <div className="w-full py-1.5 px-2 bg-emerald-50 text-emerald-900 rounded-lg text-xs font-bold flex flex-col items-center justify-center border border-emerald-200">
+                                <div className="flex items-center gap-1 text-emerald-700 font-extrabold text-[11px]">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Payment Fully Cleared</span>
+                                </div>
+                                {isAdminOrStaff && (
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <button
+                                      type="button"
+                                      onClick={openPaymentModal}
+                                      className="text-[10px] text-emerald-800 hover:text-emerald-950 underline font-medium cursor-pointer"
+                                    >
+                                      Adjust
+                                    </button>
+                                    <span className="text-slate-300 text-[10px]">•</span>
                                     <button
                                       type="button"
                                       onClick={handleRevertPayment}
                                       disabled={revertingPayment}
-                                      className="py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-[11px] font-bold border border-amber-300 flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-                                      title="Revert payment collection so technician can re-record correct amount"
+                                      className="text-[10px] text-amber-800 hover:text-amber-950 underline font-medium cursor-pointer"
                                     >
-                                      <RotateCcw className="w-3 h-3" />
-                                      <span>{revertingPayment ? 'Reverting...' : 'Revert for Tech'}</span>
+                                      Revert
                                     </button>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Technician Re-record Button on Resolved Ticket if Reverted or Uncollected */}
-                              {currentUser?.role === 'technician' && isPrimaryTechnician && (ticket.payment_status === 'Payment Reverted' || Number(ticket.payment_collected || 0) === 0) && (
-                                <button
-                                  type="button"
-                                  onClick={openPaymentModal}
-                                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
-                                >
-                                  <CreditCard className="w-3.5 h-3.5" />
-                                  <span>💰 {ticket.payment_status === 'Payment Reverted' ? 'Record Corrected Amount' : 'Record Payment Collected'}</span>
-                                </button>
-                              )}
-                            </div>
-                          ) : isSecondaryPartnerOnly ? (
-                            <div className="w-full py-2 bg-amber-50 text-amber-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border border-amber-300 select-none text-center">
-                              <Lock className="w-3.5 h-3.5 text-amber-700" />
-                              <span>Co-Partner View Only</span>
-                            </div>
-                          ) : isPaymentFullyCollected ? (
-                            <div className="w-full py-2 px-2.5 bg-emerald-50 text-emerald-900 rounded-lg text-xs font-bold flex flex-col items-center justify-center border border-emerald-300 shadow-2xs">
-                              <div className="flex items-center gap-1 text-emerald-700 font-extrabold text-[11px]">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Payment Collected</span>
+                                  </div>
+                                )}
                               </div>
-                              {isAdminOrStaff && (
-                                <div className="flex items-center gap-2 mt-1">
-                                  <button
-                                    type="button"
-                                    onClick={openPaymentModal}
-                                    className="text-[10px] text-emerald-800 hover:text-emerald-950 underline font-medium cursor-pointer"
-                                    title="Admin/Staff: Adjust payment record details"
-                                  >
-                                    Adjust / Edit Record
-                                  </button>
-                                  <span className="text-slate-300 text-[10px]">•</span>
-                                  <button
-                                    type="button"
-                                    onClick={handleRevertPayment}
-                                    disabled={revertingPayment}
-                                    className="text-[10px] text-amber-800 hover:text-amber-950 underline font-medium cursor-pointer"
-                                    title="Revert payment collection for technician to re-enter"
-                                  >
-                                    {revertingPayment ? 'Reverting...' : 'Revert for Tech'}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ) : (isAssignedTechnician || ((ticket.assigned_technician_id || ticket.technician_name) && effectiveRole !== 'technician')) ? (
-                            <button
-                              type="button"
-                              onClick={openPaymentModal}
-                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                            >
-                              <CreditCard className="w-3.5 h-3.5" />
-                              {Number(ticket.estimated_charges || 0) === 0 ? 'Collect On-Site Payment' : 'Record Payment Collected'}
-                            </button>
-                          ) : isAdminOrStaff ? (
-                            <button
-                              type="button"
-                              onClick={openPaymentModal}
-                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                            >
-                              <CreditCard className="w-3.5 h-3.5" />
-                              Collect Direct Office Payment
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={scrollToTechnicianAssignment}
-                              className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                              title="Assign a technician to enable payment collection"
-                            >
-                              <UserCheck className="w-3.5 h-3.5" />
-                              Assign Tech to Collect
-                            </button>
-                          )}
+                            ) : (isAssignedTechnician || ((ticket.assigned_technician_id || ticket.technician_name) && effectiveRole !== 'technician')) ? (
+                              <button
+                                type="button"
+                                onClick={openPaymentModal}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>{totalQuotedCharges === 0 ? 'Collect On-Site Payment' : 'Record Payment Collected'}</span>
+                              </button>
+                            ) : isAdminOrStaff ? (
+                              <button
+                                type="button"
+                                onClick={openPaymentModal}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Collect Direct Office Payment</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={scrollToTechnicianAssignment}
+                                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                              >
+                                <UserCheck className="w-3.5 h-3.5" />
+                                <span>Assign Tech to Collect</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
+
+                      {/* Itemized Payment History Table / Ledger */}
+                      {Array.isArray(ticket.payments) && ticket.payments.length > 0 && (
+                        <div className="mt-3 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <Receipt className="w-3.5 h-3.5 text-slate-500" />
+                              Itemized Payment History ({ticket.payments.length})
+                            </span>
+                            <span className="text-[10px] text-slate-500">Collected by assigned staff / technicians</span>
+                          </div>
+                          <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                            {ticket.payments.map((p, idx) => (
+                              <div key={p.id || idx} className="p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 hover:bg-slate-50/60 transition-colors text-xs">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-[10px] font-bold text-slate-400">#{idx + 1}</span>
+                                    <strong className="text-emerald-700 font-extrabold text-sm">₹{p.amount}</strong>
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                                      {p.payment_mode === 'Cash' ? '💵 Cash' :
+                                       p.payment_mode === 'UPI' ? '📱 UPI' :
+                                       p.payment_mode === 'Bank Transfer' ? '🏦 Bank' : p.payment_mode}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                                      p.company_settlement_status === 'Settled with Company'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : p.payment_mode === 'Cash'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                        : 'bg-slate-50 text-slate-600 border-slate-200'
+                                    }`}>
+                                      {p.payment_mode === 'Cash' ? (p.company_settlement_status || 'Cash in Hand') : 'Direct Account'}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-600 flex items-center gap-1.5 flex-wrap">
+                                    <span>Collected by: <strong className="text-slate-800">{p.technician_name || p.collected_by_name || 'Staff'}</strong></span>
+                                    {p.payment_date && (
+                                      <>
+                                        <span className="text-slate-300">•</span>
+                                        <span className="text-slate-500">{new Date(p.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                      </>
+                                    )}
+                                    {p.collection_reason && (
+                                      <>
+                                        <span className="text-slate-300">•</span>
+                                        <span className="text-amber-800 font-medium italic">"{p.collection_reason}"</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Prominent warning if no technician is assigned (only shown to admin/staff) */}
                       {!(ticket.assigned_technician_id || ticket.technician_name) && !isAdminOrStaff && (
@@ -2525,7 +2600,7 @@ export const ComplaintDetailDrawer = ({
                               {ticket.company_settlement_status === 'Settled with Company' ? (
                                 <>Amount ₹<strong>{ticket.payment_collected}</strong> {ticket.payment_collected_at ? `(collected on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)})` : ''} received by <strong>{ticket.company_settled_by || 'Admin'}</strong> on {ticket.company_settled_at ? new Date(ticket.company_settled_at).toLocaleString('en-IN') : 'N/A'}.</>
                               ) : (
-                                <>₹<strong>{ticket.payment_collected}</strong> was collected {ticket.payment_collected_at ? `on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)}` : ''} by <strong>{ticket.assigned_tech_name || ticket.technician_name || 'the technician'}</strong> and is currently in technician's possession.</>
+                                <>₹<strong>{ticket.payment_collected}</strong> was collected {ticket.payment_collected_at ? `on ${formatIndianDateOnly(ticket.payment_collected_at)} at ${formatIndianTimeOnly(ticket.payment_collected_at)}` : ''} and is currently in technician's possession.</>
                               )}
                             </p>
                           </div>

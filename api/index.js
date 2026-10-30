@@ -1573,9 +1573,9 @@ app.get('/api/technicians', authenticateToken, async (req, res) => {
         (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Assigned', 'In Progress', 'On Hold', 'Reopened')) as total_open_count,
         (SELECT COUNT(*) FROM complaints c WHERE (c.assigned_technician_id::text = t.id::text OR c.secondary_technician_id::text = t.id::text) AND c.status IN ('Resolved', 'Closed')) as resolved_tickets_count,
         ROUND((SELECT AVG(c.rating) FROM complaints c WHERE c.assigned_technician_id = t.id AND c.rating IS NOT NULL)::numeric, 1) as average_rating,
-        COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id), 0) as total_collected,
-        COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND c2.company_settlement_status = 'Settled with Company'), 0) as total_settled_with_company,
-        COALESCE((SELECT SUM(c2.payment_collected) FROM complaints c2 WHERE c2.assigned_technician_id = t.id AND (c2.company_settlement_status IS NULL OR c2.company_settlement_status != 'Settled with Company')), 0) as cash_in_hand_due
+        COALESCE((SELECT SUM(cp.amount) FROM complaint_payments cp WHERE cp.technician_id = t.id AND cp.payment_status = 'Collected'), 0) as total_collected,
+        COALESCE((SELECT SUM(cp.amount) FROM complaint_payments cp WHERE cp.technician_id = t.id AND cp.payment_status = 'Collected' AND cp.company_settlement_status = 'Settled with Company'), 0) as total_settled_with_company,
+        COALESCE((SELECT SUM(cp.amount) FROM complaint_payments cp WHERE cp.technician_id = t.id AND cp.payment_status = 'Collected' AND cp.payment_mode = 'Cash' AND (cp.company_settlement_status IS NULL OR cp.company_settlement_status != 'Settled with Company')), 0) as cash_in_hand_due
       FROM technicians t
       ORDER BY t.name ASC
     `);
@@ -1645,12 +1645,25 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
     const techId = techCheck.rows.length > 0 ? techCheck.rows[0].id : rawId;
     const techName = techCheck.rows.length > 0 ? techCheck.rows[0].name : 'Technician';
 
-    const pendingRes = await query(`
-      SELECT id, ticket_id, payment_collected FROM complaints
-      WHERE assigned_technician_id::text = $1
-        AND payment_collected > 0
-        AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
-    `, [String(techId)]);
+    let pendingRes = await query(`
+      SELECT cp.id as payment_id, cp.complaint_id as id, cp.amount as payment_collected, c.ticket_id
+      FROM complaint_payments cp
+      JOIN complaints c ON cp.complaint_id = c.id
+      WHERE cp.technician_id::text = $1
+        AND cp.payment_mode = 'Cash'
+        AND cp.payment_status = 'Collected'
+        AND (cp.company_settlement_status IS NULL OR cp.company_settlement_status != 'Settled with Company')
+    `, [String(techId)]).catch(() => ({ rows: [] }));
+
+    if (pendingRes.rows.length === 0) {
+      // Fallback to legacy complaints table query if complaint_payments is empty
+      pendingRes = await query(`
+        SELECT id, ticket_id, payment_collected FROM complaints
+        WHERE assigned_technician_id::text = $1
+          AND payment_collected > 0
+          AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+      `, [String(techId)]);
+    }
 
     if (pendingRes.rows.length === 0) {
       return res.json({ 
@@ -1663,9 +1676,11 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
 
     let totalAmount = 0;
     const ids = [];
+    const paymentIds = [];
     for (const c of pendingRes.rows) {
       totalAmount += (parseFloat(c.payment_collected) || 0);
       ids.push(c.id);
+      if (c.payment_id) paymentIds.push(c.payment_id);
     }
 
     await query(`
@@ -1676,6 +1691,16 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ANY($2::bigint[])
     `, [actorName, ids]);
+
+    if (paymentIds.length > 0) {
+      await query(`
+        UPDATE complaint_payments SET
+          company_settlement_status = 'Settled with Company',
+          company_settled_at = CURRENT_TIMESTAMP,
+          company_settled_by = $1
+        WHERE id = ANY($2::bigint[])
+      `, [actorName, paymentIds]).catch(() => {});
+    }
 
     for (const c of pendingRes.rows) {
       await query(`
@@ -2683,8 +2708,40 @@ app.get('/api/complaints/:id', authenticateToken, async (req, res) => {
     const tlRes = await query('SELECT * FROM complaint_timelines WHERE complaint_id = $1 ORDER BY created_at ASC', [complaint.id]);
     const attRes = await query('SELECT id, file_name, file_url, file_type, file_data, created_at FROM complaint_attachments WHERE complaint_id = $1 ORDER BY id ASC', [complaint.id]);
     const notifRes = await query('SELECT * FROM notification_logs WHERE complaint_id = $1 ORDER BY created_at DESC', [complaint.id]);
+    
+    let payments = [];
+    try {
+      const payRes = await query(`
+        SELECT cp.*, t.name as tech_full_name, t.phone as tech_phone
+        FROM complaint_payments cp
+        LEFT JOIN technicians t ON t.id::text = cp.technician_id::text
+        WHERE cp.complaint_id = $1
+        ORDER BY cp.created_at ASC, cp.id ASC
+      `, [complaint.id]);
+      payments = payRes.rows || [];
+    } catch (_) {}
 
-    return res.json({ complaint, timeline: tlRes.rows, attachments: attRes.rows, notifications: notifRes.rows });
+    const totalCollected = payments
+      .filter(p => p.payment_status === 'Collected')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const estimated = parseFloat(complaint.estimated_charges) || 0;
+    const remainingBalance = Math.max(0, estimated - totalCollected);
+
+    const payment_summary = {
+      estimated_charges: estimated,
+      total_collected: totalCollected,
+      remaining_balance: remainingBalance,
+      is_fully_paid: estimated > 0 && totalCollected >= estimated,
+      is_partially_paid: totalCollected > 0 && totalCollected < estimated,
+      payment_count: payments.length
+    };
+
+    complaint.payments = payments;
+    complaint.payment_summary = payment_summary;
+    complaint.total_collected = totalCollected;
+    complaint.remaining_balance = remainingBalance;
+
+    return res.json({ complaint, timeline: tlRes.rows, attachments: attRes.rows, notifications: notifRes.rows, payments, payment_summary });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -4369,12 +4426,48 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Reason for on-site collection is mandatory when no service charges were pre-allocated.' });
     }
 
+    let collectorTechId = null;
+    let collectorTechName = null;
+    if (req.user?.role === 'technician') {
+      collectorTechId = await resolveApiUserTechnicianId(req.user);
+    } else {
+      collectorTechId = req.body.technician_id || comp.assigned_technician_id;
+    }
+    if (collectorTechId) {
+      const tRow = await query('SELECT name FROM technicians WHERE id::text = $1', [String(collectorTechId)]);
+      if (tRow.rows.length) collectorTechName = tRow.rows[0].name;
+    }
+
+    const isDirect = (payment_mode || '').toLowerCase().includes('online') || (payment_mode || '').toLowerCase().includes('upi') || (payment_mode || '').toLowerCase().includes('bank');
+
+    // Insert itemized transaction
+    await query(`
+      INSERT INTO complaint_payments (
+        complaint_id, technician_id, technician_name, amount, payment_mode,
+        payment_status, collection_stage, collection_reason, payment_notes,
+        collected_by_name, collected_by_role, company_settlement_status,
+        company_settled_at, company_settled_by
+      ) VALUES ($1, $2, $3, $4, $5, 'Collected', $6, $7, $8, $9, $10, $11, $12, $13)
+    `, [
+      comp.id, collectorTechId || null, collectorTechName || req.user.name, amt, payment_mode || 'Cash',
+      comp.status || 'In Progress', collection_reason || null, payment_notes || null,
+      req.user.name, req.user.role, isDirect ? 'Settled with Company' : 'Pending Settlement',
+      isDirect ? new Date().toISOString() : null, isDirect ? req.user.name : null
+    ]);
+
+    const sumRes = await query(`
+      SELECT COALESCE(SUM(amount), 0) as total 
+      FROM complaint_payments 
+      WHERE complaint_id = $1 AND payment_status = 'Collected'
+    `, [comp.id]);
+    const totalCollected = parseFloat(sumRes.rows[0]?.total) || amt;
+
     let status = 'Unpaid';
-    if (amt > 0 && est === 0) {
-      status = 'Collected'; // Full payment collected for unallocated on-site service
-    } else if (amt >= est && est > 0) {
+    if (totalCollected > 0 && est === 0) {
       status = 'Collected';
-    } else if (amt > 0) {
+    } else if (totalCollected >= est && est > 0) {
+      status = 'Collected';
+    } else if (totalCollected > 0) {
       status = 'Partially Paid';
     } else {
       status = est > 0 ? 'Unpaid' : 'Not Applicable';
@@ -4392,11 +4485,10 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
         payment_mode = $3,
         payment_notes = $4,
         collection_reason = $5,
-        company_settlement_status = 'Pending Settlement',
         payment_collected_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $6
-    `, [amt, status, payment_mode || 'Cash', payment_notes || '', collection_reason ? collection_reason.trim() : null, id]);
+    `, [totalCollected, status, payment_mode || 'Cash', payment_notes || '', collection_reason ? collection_reason.trim() : null, id]);
 
     const isAdjustment = Number(comp.payment_collected || 0) > 0 && ['admin', 'staff'].includes(req.user?.role);
     const isReentry = comp.payment_status === 'Payment Reverted';
@@ -4404,15 +4496,15 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
     let timelineNotes = '';
     if (isAdjustment) {
       actionName = 'Payment Record Adjusted';
-      timelineNotes = `Payment record adjusted by Admin (${req.user.name}) from ₹${comp.payment_collected || 0} to ₹${amt} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+      timelineNotes = `Payment record adjusted by Admin (${req.user.name}) from ₹${comp.payment_collected || 0} to ₹${totalCollected} via ${payment_mode || 'Cash'}.${collection_reason ? ` Reason: ${collection_reason}` : ''}${payment_notes ? ` Note: ${payment_notes}` : ''}`;
     } else if (isReentry) {
       actionName = 'Corrected Payment Recorded';
-      timelineNotes = `Corrected payment collection of ₹${amt} recorded via ${payment_mode || 'Cash'} by ${req.user.name}.${payment_notes ? ` Note: ${payment_notes}` : ''}`;
+      timelineNotes = `Corrected payment collection of ₹${amt} recorded via ${payment_mode || 'Cash'} by ${collectorTechName || req.user.name}.${payment_notes ? ` Note: ${payment_notes}` : ''}`;
     } else {
       actionName = 'Payment Recorded';
       const reasonSuffix = collection_reason ? ` • Reason: ${collection_reason.trim()}` : (est === 0 && amt > 0 ? ' • On-Site Unallocated Collection' : '');
       const notesSuffix = payment_notes ? ` • Note: ${payment_notes.trim()}` : '';
-      timelineNotes = `Payment of ₹${amt} collected via ${payment_mode || 'Cash'}. Status: ${status}${reasonSuffix}${notesSuffix}`;
+      timelineNotes = `Payment of ₹${amt} collected via ${payment_mode || 'Cash'} by ${collectorTechName || req.user.name}. Total collected: ₹${totalCollected}${est > 0 ? ` / ₹${est}` : ''}${reasonSuffix}${notesSuffix}`;
     }
 
     await query(
@@ -4420,7 +4512,7 @@ app.post('/api/complaints/:id/payment', authenticateToken, async (req, res) => {
       [id, actionName, timelineNotes, req.user.name, req.user.role]
     );
 
-    return res.json({ message: isAdjustment ? 'Payment record adjusted successfully' : 'Payment recorded successfully' });
+    return res.json({ message: isAdjustment ? 'Payment record adjusted successfully' : 'Payment recorded successfully', total_collected: totalCollected });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -4456,6 +4548,8 @@ app.post('/api/complaints/:id/payment/revert', authenticateToken, requireRole('a
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
     `, [prevAmt, comp.id]);
+
+    await query("UPDATE complaint_payments SET payment_status = 'Reverted', updated_at = CURRENT_TIMESTAMP WHERE complaint_id = $1", [comp.id]);
 
     const adminName = req.user?.name || req.user?.username || 'Admin';
     const noteText = `Payment collection of ₹${prevAmt} (${prevMode}) reverted by Admin (${adminName}) to allow technician (${techName}) to re-enter correct collection.${reason ? ` Reason: ${reason}` : ''}`;
@@ -4505,6 +4599,14 @@ app.post('/api/complaints/:id/settle-company', authenticateToken, requireRole('a
       WHERE id = $2
       RETURNING *
     `, [actorName, complaint.id]);
+
+    await query(`
+      UPDATE complaint_payments SET
+        company_settlement_status = 'Settled with Company',
+        company_settled_at = CURRENT_TIMESTAMP,
+        company_settled_by = $1
+      WHERE complaint_id = $2 AND payment_mode = 'Cash' AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+    `, [actorName, complaint.id]).catch(() => {});
 
     const timelineMsg = `Company confirmed receipt of ₹${settledAmt} collected by technician ${complaint.tech_name || 'Assigned Tech'} into company account.${notes ? ` • Note: ${notes}` : ''}`;
 

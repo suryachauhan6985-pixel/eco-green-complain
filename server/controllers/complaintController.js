@@ -211,11 +211,42 @@ function getComplaintById(req, res) {
     const timeline = db.prepare('SELECT * FROM complaint_timelines WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
     const notifications = db.prepare('SELECT * FROM notification_logs WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
 
+    // Fetch itemized payment transactions
+    const payments = db.prepare(`
+      SELECT cp.*, t.name as tech_full_name, t.phone as tech_phone
+      FROM complaint_payments cp
+      LEFT JOIN technicians t ON cp.technician_id = t.id
+      WHERE cp.complaint_id = ?
+      ORDER BY cp.created_at ASC, cp.id ASC
+    `).all(complaint.id);
+
+    const totalCollected = payments
+      .filter(p => p.payment_status === 'Collected')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const estimated = parseFloat(complaint.estimated_charges) || 0;
+    const remainingBalance = Math.max(0, estimated - totalCollected);
+
+    const payment_summary = {
+      estimated_charges: estimated,
+      total_collected: totalCollected,
+      remaining_balance: remainingBalance,
+      is_fully_paid: estimated > 0 && totalCollected >= estimated,
+      is_partially_paid: totalCollected > 0 && totalCollected < estimated,
+      payment_count: payments.length
+    };
+
+    complaint.payments = payments;
+    complaint.payment_summary = payment_summary;
+    complaint.total_collected = totalCollected;
+    complaint.remaining_balance = remainingBalance;
+
     res.json({
       complaint,
       attachments,
       timeline,
-      notifications
+      notifications,
+      payments,
+      payment_summary
     });
   } catch (err) {
     console.error('Get complaint error:', err);
@@ -823,6 +854,15 @@ async function recordPayment(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
+    // Determine current payments and balances
+    const existingPayments = db.prepare(`
+      SELECT * FROM complaint_payments 
+      WHERE complaint_id = ? AND payment_status = 'Collected'
+    `).all(id);
+    const prevTotalCollected = existingPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const estimated = parseFloat(complaint.estimated_charges) || 0;
+    const remainingBefore = Math.max(0, estimated - prevTotalCollected);
+
     if (req.user?.role === 'technician') {
       const userTechId = String(req.user.technicianId || req.user.technician_id || '');
       const assignedTechId = String(complaint.assigned_technician_id || '');
@@ -834,9 +874,9 @@ async function recordPayment(req, res) {
         return res.status(403).json({ error: 'Permission denied. You are not assigned to this complaint.' });
       }
 
-      const isRevertedOrUnpaid = complaint.payment_status === 'Payment Reverted' || complaint.payment_status === 'Unpaid' || Number(complaint.payment_collected || 0) === 0;
+      const isRevertedOrUnpaid = complaint.payment_status === 'Payment Reverted' || complaint.payment_status === 'Unpaid' || remainingBefore > 0 || prevTotalCollected === 0;
       if (['Resolved', 'Closed'].includes(complaint.status) && !isRevertedOrUnpaid) {
-        return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${complaint.status}". Contact Admin to revert payment for correction.` });
+        return res.status(400).json({ error: `Payment collection is locked because this complaint is already marked as "${complaint.status}" with no outstanding balance. Contact Admin to adjust payments.` });
       }
     } else if (!['admin', 'staff'].includes(req.user?.role)) {
       return res.status(403).json({ error: 'Unauthorized to record payments.' });
@@ -848,13 +888,37 @@ async function recordPayment(req, res) {
       payment_method, 
       notes = '', 
       payment_notes = '', 
-      collection_reason = '' 
+      collection_reason = '',
+      technician_id: customTechId
     } = req.body;
     const finalPaymentMode = payment_method || payment_mode || 'Cash';
     const finalReason = (collection_reason || '').trim();
     const finalNotes = (notes || payment_notes || '').trim();
     const amount = parseFloat(payment_collected) || 0;
-    const estimated = parseFloat(complaint.estimated_charges) || 0;
+
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Payment amount must be greater than zero.' });
+    }
+
+    // Determine collecting technician
+    let collectorTechId = null;
+    if (req.user?.role === 'technician') {
+      collectorTechId = req.user.technicianId || req.user.technician_id || complaint.assigned_technician_id;
+    } else {
+      collectorTechId = customTechId || complaint.assigned_technician_id;
+    }
+
+    if (!collectorTechId && !['admin', 'staff'].includes(req.user?.role)) {
+      return res.status(400).json({ 
+        error: 'Cannot record payment on an unassigned complaint. Please assign a technician to this ticket first.' 
+      });
+    }
+
+    let collectorTechName = null;
+    if (collectorTechId) {
+      const techRow = db.prepare('SELECT name FROM technicians WHERE id = ?').get(collectorTechId);
+      if (techRow) collectorTechName = techRow.name;
+    }
 
     const isDirectPayment = finalPaymentMode && (
       finalPaymentMode.toLowerCase().includes('online') || 
@@ -862,33 +926,69 @@ async function recordPayment(req, res) {
       finalPaymentMode.toLowerCase().includes('upi')
     );
 
-    // Enforce: ALL payment collection strictly requires an assigned technician!
-    if (amount > 0 && !complaint.assigned_technician_id) {
-      return res.status(400).json({ 
-        error: 'Cannot record payment on an unassigned complaint. Please assign a technician to this ticket first.' 
-      });
-    }
+    const actorName = req.user ? req.user.name : (collectorTechName || 'Office Staff');
+    const actorRole = req.user ? req.user.role : (collectorTechId ? 'technician' : 'staff');
 
-    let paymentStatus = 'Collected';
-    if (amount === 0) {
-      paymentStatus = 'Unpaid';
-    } else if (estimated > 0 && amount < estimated) {
-      paymentStatus = 'Partially Paid';
-    }
-
-    // Direct office payments are already with the company; technician cash is pending settlement until deposited
-    const actorName = req.user ? req.user.name : (complaint.assigned_technician_id ? 'Field Technician' : 'Office Staff');
-    const actorRole = req.user ? req.user.role : (complaint.assigned_technician_id ? 'technician' : 'staff');
-
-    let settlementStatus = complaint.company_settlement_status || 'Pending Settlement';
-    let settledAt = complaint.company_settled_at;
-    let settledBy = complaint.company_settled_by;
+    let settlementStatus = 'Pending Settlement';
+    let settledAt = null;
+    let settledBy = null;
 
     if (isDirectPayment && amount > 0) {
       settlementStatus = 'Settled with Company';
       settledAt = new Date().toISOString();
       settledBy = actorName;
     }
+
+    // 1. Insert itemized payment transaction
+    db.prepare(`
+      INSERT INTO complaint_payments (
+        complaint_id, technician_id, technician_name, amount, payment_mode,
+        payment_status, collection_stage, collection_reason, payment_notes,
+        collected_by_user_id, collected_by_name, collected_by_role,
+        company_settlement_status, company_settled_at, company_settled_by,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(
+      id,
+      collectorTechId || null,
+      collectorTechName || null,
+      amount,
+      finalPaymentMode,
+      'Collected',
+      complaint.status || 'In Progress',
+      finalReason || null,
+      finalNotes || null,
+      req.user?.id || null,
+      actorName,
+      actorRole,
+      settlementStatus,
+      settledAt,
+      settledBy
+    );
+
+    // 2. Recalculate total payments and overall complaint status
+    const allPayments = db.prepare(`
+      SELECT cp.*, t.name as tech_full_name, t.phone as tech_phone
+      FROM complaint_payments cp
+      LEFT JOIN technicians t ON cp.technician_id = t.id
+      WHERE cp.complaint_id = ?
+      ORDER BY cp.created_at ASC, cp.id ASC
+    `).all(id);
+
+    const totalCollected = allPayments
+      .filter(p => p.payment_status === 'Collected')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const remainingAfter = Math.max(0, estimated - totalCollected);
+
+    let paymentStatus = 'Collected';
+    if (totalCollected === 0) {
+      paymentStatus = 'Unpaid';
+    } else if (estimated > 0 && totalCollected < estimated) {
+      paymentStatus = 'Partially Paid';
+    }
+
+    const pendingSettlementsCount = allPayments.filter(p => p.payment_status === 'Collected' && p.company_settlement_status !== 'Settled with Company').length;
+    const overallSettlementStatus = pendingSettlementsCount === 0 ? 'Settled with Company' : 'Pending Settlement';
 
     db.prepare(`
       UPDATE complaints SET
@@ -903,10 +1003,20 @@ async function recordPayment(req, res) {
         collection_reason = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(amount, finalPaymentMode, paymentStatus, finalNotes || null, settlementStatus, settledAt, settledBy, finalReason || complaint.collection_reason || null, id);
+    `).run(
+      totalCollected,
+      finalPaymentMode,
+      paymentStatus,
+      finalNotes || complaint.payment_notes || null,
+      overallSettlementStatus,
+      overallSettlementStatus === 'Settled with Company' ? new Date().toISOString() : null,
+      overallSettlementStatus === 'Settled with Company' ? actorName : null,
+      finalReason || complaint.collection_reason || null,
+      id
+    );
 
     const noteTextParts = [
-      `Payment of ₹${amount} recorded via ${finalPaymentMode}.${estimated > 0 ? ` (Quoted: ₹${estimated})` : ''}`,
+      `Payment of ₹${amount} recorded via ${finalPaymentMode} by ${collectorTechName || actorName}. Total collected: ₹${totalCollected}${estimated > 0 ? ` / ₹${estimated} (Remaining: ₹${remainingAfter})` : ''}`,
       finalReason ? `Reason / Approval: ${finalReason}` : null,
       finalNotes ? `Note: ${finalNotes}` : null
     ].filter(Boolean);
@@ -924,8 +1034,18 @@ async function recordPayment(req, res) {
       WHERE c.id = ?
     `).get(id);
 
+    updated.payments = allPayments;
+    updated.payment_summary = {
+      estimated_charges: estimated,
+      total_collected: totalCollected,
+      remaining_balance: remainingAfter,
+      is_fully_paid: estimated > 0 && totalCollected >= estimated,
+      is_partially_paid: totalCollected > 0 && totalCollected < estimated,
+      payment_count: allPayments.length
+    };
+
     realtimeService.notifyComplaintUpdate({ id, action: 'payment' });
-    res.json({ message: 'Payment recorded successfully', complaint: updated });
+    res.json({ message: 'Payment recorded successfully', complaint: updated, payments: allPayments, payment_summary: updated.payment_summary });
   } catch (err) {
     console.error('Record payment error:', err);
     res.status(500).json({ error: 'Failed to record payment: ' + err.message });
@@ -940,30 +1060,51 @@ async function revertPayment(req, res) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    const { reason = 'Reverted by admin for technician re-entry' } = req.body || {};
-    const prevAmt = parseFloat(complaint.payment_collected) || 0;
-    const prevMode = complaint.payment_mode || 'Cash';
-    const techName = complaint.technician_name || 'Assigned Technician';
+    const { payment_id, reason = 'Reverted by admin for technician re-entry' } = req.body || {};
+    const adminName = req.user ? req.user.name : 'Admin';
+    const adminRole = req.user ? req.user.role : 'admin';
+
+    let revertedAmount = 0;
+    if (payment_id) {
+      const targetPay = db.prepare('SELECT * FROM complaint_payments WHERE id = ? AND complaint_id = ?').get(payment_id, id);
+      if (targetPay) {
+        revertedAmount = parseFloat(targetPay.amount) || 0;
+        db.prepare("UPDATE complaint_payments SET payment_status = 'Reverted', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(payment_id);
+      }
+    } else {
+      // Revert latest payment or all active payments
+      const activePayments = db.prepare("SELECT * FROM complaint_payments WHERE complaint_id = ? AND payment_status = 'Collected' ORDER BY id DESC").all(id);
+      if (activePayments.length > 0) {
+        const latest = activePayments[0];
+        revertedAmount = parseFloat(latest.amount) || 0;
+        db.prepare("UPDATE complaint_payments SET payment_status = 'Reverted', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(latest.id);
+      }
+    }
+
+    // Recalculate remaining active collected payments
+    const remainingActive = db.prepare("SELECT * FROM complaint_payments WHERE complaint_id = ? AND payment_status = 'Collected'").all(id);
+    const newTotal = remainingActive.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const estimated = parseFloat(complaint.estimated_charges) || 0;
+    const newStatus = newTotal === 0 ? 'Payment Reverted' : (estimated > 0 && newTotal < estimated ? 'Partially Paid' : 'Collected');
+
+    const pendingSettlementsCount = remainingActive.filter(p => p.company_settlement_status !== 'Settled with Company').length;
+    const settlementStatus = pendingSettlementsCount === 0 && newTotal > 0 ? 'Settled with Company' : 'Pending Settlement';
 
     const appendedNotes = complaint.payment_notes
-      ? `Prior collection (₹${prevAmt}) reverted for correction. ${complaint.payment_notes}`
-      : `Prior collection (₹${prevAmt}) reverted for correction.`;
+      ? `Prior collection of ₹${revertedAmount} reverted. ${complaint.payment_notes}`
+      : `Prior collection of ₹${revertedAmount} reverted.`;
 
     db.prepare(`
       UPDATE complaints
-      SET payment_collected = 0,
-          payment_status = 'Payment Reverted',
-          company_settlement_status = 'Pending Settlement',
-          company_settled_at = NULL,
-          company_settled_by = NULL,
+      SET payment_collected = ?,
+          payment_status = ?,
+          company_settlement_status = ?,
           payment_notes = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(appendedNotes, id);
+    `).run(newTotal, newStatus, settlementStatus, appendedNotes, id);
 
-    const adminName = req.user ? req.user.name : 'Admin';
-    const adminRole = req.user ? req.user.role : 'admin';
-    const noteText = `Payment collection of ₹${prevAmt} (${prevMode}) reverted by Admin (${adminName}) to allow technician (${techName}) to re-enter correct collection.${reason ? ` Reason: ${reason}` : ''}`;
+    const noteText = `Payment collection of ₹${revertedAmount} reverted by Admin (${adminName}). New collected total: ₹${newTotal}.${reason ? ` Reason: ${reason}` : ''}`;
 
     db.prepare(`
       INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
@@ -974,7 +1115,9 @@ async function revertPayment(req, res) {
 
     res.json({
       success: true,
-      message: `Payment collection reverted successfully. Technician ${techName} can now re-record the correct amount.`
+      message: `Payment collection of ₹${revertedAmount} reverted successfully. New total: ₹${newTotal}.`,
+      total_collected: newTotal,
+      payment_status: newStatus
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to revert payment: ' + err.message });
@@ -1015,6 +1158,18 @@ async function settleCompanyPayment(req, res) {
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(actorName, id);
+
+    try {
+      db.prepare(`
+        UPDATE complaint_payments SET
+          company_settlement_status = 'Settled with Company',
+          company_settled_at = CURRENT_TIMESTAMP,
+          company_settled_by = ?
+        WHERE complaint_id = ? AND payment_mode = 'Cash' AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+      `).run(actorName, id);
+    } catch (paymentErr) {
+      console.warn('Could not update complaint_payments settlement status:', paymentErr.message);
+    }
 
     const timelineMsg = `Company confirmed receipt of ₹${settledAmt} collected by technician ${complaint.tech_name || 'N/A'} into company account.${notes ? ` • Note: ${notes}` : ''}`;
 

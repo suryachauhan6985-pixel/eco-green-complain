@@ -1563,11 +1563,31 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                           <Users className="w-2.5 h-2.5" /> Team: {job.technician_name} + {job.secondary_technician_name}
                         </span>
                       )}
-                      {job.payment_collected > 0 && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
-                          <IndianRupee className="w-2.5 h-2.5" /> ₹{job.payment_collected}
-                        </span>
-                      )}
+                      {(() => {
+                        const est = Number(job.estimated_charges || 0);
+                        const coll = Number(job.payment_collected || 0);
+                        const rem = Math.max(0, est - coll);
+                        if (rem > 0 && coll > 0) {
+                          return (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
+                              <IndianRupee className="w-2.5 h-2.5" /> Due: ₹{rem} (Paid: ₹{coll})
+                            </span>
+                          );
+                        } else if (coll > 0) {
+                          return (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
+                              <IndianRupee className="w-2.5 h-2.5" /> Paid: ₹{coll}
+                            </span>
+                          );
+                        } else if (est > 0) {
+                          return (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-300">
+                              <IndianRupee className="w-2.5 h-2.5" /> To Collect: ₹{est}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
 
                     <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
@@ -1711,19 +1731,36 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">
                           {job.product_type}
                         </span>
-                        {job.payment_collected > 0 ? (
-                          <span className="text-[11px] font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            Collected: ₹{job.payment_collected} {job.collection_reason ? `(${job.collection_reason})` : ''}
-                          </span>
-                        ) : job.estimated_charges > 0 ? (
-                          <span className="text-[11px] font-bold text-slate-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            Charge: ₹{job.estimated_charges} • <span className={job.payment_status === 'Collected' ? 'text-emerald-700' : 'text-amber-700'}>{job.payment_status || 'Unpaid'}</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            Unallocated (On-Site Collection Enabled)
-                          </span>
-                        )}
+                        {(() => {
+                          const est = Number(job.estimated_charges || 0);
+                          const coll = Number(job.payment_collected || 0);
+                          const rem = Math.max(0, est - coll);
+                          if (rem > 0 && coll > 0) {
+                            return (
+                              <span className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
+                                Quoted: ₹{est} • Paid: ₹{coll} • <strong className="text-amber-700">Due: ₹{rem}</strong>
+                              </span>
+                            );
+                          } else if (coll > 0) {
+                            return (
+                              <span className="text-[11px] font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                Collected: ₹{coll} {job.collection_reason ? `(${job.collection_reason})` : ''}
+                              </span>
+                            );
+                          } else if (est > 0) {
+                            return (
+                              <span className="text-[11px] font-bold text-slate-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                Quoted Charge: ₹{est} • <span className={job.payment_status === 'Collected' ? 'text-emerald-700' : 'text-amber-700'}>{job.payment_status || 'Unpaid'}</span>
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                Unallocated (On-Site Collection Enabled)
+                              </span>
+                            );
+                          }
+                        })()}
                       </div>
                       <h4 className="font-bold text-xs text-slate-900">
                         {job.issue_category}

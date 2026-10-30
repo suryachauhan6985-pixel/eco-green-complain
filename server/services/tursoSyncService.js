@@ -56,6 +56,7 @@ class TursoSyncService {
       'complaints',
       'complaint_attachments',
       'complaint_timelines',
+      'complaint_payments',
       'notification_templates',
       'notification_logs',
       'issue_categories',

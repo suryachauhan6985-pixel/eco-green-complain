@@ -128,6 +128,29 @@ function initializeSchema() {
       FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS complaint_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      technician_id INTEGER,
+      technician_name TEXT,
+      amount NUMERIC(10,2) NOT NULL,
+      payment_mode TEXT DEFAULT 'Cash',
+      payment_status TEXT DEFAULT 'Collected',
+      collection_stage TEXT DEFAULT 'Resolution',
+      collection_reason TEXT,
+      payment_notes TEXT,
+      collected_by_user_id INTEGER,
+      collected_by_name TEXT,
+      collected_by_role TEXT,
+      company_settlement_status TEXT DEFAULT 'Pending Settlement',
+      company_settled_at DATETIME,
+      company_settled_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+      FOREIGN KEY (technician_id) REFERENCES technicians(id) ON DELETE SET NULL
+    );
+
     CREATE TABLE IF NOT EXISTS notification_templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_key TEXT UNIQUE NOT NULL,
@@ -1141,6 +1164,113 @@ function migrateAttachmentsTable() {
   }
 }
 
+function migrateComplaintPayments() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS complaint_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        complaint_id INTEGER NOT NULL,
+        technician_id INTEGER,
+        technician_name TEXT,
+        amount NUMERIC(10,2) NOT NULL,
+        payment_mode TEXT DEFAULT 'Cash',
+        payment_status TEXT DEFAULT 'Collected',
+        collection_stage TEXT DEFAULT 'Resolution',
+        collection_reason TEXT,
+        payment_notes TEXT,
+        collected_by_user_id INTEGER,
+        collected_by_name TEXT,
+        collected_by_role TEXT,
+        company_settlement_status TEXT DEFAULT 'Pending Settlement',
+        company_settled_at DATETIME,
+        company_settled_by TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+        FOREIGN KEY (technician_id) REFERENCES technicians(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_complaint ON complaint_payments(complaint_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_technician ON complaint_payments(technician_id);
+    `);
+
+    // Backfill historical payments from complaints where payment_collected > 0
+    const paidComplaints = db.prepare('SELECT * FROM complaints WHERE payment_collected > 0').all();
+    const technicians = db.prepare('SELECT id, name FROM technicians').all();
+    const techNameMap = {};
+    technicians.forEach(t => {
+      techNameMap[t.name.trim().toLowerCase()] = t;
+    });
+
+    for (const comp of paidComplaints) {
+      const existingPayments = db.prepare('SELECT * FROM complaint_payments WHERE complaint_id = ?').all(comp.id);
+      if (existingPayments.length > 0) continue;
+
+      let techId = comp.assigned_technician_id;
+      let techName = null;
+      let collectionDate = comp.payment_collected_at || comp.resolved_at || comp.created_at;
+
+      // Special case: Ticket #172 (id = 210 or ticket_id LIKE '%172%') was collected by Pratik Joshi (id 10)
+      if (comp.id === 210 || (comp.ticket_id && comp.ticket_id.includes('172'))) {
+        const pratik = technicians.find(t => t.name.toLowerCase().includes('pratik joshi') || t.id === 10);
+        if (pratik) {
+          techId = pratik.id;
+          techName = pratik.name;
+        }
+      } else {
+        // Inspect timeline to see if there is an explicit "Payment Collected" action by a technician
+        const payTimeline = db.prepare(`
+          SELECT * FROM complaint_timelines 
+          WHERE complaint_id = ? AND (action LIKE '%Payment%' OR notes LIKE '%Payment%')
+          ORDER BY id ASC
+        `).get(comp.id);
+
+        if (payTimeline) {
+          if (payTimeline.created_at) collectionDate = payTimeline.created_at;
+          const perfName = (payTimeline.performed_by_name || '').trim().toLowerCase();
+          if (techNameMap[perfName]) {
+            techId = techNameMap[perfName].id;
+            techName = techNameMap[perfName].name;
+          }
+        }
+      }
+
+      if (!techName && techId) {
+        const t = technicians.find(item => item.id === techId);
+        if (t) techName = t.name;
+      }
+
+      db.prepare(`
+        INSERT INTO complaint_payments (
+          complaint_id, technician_id, technician_name, amount, payment_mode,
+          payment_status, collection_stage, collection_reason, payment_notes,
+          collected_by_name, collected_by_role, company_settlement_status,
+          company_settled_at, company_settled_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        comp.id,
+        techId || null,
+        techName || null,
+        comp.payment_collected,
+        comp.payment_mode || 'Cash',
+        'Collected',
+        comp.status || 'Resolution',
+        comp.collection_reason || null,
+        comp.payment_notes || null,
+        techName || comp.company_settled_by || 'Staff',
+        techId ? 'technician' : 'staff',
+        comp.company_settlement_status || 'Pending Settlement',
+        comp.company_settled_at || null,
+        comp.company_settled_by || null,
+        collectionDate || new Date().toISOString(),
+        collectionDate || new Date().toISOString()
+      );
+      console.log(`[Database] Backfilled payment of ₹${comp.payment_collected} for complaint #${comp.ticket_id || comp.id} to technician [${techName || 'Unassigned'}]`);
+    }
+  } catch (err) {
+    console.warn('[Database] Complaint payments migration note:', err.message);
+  }
+}
+
 try {
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, '1800-ECO-SOLAR', '+91 78784 44414') WHERE whatsapp_body LIKE '%1800-ECO-SOLAR%'").run();
   db.prepare("UPDATE notification_templates SET whatsapp_body = REPLACE(whatsapp_body, 'Eco Green Dispatch', 'Eco Green Solar') WHERE whatsapp_body LIKE '%Eco Green Dispatch%'").run();
@@ -1154,6 +1284,7 @@ migrateAttachmentsTable();
 migrateWhatsAppMessagesTable();
 migrateUsersTable();
 migrateTechniciansAndComplaints();
+migrateComplaintPayments();
 
 // Attach Supabase continuous cloud sync hook
 const supabaseSync = require('../services/supabaseSyncService');
@@ -1169,27 +1300,32 @@ if (supabaseSync.isEnabled) {
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();
     migrateAttachmentsTable();
+    migrateComplaintPayments();
   }).catch(err => {
     console.error('[Database] Initial Supabase pull failed:', err.message);
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();
     migrateAttachmentsTable();
+    migrateComplaintPayments();
   });
 } else if (tursoSync.isEnabled) {
   tursoSync.pullFromCloud(db).then(() => {
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();
     migrateAttachmentsTable();
+    migrateComplaintPayments();
   }).catch(err => {
     console.error('[Database] Initial Turso pull failed:', err.message);
     migrateNotificationTemplates();
     migrateTechniciansAndComplaints();
     migrateAttachmentsTable();
+    migrateComplaintPayments();
   });
 } else {
   migrateNotificationTemplates();
   migrateTechniciansAndComplaints();
   migrateAttachmentsTable();
+  migrateComplaintPayments();
 }
 
 module.exports = db;

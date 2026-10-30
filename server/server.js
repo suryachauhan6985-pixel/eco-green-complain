@@ -419,10 +419,13 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
     const actorRole = req.user ? req.user.role : 'admin';
 
     const pending = db.prepare(`
-      SELECT id, ticket_id, payment_collected FROM complaints
-      WHERE assigned_technician_id = ?
-        AND payment_collected > 0
-        AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')
+      SELECT cp.id as payment_id, cp.complaint_id, cp.amount, c.ticket_id 
+      FROM complaint_payments cp
+      JOIN complaints c ON cp.complaint_id = c.id
+      WHERE cp.technician_id = ?
+        AND cp.payment_status = 'Collected'
+        AND cp.payment_mode = 'Cash'
+        AND (cp.company_settlement_status IS NULL OR cp.company_settlement_status != 'Settled with Company')
     `).all(techId);
 
     if (pending.length === 0) {
@@ -430,9 +433,22 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
     }
 
     let totalAmount = 0;
-    const updateStmt = db.prepare(`
-      UPDATE complaints SET
+    const updatePaymentStmt = db.prepare(`
+      UPDATE complaint_payments SET
         company_settlement_status = 'Settled with Company',
+        company_settled_at = CURRENT_TIMESTAMP,
+        company_settled_by = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+
+    const updateComplaintStmt = db.prepare(`
+      UPDATE complaints SET
+        company_settlement_status = CASE 
+          WHEN (SELECT COUNT(*) FROM complaint_payments WHERE complaint_id = ? AND company_settlement_status != 'Settled with Company') = 0 
+          THEN 'Settled with Company' 
+          ELSE 'Pending Settlement' 
+        END,
         company_settled_at = CURRENT_TIMESTAMP,
         company_settled_by = ?
       WHERE id = ?
@@ -444,10 +460,11 @@ app.post('/api/technicians/:id/settle-all', authenticateToken, requireRole('admi
     `);
 
     const tx = db.transaction(() => {
-      for (const c of pending) {
-        totalAmount += (c.payment_collected || 0);
-        updateStmt.run(actorName, c.id);
-        timelineStmt.run(c.id, `Batch cash settlement of ₹${c.payment_collected} received and deposited into company accounts.`, actorName, actorRole);
+      for (const p of pending) {
+        totalAmount += (p.amount || 0);
+        updatePaymentStmt.run(actorName, p.payment_id);
+        updateComplaintStmt.run(p.complaint_id, actorName, p.complaint_id);
+        timelineStmt.run(p.complaint_id, `Cash settlement of ₹${p.amount} received and deposited into company accounts.`, actorName, actorRole);
       }
     });
 

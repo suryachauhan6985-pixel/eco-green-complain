@@ -119,6 +119,28 @@ CREATE TABLE IF NOT EXISTS complaint_timelines (
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 7b. COMPLAINT PAYMENTS (ITEMIZED TRANSACTIONS & MULTI-TECHNICIAN TRACKING)
+CREATE TABLE IF NOT EXISTS complaint_payments (
+  id BIGSERIAL PRIMARY KEY,
+  complaint_id BIGINT NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+  technician_id BIGINT REFERENCES technicians(id) ON DELETE SET NULL,
+  technician_name TEXT,
+  amount NUMERIC(10,2) NOT NULL,
+  payment_mode TEXT DEFAULT 'Cash',
+  payment_status TEXT DEFAULT 'Collected',
+  collection_stage TEXT DEFAULT 'Resolution',
+  collection_reason TEXT,
+  payment_notes TEXT,
+  collected_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  collected_by_name TEXT,
+  collected_by_role TEXT,
+  company_settlement_status TEXT DEFAULT 'Pending Settlement',
+  company_settled_at TIMESTAMPTZ,
+  company_settled_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 8. NOTIFICATION TEMPLATES
 CREATE TABLE IF NOT EXISTS notification_templates (
   id BIGSERIAL PRIMARY KEY,
@@ -214,6 +236,8 @@ CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status);
 CREATE INDEX IF NOT EXISTS idx_complaints_phone ON complaints(customer_phone);
 CREATE INDEX IF NOT EXISTS idx_complaints_tech ON complaints(assigned_technician_id);
 CREATE INDEX IF NOT EXISTS idx_timeline_complaint ON complaint_timelines(complaint_id);
+CREATE INDEX IF NOT EXISTS idx_payment_complaint ON complaint_payments(complaint_id);
+CREATE INDEX IF NOT EXISTS idx_payment_technician ON complaint_payments(technician_id);
 CREATE INDEX IF NOT EXISTS idx_attachment_complaint ON complaint_attachments(complaint_id);
 CREATE INDEX IF NOT EXISTS idx_notif_complaint ON notification_logs(complaint_id);
 CREATE INDEX IF NOT EXISTS idx_categories_product ON issue_categories(product_type);
