@@ -20,8 +20,7 @@ const RESOURCE_TTLS = [
   { pattern: /^\/settings/, ttl: 5 * 60 * 1000, tag: 'settings' },
   { pattern: /^\/products/, ttl: 5 * 60 * 1000, tag: 'products' },
   
-  // Technician directory & users metadata (60 seconds)
-  { pattern: /^\/technicians$/, ttl: 60 * 1000, tag: 'technicians' },
+  // Users metadata (60 seconds)
   { pattern: /^\/auth\/users$/, ttl: 60 * 1000, tag: 'users' },
   
   // Customer search directory (30 seconds)
@@ -34,6 +33,9 @@ const RESOURCE_TTLS = [
 
 // STRICT NEVER-CACHE BLACKLIST (Must always query live production state)
 const NEVER_CACHE_PATTERNS = [
+  /\/technicians/,
+  /\/complaint-payments/,
+  /\/payments/,
   /\/tour-expenses/,
   /\/settle/,
   /\/settlement/,

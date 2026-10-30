@@ -46,6 +46,46 @@ commonRoutes.get('/version', (c) => {
   });
 });
 
+// GET /api/complaint-payments - Retrieve itemized complaint payments
+commonRoutes.get('/complaint-payments', authenticateToken, async (c) => {
+  try {
+    const { technician_id, complaint_id, payment_mode } = c.req.query();
+    let sql = `
+      SELECT 
+        cp.*,
+        c.ticket_id,
+        c.customer_name,
+        c.customer_phone,
+        c.customer_address,
+        c.city,
+        c.product_type,
+        c.issue_category,
+        c.status as complaint_status
+      FROM complaint_payments cp
+      JOIN complaints c ON cp.complaint_id = c.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (technician_id) {
+      params.push(String(technician_id));
+      sql += ` AND cp.technician_id::text = $${params.length}`;
+    }
+    if (complaint_id) {
+      params.push(String(complaint_id));
+      sql += ` AND cp.complaint_id::text = $${params.length}`;
+    }
+    if (payment_mode) {
+      params.push(payment_mode);
+      sql += ` AND cp.payment_mode = $${params.length}`;
+    }
+    sql += ' ORDER BY cp.created_at DESC';
+    const res = await query(sql, params, c.env, c.executionCtx);
+    return c.json({ payments: res.rows || [] });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // In-memory LRU cache for pincodes & post offices in Worker isolate
 const pincodeMemoryCache = new Map();
 const postOfficeMemoryCache = new Map();

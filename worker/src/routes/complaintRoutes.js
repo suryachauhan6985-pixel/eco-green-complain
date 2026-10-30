@@ -1986,6 +1986,27 @@ complaintRoutes.post('/:id/settle-company', authenticateToken, requireRole('admi
       WHERE id = $2
     `, [actorName, complaint.id], c.env, c.executionCtx);
 
+    const targetPaymentId = body?.payment_id;
+    if (targetPaymentId) {
+      await query(`
+        UPDATE complaint_payments
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [actorName, targetPaymentId], c.env, c.executionCtx);
+    } else {
+      await query(`
+        UPDATE complaint_payments
+        SET company_settlement_status = 'Settled with Company',
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE complaint_id = $2
+      `, [actorName, complaint.id], c.env, c.executionCtx);
+    }
+
     const techLabel = complaint.technician_name || (complaint.assigned_technician_id ? `Technician #${complaint.assigned_technician_id}` : 'Direct Office Collection');
     const timelineMsg = `Company confirmed receipt of ₹${settledAmt} (${techLabel}) into company account.${notes ? ` • Note: ${notes}` : ''}`;
 

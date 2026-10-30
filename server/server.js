@@ -388,6 +388,7 @@ app.post('/api/complaints/sync-backup', complaintController.syncBackupComplaints
 
 // Protected complaint endpoints
 app.get('/api/complaints', authenticateToken, complaintController.listComplaints);
+app.get('/api/complaint-payments', authenticateToken, complaintController.listPayments);
 app.get('/api/complaints/customer-history', authenticateToken, complaintController.getCustomerHistory);
 app.get('/api/complaints/check-active', authenticateToken, complaintController.checkActiveComplaint);
 app.get('/api/complaints/:id', authenticateToken, complaintController.getComplaintById);

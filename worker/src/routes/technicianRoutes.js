@@ -585,7 +585,17 @@ function buildLedgerAndStatement(advances, expenses, settlements, options = {}) 
 technicianRoutes.get('/technicians', authenticateToken, async (c) => {
   try {
     const res = await query(
-      `WITH tech_counts AS (
+      `WITH payment_stats AS (
+        SELECT 
+          technician_id::text AS tech_id,
+          COALESCE(SUM(amount) FILTER (WHERE payment_status = 'Collected' AND payment_mode = 'Cash'), 0) AS total_collected,
+          COALESCE(SUM(amount) FILTER (WHERE payment_status = 'Collected' AND payment_mode = 'Cash' AND company_settlement_status = 'Settled with Company'), 0) AS total_settled_with_company,
+          COALESCE(SUM(amount) FILTER (WHERE payment_status = 'Collected' AND payment_mode = 'Cash' AND (company_settlement_status IS NULL OR company_settlement_status != 'Settled with Company')), 0) AS cash_in_hand_due
+        FROM complaint_payments
+        WHERE technician_id IS NOT NULL
+        GROUP BY technician_id::text
+      ),
+      tech_counts AS (
         SELECT 
           tech_id,
           COUNT(*) FILTER (WHERE status IN ('Assigned', 'In Progress', 'Reopened')) AS active_tickets_count,
@@ -605,9 +615,13 @@ technicianRoutes.get('/technicians', authenticateToken, async (c) => {
         COALESCE(tc.active_tickets_count, 0) AS active_jobs_count,
         COALESCE(tc.on_hold_count, 0) AS on_hold_count,
         COALESCE(tc.total_open_count, 0) AS total_open_count,
-        COALESCE(tc.resolved_tickets_count, 0) AS resolved_tickets_count
+        COALESCE(tc.resolved_tickets_count, 0) AS resolved_tickets_count,
+        COALESCE(ps.total_collected, 0) AS total_collected,
+        COALESCE(ps.total_settled_with_company, 0) AS total_settled_with_company,
+        COALESCE(ps.cash_in_hand_due, 0) AS cash_in_hand_due
       FROM technicians t
       LEFT JOIN tech_counts tc ON tc.tech_id = t.id::text
+      LEFT JOIN payment_stats ps ON ps.tech_id = t.id::text
       ORDER BY t.name ASC`,
       [],
       c.env,
@@ -619,7 +633,10 @@ technicianRoutes.get('/technicians', authenticateToken, async (c) => {
       active_jobs_count: parseInt(r.active_jobs_count || 0, 10),
       on_hold_count: parseInt(r.on_hold_count || 0, 10),
       total_open_count: parseInt(r.total_open_count || 0, 10),
-      resolved_tickets_count: parseInt(r.resolved_tickets_count || 0, 10)
+      resolved_tickets_count: parseInt(r.resolved_tickets_count || 0, 10),
+      total_collected: parseFloat(r.total_collected || 0),
+      total_settled_with_company: parseFloat(r.total_settled_with_company || 0),
+      cash_in_hand_due: parseFloat(r.cash_in_hand_due || 0)
     }));
     return c.json({ technicians: mapped });
   } catch (err) {
@@ -2104,43 +2121,58 @@ technicianRoutes.post('/technicians/:id/settle-all', authenticateToken, requireR
     if (!techRes.rows.length) return c.json({ error: 'Technician not found' }, 404);
     const tech = techRes.rows[0];
 
-    // Find unsettled complaints for primary technician
-    const compRes = await query(`
-      SELECT id, ticket_id, payment_collected
-      FROM complaints
-      WHERE (assigned_technician_id = $1 OR (assigned_technician_id IS NULL AND resolved_by_technician_id = $1::text))
-        AND COALESCE(payment_collected, 0) > 0
-        AND COALESCE(company_settlement_status, '') != 'Settled with Company'
+    // Find unsettled cash payments for technician from complaint_payments
+    const payRes = await query(`
+      SELECT cp.id as payment_id, cp.complaint_id, cp.amount, c.ticket_id
+      FROM complaint_payments cp
+      JOIN complaints c ON cp.complaint_id = c.id
+      WHERE cp.technician_id::text = $1
+        AND cp.payment_status = 'Collected'
+        AND cp.payment_mode = 'Cash'
+        AND (cp.company_settlement_status IS NULL OR cp.company_settlement_status != 'Settled with Company')
     `, [techId], c.env, c.executionCtx);
 
-    const unsettledJobs = compRes.rows;
-    if (unsettledJobs.length === 0) {
+    const unsettledPayments = payRes.rows;
+    if (unsettledPayments.length === 0) {
       return c.json({ success: true, message: 'No unsettled cash balances for this technician', settledCount: 0, totalAmount: 0 });
     }
 
-    const totalAmount = unsettledJobs.reduce((sum, j) => sum + Number(j.payment_collected || 0), 0);
+    const totalAmount = unsettledPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
     const settler = user.name || 'Admin';
 
-    for (const job of unsettledJobs) {
+    for (const p of unsettledPayments) {
       await query(`
-        UPDATE complaints
+        UPDATE complaint_payments
         SET company_settlement_status = 'Settled with Company',
             company_settled_at = CURRENT_TIMESTAMP,
             company_settled_by = $1,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
-      `, [settler, job.id], c.env, c.executionCtx);
+      `, [settler, p.payment_id], c.env, c.executionCtx);
+
+      await query(`
+        UPDATE complaints
+        SET company_settlement_status = CASE 
+              WHEN (SELECT COUNT(*) FROM complaint_payments WHERE complaint_id = $1 AND company_settlement_status != 'Settled with Company') = 0 
+              THEN 'Settled with Company' 
+              ELSE 'Pending Settlement' 
+            END,
+            company_settled_at = CURRENT_TIMESTAMP,
+            company_settled_by = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [p.complaint_id, settler], c.env, c.executionCtx);
 
       await query(`
         INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
         VALUES ($1, 'Cash Settled with Company', $2, $3, $4, 0)
-      `, [job.id, `Company confirmed receipt of ₹${job.payment_collected} collected by technician ${tech.name} into company account via batch settlement.`, settler, user.role || 'admin'], c.env, c.executionCtx);
+      `, [p.complaint_id, `Company confirmed receipt of ₹${p.amount} collected by technician ${tech.name} into company account via batch settlement.`, settler, user.role || 'admin'], c.env, c.executionCtx);
     }
 
     return c.json({
       success: true,
-      message: `Successfully settled ₹${totalAmount} across ${unsettledJobs.length} complaints for ${tech.name}`,
-      settledCount: unsettledJobs.length,
+      message: `Successfully settled ₹${totalAmount} across ${unsettledPayments.length} payments for ${tech.name}`,
+      settledCount: unsettledPayments.length,
       totalAmount
     });
   } catch (err) {

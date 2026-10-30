@@ -2156,6 +2156,12 @@ export const api = {
     body: JSON.stringify(data)
   }),
 
+  // Itemized Complaint Payments
+  getComplaintPayments: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request('/complaint-payments' + (qs ? '?' + qs : ''));
+  },
+
   // Company Payment Settlement
   settleCompanyPayment: (id, data = {}) => request(`/complaints/${id}/settle-company`, {
     method: 'POST',

@@ -2399,8 +2399,49 @@ function resendTechnicianWorkOrder(req, res) {
   }
 }
 
+function listPayments(req, res) {
+  try {
+    const { technician_id, complaint_id, payment_mode } = req.query;
+    let sql = `
+      SELECT 
+        cp.*,
+        c.ticket_id,
+        c.customer_name,
+        c.customer_phone,
+        c.customer_address,
+        c.city,
+        c.product_type,
+        c.issue_category,
+        c.status as complaint_status
+      FROM complaint_payments cp
+      JOIN complaints c ON cp.complaint_id = c.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (technician_id) {
+      sql += ' AND cp.technician_id = ?';
+      params.push(technician_id);
+    }
+    if (complaint_id) {
+      sql += ' AND cp.complaint_id = ?';
+      params.push(complaint_id);
+    }
+    if (payment_mode) {
+      sql += ' AND cp.payment_mode = ?';
+      params.push(payment_mode);
+    }
+    sql += ' ORDER BY cp.created_at DESC';
+    const payments = db.prepare(sql).all(...params);
+    res.json({ payments });
+  } catch (err) {
+    console.error('List payments error:', err);
+    res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+}
+
 module.exports = {
   listComplaints,
+  listPayments,
   getComplaintById,
   getCustomerHistory,
   checkActiveComplaint,

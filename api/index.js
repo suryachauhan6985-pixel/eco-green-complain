@@ -1548,6 +1548,47 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/complaint-payments - Retrieve itemized complaint payments
+app.get('/api/complaint-payments', authenticateToken, async (req, res) => {
+  try {
+    const { technician_id, complaint_id, payment_mode } = req.query;
+    let sql = `
+      SELECT 
+        cp.*,
+        c.ticket_id,
+        c.customer_name,
+        c.customer_phone,
+        c.customer_address,
+        c.city,
+        c.product_type,
+        c.issue_category,
+        c.status as complaint_status
+      FROM complaint_payments cp
+      JOIN complaints c ON cp.complaint_id = c.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (technician_id) {
+      params.push(technician_id);
+      sql += ` AND cp.technician_id::text = $${params.length}`;
+    }
+    if (complaint_id) {
+      params.push(complaint_id);
+      sql += ` AND cp.complaint_id::text = $${params.length}`;
+    }
+    if (payment_mode) {
+      params.push(payment_mode);
+      sql += ` AND cp.payment_mode = $${params.length}`;
+    }
+    sql += ' ORDER BY cp.created_at DESC';
+    const result = await query(sql, params);
+    return res.json({ payments: result.rows || [] });
+  } catch (err) {
+    console.error('List payments error:', err);
+    return res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
 app.delete('/api/auth/users/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;

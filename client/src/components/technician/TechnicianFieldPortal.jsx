@@ -190,12 +190,19 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   // Cash Reconciliation UI States
   const [expandedTechId, setExpandedTechId] = useState(null);
   const [settlingAction, setSettlingAction] = useState(false);
+  const [complaintPayments, setComplaintPayments] = useState([]);
 
   const fetchMyJobs = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await api.getComplaints({});
-      setComplaints(data.complaints || []);
+      const [compData, payData] = await Promise.all([
+        api.getComplaints({}),
+        api.getComplaintPayments ? api.getComplaintPayments().catch(() => ({ payments: [] })) : Promise.resolve({ payments: [] })
+      ]);
+      setComplaints(compData.complaints || []);
+      if (payData && Array.isArray(payData.payments)) {
+        setComplaintPayments(payData.payments);
+      }
     } catch (err) {
       if (!silent) console.error('Failed to load technician jobs:', err);
     } finally {
@@ -331,7 +338,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
   // Collect cash for one specific complaint
   const handleSingleSettle = async (e, comp, tech) => {
     e.stopPropagation();
-    const amount = comp.payment_collected || 0;
+    const amount = comp.payment_collected || comp.amount || 0;
     const ok = await confirm({
       title: 'Collect Ticket Cash Deposit',
       message: `Confirm receiving ₹${amount} cash from technician "${tech?.name || 'Assigned Tech'}" for Ticket #${comp.ticket_id} into company account?`,
@@ -344,7 +351,9 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
     try {
       setSettlingAction(true);
-      await api.settleCompanyPayment(comp.id, {
+      await api.settleCompanyPayment(comp.complaint_id || comp.id, {
+        payment_id: comp.payment_id || null,
+        technician_id: tech.id,
         notes: `Settled by ${currentUser?.name || 'Admin'} from Field View`,
         amount_received: amount
       });
@@ -360,13 +369,49 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
 
   // Compute Technician Cash Breakdown
   const techCashBreakdown = technicians.map(tech => {
-    // Only primary technician is responsible for on-site cash collection & register accounting
-    const techJobs = complaints.filter(c => 
-      String(c.assigned_technician_id) === String(tech.id) || 
-      String(c.technician_id) === String(tech.id) ||
-      (c.technician_name && tech.name && c.technician_name.trim().toLowerCase() === tech.name.trim().toLowerCase())
+    // 1. Identify payments collected by this technician from itemized payments ledger
+    const matchingPayments = complaintPayments.filter(p => 
+      String(p.technician_id) === String(tech.id) || 
+      (p.technician_name && tech.name && p.technician_name.trim().toLowerCase() === tech.name.trim().toLowerCase())
     );
-    const cashJobs = techJobs.filter(c => (parseFloat(c.payment_collected) || 0) > 0);
+
+    // Map payments to standard cashJobs shape
+    const paymentJobs = matchingPayments.map(p => ({
+      id: p.complaint_id,
+      complaint_id: p.complaint_id,
+      payment_id: p.id,
+      ticket_id: p.ticket_id,
+      customer_name: p.customer_name,
+      customer_phone: p.customer_phone,
+      city: p.city,
+      product_type: p.product_type,
+      issue_category: p.issue_category,
+      payment_collected: parseFloat(p.amount) || 0,
+      payment_mode: p.payment_mode || 'Cash',
+      payment_status: p.payment_status || 'Collected',
+      company_settlement_status: p.company_settlement_status || 'Pending Settlement',
+      company_settled_by: p.company_settled_by,
+      company_settled_at: p.company_settled_at,
+      payment_notes: p.payment_notes,
+      collection_reason: p.collection_reason,
+      payment_collected_at: p.created_at,
+      status: p.complaint_status
+    }));
+
+    // Legacy fallback for complaints where payment was collected before complaint_payments table existed
+    const legacyComplaints = complaints.filter(c => {
+      const amt = parseFloat(c.payment_collected) || 0;
+      if (amt <= 0) return false;
+      // If this complaint already has records in complaintPayments, do not duplicate
+      if (complaintPayments.some(cp => String(cp.complaint_id) === String(c.id))) return false;
+      return (
+        String(c.assigned_technician_id) === String(tech.id) || 
+        String(c.technician_id) === String(tech.id) ||
+        (c.technician_name && tech.name && c.technician_name.trim().toLowerCase() === tech.name.trim().toLowerCase())
+      );
+    });
+
+    const cashJobs = [...paymentJobs, ...legacyComplaints];
     const computedTotal = cashJobs.reduce((sum, c) => sum + (parseFloat(c.payment_collected) || 0), 0);
     const computedSettled = cashJobs
       .filter(c => c.company_settlement_status === 'Settled with Company')
@@ -374,7 +419,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
     const computedDue = Math.max(0, computedTotal - computedSettled);
     const pendingJobs = cashJobs.filter(c => c.company_settlement_status !== 'Settled with Company');
 
-    // Prefer live backend aggregated cash values if present, else fallback to loaded complaints
+    // Prefer live backend aggregated cash values if present, else fallback to computed items
     const totalCollected = (tech.total_collected !== undefined && tech.total_collected !== null)
       ? parseFloat(tech.total_collected)
       : computedTotal;
