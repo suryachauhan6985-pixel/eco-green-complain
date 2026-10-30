@@ -82,10 +82,10 @@ export function WhatsAppQuickTemplatesModal({ isOpen, onClose, onSelectTemplate 
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]"
+        className="apple-glass-modal rounded-3xl shadow-2xl w-full overflow-hidden flex flex-col max-h-[85vh] modal-jelly-enter"
       >
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#008069] text-white flex items-center justify-between shadow-xs">
+        <div className="px-5 py-3.5 apple-glass-header text-white flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-amber-300" />
             <div>
@@ -103,7 +103,7 @@ export function WhatsAppQuickTemplatesModal({ isOpen, onClose, onSelectTemplate 
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="p-3.5 border-b border-slate-200 bg-slate-50 space-y-2">
+        <div className="p-3.5 apple-glass-subbar space-y-2">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input

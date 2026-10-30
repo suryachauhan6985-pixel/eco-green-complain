@@ -1523,18 +1523,18 @@ export const NewComplaintModal = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs backdrop-enter-fade flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 overflow-y-auto apple-glass-backdrop backdrop-enter-fade flex items-center justify-center p-4"
       style={{
         paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))',
         paddingBottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))'
       }}
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 modal-enter-scale"
+        className="apple-glass-modal rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden modal-jelly-enter"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between">
+        <div className="px-6 py-4 apple-glass-header text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             {step === 'form' && !createdTicket && !isEditMode ? (
               <button
@@ -1612,7 +1612,7 @@ export const NewComplaintModal = ({
               </div>
 
               {/* Ticket Summary Box */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs text-slate-700 shadow-2xs">
+              <div className="apple-glass-card rounded-2xl p-4 border border-white/80 text-xs text-slate-700 shadow-2xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Customer Name</span>
@@ -1766,7 +1766,7 @@ export const NewComplaintModal = ({
                         type="button"
                         key={prod.name}
                         onClick={() => handleSelectProduct(prod.name)}
-                        className="group p-4 rounded-2xl border-2 border-slate-200 hover:border-emerald-500 bg-white hover:bg-emerald-50/40 text-left transition-all shadow-2xs hover:shadow-md flex flex-col justify-between gap-3 relative overflow-hidden cursor-pointer"
+                        className="group p-4 rounded-2xl apple-glass-card hover:bg-white/90 border border-white/80 hover:border-emerald-500/80 text-left transition-all shadow-xs hover:shadow-lg flex flex-col justify-between gap-3 relative overflow-hidden cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
                       >
                         <div className="flex items-start justify-between">
                           <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
@@ -1795,7 +1795,7 @@ export const NewComplaintModal = ({
             /* STEP 2: REGISTRATION FORM WINDOW */
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Selected Product Banner with "Change Product" button */}
-              <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-2xs">
+              <div className="apple-glass-card border border-emerald-300/80 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-2xs">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0">
                     {React.createElement(getProductComponentIcon(formData.product_type), { className: 'w-5 h-5' })}
@@ -1813,7 +1813,7 @@ export const NewComplaintModal = ({
                 <button
                   type="button"
                   onClick={() => setStep('product')}
-                  className="px-3 py-1.5 bg-white hover:bg-emerald-100/80 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  className="px-3 py-1.5 bg-white/90 hover:bg-white border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   Change Product
@@ -1850,7 +1850,7 @@ export const NewComplaintModal = ({
               )}
 
               {/* Smart Customer Lookup Bar (Excel 6,100+ Database) */}
-              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/60 p-3.5 rounded-2xl border border-emerald-200 shadow-2xs relative">
+              <div className="apple-glass-card p-3.5 rounded-2xl border border-emerald-300/80 shadow-2xs relative">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-1.5">
                     <Search className="w-4 h-4 text-emerald-700" />
@@ -2061,7 +2061,7 @@ export const NewComplaintModal = ({
               </div>
 
               {/* Customer Information */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="apple-glass-card p-4 sm:p-5 rounded-2xl border border-white/80 space-y-3">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-emerald-600" />
                   Customer Contact & Site Location
@@ -2442,7 +2442,7 @@ export const NewComplaintModal = ({
               </div>
 
               {/* System & Warranty Details */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="apple-glass-card p-4 sm:p-5 rounded-2xl border border-white/80 space-y-3">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Award className="w-3.5 h-3.5 text-emerald-600" />
                   System Identification & Warranty Status
@@ -2907,7 +2907,7 @@ export const NewComplaintModal = ({
               </div>
 
               {/* Service Charges & Quotation */}
-              <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/80 space-y-3">
+              <div className="apple-glass-card p-4 sm:p-5 rounded-2xl border border-amber-300/70 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                     <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
@@ -3179,11 +3179,11 @@ export const NewComplaintModal = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5 flex-wrap">
+              <div className="pt-3.5 border-t border-slate-200/80 flex items-center justify-end gap-2.5 flex-wrap">
                 <button
                   type="button"
                   onClick={resetAndClose}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+                  className="px-4 py-2 border border-slate-300/80 bg-white/80 hover:bg-white rounded-xl text-xs font-semibold text-slate-700 transition-colors cursor-pointer shadow-2xs"
                 >
                   Cancel
                 </button>
@@ -3193,7 +3193,7 @@ export const NewComplaintModal = ({
                     type="button"
                     onClick={handleSaveDraft}
                     disabled={submitting}
-                    className="px-4 py-2 border-2 border-emerald-600 bg-white hover:bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    className="px-4 py-2 border-2 border-emerald-600 bg-white/90 hover:bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                   >
                     {submitting ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />

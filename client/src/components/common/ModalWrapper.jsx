@@ -97,7 +97,7 @@ export function ModalWrapper({
     >
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`fixed inset-0 apple-glass-backdrop transition-opacity duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isActive ? 'opacity-100' : 'opacity-0'
         } ${backdropClassName}`}
         aria-hidden="true"
@@ -111,9 +111,9 @@ export function ModalWrapper({
 
       {/* Modal Dialog Window */}
       <div
-        className={`relative z-10 w-full ${maxWidth} transform transition-all duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform ${
+        className={`relative z-10 w-full ${maxWidth} transform transition-all duration-220 ease-[cubic-bezier(0.34,1.35,0.64,1)] will-change-transform ${
           isActive 
-            ? 'opacity-100 scale-100 translate-y-0' 
+            ? 'opacity-100 scale-100 translate-y-0 modal-jelly-enter' 
             : 'opacity-0 scale-95 translate-y-2'
         } ${className}`}
         onClick={(e) => e.stopPropagation()}

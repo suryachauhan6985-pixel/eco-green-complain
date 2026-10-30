@@ -221,11 +221,11 @@ export const CustomerSearchModal = ({
       ariaLabel="Customer Directory & Solar Plant Lookup"
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200"
+        className="apple-glass-modal rounded-3xl shadow-2xl w-full max-h-[90vh] flex flex-col overflow-hidden modal-jelly-enter"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Bar */}
-        <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-4 apple-glass-header text-white flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-xs">
               <Search className="w-5 h-5" />
@@ -239,7 +239,7 @@ export const CustomerSearchModal = ({
                   6,100+ Installed Records
                 </span>
               </div>
-              <p className="text-xs text-slate-400 truncate mt-0.5">
+              <p className="text-xs text-slate-300 truncate mt-0.5">
                 Search verified customers, view equipment specifications, and initiate tickets with prefilled data
               </p>
             </div>
@@ -248,7 +248,7 @@ export const CustomerSearchModal = ({
           <button 
             type="button"
             onClick={onClose} 
-            className="p-1.5 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white transition-all cursor-pointer shrink-0"
+            className="p-1.5 hover:bg-white/10 rounded-xl text-slate-300 hover:text-white transition-all cursor-pointer shrink-0"
             title="Close Search Window (Esc)"
           >
             <X className="w-5 h-5" />
@@ -256,7 +256,7 @@ export const CustomerSearchModal = ({
         </div>
 
         {/* Search Input & Quick Controls */}
-        <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-3 shrink-0">
+        <div className="p-4 apple-glass-subbar space-y-3 shrink-0">
           <div className="relative">
             <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -506,7 +506,7 @@ export const CustomerSearchModal = ({
                 {/* 2-Column Technical & Installation Specifications */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   {/* Card 1: Utility & Electricity Board Details */}
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="p-3.5 apple-glass-card rounded-2xl border border-white/80 space-y-2.5">
                     <h5 className="font-bold text-[11px] text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5 text-amber-500" />
                       Electricity & Order Record
@@ -544,7 +544,7 @@ export const CustomerSearchModal = ({
                   </div>
 
                   {/* Card 2: Plant & Technical Equipment */}
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="p-3.5 apple-glass-card rounded-2xl border border-white/80 space-y-2.5">
                     <h5 className="font-bold text-[11px] text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                       <Sun className="w-3.5 h-3.5 text-emerald-600" />
                       Solar Plant & Equipment
@@ -583,7 +583,7 @@ export const CustomerSearchModal = ({
                 </div>
 
                 {/* Card 3: Site Address & Location */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 text-xs">
+                <div className="p-3.5 apple-glass-card rounded-2xl border border-white/80 space-y-1.5 text-xs">
                   <h5 className="font-bold text-[11px] text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-rose-500" />
                     Installation Site Address

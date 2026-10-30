@@ -3498,8 +3498,8 @@ export const TourLedgerSection = ({
 
       {/* ================= MODAL: ALLOCATE ADVANCE ================= */}
       {isAdvanceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
+          <div className="apple-glass-modal rounded-3xl max-w-md w-full p-5 shadow-2xl modal-jelly-enter space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <ArrowDownLeft className="w-4 h-4 text-blue-600" />
@@ -3662,8 +3662,8 @@ export const TourLedgerSection = ({
 
       {/* ================= MODAL: EDIT TOUR ADVANCE ================= */}
       {isEditAdvanceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
+          <div className="apple-glass-modal rounded-3xl max-w-md w-full p-5 shadow-2xl modal-jelly-enter space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -3798,8 +3798,8 @@ export const TourLedgerSection = ({
 
       {/* ================= MODAL: ADD EXPENSE VOUCHER (MULTI-ITEM BATCH CLAIM) ================= */}
       {isExpenseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
+          <div className="apple-glass-modal rounded-3xl max-w-2xl w-full p-5 shadow-2xl modal-jelly-enter space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
@@ -4225,8 +4225,8 @@ export const TourLedgerSection = ({
         const targetDue = Math.abs(targetNetBal);
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-            <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
+            <div className="apple-glass-modal rounded-3xl max-w-md w-full p-5 shadow-2xl modal-jelly-enter space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                   <IndianRupee className={`w-4 h-4 ${isTargetReimb ? 'text-blue-600' : 'text-emerald-600'}`} />
@@ -4401,10 +4401,10 @@ export const TourLedgerSection = ({
 
       {/* ================= MODAL: VOUCHER SEQUENCE SETTINGS (ADMIN ONLY) ================= */}
       {isVoucherSettingsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
+          <div className="apple-glass-modal rounded-3xl max-w-md w-full shadow-2xl overflow-hidden modal-jelly-enter">
             {/* Header */}
-            <div className="px-5 py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between">
+            <div className="px-5 py-4 apple-glass-header text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
                   <Settings className="w-5 h-5" />
@@ -5166,11 +5166,11 @@ export const TourLedgerSection = ({
       {receiptLightbox && (
         <div 
           onClick={() => setReceiptLightbox(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm cursor-zoom-out"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade cursor-zoom-out"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl p-4 flex flex-col"
+            className="apple-glass-modal rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl p-4 flex flex-col modal-jelly-enter"
           >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -5257,11 +5257,11 @@ export const TourLedgerSection = ({
       {/* ================= IN-APP AUDIT CANCELLATION & REVERSAL MODAL (NO NATIVE CHROME PROMPT) ================= */}
       {cancelModalState.isOpen && (
         <div 
-          className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[120] apple-glass-backdrop backdrop-enter-fade flex items-center justify-center p-4"
           onClick={() => !cancelModalState.submitting && setCancelModalState(prev => ({ ...prev, isOpen: false }))}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150"
+            className="apple-glass-modal rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden modal-jelly-enter"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}

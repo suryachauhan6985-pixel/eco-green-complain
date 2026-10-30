@@ -35,10 +35,10 @@ export const CustomerHistoryModal = ({ phone, isOpen, onClose, onSelectTicket })
       ariaLabel="Customer Complaint History"
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200"
+        className="apple-glass-modal rounded-3xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden modal-jelly-enter"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div className="px-6 py-4 apple-glass-header text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <History className="w-5 h-5 text-emerald-400" />
             <div>

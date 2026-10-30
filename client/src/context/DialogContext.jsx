@@ -167,14 +167,14 @@ export function DialogProvider({ children }) {
         ariaLabel={dialog?.title || 'Notice'}
       >
         {dialog && (
-          <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden border border-slate-200">
+          <div className="apple-glass-modal rounded-3xl w-full overflow-hidden shadow-2xl">
             {/* Header with appropriate icon & color */}
             <div className={`px-5 py-4 flex items-center justify-between border-b ${
-              dialog.type === 'danger' ? 'bg-rose-50 border-rose-100 text-rose-950' :
-              dialog.type === 'payment' ? 'bg-gradient-to-r from-emerald-800 to-teal-800 text-white' :
-              dialog.type === 'warning' ? 'bg-amber-50 border-amber-100 text-amber-950' :
-              dialog.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-950' :
-              'bg-slate-900 text-white'
+              dialog.type === 'danger' ? 'bg-rose-50/90 border-rose-100 text-rose-950' :
+              dialog.type === 'payment' ? 'apple-glass-header text-white' :
+              dialog.type === 'warning' ? 'bg-amber-50/90 border-amber-100 text-amber-950' :
+              dialog.type === 'success' ? 'bg-emerald-50/90 border-emerald-100 text-emerald-950' :
+              'apple-glass-header text-white'
             }`}>
               <div className="flex items-center gap-2.5">
                 <div className={`p-2 rounded-xl shrink-0 ${
@@ -239,12 +239,12 @@ export function DialogProvider({ children }) {
             </div>
 
             {/* Footer Buttons */}
-            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+            <div className="px-5 py-3.5 apple-glass-subbar flex items-center justify-end gap-2.5">
               {dialog.isConfirm && (
                 <button
                   type="button"
                   onClick={() => handleCloseDialog(false)}
-                  className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  className="px-4 py-2 border border-slate-300/80 bg-white/90 hover:bg-white text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
                 >
                   {dialog.cancelText || 'Cancel'}
                 </button>
