@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useId } from 'react';
-import { ChevronDown, Check, Search, X } from 'lucide-react';
+import { ChevronDown, Check } from 'lucide-react';
 
 /**
  * AppleGlassSelect — Premium Liquid Glass Dropdown
@@ -7,8 +7,9 @@ import { ChevronDown, Check, Search, X } from 'lucide-react';
  * Replaces native OS <select> with an authentic Apple-grade frosted glass experience:
  * - Fluid spring/jelly physics (smooth expansion & collapse)
  * - Translucent backdrop blur with specular glass reflections
+ * - Full typeahead keyboard search (instant jump to typed letters)
+ * - Full detail visibility for technician workloads & zones without clipping
  * - Full touch & keyboard accessibility
- * - Prevents native mobile browser wheel/sheet popups
  */
 export const GlassSelect = ({
   value,
@@ -18,14 +19,14 @@ export const GlassSelect = ({
   icon: Icon = null,
   className = '',
   menuClassName = '',
-  searchable = false,
   disabled = false,
   'aria-label': ariaLabel = ''
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef(null);
-  const searchInputRef = useRef(null);
+  const optionsListRef = useRef(null);
+  const typeaheadBufferRef = useRef('');
+  const typeaheadTimerRef = useRef(null);
   const dropdownId = useId();
 
   // Normalize options to { value, label, badge, dotColor, sublabel }
@@ -54,30 +55,17 @@ export const GlassSelect = ({
 
   const selectedOption = normalizedOptions.find(opt => String(opt.value) === String(value));
 
-  // Filtered options if search is enabled
-  const filteredOptions = React.useMemo(() => {
-    if (!searchQuery.trim()) return normalizedOptions;
-    const q = searchQuery.toLowerCase().trim();
-    return normalizedOptions.filter(opt => 
-      opt.label.toLowerCase().includes(q) || 
-      (opt.sublabel && opt.sublabel.toLowerCase().includes(q)) ||
-      (opt.badge && opt.badge.toLowerCase().includes(q))
-    );
-  }, [normalizedOptions, searchQuery]);
-
   // Close on outside click
   useEffect(() => {
     if (!isOpen) return;
     const handleOutsideClick = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false);
-        setSearchQuery('');
       }
     };
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         setIsOpen(false);
-        setSearchQuery('');
       }
     };
     document.addEventListener('mousedown', handleOutsideClick, true);
@@ -90,17 +78,48 @@ export const GlassSelect = ({
     };
   }, [isOpen]);
 
-  // Focus search when opened
+  // Keyboard Typeahead: Jump directly to option when user types keys (no dedicated input box)
   useEffect(() => {
-    if (isOpen && searchable && searchInputRef.current) {
-      setTimeout(() => searchInputRef.current?.focus(), 50);
-    }
-  }, [isOpen, searchable]);
+    if (!isOpen) return;
+
+    const handleTypeahead = (e) => {
+      if (e.key === 'Escape' || e.key === 'Tab' || e.key === 'Enter' || e.altKey || e.ctrlKey || e.metaKey) {
+        return;
+      }
+      // Single character keypress
+      if (e.key && e.key.length === 1) {
+        typeaheadBufferRef.current += e.key.toLowerCase();
+        if (typeaheadTimerRef.current) clearTimeout(typeaheadTimerRef.current);
+        typeaheadTimerRef.current = setTimeout(() => {
+          typeaheadBufferRef.current = '';
+        }, 750);
+
+        const query = typeaheadBufferRef.current;
+        const matched = normalizedOptions.find(opt => 
+          opt.label.toLowerCase().startsWith(query) || 
+          opt.label.toLowerCase().includes(query)
+        );
+
+        if (matched) {
+          const btn = document.getElementById(`${dropdownId}-opt-${matched.value}`);
+          if (btn) {
+            btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            btn.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleTypeahead);
+    return () => {
+      window.removeEventListener('keydown', handleTypeahead);
+      if (typeaheadTimerRef.current) clearTimeout(typeaheadTimerRef.current);
+    };
+  }, [isOpen, normalizedOptions, dropdownId]);
 
   const handleSelect = (optVal) => {
     if (onChange) onChange(optVal);
     setIsOpen(false);
-    setSearchQuery('');
   };
 
   return (
@@ -153,72 +172,50 @@ export const GlassSelect = ({
         <div 
           role="listbox"
           aria-labelledby={dropdownId}
-          className={`absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-full min-w-[240px] max-w-[360px] sm:max-w-md apple-glass-dropdown z-50 rounded-2xl overflow-hidden shadow-2xl isolate border border-white/80 ${menuClassName}`}
+          className={`absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-max min-w-full sm:min-w-[340px] md:min-w-[420px] max-w-[min(650px,94vw)] apple-glass-dropdown z-50 rounded-2xl overflow-hidden shadow-2xl isolate border border-white/80 ${menuClassName}`}
           style={{
             transformOrigin: 'top center',
             animation: 'appleJellyDropdownEnter 260ms cubic-bezier(0.34, 1.4, 0.64, 1) both'
           }}
         >
-          {/* Optional Search Filter */}
-          {searchable && normalizedOptions.length > 5 && (
-            <div className="p-2 border-b border-slate-200 bg-slate-50">
-              <div className="relative flex items-center">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search options..."
-                  className="w-full text-xs pl-8 pr-7 py-1.5 bg-white rounded-lg border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-slate-800 transition-all placeholder:text-slate-400"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Options List with Apple Tactile Spring Interaction */}
-          <div className="max-h-64 overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-slate-300">
-            {filteredOptions.length === 0 ? (
+          <div 
+            ref={optionsListRef}
+            className="max-h-72 overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-slate-300"
+          >
+            {normalizedOptions.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-slate-400 font-medium">
-                No matching options found
+                No options available
               </div>
             ) : (
-              filteredOptions.map((opt) => {
+              normalizedOptions.map((opt) => {
                 const isSelected = String(opt.value) === String(value);
                 return (
                   <button
                     key={opt.value}
+                    id={`${dropdownId}-opt-${opt.value}`}
                     type="button"
                     role="option"
                     aria-selected={isSelected}
                     disabled={opt.disabled}
                     onClick={() => handleSelect(opt.value)}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-all duration-160 cursor-pointer ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 transition-all duration-160 cursor-pointer ${
                       isSelected
                         ? 'bg-emerald-600 text-white shadow-xs font-bold'
                         : 'text-slate-800 hover:bg-slate-900/5 active:bg-slate-900/10'
                     } ${opt.disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       {opt.dotColor && (
                         <span 
                           className="w-2 h-2 rounded-full shrink-0 shadow-2xs" 
                           style={{ backgroundColor: opt.dotColor }}
                         />
                       )}
-                      <div className="min-w-0">
-                        <div className="truncate">{opt.label}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="whitespace-normal leading-snug">{opt.label}</div>
                         {opt.sublabel && (
-                          <div className={`text-[10px] truncate ${isSelected ? 'text-emerald-100' : 'text-slate-500 font-normal'}`}>
+                          <div className={`text-[10px] ${isSelected ? 'text-emerald-100' : 'text-slate-500 font-normal'}`}>
                             {opt.sublabel}
                           </div>
                         )}

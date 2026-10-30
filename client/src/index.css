@@ -15,12 +15,9 @@
     text-rendering: optimizeLegibility;
     background-color: #f8fafc;
     background-image: 
-      radial-gradient(1200px 600px at 50% 0px, rgba(16, 185, 129, 0.05), transparent 70%),
-      radial-gradient(circle at 1px 1px, rgba(5, 150, 105, 0.09) 1.2px, transparent 1.2px),
-      linear-gradient(to right, rgba(148, 163, 184, 0.075) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(148, 163, 184, 0.075) 1px, transparent 1px);
-    background-size: 100% 100%, 32px 32px, 32px 32px, 32px 32px;
-    background-position: center top, 0 0, 0 0, 0 0;
+      radial-gradient(1200px 700px at 50% -100px, rgba(16, 185, 129, 0.05), transparent 70%),
+      radial-gradient(1000px 600px at 100% 100%, rgba(14, 165, 233, 0.035), transparent 60%),
+      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     background-attachment: fixed;
     @apply text-slate-900 font-sans;
     margin: 0;
@@ -514,27 +511,25 @@ input, select, textarea, button, a {
 }
 
 /* ================= Apple Frosted Glass / Vibrancy Material Engine ================= */
-/* ================= Apple Frosted Glass / Vibrancy Material Engine ================= */
-/* Solid, High-Contrast Readability Base (Zero Background Bleed-Through) */
 .apple-glass-backdrop {
-  background-color: rgba(15, 23, 42, 0.60) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
+  background-color: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(10px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(140%) !important;
 }
 
 .apple-glass-drawer {
-  background: rgba(255, 255, 255, 0.94) !important;
-  backdrop-filter: blur(28px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.85) !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(28px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.8) !important;
   box-shadow: 
     inset 1px 0 0 0 rgba(255, 255, 255, 0.9),
-    -20px 0 60px -10px rgba(15, 23, 42, 0.30),
-    -4px 0 16px 0 rgba(15, 23, 42, 0.10) !important;
+    -20px 0 60px -10px rgba(15, 23, 42, 0.25),
+    -4px 0 16px 0 rgba(15, 23, 42, 0.08) !important;
 }
 
 .apple-glass-header, .apple-glass-modal-header {
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.94) 0%, rgba(15, 23, 42, 0.96) 100%) !important;
   backdrop-filter: blur(20px) saturate(160%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.20) !important;
@@ -542,7 +537,7 @@ input, select, textarea, button, a {
 }
 
 .apple-glass-subbar {
-  background: rgba(248, 250, 252, 0.90) !important;
+  background: rgba(248, 250, 252, 0.80) !important;
   backdrop-filter: blur(16px) saturate(160%) !important;
   -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
   border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
@@ -550,19 +545,19 @@ input, select, textarea, button, a {
 }
 
 .apple-glass-card {
-  background: rgba(255, 255, 255, 0.88) !important;
-  backdrop-filter: blur(20px) saturate(160%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  background: rgba(255, 255, 255, 0.70) !important;
+  backdrop-filter: blur(20px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(170%) !important;
   border: 1px solid rgba(255, 255, 255, 0.85) !important;
   box-shadow: 
-    inset 0 0 2px 1px rgba(255, 255, 255, 0.70),
-    inset 0 0 14px 2px rgba(255, 255, 255, 0.25),
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.80),
+    inset 0 0 14px 2px rgba(255, 255, 255, 0.30),
     0 6px 24px -2px rgba(15, 23, 42, 0.08), 
     0 1px 3px 0 rgba(15, 23, 42, 0.04) !important;
 }
 
 .apple-glass-card-subtle {
-  background: rgba(248, 250, 252, 0.85) !important;
+  background: rgba(248, 250, 252, 0.75) !important;
   backdrop-filter: blur(14px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(14px) saturate(150%) !important;
   border: 1px solid rgba(226, 232, 240, 0.85) !important;
@@ -570,14 +565,14 @@ input, select, textarea, button, a {
 }
 
 .apple-glass-modal {
-  background: rgba(255, 255, 255, 0.92) !important;
-  backdrop-filter: blur(30px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(30px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.90) !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(30px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
   box-shadow: 
-    inset 0 0 2px 1px rgba(255, 255, 255, 0.85),
-    inset 0 0 20px 4px rgba(255, 255, 255, 0.35),
-    0 25px 70px -10px rgba(15, 23, 42, 0.30),
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.90),
+    inset 0 0 20px 4px rgba(255, 255, 255, 0.40),
+    0 25px 70px -10px rgba(15, 23, 42, 0.28),
     0 10px 24px -5px rgba(15, 23, 42, 0.12) !important;
 }
 
@@ -599,16 +594,33 @@ input, select, textarea, button, a {
 }
 
 .apple-glass-dropdown {
-  background: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  background: rgba(255, 255, 255, 0.90) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
   box-shadow: 
     0 20px 45px -8px rgba(15, 23, 42, 0.22), 
-    0 4px 12px 0 rgba(15, 23, 42, 0.08) !important;
+    0 4px 16px 0 rgba(15, 23, 42, 0.08),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9) !important;
   -webkit-font-smoothing: subpixel-antialiased !important;
   -moz-osx-font-smoothing: auto !important;
   text-rendering: geometricPrecision !important;
+}
+
+.glass-panel-surface {
+  background: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.65) !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25) !important;
+}
+
+.glass-drawer-surface {
+  background: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.6) !important;
+  box-shadow: -10px 0 35px -5px rgba(15, 23, 42, 0.18) !important;
 }
 
 /* Modern High-End Liquid Glass (Chromatic Aberration & Refraction) Utility */

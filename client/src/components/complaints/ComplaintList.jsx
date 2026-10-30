@@ -721,8 +721,8 @@ export const ComplaintList = ({
               value={technicianFilter}
               onChange={handleTechnicianFilterChange}
               options={technicianOptions}
-              searchable={true}
               className="w-full sm:w-auto min-w-[200px] sm:min-w-[250px]"
+              menuClassName="w-max min-w-full sm:min-w-[420px] max-w-[min(650px,94vw)]"
               placeholder="All Technicians"
               aria-label="Filter by Assigned Technician"
             />
