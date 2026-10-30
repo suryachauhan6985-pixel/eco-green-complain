@@ -25,6 +25,7 @@ import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 import { downloadFileSafely } from '../../utils/videoUtils';
 import { getOrCacheMediaUrl, getInMemoryMediaUrl, preloadComplaintAttachments } from '../../utils/mediaCache';
 import { GlassSelect } from '../common/GlassSelect';
+import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
 
 const STATUS_ORDER = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -60,6 +61,14 @@ export const ComplaintDetailDrawer = ({
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview'); // overview | timeline | notifications
+
+  // Apple Segmented Control Jelly Sliding Highlight for Drawer Sub-Tabs
+  const {
+    containerRef: drawerTabContainerRef,
+    getButtonRef: getDrawerTabButtonRef,
+    indicator: drawerTabIndicator,
+    onTabClick: onDrawerTabClick
+  } = useSlidingIndicator(activeTab);
 
   // Actions state
   const [selectedTechId, setSelectedTechId] = useState('');
@@ -2077,28 +2086,48 @@ export const ComplaintDetailDrawer = ({
             </div>
           </div>
 
-          {/* Sub Navigation Tabs */}
-          <div className="px-3.5 sm:px-6 apple-glass-subbar flex items-center justify-between overflow-x-auto shrink-0">
-            <div className="flex gap-2 sm:gap-4 text-xs font-semibold whitespace-nowrap">
+          {/* Sub Navigation Tabs with Apple Jelly Segmented Indicator */}
+          <div className="px-3.5 sm:px-6 py-2 apple-glass-subbar flex items-center justify-between gap-3 overflow-x-auto shrink-0 select-none">
+            <div 
+              ref={drawerTabContainerRef}
+              className="relative flex items-center p-1 bg-slate-200/80 rounded-xl isolate"
+            >
+              {/* Apple Jelly Spring Pill Highlight */}
+              <div
+                className="absolute left-0 top-1 bottom-1 rounded-lg bg-white shadow-xs pointer-events-none z-0 border border-slate-300/60"
+                style={{
+                  transform: `translate3d(${drawerTabIndicator.left}px, 0, 0)`,
+                  width: `${drawerTabIndicator.width}px`,
+                  opacity: drawerTabIndicator.opacity,
+                  transition: 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1), width 320ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 180ms ease',
+                  willChange: 'transform, width'
+                }}
+              />
+
               <button
-                onClick={() => setActiveTab('overview')}
-                className={`py-3 border-b-2 transition-colors ${
+                type="button"
+                ref={getDrawerTabButtonRef('overview')}
+                onClick={() => onDrawerTabClick('overview', setActiveTab)}
+                className={`relative z-10 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer ${
                   activeTab === 'overview'
-                    ? 'border-emerald-600 text-emerald-800'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                    ? 'text-emerald-900 font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Ticket Overview & Actions
               </button>
+
               <button
-                onClick={() => setActiveTab('timeline')}
-                className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+                type="button"
+                ref={getDrawerTabButtonRef('timeline')}
+                onClick={() => onDrawerTabClick('timeline', setActiveTab)}
+                className={`relative z-10 px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer ${
                   activeTab === 'timeline'
-                    ? 'border-emerald-600 text-emerald-800'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                    ? 'text-emerald-900 font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <History className="w-3.5 h-3.5" />
+                <History className="w-3.5 h-3.5 text-slate-500" />
                 Audit Timeline ({timeline.length})
               </button>
             </div>
@@ -2106,7 +2135,7 @@ export const ComplaintDetailDrawer = ({
             <button
               onClick={fetchTicketDetails}
               title="Refresh details"
-              className="p-1.5 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-800"
+              className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-600 hover:text-slate-900 transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -3396,69 +3425,76 @@ export const ComplaintDetailDrawer = ({
                               </p>
                             )}
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                  {ticket.assigned_technician_id ? 'Select Primary / Lead Specialist *' : 'Lead Technician *'}
-                                </label>
-                                <GlassSelect
-                                  value={selectedTechId}
-                                  onChange={(val) => setSelectedTechId(val)}
-                                  options={leadTechOptions}
-                                  searchable={true}
-                                  placeholder="-- Choose Lead Specialist --"
-                                  aria-label="Lead Technician Selector"
-                                />
+                            <div className="space-y-3">
+                              {/* Specialists Selection (2-Column Spacious Grid) */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    {ticket.assigned_technician_id ? 'Select Primary / Lead Specialist *' : 'Lead Technician *'}
+                                  </label>
+                                  <GlassSelect
+                                    value={selectedTechId}
+                                    onChange={(val) => setSelectedTechId(val)}
+                                    options={leadTechOptions}
+                                    searchable={true}
+                                    placeholder="-- Choose Lead Specialist --"
+                                    aria-label="Lead Technician Selector"
+                                  />
 
-                                {/* Warning Banner if selected technician is Off-Duty */}
-                                {(() => {
-                                  const pickedTech = technicians.find(t => String(t.id) === String(selectedTechId));
-                                  if (pickedTech && !pickedTech.is_available) {
-                                    return (
-                                      <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2 animate-in fade-in duration-150 shadow-2xs">
-                                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                                        <div>
-                                          <p className="font-bold text-amber-800">⚠️ Technician is Currently Off-Duty</p>
-                                          <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
-                                            <strong>{pickedTech.name}</strong> is marked Off-Duty.
-                                          </p>
+                                  {/* Warning Banner if selected technician is Off-Duty */}
+                                  {(() => {
+                                    const pickedTech = technicians.find(t => String(t.id) === String(selectedTechId));
+                                    if (pickedTech && !pickedTech.is_available) {
+                                      return (
+                                        <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2 animate-in fade-in duration-150 shadow-2xs">
+                                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="font-bold text-amber-800">⚠️ Technician is Currently Off-Duty</p>
+                                            <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
+                                              <strong>{pickedTech.name}</strong> is marked Off-Duty.
+                                            </p>
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                })()}
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                    <span>Co-Technician (2nd)</span>
+                                    <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                      Team Mode
+                                    </span>
+                                  </label>
+                                  <GlassSelect
+                                    value={secondaryTechId}
+                                    onChange={(val) => setSecondaryTechId(val)}
+                                    options={coTechOptions}
+                                    searchable={true}
+                                    placeholder="-- No Second Tech (Solo) --"
+                                    aria-label="Co-Technician Selector"
+                                  />
+                                  {secondaryTechId && (
+                                    <p className="mt-1 text-[10px] text-blue-700 font-medium leading-tight">
+                                      👥 2 Technicians assigned. Both receive WhatsApp team work order with both names.
+                                    </p>
+                                  )}
+                                </div>
                               </div>
 
-                              <div>
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
-                                  <span>Co-Technician (2nd)</span>
-                                  <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                                    Team Mode
-                                  </span>
-                                </label>
-                                <GlassSelect
-                                  value={secondaryTechId}
-                                  onChange={(val) => setSecondaryTechId(val)}
-                                  options={coTechOptions}
-                                  searchable={true}
-                                  placeholder="-- No Second Tech (Solo) --"
-                                  aria-label="Co-Technician Selector"
-                                />
-                                {secondaryTechId && (
-                                  <p className="mt-1 text-[10px] text-blue-700 font-medium leading-tight">
-                                    👥 2 Technicians assigned. Both receive WhatsApp team work order with both names.
-                                  </p>
-                                )}
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
-                                  <span>Expected Visit Date *</span>
-                                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              {/* Dedicated Expected Visit Date Card (Prevents Label & Badge Collision) */}
+                              <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Expected Visit Date *</span>
+                                  </label>
+                                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                                     Min: Today ({formatIndianDateOnly(getTodayDateStr())})
                                   </span>
-                                </label>
+                                </div>
                                 <input
                                   type="date"
                                   min={getTodayDateStr()}
@@ -3473,7 +3509,7 @@ export const ComplaintDetailDrawer = ({
                                       setExpectedDate(val);
                                     }
                                   }}
-                                  className={`w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:outline-none focus:ring-2 font-medium ${
+                                  className={`w-full text-xs px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 font-medium shadow-2xs ${
                                     expectedDate && expectedDate < getTodayDateStr()
                                       ? 'border-rose-400 ring-2 ring-rose-200 text-rose-700 bg-rose-50'
                                       : 'border-slate-300 focus:ring-emerald-500'

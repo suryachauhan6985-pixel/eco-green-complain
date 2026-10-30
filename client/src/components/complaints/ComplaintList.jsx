@@ -16,6 +16,7 @@ import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { formatTechnicianOptionLabel } from '../../utils/technicianUtils';
 import { useSlidingIndicator } from '../../hooks/useSlidingIndicator';
 import { GlassSelect } from '../common/GlassSelect';
+import { LiquidGlassCard } from '../common/LiquidGlassCard';
 
 const STATUS_PILLS = ['Unassigned', 'Assigned', 'In Progress', 'On Hold', 'Resolved', 'Closed', 'Reopened', 'all'];
 
@@ -549,6 +550,56 @@ export const ComplaintList = ({
 
   return (
     <div className="w-full max-w-full min-w-0 space-y-4">
+      {/* High-End Apple Liquid Glass KPI Summary Card */}
+      <LiquidGlassCard
+        ariaLabel="Solar Operations Matrix"
+        rounded="rounded-2xl"
+        className="w-full shadow-md border border-white/80 bg-gradient-to-r from-emerald-950/5 via-teal-950/5 to-slate-900/5"
+        frost={0.10}
+        saturation={1.25}
+      >
+        <div className="p-3.5 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-md shadow-emerald-700/25 shrink-0">
+              <ShieldCheck className="w-5 h-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
+                  Solar Field Operations Matrix
+                </h2>
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Sync
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 font-medium">
+                Enterprise real-time dispatch, SLA tracking & multi-technician service coordination
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full md:w-auto shrink-0">
+            <div className="px-3 py-1.5 rounded-xl bg-white/85 border border-slate-200/80 shadow-2xs backdrop-blur-xs flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Active Queue</span>
+              <span className="text-base sm:text-lg font-black text-slate-900">{getStatusCount('all')}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-white/85 border border-slate-200/80 shadow-2xs backdrop-blur-xs flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Needs Dispatch</span>
+              <span className="text-base sm:text-lg font-black text-amber-900">{getStatusCount('Unassigned')}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-white/85 border border-slate-200/80 shadow-2xs backdrop-blur-xs flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">In Progress</span>
+              <span className="text-base sm:text-lg font-black text-indigo-900">{getStatusCount('In Progress')}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-white/85 border border-slate-200/80 shadow-2xs backdrop-blur-xs flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Resolved</span>
+              <span className="text-base sm:text-lg font-black text-emerald-900">{getStatusCount('Resolved')}</span>
+            </div>
+          </div>
+        </div>
+      </LiquidGlassCard>
+
       {/* Top Controls Bar */}
       <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3 w-full max-w-full min-w-0">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 w-full max-w-full">
@@ -735,14 +786,14 @@ export const ComplaintList = ({
           onScroll={updateStatusIndicator}
           className="relative flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none p-1 bg-slate-100/80 rounded-full border border-slate-200/60 isolate"
         >
-          {/* Apple Sliding Pill Background Highlight with left-0 anchor */}
+          {/* Apple Sliding Pill Background Highlight with Jelly Spring Physics */}
           <div
             className="absolute left-0 top-1 bottom-1 rounded-full bg-emerald-700 shadow-xs pointer-events-none z-0"
             style={{
               transform: `translate3d(${statusIndicator.left}px, 0, 0)`,
               width: `${statusIndicator.width}px`,
               opacity: statusIndicator.opacity,
-              transition: 'transform 260ms cubic-bezier(0.16, 1, 0.3, 1), width 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease',
+              transition: 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1), width 320ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 180ms ease',
               willChange: 'transform, width'
             }}
           />

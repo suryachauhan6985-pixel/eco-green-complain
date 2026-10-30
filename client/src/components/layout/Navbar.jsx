@@ -174,14 +174,14 @@ export const Navbar = ({
               ref={navContainerRef}
               className="relative hidden md:flex items-center p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 shadow-2xs isolate ml-3 select-none"
             >
-              {/* Apple Sliding Green Pill Highlight with left-0 anchor */}
+              {/* Apple Sliding Green Pill Highlight with Jelly Spring Physics */}
               <div
                 className="absolute left-0 top-1 bottom-1 rounded-lg bg-emerald-600 shadow-sm pointer-events-none z-0"
                 style={{
                   transform: `translate3d(${navIndicator.left}px, 0, 0)`,
                   width: `${navIndicator.width}px`,
                   opacity: navIndicator.opacity,
-                  transition: 'transform 260ms cubic-bezier(0.16, 1, 0.3, 1), width 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease',
+                  transition: 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1), width 320ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 180ms ease',
                   willChange: 'transform, width'
                 }}
               />

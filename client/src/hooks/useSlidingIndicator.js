@@ -111,11 +111,27 @@ export function useSlidingIndicator(activeKey) {
     }
   }, []);
 
+  // Pre-configured Apple Vision / iOS Jelly Spring Transition
+  const jellyTransition = 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1), width 320ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 180ms ease';
+
+  const indicatorStyle = {
+    transform: `translate3d(${indicator.left}px, 0, 0)`,
+    width: `${indicator.width}px`,
+    opacity: indicator.opacity,
+    transition: jellyTransition,
+    willChange: 'transform, width'
+  };
+
   return {
     containerRef,
     getButtonRef,
     indicator,
+    indicatorStyle,
+    jellyTransition,
     updateIndicator,
     onTabClick
   };
 }
+
+export const JELLY_SPRING_TRANSITION = 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1), width 320ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 180ms ease';
+
