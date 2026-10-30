@@ -1,3 +1,4 @@
+import ReactDOM from 'react-dom';
 import { formatIndianDateOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { api } from '../../api/client';
@@ -1521,7 +1522,10 @@ export const NewComplaintModal = ({
 
   if (!isOpen) return null;
 
-  return (
+  const portalRoot = typeof document !== 'undefined' ? (document.getElementById('portal-root') || document.body) : null;
+  if (!portalRoot) return null;
+
+  return ReactDOM.createPortal(
     <div 
       className="fixed inset-0 z-50 overflow-y-auto apple-glass-backdrop backdrop-enter-fade flex items-center justify-center p-4"
       style={{
@@ -3371,6 +3375,7 @@ export const NewComplaintModal = ({
         totalFiles={uploadProgress.totalFiles}
         stage={uploadProgress.stage}
       />
-    </div>
+    </div>,
+    portalRoot
   );
 };

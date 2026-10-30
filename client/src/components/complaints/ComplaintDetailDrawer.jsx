@@ -1,3 +1,4 @@
+import ReactDOM from 'react-dom';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { api, getPermanentComplaints } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -1967,7 +1968,10 @@ export const ComplaintDetailDrawer = ({
 
   if (!isOpen && !isClosing) return null;
 
-  return (
+  const portalRoot = typeof document !== 'undefined' ? (document.getElementById('portal-root') || document.body) : null;
+  if (!portalRoot) return null;
+
+  return ReactDOM.createPortal(
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div 
         className={`absolute inset-0 apple-glass-backdrop transition-opacity ${
@@ -3428,7 +3432,7 @@ export const ComplaintDetailDrawer = ({
                             <div className="space-y-3">
                               {/* Specialists Selection (2-Column Spacious Grid) */}
                               <div className="grid grid-cols-1 gap-3.5 w-full min-w-0">
-                                <div>
+                                <div className="relative z-30">
                                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                                     {ticket.assigned_technician_id ? 'Select Primary / Lead Specialist *' : 'Lead Technician *'}
                                   </label>
@@ -3436,7 +3440,6 @@ export const ComplaintDetailDrawer = ({
                                     value={selectedTechId}
                                     onChange={(val) => setSelectedTechId(val)}
                                     options={leadTechOptions}
-                                    searchable={true}
                                     placeholder="-- Choose Lead Specialist --"
                                     aria-label="Lead Technician Selector"
                                     className="w-full min-w-0"
@@ -3463,7 +3466,7 @@ export const ComplaintDetailDrawer = ({
                                   })()}
                                 </div>
 
-                                <div>
+                                <div className="relative z-20">
                                   <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
                                     <span>Co-Technician (2nd)</span>
                                     <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
@@ -3474,7 +3477,6 @@ export const ComplaintDetailDrawer = ({
                                     value={secondaryTechId}
                                     onChange={(val) => setSecondaryTechId(val)}
                                     options={coTechOptions}
-                                    searchable={true}
                                     placeholder="-- No Second Tech (Solo) --"
                                     aria-label="Co-Technician Selector"
                                     className="w-full min-w-0"
@@ -5549,6 +5551,7 @@ export const ComplaintDetailDrawer = ({
         totalFiles={attachUploadProgress.totalFiles}
         stage={attachUploadProgress.stage}
       />
-    </div>
+    </div>,
+    portalRoot
   );
 };

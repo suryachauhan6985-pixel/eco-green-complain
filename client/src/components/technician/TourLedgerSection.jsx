@@ -3497,7 +3497,7 @@ export const TourLedgerSection = ({
       </div>
 
       {/* ================= MODAL: ALLOCATE ADVANCE ================= */}
-      {isAdvanceModalOpen && (
+      {isAdvanceModalOpen && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
           <div className="apple-glass-modal rounded-3xl max-w-md w-full p-5 shadow-2xl modal-jelly-enter space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -3657,11 +3657,12 @@ export const TourLedgerSection = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.getElementById("portal-root") || document.body
       )}
 
       {/* ================= MODAL: EDIT TOUR ADVANCE ================= */}
-      {isEditAdvanceModalOpen && (
+      {isEditAdvanceModalOpen && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
           <div className="apple-glass-modal rounded-3xl max-w-md w-full p-5 shadow-2xl modal-jelly-enter space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -3797,7 +3798,7 @@ export const TourLedgerSection = ({
       )}
 
       {/* ================= MODAL: ADD EXPENSE VOUCHER (MULTI-ITEM BATCH CLAIM) ================= */}
-      {isExpenseModalOpen && (
+      {isExpenseModalOpen && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 apple-glass-backdrop backdrop-enter-fade">
           <div className="apple-glass-modal rounded-3xl max-w-2xl w-full p-5 shadow-2xl modal-jelly-enter space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -4215,7 +4216,7 @@ export const TourLedgerSection = ({
       )}
 
       {/* ================= MODAL: DEPOSIT / RETURN BALANCE TO COMPANY ================= */}
-      {isSettleModalOpen && (() => {
+      {isSettleModalOpen && typeof document !== "undefined" && createPortal((() => {
         const currentTargetTech = loadedTechs.find(t => String(t.id) === String(settleForm.technician_id)) 
           || (selectedTechId !== 'all' ? loadedTechs.find(t => String(t.id) === String(selectedTechId)) : null)
           || currentTech;
@@ -4397,7 +4398,7 @@ export const TourLedgerSection = ({
             </div>
           </div>
         );
-      })()}
+      })(), document.getElementById("portal-root") || document.body)}
 
       {/* ================= MODAL: VOUCHER SEQUENCE SETTINGS (ADMIN ONLY) ================= */}
       {isVoucherSettingsModalOpen && (
@@ -4500,7 +4501,7 @@ export const TourLedgerSection = ({
       {/* ================= MODAL: PRINT & WORD EXPORT VOUCHER ================= */}
       {isVoucherModalOpen && typeof document !== 'undefined' ? createPortal(
         <div id="tour-voucher-modal-portal" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
-          <div className="voucher-modal-card bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+          <div className="voucher-modal-card apple-glass-modal rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
             {/* Modal Actions Bar */}
             <div className="print:hidden no-print p-3 sm:p-4 bg-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
@@ -4922,7 +4923,7 @@ export const TourLedgerSection = ({
       {/* ================= MODAL: PRINTABLE ACCOUNT STATEMENT (A4) ================= */}
       {isPrintStatementOpen && typeof document !== 'undefined' ? createPortal(
         <div id="tour-statement-modal-portal" className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs print:p-0 print:bg-white print:static">
-          <div className="statement-modal-card bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl p-4 sm:p-6 print:p-0 print:shadow-none print:max-w-none print:max-h-none print:w-full">
+          <div className="statement-modal-card apple-glass-modal rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl p-4 sm:p-6 print:p-0 print:shadow-none print:max-w-none print:max-h-none print:w-full">
             <style>{`
               @media print {
                 @page {

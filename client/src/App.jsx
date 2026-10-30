@@ -35,6 +35,7 @@ const ComplaintDetailDrawer = React.lazy(() => import('./components/complaints/C
 import { AppPageSkeleton, ComplaintGridSkeleton } from './components/common/SkeletonLoader';
 import { GlobalLoadingOverlay } from './components/common/GlobalLoadingOverlay';
 import { SplashScreen } from './components/common/SplashScreen';
+import { AppBackground } from './components/common/AppBackground';
 
 const TabSuspenseFallback = () => (
   <div className="w-full flex-1 flex flex-col items-center justify-center min-h-[360px] p-8 text-emerald-700 animate-in fade-in duration-200">
@@ -531,7 +532,8 @@ function AppContent() {
   }
 
   return (
-    <div className="h-[100dvh] w-full max-w-full min-w-0 flex flex-col overflow-x-hidden overflow-y-hidden bg-transparent font-sans">
+    <div className="h-[100dvh] w-full max-w-full min-w-0 flex flex-col overflow-x-hidden overflow-y-hidden bg-transparent font-sans relative">
+      <AppBackground />
       {!splashComplete && <SplashScreen minDuration={500} onComplete={handleSplashComplete} />}
       {/* Top Main Navigation (Sticky Header) */}
       <div className="shrink-0 z-30 w-full max-w-full">

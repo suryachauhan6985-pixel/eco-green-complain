@@ -1341,7 +1341,17 @@ async function assignTechnician(req, res) {
       secTech = db.prepare('SELECT * FROM technicians WHERE id = ?').get(secondary_technician_id);
     }
 
-    // Update complaint
+    // Check previous technician for transfer tracking
+    const prevPrimaryTechId = complaint.assigned_technician_id ? String(complaint.assigned_technician_id) : null;
+    const isReassignment = prevPrimaryTechId && prevPrimaryTechId !== String(technician_id);
+    let prevTechRow = null;
+    if (isReassignment) {
+      try {
+        prevTechRow = db.prepare('SELECT name FROM technicians WHERE id = ?').get(complaint.assigned_technician_id);
+      } catch (_) {}
+    }
+
+    // Update complaint with explicit reassignment / transfer timestamps
     db.prepare(`
       UPDATE complaints 
       SET assigned_technician_id = ?, 
@@ -1350,9 +1360,18 @@ async function assignTechnician(req, res) {
           status = 'Assigned', 
           assigned_at = CURRENT_TIMESTAMP, 
           status_updated_at = CURRENT_TIMESTAMP,
+          previous_technician_id = COALESCE(?, previous_technician_id),
+          previous_technician_name = COALESCE(?, previous_technician_name),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(technician_id, secTech ? secTech.id : null, expected_visit_date || null, id);
+    `).run(
+      technician_id, 
+      secTech ? secTech.id : null, 
+      expected_visit_date || null, 
+      isReassignment ? complaint.assigned_technician_id : null,
+      isReassignment ? (prevTechRow ? prevTechRow.name : 'Previous Technician') : null,
+      id
+    );
 
     // Add timeline
     const performer = req.user ? req.user.name : 'Support Desk';
@@ -1367,12 +1386,10 @@ async function assignTechnician(req, res) {
     `).run(id, timelineNote, performer, role);
 
 
-    const prevPrimaryTechId = complaint.assigned_technician_id ? String(complaint.assigned_technician_id) : null;
     const prevSecondaryTechId = complaint.secondary_technician_id ? String(complaint.secondary_technician_id) : null;
     const wasAssigned = Boolean(prevPrimaryTechId);
     const wasTeam = Boolean(prevSecondaryTechId);
     const isTeam = Boolean(secTech);
-    const isReassignment = wasAssigned;
 
     let prevPrimaryTech = null;
     let prevSecondaryTech = null;

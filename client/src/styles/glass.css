@@ -1,0 +1,299 @@
+/* ==========================================================================
+   Apple iOS 26 Liquid Glass Design System
+   Eco Green Solar CRM — Enterprise Universal Glassmorphism Engine
+   ========================================================================== */
+
+:root {
+  /* Surface Fills (Translucent Liquid Glass - Light Mode) */
+  --glass-fill-base: rgba(255, 255, 255, 0.45);
+  --glass-fill-raised: rgba(255, 255, 255, 0.55);
+  --glass-fill-overlay: rgba(255, 255, 255, 0.65);
+  --glass-fill-subtle: rgba(255, 255, 255, 0.30);
+  --glass-fill-input: rgba(255, 255, 255, 0.60);
+
+  /* Specular Highlight Borders */
+  --glass-border-specular: 1px solid rgba(255, 255, 255, 0.85);
+  --glass-border-subtle: 1px solid rgba(255, 255, 255, 0.60);
+  --glass-border-raised: 1px solid rgba(255, 255, 255, 0.90);
+  
+  /* Blurs & Vibrancy */
+  --glass-blur-base: 20px;
+  --glass-blur-raised: 26px;
+  --glass-blur-overlay: 30px;
+  --glass-blur-subtle: 14px;
+  --glass-saturate: 180%;
+  --glass-brightness: 1.05;
+
+  /* Specular Depth Box Shadows */
+  --glass-shadow-base: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.15),
+    0 10px 30px -5px rgba(15, 23, 42, 0.08),
+    0 2px 8px 0 rgba(15, 23, 42, 0.04);
+
+  --glass-shadow-raised: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.20),
+    0 20px 45px -8px rgba(15, 23, 42, 0.14),
+    0 4px 16px 0 rgba(15, 23, 42, 0.05);
+
+  --glass-shadow-overlay: 
+    inset 0 1.5px 0 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.25),
+    0 28px 70px -10px rgba(15, 23, 42, 0.22),
+    0 10px 24px -4px rgba(15, 23, 42, 0.10);
+
+  --glass-shadow-subtle: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.70),
+    0 2px 10px 0 rgba(15, 23, 42, 0.03);
+
+  /* Corner Radii (Concentric Hierarchy) */
+  --radius-outer: 24px;
+  --radius-inner: 16px;
+  --radius-pill: 9999px;
+}
+
+/* ==========================================================================
+   Elevation Levels & Shared Utility Classes
+   ========================================================================== */
+
+/* Level 1: Base Glass (Cards, Sections, Form Panels) */
+.glass, .glass-base {
+  background-color: var(--glass-fill-base) !important;
+  backdrop-filter: blur(var(--glass-blur-base)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-base)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  border: var(--glass-border-specular) !important;
+  box-shadow: var(--glass-shadow-base) !important;
+}
+
+/* Level 2: Raised Glass (Drawers, Dropdowns, Popovers, Segmented Controls) */
+.glass-raised {
+  background-color: var(--glass-fill-raised) !important;
+  backdrop-filter: blur(var(--glass-blur-raised)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-raised)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  border: var(--glass-border-raised) !important;
+  box-shadow: var(--glass-shadow-raised) !important;
+}
+
+/* Level 3: Overlay Glass (Modals, Dialogs, Floating Push Toasts, Media Lightboxes) */
+.glass-overlay {
+  background-color: var(--glass-fill-overlay) !important;
+  backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  border: var(--glass-border-raised) !important;
+  box-shadow: var(--glass-shadow-overlay) !important;
+}
+
+/* Level 0: Subtle Glass (Sub-navbars, Table Headers, Filter Ribbons, Status Tracks) */
+.glass-subtle {
+  background-color: var(--glass-fill-subtle) !important;
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(160%) !important;
+  border: var(--glass-border-subtle) !important;
+  box-shadow: var(--glass-shadow-subtle) !important;
+}
+
+/* Liquid Refraction Class (Chromium SVG displacement map with plain blur fallback) */
+.glass-liquid {
+  backdrop-filter: url(#liquid-glass-refraction) blur(var(--glass-blur-base)) saturate(var(--glass-saturate)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-base)) saturate(var(--glass-saturate)) !important;
+}
+
+/* Interactive Glass (Hover Specular Sheen + Apple Press Feedback) */
+.glass-interactive {
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform, box-shadow;
+}
+
+.glass-interactive:hover {
+  transform: translateY(-2px) translateZ(0);
+  background-color: rgba(255, 255, 255, 0.65) !important;
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+    0 16px 36px -6px rgba(15, 23, 42, 0.12),
+    0 4px 12px 0 rgba(15, 23, 42, 0.04) !important;
+}
+
+.glass-interactive:active {
+  transform: scale(0.985) translateZ(0) !important;
+}
+
+/* Moving Light Sheen on Pointer Hover */
+.glass-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle 260px at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.28),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 280ms ease;
+  border-radius: inherit;
+}
+
+.glass-sheen:hover::after {
+  opacity: 1;
+}
+
+/* Glass Input Fields & Controls */
+.glass-input {
+  background-color: var(--glass-fill-input) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-input:focus {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(16, 185, 129, 0.6) !important;
+  box-shadow: 
+    0 0 0 3px rgba(16, 185, 129, 0.15),
+    inset 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+/* Apple Sliding Capsule Pill */
+.glass-pill {
+  border-radius: 9999px !important;
+  background-color: rgba(255, 255, 255, 0.60) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    0 4px 12px -2px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Backdrop Dimmer Filter */
+.glass-backdrop {
+  background-color: rgba(15, 23, 42, 0.40) !important;
+  backdrop-filter: blur(12px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
+}
+
+/* ==========================================================================
+   Backwards Compatibility Mappings
+   ========================================================================== */
+.apple-glass-backdrop {
+  background-color: rgba(15, 23, 42, 0.40) !important;
+  backdrop-filter: blur(12px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
+}
+
+.apple-glass-drawer {
+  background-color: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.95),
+    -20px 0 60px -10px rgba(15, 23, 42, 0.20),
+    -4px 0 16px 0 rgba(15, 23, 42, 0.06) !important;
+}
+
+.apple-glass-modal {
+  background-color: var(--glass-fill-overlay) !important;
+  backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness)) !important;
+  border: var(--glass-border-raised) !important;
+  box-shadow: var(--glass-shadow-overlay) !important;
+}
+
+.apple-glass-header {
+  background-color: rgba(16, 185, 129, 0.85) !important;
+  backdrop-filter: blur(16px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+.apple-glass-card {
+  background-color: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(20px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(170%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.80) !important;
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    0 8px 25px -4px rgba(15, 23, 42, 0.06) !important;
+}
+
+.apple-glass-dropdown {
+  background-color: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+    0 20px 45px -8px rgba(15, 23, 42, 0.18), 
+    0 4px 16px 0 rgba(15, 23, 42, 0.06) !important;
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+}
+
+.apple-glass-trigger {
+  background-color: rgba(255, 255, 255, 0.50) !important;
+  backdrop-filter: blur(16px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.80) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.85) !important;
+}
+
+.apple-glass-trigger-active {
+  background-color: rgba(255, 255, 255, 0.70) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+}
+
+.apple-glass-header {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.90) 100%) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.20) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 4px 16px -2px rgba(0, 0, 0, 0.20) !important;
+}
+
+.apple-glass-subbar {
+  background-color: rgba(248, 250, 252, 0.55) !important;
+  backdrop-filter: blur(16px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.70) !important;
+}
+
+/* ==========================================================================
+   Mesh Gradient Drift Keyframes (GPU Transform3d only)
+   ========================================================================== */
+@keyframes meshDrift1 {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(140px, 80px, 0) scale(1.15); }
+  100% { transform: translate3d(-60px, 120px, 0) scale(0.95); }
+}
+
+@keyframes meshDrift2 {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-120px, 90px, 0) scale(1.1); }
+  100% { transform: translate3d(70px, -50px, 0) scale(1.05); }
+}
+
+@keyframes meshDrift3 {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(80px, -110px, 0) scale(1.08); }
+  100% { transform: translate3d(-90px, -40px, 0) scale(0.92); }
+}
+
+@keyframes meshDrift4 {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-100px, -80px, 0) scale(1.12); }
+  100% { transform: translate3d(50px, 60px, 0) scale(0.98); }
+}

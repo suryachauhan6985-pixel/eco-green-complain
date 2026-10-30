@@ -1,11 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 
 /**
- * Enterprise Modal Transition Wrapper
+ * Enterprise Modal Transition Wrapper (Apple iOS 26 Liquid Glass Engine)
  * 
- * Provides smooth, hardware-accelerated entrance AND exit animations without heavy external libraries.
- * Handles LIFO Escape key stack, backdrop click, body scroll locking, and accessible ARIA attributes.
+ * - Renders through React Portal (#portal-root) so ancestor transforms / stacking contexts
+ *   NEVER break backdrop-filter blur.
+ * - Hardware-accelerated jelly/spring physics on entry and exit.
+ * - Hierarchical Escape key management (LIFO priority stack).
+ * - Full backdrop blur + liquid glass depth.
  */
 export function ModalWrapper({
   isOpen,
@@ -20,7 +24,7 @@ export function ModalWrapper({
   priority = ESCAPE_PRIORITY.DRAWER,
   zIndex = 'z-50',
   ariaLabel = 'Dialog',
-  duration = 220 // ms
+  duration = 240 // ms
 }) {
   const [isRendered, setIsRendered] = useState(isOpen);
   const [isActive, setIsActive] = useState(false);
@@ -33,17 +37,14 @@ export function ModalWrapper({
         timerRef.current = null;
       }
       setIsRendered(true);
-      // Wait for DOM paint before adding active transition classes
       const frameId = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setIsActive(true);
         });
       });
-      // Lock background scrolling
       document.body.style.overflow = 'hidden';
       return () => cancelAnimationFrame(frameId);
     } else if (isRendered) {
-      // Trigger exit transition
       setIsActive(false);
       timerRef.current = setTimeout(() => {
         setIsRendered(false);
@@ -59,14 +60,12 @@ export function ModalWrapper({
     };
   }, [isOpen, isRendered, duration]);
 
-  // Clean up body overflow when component unmounts entirely
   useEffect(() => {
     return () => {
       document.body.style.overflow = '';
     };
   }, []);
 
-  // Hierarchical Escape key management (LIFO priority)
   useEscapeHandler(() => {
     if (closeOnEscape && onClose) {
       onClose();
@@ -77,12 +76,18 @@ export function ModalWrapper({
 
   if (!isRendered) return null;
 
-  return (
+  const portalRoot = typeof document !== 'undefined' 
+    ? (document.getElementById('portal-root') || document.body) 
+    : null;
+
+  if (!portalRoot) return null;
+
+  return ReactDOM.createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
-      className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 overflow-y-auto transition-opacity duration-200 ${
+      className={`fixed inset-0 ${zIndex} flex items-center justify-center p-3 sm:p-5 overflow-y-auto transition-opacity duration-240 ${
         isActive ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       } ${overlayClassName}`}
       style={{
@@ -95,9 +100,9 @@ export function ModalWrapper({
         }
       }}
     >
-      {/* Backdrop */}
+      {/* Liquid Glass Apple Backdrop */}
       <div
-        className={`fixed inset-0 apple-glass-backdrop transition-opacity duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`fixed inset-0 glass-backdrop transition-opacity duration-240 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isActive ? 'opacity-100' : 'opacity-0'
         } ${backdropClassName}`}
         aria-hidden="true"
@@ -111,7 +116,7 @@ export function ModalWrapper({
 
       {/* Modal Dialog Window */}
       <div
-        className={`relative z-10 w-full ${maxWidth} transform transition-all duration-220 ease-[cubic-bezier(0.34,1.35,0.64,1)] will-change-transform ${
+        className={`relative z-10 w-full ${maxWidth} transform transition-all duration-240 ease-[cubic-bezier(0.34,1.35,0.64,1)] will-change-transform ${
           isActive 
             ? 'opacity-100 scale-100 translate-y-0 modal-jelly-enter' 
             : 'opacity-0 scale-95 translate-y-2'
@@ -120,7 +125,8 @@ export function ModalWrapper({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    portalRoot
   );
 }
 

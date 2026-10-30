@@ -1,0 +1,186 @@
+/* ==========================================================================
+   Apple iOS 26 Motion System
+   Eco Green Solar CRM — Enterprise Buttery-Smooth Motion Tokens & Physics
+   ========================================================================== */
+
+:root {
+  /* Apple Easing Curves */
+  --ease-out-apple: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out-apple: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-in-apple: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-spring-apple: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --ease-bounce-apple: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+  /* Animation Durations */
+  --dur-micro: 140ms;
+  --dur-standard: 260ms;
+  --dur-modal: 360ms;
+  --dur-drawer: 420ms;
+}
+
+/* Modal Window Entrance & Exit (Center scale + translate + fade) */
+@keyframes appleModalEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.93) translateY(14px);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes appleModalExit {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+}
+
+/* Drawer Entrances (Hardware-Accelerated transform-only) */
+@keyframes appleDrawerRightEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes appleDrawerRightExit {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes appleDrawerLeftEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Dropdown / Popover Origin-Aware Spring Enter */
+@keyframes appleDropdownEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Toast Notification Enter */
+@keyframes appleToastEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* Dimmed + Blurred Backdrop Fade */
+@keyframes appleBackdropFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes appleBackdropFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Global Motion Utility Classes */
+.motion-modal-enter {
+  animation: appleModalEnter var(--dur-modal) var(--ease-out-apple) both !important;
+  will-change: transform, opacity;
+}
+
+.motion-modal-exit {
+  animation: appleModalExit 220ms var(--ease-in-apple) both !important;
+  will-change: transform, opacity;
+}
+
+.motion-drawer-enter {
+  animation: appleDrawerRightEnter var(--dur-drawer) var(--ease-out-apple) both !important;
+  will-change: transform;
+}
+
+.motion-drawer-exit {
+  animation: appleDrawerRightExit 280ms var(--ease-in-apple) both !important;
+  will-change: transform;
+}
+
+.motion-drawer-left-enter {
+  animation: appleDrawerLeftEnter var(--dur-drawer) var(--ease-out-apple) both !important;
+  will-change: transform;
+}
+
+.motion-dropdown-enter {
+  animation: appleDropdownEnter var(--dur-standard) var(--ease-spring-apple) both !important;
+  will-change: transform, opacity;
+}
+
+.motion-toast-enter {
+  animation: appleToastEnter var(--dur-standard) var(--ease-out-apple) both !important;
+  will-change: transform, opacity;
+}
+
+.motion-backdrop-enter {
+  animation: appleBackdropFadeIn var(--dur-standard) var(--ease-out-apple) both !important;
+}
+
+.motion-backdrop-exit {
+  animation: appleBackdropFadeOut 200ms var(--ease-in-apple) both !important;
+}
+
+/* Press Feedback (Tactile Apple Button Physics) */
+.motion-press {
+  transition: transform var(--dur-micro) var(--ease-out-apple), box-shadow var(--dur-micro) var(--ease-out-apple);
+}
+
+.motion-press:active {
+  transform: scale(0.97) !important;
+}
+
+/* Stagger Animations for Cards & Rows */
+.motion-stagger > *:nth-child(1) { animation-delay: 30ms; }
+.motion-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.motion-stagger > *:nth-child(3) { animation-delay: 90ms; }
+.motion-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.motion-stagger > *:nth-child(5) { animation-delay: 150ms; }
+.motion-stagger > *:nth-child(6) { animation-delay: 180ms; }
+.motion-stagger > *:nth-child(7) { animation-delay: 210ms; }
+.motion-stagger > *:nth-child(8) { animation-delay: 240ms; }
+
+/* Accessible Motion Preference: Gracefully Degrade */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

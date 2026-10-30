@@ -1,3 +1,4 @@
+import ReactDOM from 'react-dom';
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -422,16 +423,18 @@ export const Navbar = ({
       </div>
 
       {/* Mobile Slide-out Navigation Drawer & Backdrop */}
-      <div 
-        className={`fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm transition-opacity duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden ${
-          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
-        onClick={() => setMobileMenuOpen(false)}
-        aria-hidden="true"
-      />
+      {typeof document !== 'undefined' && ReactDOM.createPortal(
+        <>
+          <div 
+            className={`fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm transition-opacity duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden ${
+              mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
 
       <aside 
-        className={`fixed top-0 bottom-0 left-0 z-50 w-[84vw] max-w-[325px] bg-white/85 backdrop-blur-2xl border-r border-white/70 shadow-2xl shadow-slate-950/30 flex flex-col md:hidden transform transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] rounded-r-2xl sm:rounded-r-3xl overflow-hidden will-change-transform ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-[84vw] max-w-[325px] glass-overlay rounded-r-2xl sm:rounded-r-3xl shadow-2xl flex flex-col md:hidden transform transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden will-change-transform ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
         }`}
         role="dialog"
@@ -440,7 +443,7 @@ export const Navbar = ({
       >
         {/* Drawer Header */}
         <div 
-          className="p-4 border-b border-slate-200/60 flex items-center justify-between bg-white/60 backdrop-blur-md shrink-0"
+          className="p-4 border-b border-white/40 flex items-center justify-between glass-subtle shrink-0"
           style={{
             paddingTop: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))'
           }}
@@ -811,6 +814,9 @@ export const Navbar = ({
           </button>
         </div>
       </aside>
+      </>,
+      document.getElementById("portal-root") || document.body
+      )}
 
       {/* Admin Credentials & Profile Modal */}
       <AccountSettingsModal 

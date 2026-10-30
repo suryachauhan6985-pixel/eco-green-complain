@@ -93,7 +93,7 @@ export const getTicketAgeInfo = (complaint, mode = 'created') => {
   // When mode === 'assigned', calculate age from when technician was assigned or ticket was transferred
   const isAssignedMode = mode === 'assigned';
   const targetDateStr = isAssignedMode
-    ? (complaint.assigned_at || complaint.created_at || complaint.status_updated_at)
+    ? (complaint.assigned_at || complaint.status_updated_at || complaint.created_at)
     : (complaint.created_at || complaint.status_updated_at);
 
   if (!targetDateStr) {

@@ -845,7 +845,7 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
       >
         {/* Apple Sliding Pill Indicator with Jelly Physics */}
         <div
-          className="absolute top-1.5 bottom-1.5 rounded-xl bg-emerald-800 shadow-sm pointer-events-none z-0"
+          className="absolute top-1.5 bottom-1.5 rounded-xl bg-emerald-600 shadow-xs pointer-events-none z-0"
           style={{
             transform: `translate3d(${sectionIndicator.left}px, 0, 0)`,
             width: `${sectionIndicator.width}px`,
@@ -1637,6 +1637,15 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                         {job.priority}
                       </span>
                       <TicketAgeBadge complaint={job} compact={true} mode="assigned" />
+                      <span className="text-[10px] font-medium text-slate-600 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" title={`Assigned to Specialist: ${formatIndianDateTime(job.assigned_at || job.status_updated_at || job.created_at)} (IST) • Registered: ${formatIndianDateOnly(job.created_at)}`}>
+                        <Clock className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>{formatIndianDateTime(job.assigned_at || job.status_updated_at || job.created_at)}</span>
+                      </span>
+                      {Boolean(job.previous_technician_name || (job.assigned_at && job.created_at && Math.abs(new Date(job.assigned_at).getTime() - new Date(job.created_at).getTime()) > 3600000)) && (
+                        <span className="text-[9px] font-extrabold text-blue-900 bg-blue-100 border border-blue-300 px-1.5 py-0.2 rounded-full" title={`Transferred to this specialist. Originally registered: ${formatIndianDateTime(job.created_at)}`}>
+                          Transferred
+                        </span>
+                      )}
                       {job.secondary_technician_name && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-300">
                           <Users className="w-2.5 h-2.5" /> Team: {job.technician_name} + {job.secondary_technician_name}
@@ -1795,11 +1804,25 @@ export const TechnicianFieldPortal = ({ onSelectComplaint, activeSection = 'fiel
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <TicketAgeBadge complaint={job} compact={true} />
-                      <span className="text-[10px] font-medium text-slate-500 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" title="Registered Time (IST)">
-                        <Clock className="w-2.5 h-2.5 text-slate-400" />
-                        <span>{formatIndianDateTime(job.created_at)}</span>
+                      <TicketAgeBadge complaint={job} compact={true} mode="assigned" />
+                      <span className="text-[10px] font-medium text-slate-600 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" title={`Assigned to Specialist: ${formatIndianDateTime(job.assigned_at || job.status_updated_at || job.created_at)} (IST) • Registered: ${formatIndianDateOnly(job.created_at)}`}>
+                        <Clock className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>{formatIndianDateTime(job.assigned_at || job.status_updated_at || job.created_at)}</span>
                       </span>
+                      {Boolean(job.previous_technician_name || (job.assigned_at && job.created_at && Math.abs(new Date(job.assigned_at).getTime() - new Date(job.created_at).getTime()) > 3600000)) && (
+                        <span className="text-[9px] font-extrabold text-blue-900 bg-blue-100 border border-blue-300 px-1.5 py-0.2 rounded-full" title={`Transferred to this specialist. Originally registered: ${formatIndianDateTime(job.created_at)}`}>
+                          Transferred
+                        </span>
+                      )}
+                      <span className="text-[10px] font-medium text-slate-600 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" title={`Assigned to Specialist: ${formatIndianDateTime(job.assigned_at || job.status_updated_at || job.created_at)} (IST) • Registered: ${formatIndianDateOnly(job.created_at)}`}>
+                        <Clock className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>{formatIndianDateTime(job.assigned_at || job.status_updated_at || job.created_at)}</span>
+                      </span>
+                      {Boolean(job.previous_technician_name || (job.assigned_at && job.created_at && Math.abs(new Date(job.assigned_at).getTime() - new Date(job.created_at).getTime()) > 3600000)) && (
+                        <span className="text-[9px] font-extrabold text-blue-900 bg-blue-100 border border-blue-300 px-1.5 py-0.2 rounded-full" title={`Transferred to this specialist. Originally registered: ${formatIndianDateTime(job.created_at)}`}>
+                          Transferred
+                        </span>
+                      )}
                     </div>
                   </div>
 

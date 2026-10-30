@@ -2475,7 +2475,7 @@ if (fs.existsSync(clientDistPath)) {
     }
   }));
   app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+    if ((req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
       const host = req.get('host') || '';
       if (host.includes('vprotech.online') || host.includes('onrender.com')) {
         return res.redirect(301, `https://complain.ecogreensolar.co.in${req.originalUrl}`);
@@ -2488,7 +2488,7 @@ if (fs.existsSync(clientDistPath)) {
         res.type('html');
         return res.send(fs.readFileSync(indexPath, 'utf8'));
       }
-      return res.sendFile('index.html', { root: clientDistPath, dotfiles: 'allow' });
+      return res.status(503).send('<!DOCTYPE html><html><head><title>Eco Green Solar</title><meta http-equiv="refresh" content="2"></head><body style="font-family:system-ui,-apple-system,sans-serif;padding:3rem;text-align:center;background:#f8fafc;color:#1e293b;"><h2>App is refreshing...</h2><p>Please wait a moment.</p></body></html>');
     }
     next();
   });
