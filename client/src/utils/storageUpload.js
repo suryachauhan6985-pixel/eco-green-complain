@@ -799,8 +799,8 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
     });
   }
 
+  const uploadStartTime = Date.now();
   const updateAggregateProgress = (currentFileName, currentIndex) => {
-    if (!onProgress) return;
     const totalLoadedBytes = preOptimized.reduce((sum, it) => sum + (it.loadedBytes || 0), 0);
     const overallPct = Math.min(98, Math.round((totalLoadedBytes / totalBytesAllFiles) * 94) + 4);
 
@@ -808,6 +808,21 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
     const totalMB = (totalBytesAllFiles / (1024 * 1024)).toFixed(1);
     const activeIdx = Math.min(preOptimized.length, activeCompletedFiles + 1);
 
+    const elapsedSeconds = Math.max(0.1, (Date.now() - uploadStartTime) / 1000);
+    const speedMbps = ((totalLoadedBytes * 8) / elapsedSeconds) / 1_000_000;
+
+    updateUploadDebugHud({
+      stage: `Uploading (${activeIdx}/${preOptimized.length})`,
+      filename: currentFileName || 'file',
+      loaded: totalLoadedBytes,
+      total: totalBytesAllFiles,
+      speedMbps,
+      concurrency: currentBatchConcurrency,
+      mode: 'Pipelined / Direct R2',
+      retries: batchConsecutiveFailures
+    });
+
+    if (!onProgress) return;
     onProgress({
       percent: overallPct,
       currentFile: currentFileName,
@@ -834,7 +849,12 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
       const itemIndex = queueIndex++;
       const item = preOptimized[itemIndex];
 
-      // Check if file was already uploaded in background pipeline during recording
+      // Check if file was already uploaded or is actively finishing in background pipeline during recording
+      if (!item.file?._uploadedMeta && item.file?._uploadPromise) {
+        try {
+          item.file._uploadedMeta = await item.file._uploadPromise;
+        } catch (_) {}
+      }
       if (item.file?._uploadedMeta) {
         item.loadedBytes = item.size;
         activeCompletedFiles++;
@@ -880,6 +900,17 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
   const workers = Array.from({ length: currentBatchConcurrency }, (_, id) => worker(id));
   await Promise.all(workers);
 
+  updateUploadDebugHud({
+    stage: 'Complete',
+    filename: 'All files',
+    loaded: totalBytesAllFiles,
+    total: totalBytesAllFiles,
+    speedMbps: 0,
+    concurrency: currentBatchConcurrency,
+    mode: 'Pipelined / Direct R2',
+    retries: batchConsecutiveFailures
+  });
+
   if (onProgress) {
     onProgress({
       percent: 100,
@@ -891,6 +922,52 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
   }
 
   return results;
+}
+
+export function updateUploadDebugHud(info) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const isDebug = window.location.search.includes('debug=1') || window.location.hash.includes('debug=1');
+  if (!isDebug) return;
+
+  let hud = document.getElementById('egs-upload-debug-hud');
+  if (!hud) {
+    hud = document.createElement('div');
+    hud.id = 'egs-upload-debug-hud';
+    hud.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:999999;background:rgba(15,23,42,0.94);color:#38bdf8;padding:12px 16px;border-radius:12px;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.4;max-width:340px;pointer-events:none;backdrop-filter:blur(8px);border:1px solid rgba(56,189,248,0.25);';
+    document.body.appendChild(hud);
+  }
+
+  const {
+    stage = 'Uploading',
+    filename = '',
+    loaded = 0,
+    total = 0,
+    speedMbps = 0,
+    concurrency = 1,
+    mode = 'Direct R2 (Presigned)',
+    retries = 0
+  } = info;
+
+  const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+  hud.innerHTML = `
+    <div style="font-weight:bold;color:#f8fafc;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;margin-bottom:6px;display:flex;justify-content:space-between;">
+      <span>⚡ UPLOAD DIAGNOSTIC HUD</span>
+      <span style="color:#22c55e;">LIVE</span>
+    </div>
+    <div><span style="color:#94a3b8;">Mode:</span> <span style="color:#e2e8f0;font-weight:600;">${mode}</span></div>
+    <div><span style="color:#94a3b8;">File:</span> <span style="color:#e2e8f0;">${filename.slice(-24)}</span></div>
+    <div><span style="color:#94a3b8;">Progress:</span> <span style="color:#38bdf8;font-weight:600;">${pct}%</span> (${(loaded / (1024 * 1024)).toFixed(1)} / ${(total / (1024 * 1024)).toFixed(1)} MB)</div>
+    <div><span style="color:#94a3b8;">Speed:</span> <span style="color:#a855f7;font-weight:600;">${speedMbps.toFixed(2)} Mbps</span></div>
+    <div><span style="color:#94a3b8;">Concurrency:</span> <span style="color:#f59e0b;">${concurrency} streams</span></div>
+    ${retries > 0 ? `<div><span style="color:#ef4444;">Retries:</span> ${retries}</div>` : ''}
+    <div><span style="color:#94a3b8;">Stage:</span> <span style="color:#10b981;">${stage}</span></div>
+  `;
+
+  if (stage === 'Complete') {
+    setTimeout(() => {
+      if (hud && hud.parentNode) hud.parentNode.removeChild(hud);
+    }, 8000);
+  }
 }
 
 export async function uploadMultipleFilesToSupabase(files, onProgress) {

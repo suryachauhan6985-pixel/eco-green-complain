@@ -37,6 +37,138 @@ export function getSupportedRecorderMimeType() {
 }
 
 /**
+ * In-place Lossless MP4 Rotation via tkhd Transformation Matrix
+ * Modifies the 3x3 transformation matrix in the ISO Base Media File Format (MP4/MOV)
+ * in 0 milliseconds without re-encoding, preserving 100% video bitstream and audio quality.
+ */
+export function rotateMp4Lossless(arrayBuffer, angle) {
+  try {
+    const view = new DataView(arrayBuffer);
+    const totalLength = arrayBuffer.byteLength;
+    if (totalLength < 16) return null;
+
+    const tag0 = String.fromCharCode(view.getUint8(4), view.getUint8(5), view.getUint8(6), view.getUint8(7));
+    if (tag0 !== 'ftyp') return null;
+
+    function findBox(offset, end, targetName) {
+      let curr = offset;
+      while (curr + 8 <= end) {
+        let boxSize = view.getUint32(curr);
+        const boxName = String.fromCharCode(
+          view.getUint8(curr + 4),
+          view.getUint8(curr + 5),
+          view.getUint8(curr + 6),
+          view.getUint8(curr + 7)
+        );
+        if (boxSize === 1 && curr + 16 <= end) {
+          boxSize = Number(view.getBigUint64(curr + 8));
+        } else if (boxSize === 0) {
+          boxSize = end - curr;
+        }
+        if (boxSize < 8 || curr + boxSize > end) break;
+        if (boxName === targetName) {
+          return { offset: curr, size: boxSize, dataOffset: curr + 8 };
+        }
+        curr += boxSize;
+      }
+      return null;
+    }
+
+    function findAllBoxes(offset, end, targetName) {
+      const list = [];
+      let curr = offset;
+      while (curr + 8 <= end) {
+        let boxSize = view.getUint32(curr);
+        const boxName = String.fromCharCode(
+          view.getUint8(curr + 4),
+          view.getUint8(curr + 5),
+          view.getUint8(curr + 6),
+          view.getUint8(curr + 7)
+        );
+        if (boxSize === 1 && curr + 16 <= end) {
+          boxSize = Number(view.getBigUint64(curr + 8));
+        } else if (boxSize === 0) {
+          boxSize = end - curr;
+        }
+        if (boxSize < 8 || curr + boxSize > end) break;
+        if (boxName === targetName) {
+          list.push({ offset: curr, size: boxSize, dataOffset: curr + 8 });
+        }
+        curr += boxSize;
+      }
+      return list;
+    }
+
+    const moov = findBox(0, totalLength, 'moov');
+    if (!moov) return null;
+
+    const traks = findAllBoxes(moov.dataOffset, moov.offset + moov.size, 'trak');
+    let videoTrak = null;
+    for (const trak of traks) {
+      const mdia = findBox(trak.dataOffset, trak.offset + trak.size, 'mdia');
+      if (!mdia) continue;
+      const hdlr = findBox(mdia.dataOffset, mdia.offset + mdia.size, 'hdlr');
+      if (!hdlr) continue;
+      if (hdlr.dataOffset + 12 <= mdia.offset + mdia.size) {
+        const handlerType = String.fromCharCode(
+          view.getUint8(hdlr.dataOffset + 8),
+          view.getUint8(hdlr.dataOffset + 9),
+          view.getUint8(hdlr.dataOffset + 10),
+          view.getUint8(hdlr.dataOffset + 11)
+        );
+        if (handlerType === 'vide') {
+          videoTrak = trak;
+          break;
+        }
+      }
+    }
+    if (!videoTrak) videoTrak = traks[0];
+    if (!videoTrak) return null;
+
+    const tkhd = findBox(videoTrak.dataOffset, videoTrak.offset + videoTrak.size, 'tkhd');
+    if (!tkhd) return null;
+
+    const version = view.getUint8(tkhd.dataOffset);
+    let matrixOffset, widthOffset, heightOffset;
+    if (version === 0) {
+      matrixOffset = tkhd.dataOffset + 40;
+      widthOffset = tkhd.dataOffset + 76;
+      heightOffset = tkhd.dataOffset + 80;
+    } else if (version === 1) {
+      matrixOffset = tkhd.dataOffset + 52;
+      widthOffset = tkhd.dataOffset + 88;
+      heightOffset = tkhd.dataOffset + 92;
+    } else {
+      return null;
+    }
+
+    const width16 = view.getInt32(widthOffset);
+    const height16 = view.getInt32(heightOffset);
+
+    let matrix;
+    const normAngle = ((Math.round(angle) % 360) + 360) % 360;
+    if (normAngle === 90) {
+      matrix = [0, 65536, 0, -65536, 0, 0, height16, 0, 1073741824];
+    } else if (normAngle === 180) {
+      matrix = [-65536, 0, 0, 0, -65536, 0, width16, height16, 1073741824];
+    } else if (normAngle === 270) {
+      matrix = [0, -65536, 0, 65536, 0, 0, 0, width16, 1073741824];
+    } else {
+      matrix = [65536, 0, 0, 0, 65536, 0, 0, 0, 1073741824];
+    }
+
+    for (let i = 0; i < 9; i++) {
+      view.setInt32(matrixOffset + i * 4, matrix[i]);
+    }
+
+    return arrayBuffer;
+  } catch (err) {
+    console.warn('[VideoRotation] Lossless MP4 matrix modification skipped:', err);
+    return null;
+  }
+}
+
+/**
  * Rotate an existing video (Blob URL, File, or Remote URL) to 90°, 180°, or 270°
  * and return the rotated video Blob with preserved audio.
  * 
@@ -65,6 +197,33 @@ export async function rotateVideoBlobOrUrl(source, rotationDegrees = 0, options 
       filename,
       rotated: false
     };
+  }
+
+  // Phase A: Fast Lossless MP4 In-Place Matrix Rotation
+  try {
+    if (onProgress) onProgress({ percent: 15, stage: 'Reading video container for lossless rotation...' });
+    let arrayBuffer;
+    if (source instanceof Blob) {
+      arrayBuffer = await source.arrayBuffer();
+    } else {
+      const fetchRes = await fetch(source);
+      arrayBuffer = await fetchRes.arrayBuffer();
+    }
+
+    const rotatedBuffer = rotateMp4Lossless(arrayBuffer, angle);
+    if (rotatedBuffer) {
+      if (onProgress) onProgress({ percent: 100, stage: 'Lossless display matrix rotation complete!' });
+      const baseName = filename.replace(/\.[^/.]+$/, '');
+      const ext = filename.split('.').pop() || 'mp4';
+      const rotatedFilename = `${baseName}_rotated_${angle}deg.${ext}`;
+      return {
+        blob: new Blob([rotatedBuffer], { type: 'video/mp4' }),
+        filename: rotatedFilename,
+        rotated: true
+      };
+    }
+  } catch (losslessErr) {
+    console.warn('[VideoRotation] Lossless path fallback to canvas re-encode:', losslessErr);
   }
 
   if (typeof document === 'undefined' || typeof MediaRecorder === 'undefined') {
@@ -306,6 +465,24 @@ export async function downloadFileSafely(url, filename = 'download', options = {
   }
 
   // Case 2: Standard safe download (0° rotation or non-video document)
+  // If file is in Cloudflare R2, try direct presigned S3 SigV4 GET URL for unlimited bandwidth & zero Worker buffering
+  if (url.includes('/api/attachments/r2/') && angle === 0) {
+    try {
+      const storageKey = url.replace(/^.*\/api\/attachments\/r2\//, '').replace(/\?.*$/, '');
+      const presignRes = await fetch(`/api/attachments/presign-download?key=${encodeURIComponent(storageKey)}&filename=${encodeURIComponent(filename)}`);
+      if (presignRes.ok) {
+        const data = await presignRes.json();
+        if (data.success && data.presigned && data.url) {
+          triggerAnchorDownload(data.url, filename);
+          if (onProgress) onProgress({ percent: 100, stage: 'Direct cloud storage download started!' });
+          return { success: true, direct: true, filename };
+        }
+      }
+    } catch (e) {
+      console.warn('[Downloader] Direct presigned download fallback to stream:', e);
+    }
+  }
+
   const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
 
   try {

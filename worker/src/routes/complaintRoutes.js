@@ -1712,15 +1712,18 @@ complaintRoutes.post('/:id/note', authenticateToken, async (c) => {
     }
 
     const author = user?.name || user?.username || 'Technician';
+    const authorRole = user?.role || 'staff';
+    const authorUserId = user?.id ? Number(user.id) : null;
     await query(
-      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, $6)',
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, actor_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [
         complaint.id, 
         normalizedStatus ? `Status: ${normalizedStatus}` : 'Visit Note Added', 
         actualNote || (normalizedStatus ? `Status updated to ${normalizedStatus}` : 'Follow-up update recorded'), 
         author, 
-        user?.role || 'staff', 
-        notify_customer ? 1 : 0
+        authorRole, 
+        notify_customer ? 1 : 0,
+        authorUserId
       ],
       c.env,
       c.executionCtx
@@ -1788,6 +1791,13 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
     if (!compRes.rows.length) return c.json({ error: 'Complaint not found' }, 404);
     const complaint = compRes.rows[0];
 
+    const actorName = user?.name || user?.username || 'Staff';
+    const actorRole = user?.role || 'staff';
+    const actorUserId = user?.id ? Number(user.id) : null;
+
+    let finalResolvedTechId = null;
+    let finalResolvedTechName = null;
+
     // Technician assignment check
     if (user.role === 'technician') {
       const techId = await resolveUserTechnicianId(user, c.env, c.executionCtx);
@@ -1795,9 +1805,32 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
       if (!isPrimary) {
         return c.json({ error: 'Only the primary assigned technician can mark complaints as resolved.' }, 403);
       }
+      finalResolvedTechId = techId ? String(techId) : null;
+      finalResolvedTechName = actorName;
+    } else {
+      // Admin / Staff resolving: only store technician if explicitly chosen/provided
+      const chosenTechId = body.resolved_by_technician_id || body.technician_id;
+      if (chosenTechId && chosenTechId !== 'none' && chosenTechId !== 'null') {
+        const techLookup = await query(
+          'SELECT id, name FROM technicians WHERE id::text = $1 LIMIT 1',
+          [String(chosenTechId)],
+          c.env,
+          c.executionCtx
+        ).catch(() => ({ rows: [] }));
+        if (techLookup.rows && techLookup.rows.length > 0) {
+          finalResolvedTechId = String(techLookup.rows[0].id);
+          finalResolvedTechName = techLookup.rows[0].name;
+        }
+      }
     }
 
-    const solver = performed_by || user?.name || user?.username || 'Technician';
+    // Determine enterprise timeline note with strict "on behalf of" attribution
+    let timelineNote = '';
+    if (finalResolvedTechName && (user.role === 'admin' || user.role === 'staff' || user.role === 'superadmin')) {
+      timelineNote = `Marked as Resolved by ${actorName} (${actorRole}) on behalf of ${finalResolvedTechName} (technician).${resolution_notes ? ` Notes: ${resolution_notes}` : ' Issue resolved and inspected on site.'}`;
+    } else {
+      timelineNote = `Marked as Resolved by ${actorName} (${actorRole}).${resolution_notes ? ` Notes: ${resolution_notes}` : ' Issue resolved and inspected on site.'}`;
+    }
 
     await query(
       `UPDATE complaints
@@ -1811,19 +1844,29 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
            status_updated_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $6`,
-      [resolution_notes || '', closing_photo_url || null, spare_parts_used || null, String(user?.technician_id || user?.id || ''), solver, complaint.id],
+      [
+        resolution_notes || '',
+        closing_photo_url || null,
+        spare_parts_used || null,
+        finalResolvedTechId,
+        finalResolvedTechName,
+        complaint.id
+      ],
       c.env,
       c.executionCtx
     );
 
     await query(
-      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
+      `INSERT INTO complaint_timelines (
+         complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, actor_user_id
+       ) VALUES ($1, $2, $3, $4, $5, 1, $6)`,
       [
         complaint.id, 
         'Resolved', 
-        `Marked as Resolved by ${solver}.${resolution_notes ? ` Notes: ${resolution_notes}` : ' Issue resolved and inspected on site.'}`, 
-        solver, 
-        user?.role || 'technician'
+        timelineNote, 
+        actorName, 
+        actorRole,
+        actorUserId
       ],
       c.env,
       c.executionCtx
@@ -1835,7 +1878,7 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
         await query(
           `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
            VALUES ($1, $2, $3, $4, $5, $6, 'resolution')`,
-          [complaint.id, att.file_name || 'Resolution_Proof.jpg', att.file_url || att.storage_key, att.file_type || 'image/jpeg', att.file_url || att.storage_key, `${solver} (Technician Resolution Proof)`],
+          [complaint.id, att.file_name || 'Resolution_Proof.jpg', att.file_url || att.storage_key, att.file_type || 'image/jpeg', att.file_url || att.storage_key, `${actorName} (Resolution Proof)`],
           c.env,
           c.executionCtx
         ).catch(() => {});
@@ -1844,15 +1887,16 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
       await query(
         `INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_data, uploaded_by, attachment_type)
          VALUES ($1, 'Resolution_Proof.jpg', $2, 'image/jpeg', $2, $3, 'resolution')`,
-        [complaint.id, closing_photo_url, `${solver} (Technician Resolution Proof)`],
+        [complaint.id, closing_photo_url, `${actorName} (Resolution Proof)`],
         c.env,
         c.executionCtx
       ).catch(() => {});
     }
 
-    // Notify Customer asynchronously
+    // Notify Customer asynchronously with correct field technician or service team
     const isSurvey = isSurveyTicket(complaint.product_type, complaint.issue_category);
     const resolvedTemplate = isSurvey ? 'site_survey_resolved' : 'complaint_resolved';
+    const waTechName = finalResolvedTechName || (user.role === 'technician' ? actorName : 'Eco Green Service Team');
     c.executionCtx?.waitUntil?.(
       sendWhatsApp({
         to: complaint.customer_phone,
@@ -1860,7 +1904,7 @@ complaintRoutes.post('/:id/resolve', authenticateToken, async (c) => {
         variables: {
           ticket_id: complaint.ticket_id,
           customer_name: complaint.customer_name,
-          technician_name: solver,
+          technician_name: waTechName,
           resolution_notes: resolution_notes || (isSurvey ? 'Site survey report, shadow analysis, and technical feasibility completed.' : 'Service successfully completed.')
         },
         env: c.env
@@ -2175,9 +2219,11 @@ complaintRoutes.post('/:id/close', authenticateToken, requireRole('admin', 'staf
     );
 
     const closer = user?.name || user?.username || 'Quality Desk';
+    const closerRole = user?.role || 'staff';
+    const closerUserId = user?.id ? Number(user.id) : null;
     await query(
-      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Closed', `Ticket verified and closed. Remarks: ${closure_remarks || 'Work completed to standard.'}`, closer, user?.role || 'staff'],
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, actor_user_id) VALUES ($1, $2, $3, $4, $5, 1, $6)',
+      [complaint.id, 'Closed', `Ticket verified and closed. Remarks: ${closure_remarks || 'Work completed to standard.'}`, closer, closerRole, closerUserId],
       c.env,
       c.executionCtx
     );
@@ -2263,10 +2309,12 @@ complaintRoutes.post('/:id/reopen', authenticateToken, async (c) => {
     );
 
     const reopener = user?.name || user?.username || 'Customer';
+    const reopenerRole = user?.role || 'customer';
+    const reopenerUserId = user?.id ? Number(user.id) : null;
     const techNoticeText = targetTech ? ` (Assigned to ${targetTech.name})` : '';
     await query(
-      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer) VALUES ($1, $2, $3, $4, $5, 1)',
-      [complaint.id, 'Reopened', `Complaint reopened. Reason: ${reason || 'Issue recurred'}${techNoticeText}`, reopener, user?.role || 'customer'],
+      'INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, actor_user_id) VALUES ($1, $2, $3, $4, $5, 1, $6)',
+      [complaint.id, 'Reopened', `Complaint reopened. Reason: ${reason || 'Issue recurred'}${techNoticeText}`, reopener, reopenerRole, reopenerUserId],
       c.env,
       c.executionCtx
     );

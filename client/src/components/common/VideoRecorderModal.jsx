@@ -781,13 +781,15 @@ export function VideoRecorderModal({
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const partFilename = `VID_${ts}_site_part${partNumber}.${ext}`;
+    const randSuffix = Math.random().toString(36).substring(2, 6);
+    const partFilename = `VID_${ts}_${randSuffix}_site_part${partNumber}.${ext}`;
     const partFile = new File([blob], partFilename, {
       type: finalMime,
       lastModified: Date.now()
     });
 
     if (pipelinePromise) {
+      partFile._uploadPromise = pipelinePromise;
       pipelinePromise.then(meta => {
         if (meta) {
           partFile._uploadedMeta = meta;
@@ -828,7 +830,8 @@ export function VideoRecorderModal({
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
       const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const currentPartFilename = `VID_${ts}_site_part${partIndex}.${ext}`;
+      const randSuffix = Math.random().toString(36).substring(2, 6);
+      const currentPartFilename = `VID_${ts}_${randSuffix}_site_part${partIndex}.${ext}`;
 
       const pipeline = new PipelinedRecordingUpload(partIndex, mimeType);
       activePipelineRef.current = pipeline;

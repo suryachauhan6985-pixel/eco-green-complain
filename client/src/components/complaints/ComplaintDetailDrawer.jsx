@@ -806,7 +806,8 @@ export const ComplaintDetailDrawer = ({
         } else {
           setExpectedDate('');
         }
-        if (targetComp.resolved_by_technician_id) {
+        // Do not prefill stale resolver if ticket is open or reopened
+        if (targetComp.status === 'Resolved' && targetComp.resolved_by_technician_id) {
           setResolvedByTechId(String(targetComp.resolved_by_technician_id));
         } else if (targetComp.assigned_technician_id) {
           setResolvedByTechId(String(targetComp.assigned_technician_id));
@@ -1317,7 +1318,7 @@ export const ComplaintDetailDrawer = ({
       // Determine technician who physically resolved/led on site
       let resolvedTechId = resolvedByTechId;
       let resolvedTechName = '';
-      if (resolvedTechId) {
+      if (resolvedTechId && resolvedTechId !== 'none' && resolvedTechId !== 'null') {
         const found = technicians.find(t => String(t.id) === String(resolvedTechId));
         if (found) resolvedTechName = found.name;
         if (!resolvedTechName) {
@@ -1325,22 +1326,15 @@ export const ComplaintDetailDrawer = ({
           else if (String(resolvedTechId) === String(ticket.secondary_technician_id)) resolvedTechName = ticket.secondary_technician_name;
         }
       }
-      if (!resolvedTechName) {
-        if (isAssignedTechnician) {
-          resolvedTechId = String(currentUser.id);
-          resolvedTechName = currentUser.name;
-        } else if (ticket.technician_name) {
-          resolvedTechId = String(ticket.assigned_technician_id || '');
-          resolvedTechName = ticket.technician_name;
-        }
+      if (!resolvedTechName && isAssignedTechnician) {
+        resolvedTechId = String(currentUser.id);
+        resolvedTechName = currentUser.name;
       }
 
-      if (resolvedTechId) data.append('resolved_by_technician_id', resolvedTechId);
-      if (resolvedTechName) data.append('resolved_by_technician_name', resolvedTechName);
-
-      const activeTechName = resolvedTechName || ticket.technician_name || ticket.assigned_tech_name || (isAssignedTechnician ? currentUser?.name : '');
-      if (activeTechName) {
-        data.append('technician_name', activeTechName);
+      if (resolvedTechId && resolvedTechId !== 'none') data.append('resolved_by_technician_id', resolvedTechId);
+      if (resolvedTechName) {
+        data.append('resolved_by_technician_name', resolvedTechName);
+        data.append('technician_name', resolvedTechName);
       }
 
       let fallbackFiles = [];
@@ -4482,13 +4476,28 @@ export const ComplaintDetailDrawer = ({
                                 </div>
                               );
                             })()}
-                            <div className="mt-2 text-[10px] text-slate-500 flex items-center justify-between">
-                              <span>By: <strong>{item.performed_by_name}</strong> ({item.performed_by_role})</span>
-                              {item.notify_customer === 1 && (
-                                <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                                  <Check className="w-3 h-3" /> Customer Alerted
-                                </span>
-                              )}
+                            <div className="mt-2 text-[10px] text-slate-500">
+                              <div className="flex items-center justify-between">
+                                <span>By: <strong>{item.performed_by_name}</strong> ({item.performed_by_role})</span>
+                                {item.notify_customer === 1 && (
+                                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                                    <Check className="w-3 h-3" /> Customer Alerted
+                                  </span>
+                                )}
+                              </div>
+                              {(() => {
+                                const onBehalfMatch = (item.notes || '').match(/on behalf of ([^(]+)\s*\(([^)]+)\)/i);
+                                if (onBehalfMatch) {
+                                  return (
+                                    <div className="text-[10px] text-indigo-700 font-medium mt-0.5 flex items-center gap-1">
+                                      <span>On behalf of:</span>
+                                      <strong className="text-slate-800">{onBehalfMatch[1].trim()}</strong>
+                                      <span className="text-slate-500 font-normal">({onBehalfMatch[2].trim()})</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                           </div>
                         </div>

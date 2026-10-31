@@ -513,15 +513,17 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
 
     // Timeline event
     if (saved.length > 0) {
+      const uploaderUserId = user?.id ? Number(user.id) : null;
       await query(
-        `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
-         VALUES ($1, $2, $3, $4, $5, 0)`,
+        `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer, actor_user_id)
+         VALUES ($1, $2, $3, $4, $5, 0, $6)`,
         [
           complaintId,
           'Document Attached',
           `${saved.length} document/photo(s) attached by ${uploaderName}: ${saved.map(s => s.file_name).join(', ')}`,
           uploaderName,
-          user?.role || 'staff'
+          user?.role || 'staff',
+          uploaderUserId
         ],
         c.env,
         c.executionCtx
@@ -529,6 +531,55 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
     }
 
     return c.json({ success: true, attachments: saved });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// GET /api/attachments/presign-download - Presigned Direct GET Download URL from R2
+attachmentRoutes.get('/attachments/presign-download', optionalAuth, async (c) => {
+  try {
+    const rawKey = c.req.query('key') || '';
+    const cleanKey = decodeURIComponent(rawKey).replace(/^\/+/, '');
+    const filename = (c.req.query('filename') || cleanKey.split('/').pop() || 'download').replace(/"/g, '');
+    if (!cleanKey) return c.json({ error: 'Missing object key' }, 400);
+
+    // Path traversal defense
+    if (cleanKey.includes('..') || cleanKey.includes('\\')) {
+      return c.json({ error: 'Invalid object key' }, 400);
+    }
+
+    const accountId = c.env?.R2_ACCOUNT_ID;
+    const accessKeyId = c.env?.R2_ACCESS_KEY_ID;
+    const secretAccessKey = c.env?.R2_SECRET_ACCESS_KEY;
+    const bucket = c.env?.MEDIA_BUCKET?.name || 'eco-green-solar-cms-media';
+
+    if (!accountId || !accessKeyId || !secretAccessKey) {
+      return c.json({
+        success: true,
+        presigned: false,
+        url: `/api/attachments/r2/${cleanKey}?download=1`
+      });
+    }
+
+    const presignedUrl = await getR2PresignedUrl({
+      accountId,
+      accessKeyId,
+      secretAccessKey,
+      bucket,
+      key: cleanKey,
+      method: 'GET',
+      queryParams: {
+        'response-content-disposition': `attachment; filename="${filename}"`
+      },
+      expiresInSeconds: 1800
+    });
+
+    return c.json({
+      success: true,
+      presigned: true,
+      url: presignedUrl
+    });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
