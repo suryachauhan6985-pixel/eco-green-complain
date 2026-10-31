@@ -3,7 +3,8 @@ import {
   Play, Pause, Download, Maximize2, RotateCw, ZoomIn, ZoomOut,
   FileText, ExternalLink, MapPin, Copy, Phone, User, Check,
   CheckCheck, Clock, AlertCircle, Eye, RefreshCw, X, Mic,
-  FileSpreadsheet, Archive, File, Star, Smile, Plus, Paperclip, ArrowLeft
+  FileSpreadsheet, Archive, File, Star, Smile, Plus, Paperclip, ArrowLeft,
+  ChevronLeft, ChevronRight, Reply
 } from 'lucide-react';
 
 /**
@@ -549,11 +550,19 @@ export function WhatsAppQuotedPreview({
 
   return (
     <div
-      onClick={onClick}
-      className="mb-1.5 p-2 rounded-lg bg-black/5 hover:bg-black/10 border-l-4 border-[#00a884] text-xs transition-colors cursor-pointer select-none max-w-sm"
-      title="Click to jump to quoted message"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onClick) onClick(e);
+      }}
+      className="mb-1.5 p-2 rounded-lg bg-black/5 hover:bg-black/10 border-l-4 border-[#00a884] text-xs transition-all cursor-pointer select-none max-w-sm active:scale-[0.99] group"
+      title="Click to jump to quoted message in chat"
     >
-      <p className="font-bold text-[#00a884] text-[11px] mb-0.5 truncate">{senderName}</p>
+      <div className="flex items-center justify-between gap-1 mb-0.5">
+        <p className="font-bold text-[#00a884] text-[11px] truncate">{senderName}</p>
+        <span className="text-[10px] text-[#00a884]/70 font-medium group-hover:underline flex items-center gap-0.5">
+          Jump <ChevronRight className="w-3 h-3" />
+        </span>
+      </div>
       <p className="text-[#54656f] text-[11px] truncate max-w-xs leading-snug">
         {quotedText}
       </p>
@@ -745,19 +754,59 @@ export function WhatsAppQuickReactionHover() {
  * - Download High Res
  * - Close via Esc or outside click
  */
+/**
+ * Format timestamp into standard enterprise date-time (e.g., 10/8/2026 at 8:10 PM)
+ */
+function formatMediaTimestamp(isoDate) {
+  if (!isoDate) return '';
+  try {
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return '';
+    const dateStr = d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return `${dateStr} at ${timeStr}`;
+  } catch (_) {
+    return '';
+  }
+}
+
+/**
+ * Authentic WhatsApp Web Media Lightbox Gallery Modal
+ * Features:
+ * - Header bar with sender avatar, contact name, timestamp, and action buttons (Reply, Star, Attach, Rotate, Zoom, Download, Close)
+ * - Navigation: Left (<) and Right (>) side arrows with keyboard shortcuts (ArrowLeft / ArrowRight)
+ * - Filmstrip: Bottom thumbnail carousel of all media items in current chat with active indicator
+ * - Support for both images (zoom, pan, rotate) and videos (full HTML5 player with range seekbar)
+ * - Graceful expired/purged state display for closed complaint media
+ */
 export function WhatsAppMediaLightbox({
   media,
+  mediaList = [],
+  onSelectMedia,
+  selectedContact,
   onClose,
   onDownload,
-  onAttachToComplaint
+  onAttachToComplaint,
+  onReplyMessage,
+  onStarMessage
 }) {
   const isVideo = media && (media.type === 'video' || (media.url && /\.(mp4|webm|mov)($|\?)/i.test(media.url)));
 
   const containerRef = useRef(null);
+  const activeThumbnailRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [purgeInfo, setPurgeInfo] = useState(
+    media?.isPurged || media?.msg?.media_purged === 1 || media?.msg?.purge_reason === 'complaint_closed_retention_expired'
+      ? {
+          isPurged: true,
+          ticketId: media?.msg?.complaint_id || media?.ticket_id || null,
+        }
+      : null
+  );
 
   // Gesture tracking refs
   const dragStartRef = useRef({ x: 0, y: 0 });
@@ -775,6 +824,54 @@ export function WhatsAppMediaLightbox({
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
+
+  // Reset zoom, position, and errors whenever the displayed media changes
+  useEffect(() => {
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    setRotation(0);
+    setLoadError(false);
+    if (media?.isPurged || media?.msg?.media_purged === 1 || media?.msg?.purge_reason === 'complaint_closed_retention_expired') {
+      setLoadError(true);
+      setPurgeInfo({
+        isPurged: true,
+        ticketId: media?.msg?.complaint_id || media?.ticket_id || null,
+      });
+    } else {
+      setPurgeInfo(null);
+    }
+  }, [media?.url, media?.isPurged]);
+
+  // Scroll active thumbnail smoothly into view in bottom filmstrip
+  useEffect(() => {
+    if (activeThumbnailRef.current) {
+      activeThumbnailRef.current.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest'
+      });
+    }
+  }, [media?.url]);
+
+  // Find index of current media item in the active chat's media list
+  const currentIndex = mediaList.findIndex((item) =>
+    (item.url && media?.url && item.url === media.url) ||
+    (item.msg && media?.msg && item.msg.id === media.msg.id)
+  );
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex !== -1 && currentIndex < mediaList.length - 1;
+
+  const handlePrev = useCallback(() => {
+    if (hasPrev && onSelectMedia) {
+      onSelectMedia(mediaList[currentIndex - 1]);
+    }
+  }, [hasPrev, currentIndex, mediaList, onSelectMedia]);
+
+  const handleNext = useCallback(() => {
+    if (hasNext && onSelectMedia) {
+      onSelectMedia(mediaList[currentIndex + 1]);
+    }
+  }, [hasNext, currentIndex, mediaList, onSelectMedia]);
 
   // Reset zoom and pan
   const handleReset = useCallback(() => {
@@ -809,7 +906,6 @@ export function WhatsAppMediaLightbox({
     });
   }, [isVideo]);
 
-  // Attach non-passive wheel listener on container to prevent page scroll while zooming
   useEffect(() => {
     const el = containerRef.current;
     if (!el || isVideo) return;
@@ -819,10 +915,21 @@ export function WhatsAppMediaLightbox({
     };
   }, [handleWheel, isVideo]);
 
-  // Keyboard controls
+  // Keyboard navigation and shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        handlePrev();
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        handleNext();
+        return;
+      }
       if (isVideo) return;
       if (e.key === '+' || e.key === '=') adjustZoom(0.25);
       if (e.key === '-') adjustZoom(-0.25);
@@ -830,7 +937,7 @@ export function WhatsAppMediaLightbox({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, adjustZoom, handleReset, isVideo]);
+  }, [onClose, handlePrev, handleNext, adjustZoom, handleReset, isVideo]);
 
   // Mouse Drag to Pan (Desktop)
   const handleMouseDown = (e) => {
@@ -859,7 +966,7 @@ export function WhatsAppMediaLightbox({
   // Double click to toggle zoom (Desktop)
   const handleDoubleClick = (e) => {
     if (isVideo) return;
-    e.stopPropagation();
+    e?.stopPropagation?.();
     if (zoom > 1.2) {
       handleReset();
     } else {
@@ -941,16 +1048,6 @@ export function WhatsAppMediaLightbox({
     }
   };
 
-  const [loadError, setLoadError] = useState(false);
-  const [purgeInfo, setPurgeInfo] = useState(
-    media?.isPurged || media?.msg?.media_purged === 1 || media?.msg?.purge_reason === 'complaint_closed_retention_expired'
-      ? {
-          isPurged: true,
-          ticketId: media?.msg?.complaint_id || media?.ticket_id || null,
-        }
-      : null
-  );
-
   const handleMediaError = async () => {
     if (purgeInfo) {
       setLoadError(true);
@@ -980,36 +1077,72 @@ export function WhatsAppMediaLightbox({
 
   if (!media || !media.url) return null;
 
+  const senderDisplayName = media?.sender_name || (media?.msg?.sender_type === 'customer' ? (selectedContact?.name || media?.msg?.sender_name || 'Customer') : 'You');
+  const formattedTime = formatMediaTimestamp(media?.created_at || media?.msg?.created_at);
+
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-enter-fade select-none"
+      className="fixed inset-0 z-50 bg-[#0c1317]/95 backdrop-blur-md flex flex-col items-center justify-between p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-enter-fade select-none"
     >
-      {/* Lightbox Top Navigation Bar with Dedicated Mobile Back Button */}
+      {/* Lightbox Top Header Bar - Authentic WhatsApp Web Layout */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-5xl flex items-center justify-between text-white py-1.5 px-1 sm:px-2 z-20 gap-2 shrink-0"
+        className="w-full max-w-6xl flex items-center justify-between text-white py-2 px-2 sm:px-4 z-30 gap-2 shrink-0 border-b border-white/10"
       >
-        {/* Left Side: Mobile & Desktop Back Button + Media Title */}
-        <div className="flex items-center gap-2 min-w-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center gap-1.5 transition-all cursor-pointer text-xs font-bold shrink-0 shadow-md ring-1 ring-white/25"
-            title="Back to Chat (Esc)"
-          >
-            <ArrowLeft className="w-4 h-4 text-white" />
-            <span>Back</span>
-          </button>
-          <span className="font-semibold text-xs sm:text-sm truncate max-w-[130px] sm:max-w-md text-white/90">
-            {media.title || (isVideo ? 'WhatsApp Video' : 'WhatsApp Photo')}
-          </span>
+        {/* Left Side: Avatar + Sender Name + Timestamp + Count Indicator */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shrink-0 uppercase shadow-md ring-1 ring-white/20 select-none">
+            {senderDisplayName.charAt(0) || 'U'}
+          </div>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm text-white truncate max-w-[160px] sm:max-w-xs">
+                {senderDisplayName}
+              </span>
+              {mediaList.length > 1 && currentIndex !== -1 && (
+                <span className="text-[11px] text-white/60 font-mono bg-white/10 px-1.5 py-0.5 rounded">
+                  {currentIndex + 1} of {mediaList.length}
+                </span>
+              )}
+            </div>
+            {formattedTime && (
+              <span className="text-[11px] text-white/70">
+                {formattedTime}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Right Side: Desktop Controls & Mobile Actions */}
+        {/* Right Side: Action Icons */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Reply in chat button */}
+          {onReplyMessage && media.msg && (
+            <button
+              type="button"
+              onClick={() => onReplyMessage(media.msg)}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer"
+              title="Reply to message in chat"
+            >
+              <Reply className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Star toggle button */}
+          {onStarMessage && media.msg && (
+            <button
+              type="button"
+              onClick={() => onStarMessage(media.msg)}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer"
+              title={media.msg?.is_starred ? 'Unstar message' : 'Star message'}
+            >
+              <Star className={`w-4 h-4 ${media.msg?.is_starred ? 'fill-amber-400 text-amber-400' : 'text-white'}`} />
+            </button>
+          )}
+
+          {/* Desktop Zoom & Rotate Controls */}
           {!isVideo && (
-            <div className="hidden sm:flex items-center gap-1.5">
+            <div className="hidden md:flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => adjustZoom(-0.25)}
@@ -1044,56 +1177,51 @@ export function WhatsAppMediaLightbox({
               >
                 <RotateCw className="w-4 h-4" />
               </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                title="Reset Zoom & Pan"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
             </div>
           )}
 
-          {/* Quick Rotate button on mobile */}
+          {/* Mobile Quick Rotate */}
           {!isVideo && (
             <button
               type="button"
               onClick={() => setRotation(r => (r + 90) % 360)}
-              className="p-2 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white transition-all cursor-pointer sm:hidden"
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer md:hidden"
               title="Rotate 90°"
             >
               <RotateCw className="w-4 h-4" />
             </button>
           )}
 
+          {/* Attach to Complaint / Ticket */}
           {onAttachToComplaint && (
             <button
               type="button"
               onClick={onAttachToComplaint}
-              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
-              title="Attach to Complaint / Ticket"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+              title="Attach Media to Complaint / Ticket"
             >
               <Paperclip className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Attach</span>
             </button>
           )}
 
+          {/* Download Media */}
           {onDownload && !loadError && (
             <button
               type="button"
               onClick={() => onDownload(rotation)}
-              className="p-2 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white transition-all cursor-pointer"
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer"
               title={rotation ? `Download Media (Rotated ${rotation}°)` : 'Download Media'}
             >
               <Download className="w-4 h-4" />
             </button>
           )}
 
+          {/* Close Modal (Esc) */}
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white transition-all cursor-pointer ml-1"
+            className="p-2 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white transition-all cursor-pointer ml-1"
             title="Close (Esc)"
           >
             <X className="w-5 h-5" />
@@ -1101,123 +1229,201 @@ export function WhatsAppMediaLightbox({
         </div>
       </div>
 
-      {/* Media Canvas */}
-      <div
-        ref={containerRef}
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`flex-1 w-full max-w-5xl flex items-center justify-center overflow-hidden my-1 sm:my-2 modal-enter-scale select-none ${
-          !isVideo && zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
-        }`}
-      >
-        {loadError ? (
-          purgeInfo?.isPurged ? (
-            <div className="p-8 max-w-md bg-slate-900 border border-amber-500/40 rounded-2xl text-center text-white flex flex-col items-center gap-3.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-              <div className="w-14 h-14 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-inner">
-                <Archive className="w-7 h-7" />
-              </div>
-              <h3 className="font-bold text-lg text-amber-200">
-                Media Removed — Complaint Closed
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                This complaint has been closed and the media file has been permanently deleted by the system in accordance with our 10–15 day data retention policy.
-              </p>
-              {purgeInfo.ticketId && (
-                <div className="px-3.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 font-mono">
-                  Complaint Ticket: <span className="text-amber-300 font-semibold">{purgeInfo.ticketId}</span>
-                </div>
-              )}
-              <div className="text-[11px] text-amber-400/90 font-medium">
-                Retention expired • Media permanently deleted by system
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="mt-2 px-6 py-2.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-lg ring-1 ring-amber-400/30"
-              >
-                Understood
-              </button>
-            </div>
-          ) : (
-            <div className="p-8 max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl text-center text-white flex flex-col items-center gap-3 shadow-2xl">
-              <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center">
-                <AlertCircle className="w-6 h-6" />
-              </div>
-              <h3 className="font-bold text-base text-rose-200">
-                {isVideo ? 'WhatsApp Video Expired' : 'WhatsApp Media Expired'}
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago. Cloud API media retention is temporary.
-              </p>
-              <p className="text-xs text-emerald-400 font-semibold">
-                Please request the customer to resend this file on WhatsApp.
-              </p>
-              <button
-                type="button"
-                onClick={onClose}
-                className="mt-2 px-5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                Close Lightbox
-              </button>
-            </div>
-          )
-        ) : isVideo ? (
-          <video
-            src={media.url}
-            controls
-            autoPlay
-            playsInline
-            preload="auto"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseMove={(e) => e.stopPropagation()}
-            onMouseUp={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            onTouchMove={(e) => e.stopPropagation()}
-            onTouchEnd={(e) => e.stopPropagation()}
-            onError={handleMediaError}
-            className="max-h-[76vh] sm:max-h-[82vh] max-w-full rounded-lg object-contain shadow-2xl bg-black select-auto pointer-events-auto"
-          />
-        ) : (
-          <img
-            src={media.url}
-            alt="WhatsApp Media"
-            draggable={false}
-            onError={handleMediaError}
-            style={{
-              transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
-              transition: isDragging ? 'none' : 'transform 0.15s ease-out',
-              willChange: 'transform',
+      {/* Main Viewport Container with Left/Right Arrows */}
+      <div className="relative flex-1 w-full max-w-6xl flex items-center justify-center overflow-hidden my-1 sm:my-2">
+        {/* Left Navigation Arrow */}
+        {hasPrev && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePrev();
             }}
-            className="max-h-[76vh] sm:max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl select-none"
-          />
+            className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-xs transition-all active:scale-95 cursor-pointer shadow-2xl ring-1 ring-white/20 hover:scale-105"
+            title="Previous Media (Left Arrow)"
+          >
+            <ChevronLeft className="w-7 h-7 -ml-0.5 text-white" />
+          </button>
         )}
+
+        {/* Right Navigation Arrow */}
+        {hasNext && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNext();
+            }}
+            className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-xs transition-all active:scale-95 cursor-pointer shadow-2xl ring-1 ring-white/20 hover:scale-105"
+            title="Next Media (Right Arrow)"
+          >
+            <ChevronRight className="w-7 h-7 -mr-0.5 text-white" />
+          </button>
+        )}
+
+        {/* Media Canvas */}
+        <div
+          ref={containerRef}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onDoubleClick={handleDoubleClick}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className={`w-full h-full flex items-center justify-center select-none ${
+            !isVideo && zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+          }`}
+        >
+          {loadError ? (
+            purgeInfo?.isPurged ? (
+              <div className="p-8 max-w-md bg-slate-900 border border-amber-500/40 rounded-2xl text-center text-white flex flex-col items-center gap-3.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-14 h-14 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-inner">
+                  <Archive className="w-7 h-7" />
+                </div>
+                <h3 className="font-bold text-lg text-amber-200">
+                  Media Removed — Complaint Closed
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  This complaint has been closed and the media file has been permanently deleted by the system in accordance with our 10–15 day data retention policy.
+                </p>
+                {purgeInfo.ticketId && (
+                  <div className="px-3.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 font-mono">
+                    Complaint Ticket: <span className="text-amber-300 font-semibold">{purgeInfo.ticketId}</span>
+                  </div>
+                )}
+                <div className="text-[11px] text-amber-400/90 font-medium">
+                  Retention expired • Media permanently deleted by system
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="mt-2 px-6 py-2.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-lg ring-1 ring-amber-400/30"
+                >
+                  Understood
+                </button>
+              </div>
+            ) : (
+              <div className="p-8 max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl text-center text-white flex flex-col items-center gap-3 shadow-2xl">
+                <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-base text-rose-200">
+                  {isVideo ? 'WhatsApp Video Expired' : 'WhatsApp Media Expired'}
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago. Cloud API media retention is temporary.
+                </p>
+                <p className="text-xs text-emerald-400 font-semibold">
+                  Please request the customer to resend this file on WhatsApp.
+                </p>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="mt-2 px-5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Close Lightbox
+                </button>
+              </div>
+            )
+          ) : isVideo ? (
+            <video
+              src={media.url}
+              controls
+              autoPlay
+              playsInline
+              preload="auto"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseMove={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+              onError={handleMediaError}
+              className="max-h-[68vh] sm:max-h-[74vh] max-w-full rounded-lg object-contain shadow-2xl bg-black select-auto pointer-events-auto"
+            />
+          ) : (
+            <img
+              src={media.url}
+              alt="WhatsApp Media"
+              draggable={false}
+              onError={handleMediaError}
+              style={{
+                transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
+                transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+                willChange: 'transform',
+              }}
+              className="max-h-[68vh] sm:max-h-[74vh] max-w-full object-contain rounded-lg shadow-2xl select-none"
+            />
+          )}
+        </div>
       </div>
 
-      {/* Lightbox Footer Caption & Interaction Tip */}
-      <div className="w-full max-w-2xl flex flex-col items-center gap-1.5 z-10 shrink-0">
-        {!isVideo && (
-          <div className="text-[11px] text-white/50 tracking-wide font-medium text-center">
-            <span className="hidden sm:inline">Scroll mouse wheel to zoom • Drag to pan • Double click to toggle</span>
-            <span className="sm:hidden">Pinch to zoom • Double tap to toggle</span>
+      {/* Caption Banner (if caption present) */}
+      {media.caption && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-2xl bg-black/70 backdrop-blur-md text-white text-center py-1.5 px-4 rounded-xl text-xs shrink-0 mb-1 shadow-lg border border-white/10"
+        >
+          {media.caption}
+        </div>
+      )}
+
+      {/* Authentic WhatsApp Web Bottom Filmstrip / Thumbnail Strip */}
+      {mediaList && mediaList.length > 0 && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-5xl px-2 sm:px-4 py-2 z-30 shrink-0 select-none bg-black/40 backdrop-blur-xs rounded-xl border border-white/10"
+        >
+          <div className="flex items-center justify-start sm:justify-center gap-2 overflow-x-auto no-scrollbar py-1">
+            {mediaList.map((item, idx) => {
+              const isCurrent = idx === currentIndex || (item.url && item.url === media.url);
+              const isItemVideo = item.type === 'video' || /\.(mp4|webm|mov)($|\?)/i.test(item.url);
+
+              return (
+                <button
+                  key={item.id || item.url || idx}
+                  ref={isCurrent ? activeThumbnailRef : null}
+                  type="button"
+                  onClick={() => onSelectMedia && onSelectMedia(item)}
+                  className={`w-12 h-12 sm:w-14 sm:h-14 rounded-lg overflow-hidden shrink-0 relative transition-all duration-200 cursor-pointer ${
+                    isCurrent
+                      ? 'ring-2 ring-[#00a884] scale-105 shadow-xl brightness-105 border-2 border-emerald-400 opacity-100 z-10'
+                      : 'opacity-50 hover:opacity-90 hover:scale-100 border border-white/20'
+                  }`}
+                  title={item.caption || (isItemVideo ? 'Video' : 'Photo')}
+                >
+                  {isItemVideo ? (
+                    <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
+                      <video
+                        src={item.url}
+                        className="w-full h-full object-cover pointer-events-none"
+                        preload="metadata"
+                      />
+                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                        <Play className="w-4 h-4 fill-white text-white drop-shadow" />
+                      </div>
+                      <div className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] font-bold text-white text-center py-0.5 leading-none">
+                        VID
+                      </div>
+                    </div>
+                  ) : (
+                    <img
+                      src={item.url}
+                      alt=""
+                      className="w-full h-full object-cover pointer-events-none"
+                      loading="lazy"
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
-        )}
-        {media.caption && (
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full bg-black/60 backdrop-blur-md text-white text-center py-2 px-4 rounded-xl text-xs"
-          >
-            {media.caption}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

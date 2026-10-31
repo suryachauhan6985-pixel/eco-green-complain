@@ -1,5 +1,5 @@
 import { formatIndianDateOnly, formatIndianTimeOnly, formatIndianDateTime } from '../common/TicketAgeBadge';
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 
 const PdfViewerModal = lazy(() => import('./PdfViewerModal'));
 import { api, getPermanentWhatsAppMessages, saveWhatsAppMessagesPermanently } from '../../api/client';
@@ -383,6 +383,45 @@ export const WhatsAppWebInbox = ({
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
   const [showStarredDrawer, setShowStarredDrawer] = useState(false);
   const [highlightedMsgId, setHighlightedMsgId] = useState(null);
+
+  // Collect all media items (photos and videos) from current chat for the WhatsApp lightbox filmstrip & gallery
+  const chatMediaList = useMemo(() => {
+    if (!messages || messages.length === 0) return [];
+    const list = [];
+    messages.forEach((m) => {
+      if (isImageMessage(m)) {
+        const url = getWhatsAppMediaUrl(m);
+        if (url) {
+          list.push({
+            id: m.id,
+            url,
+            type: 'image',
+            caption: m.media_caption || '',
+            title: m.media_caption || 'WhatsApp Photo',
+            created_at: m.created_at,
+            sender_name: m.sender_type === 'customer' ? (selectedContact?.name || m.sender_name || 'Customer') : 'You',
+            msg: m
+          });
+        }
+      } else if (isVideoMessage(m)) {
+        const url = getWhatsAppMediaUrl(m);
+        if (url) {
+          list.push({
+            id: m.id,
+            url,
+            type: 'video',
+            caption: m.media_caption || '',
+            title: m.media_caption || 'WhatsApp Video',
+            created_at: m.created_at,
+            sender_name: m.sender_type === 'customer' ? (selectedContact?.name || m.sender_name || 'Customer') : 'You',
+            msg: m,
+            isPurged: m.media_purged === 1 || m.purge_reason === 'complaint_closed_retention_expired'
+          });
+        }
+      }
+    });
+    return list;
+  }, [messages, selectedContact]);
 
   // Direct Attach Media to Complaint Modal state
   const [attachMediaModal, setAttachMediaModal] = useState(null); // { msg, mediaUrl, fileName, mediaType }
@@ -1580,18 +1619,49 @@ export const WhatsAppWebInbox = ({
     }
   };
 
-  // Jump to message in chat log and highlight briefly
+  // Jump to message in chat log and highlight briefly with pulse animation
   const handleJumpToMessage = (targetMsgId) => {
-    if (!targetMsgId) return;
-    const el = document.getElementById(`msg-${targetMsgId}`) || document.querySelector(`[data-wamid="${targetMsgId}"]`);
+    if (!targetMsgId) {
+      showToast('No original message reference found for this reply', 'info');
+      return;
+    }
+
+    // 1. Locate message object in current messages list
+    const targetMsg = messages.find(m => 
+      String(m.id) === String(targetMsgId) ||
+      (m.wam_id && m.wam_id === targetMsgId) ||
+      (m.whatsapp_message_id && m.whatsapp_message_id === targetMsgId) ||
+      (typeof targetMsgId === 'string' && m.wam_id && targetMsgId.includes(m.wam_id))
+    );
+
+    const numericId = targetMsg ? targetMsg.id : (!isNaN(targetMsgId) ? Number(targetMsgId) : null);
+    const wamid = targetMsg ? (targetMsg.wam_id || targetMsg.whatsapp_message_id) : (String(targetMsgId).startsWith('wamid') ? targetMsgId : null);
+
+    // 2. Query DOM element using all possible selectors
+    let el = null;
+    if (numericId) {
+      el = document.getElementById(`msg-${numericId}`) || 
+           document.querySelector(`[data-msg-id="${numericId}"]`);
+    }
+    if (!el && wamid) {
+      el = document.querySelector(`[data-wamid="${wamid}"]`) ||
+           document.getElementById(`msg-${wamid}`);
+    }
+    if (!el) {
+      el = document.getElementById(`msg-${targetMsgId}`) || 
+           document.querySelector(`[data-wamid="${targetMsgId}"]`) ||
+           document.querySelector(`[data-msg-id="${targetMsgId}"]`);
+    }
+
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightedMsgId(targetMsgId);
+      const highlightKey = numericId || targetMsgId;
+      setHighlightedMsgId(highlightKey);
       setTimeout(() => {
-        setHighlightedMsgId(null);
+        setHighlightedMsgId((curr) => (curr === highlightKey ? null : curr));
       }, 2500);
     } else {
-      showToast('Message not found in currently loaded view', 'info');
+      showToast('Quoted message not found in currently loaded view', 'info');
     }
   };
 
@@ -2098,7 +2168,8 @@ export const WhatsAppWebInbox = ({
 
               <div
                 id={`msg-${msg.id}`}
-                data-wamid={msg.whatsapp_message_id || ''}
+                data-msg-id={msg.id}
+                data-wamid={msg.wam_id || msg.whatsapp_message_id || ''}
                 onMouseEnter={() => setHoveredMessageId(msg.id)}
                 onMouseLeave={() => setHoveredMessageId(prev => prev === msg.id ? null : prev)}
                 className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} items-end my-1 relative px-2 group ${actionMessageMenuId === msg.id || activeReactionPickerMsgId === msg.id ? 'z-30' : 'z-1'}`}
@@ -2121,7 +2192,13 @@ export const WhatsAppWebInbox = ({
                   className={`max-w-[85%] sm:max-w-[75%] md:max-w-[70%] lg:max-w-[65%] ${
                     isMediaOnly ? 'p-1' : 'px-3 py-2'
                   } shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] text-sm relative rounded-lg min-w-[70px] transition-all duration-300 ${
-                    highlightedMsgId === msg.id ? 'ring-2 ring-emerald-500 bg-emerald-50 scale-[1.01]' : ''
+                    highlightedMsgId && (
+                      String(highlightedMsgId) === String(msg.id) ||
+                      (msg.wam_id && highlightedMsgId === msg.wam_id) ||
+                      (msg.whatsapp_message_id && highlightedMsgId === msg.whatsapp_message_id)
+                    )
+                      ? 'ring-4 ring-emerald-500 bg-emerald-100/90 shadow-2xl scale-[1.02] animate-pulse duration-500'
+                      : ''
                   } ${
                     isCustomer
                       ? 'bg-white text-[#111b21] rounded-tl-none'
@@ -2221,12 +2298,30 @@ export const WhatsAppWebInbox = ({
                 )}
 
                 {/* Quoted Reply Preview block if present */}
-                {msg.quoted_text && (
-                  <WhatsAppQuotedPreview
-                    quotedText={msg.quoted_text}
-                    senderName={msg.sender_type === 'customer' ? 'Customer' : 'You'}
-                    onClick={() => handleJumpToMessage(msg.quoted_msg_id)}
-                  />
+                {(msg.quoted_text || msg.quoted_msg_id) && (
+                  (() => {
+                    const parentMsg = msg.quoted_msg_id ? messages.find(m => 
+                      String(m.id) === String(msg.quoted_msg_id) ||
+                      (m.wam_id && m.wam_id === msg.quoted_msg_id) ||
+                      (m.whatsapp_message_id && m.whatsapp_message_id === msg.quoted_msg_id)
+                    ) : null;
+
+                    const displayQuotedText = msg.quoted_text || parentMsg?.message_body || parentMsg?.media_caption || (parentMsg?.media_type ? `[${parentMsg.media_type.toUpperCase()} file]` : '[Quoted message]');
+                    const displaySenderName = parentMsg 
+                      ? (parentMsg.sender_type === 'customer' ? (selectedContact?.name || parentMsg.sender_name || 'Customer') : 'You') 
+                      : (msg.sender_type === 'customer' ? 'You' : (selectedContact?.name || 'Customer'));
+
+                    return (
+                      <WhatsAppQuotedPreview
+                        quotedText={displayQuotedText}
+                        senderName={displaySenderName}
+                        onClick={(e) => {
+                          e?.stopPropagation?.();
+                          handleJumpToMessage(msg.quoted_msg_id || parentMsg?.id);
+                        }}
+                      />
+                    );
+                  })()
                 )}
 
                 {/* Media: Image Photo preview with loading shimmer, download button & graceful failure card */}
@@ -4841,6 +4936,9 @@ export const WhatsAppWebInbox = ({
         ) : (
           <WhatsAppMediaLightbox
             media={previewMedia}
+            mediaList={chatMediaList}
+            onSelectMedia={(item) => setPreviewMedia(item)}
+            selectedContact={selectedContact}
             onClose={() => setPreviewMedia(null)}
             onDownload={(rotation) => handleDownloadFile(
               previewMedia.url,
@@ -4856,6 +4954,13 @@ export const WhatsAppWebInbox = ({
               };
               setPreviewMedia(null);
               openAttachMediaModal(targetMsg);
+            }}
+            onReplyMessage={(targetMsg) => {
+              setPreviewMedia(null);
+              handleQuoteReply(targetMsg);
+            }}
+            onStarMessage={(targetMsg) => {
+              handleToggleStarMessage(targetMsg);
             }}
           />
         )
