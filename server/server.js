@@ -1236,9 +1236,54 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/w
     });
 
     if (!metaRes.ok) {
-      const errText = await metaRes.text();
+      const errText = await metaRes.text().catch(() => '');
       console.error('[WhatsApp Media] Meta error for ID', mediaId, errText);
-      return res.status(metaRes.status).send('Failed to locate media on Meta: ' + errText);
+
+      const isDownload = req.query.download === '1' || req.query.dl === '1';
+      const acceptHeader = req.headers['accept'] || '';
+      const wantsHtml = acceptHeader.includes('text/html') || isDownload;
+
+      if (wantsHtml) {
+        return res.status(410).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Media Expired - Eco Green Solar</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b141a; color: #e9edef; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #111b21; border: 1px solid #222e35; border-radius: 16px; padding: 32px 24px; max-width: 440px; text-align: center; box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+    .icon { width: 56px; height: 56px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #ef4444; font-size: 26px; }
+    h2 { margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #fff; }
+    p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: #8696a0; }
+    .meta-badge { background: #202c33; border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #aebac1; margin-bottom: 20px; text-align: left; }
+    .tip { font-size: 13px; color: #00a884; margin-bottom: 24px; }
+    .btn { display: inline-block; background: #00a884; color: #111b21; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 10px; transition: opacity 0.2s; cursor: pointer; border: none; }
+    .btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h2>WhatsApp Media Expired</h2>
+    <p>This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago and was not cached.</p>
+    <div class="meta-badge">
+      <div><strong>Media ID:</strong> ${mediaId}</div>
+      <div style="margin-top: 4px;"><strong>Status:</strong> Ephemeral media expired on Meta Cloud API (Error 100/33).</div>
+    </div>
+    <div class="tip">Please request the customer to resend this video or photo on WhatsApp.</div>
+    <button onclick="window.close()" class="btn">Close Tab</button>
+  </div>
+</body>
+</html>`);
+      }
+
+      return res.status(410).json({
+        success: false,
+        expired: true,
+        error: 'This media item has expired on Meta WhatsApp servers. Please request the customer to resend it.',
+        mediaId
+      });
     }
 
     const metaData = await metaRes.json();

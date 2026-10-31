@@ -336,6 +336,7 @@ export const WhatsAppWebInbox = ({
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [failedImageIds, setFailedImageIds] = useState(new Set());
   const [loadedImageIds, setLoadedImageIds] = useState(new Set());
+  const [failedVideoIds, setFailedVideoIds] = useState(new Set());
   const [selectedPhone, setSelectedPhone] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -1139,6 +1140,16 @@ export const WhatsAppWebInbox = ({
     if (mediaInputRef.current) mediaInputRef.current.value = '';
   };
 
+  // Resend request helper for expired media
+  const handleRequestResend = (msg) => {
+    const isVid = isVideoMessage(msg);
+    const mediaWord = isVid ? 'video' : 'photo';
+    const text = `Dear Customer, the ${mediaWord} you sent earlier has expired and could not be loaded. Could you please resend the ${mediaWord} so our team can assist you?`;
+    setReplyText(text);
+    messageInputRef.current?.focus();
+    showToast(`Resend prompt inserted in reply box. Press send to dispatch.`, 'info');
+  };
+
   // Direct in-app media & document download helper (Blob streaming forces direct save with optional rotation)
   const handleDownloadFile = async (url, filename, rotation = 0) => {
     if (!url) return;
@@ -1154,13 +1165,11 @@ export const WhatsAppWebInbox = ({
       });
     } catch (e) {
       console.error('Safe download error:', e);
-      // Direct anchor download without _blank navigation fallback
-      const a = document.createElement('a');
-      a.href = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
-      a.download = filename || 'whatsapp_file';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      if (e.isExpired || e.status === 410 || e.message?.toLowerCase().includes('expired')) {
+        showToast('This WhatsApp media has expired on Meta servers and cannot be downloaded. Please request the customer to resend.', 'error');
+        return;
+      }
+      showToast('Download error: ' + (e.message || 'Failed to download file'), 'error');
     }
   };
 
@@ -2364,6 +2373,8 @@ export const WhatsAppWebInbox = ({
                 {isVideoMessage(msg) && (
                   (() => {
                     const videoUrl = getWhatsAppMediaUrl(msg);
+                    const isFailed = failedVideoIds.has(msg.id);
+
                     if (!videoUrl) {
                       return (
                         <div className="mb-2 p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
@@ -2381,10 +2392,63 @@ export const WhatsAppWebInbox = ({
                         </div>
                       );
                     }
+
+                    if (isFailed) {
+                      return (
+                        <div className="mb-2 p-3 bg-slate-900/95 text-white rounded-xl border border-rose-500/30 flex flex-col gap-2.5 max-w-md shadow-md">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-9 h-9 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center shrink-0 mt-0.5">
+                              <AlertCircle className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 font-bold text-xs text-rose-300">
+                                <Video className="w-3.5 h-3.5" />
+                                <span>WhatsApp Video Expired</span>
+                              </div>
+                              <p className="text-[11px] text-slate-300 mt-1 leading-snug">
+                                This video was received on {formatWhatsAppListTime(msg.created_at)} and has expired on Meta WhatsApp servers. Cloud API media is temporary.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRequestResend(msg)}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-xs"
+                              title="Send resend request to customer"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Request Resend</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFailedVideoIds(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(msg.id);
+                                  return next;
+                                });
+                              }}
+                              className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                              title="Try reloading video"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
                       <div className={`rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}>
                         <div
-                          onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
+                          onClick={() => {
+                            if (failedVideoIds.has(msg.id)) {
+                              showToast('This video has expired on Meta WhatsApp servers and cannot be played. Please request the customer to resend.', 'warning');
+                              return;
+                            }
+                            setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg });
+                          }}
                           className="relative cursor-pointer group/vid select-none"
                           title="Click to play video in full player"
                         >
@@ -2392,6 +2456,9 @@ export const WhatsAppWebInbox = ({
                             src={videoUrl}
                             playsInline
                             preload="metadata"
+                            onError={() => {
+                              setFailedVideoIds(prev => new Set(prev).add(msg.id));
+                            }}
                             className="w-full max-h-72 rounded-t-lg object-contain bg-black pointer-events-none"
                           />
                           <div className="absolute inset-0 bg-black/25 group-hover/vid:bg-black/40 flex items-center justify-center transition-colors">
@@ -2402,7 +2469,13 @@ export const WhatsAppWebInbox = ({
                         </div>
                         <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
                           <span
-                            onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
+                            onClick={() => {
+                              if (failedVideoIds.has(msg.id)) {
+                                showToast('This video has expired on Meta WhatsApp servers and cannot be played. Please request the customer to resend.', 'warning');
+                                return;
+                              }
+                              setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg });
+                            }}
                             className="text-[11px] truncate flex items-center gap-1.5 font-medium text-slate-300 cursor-pointer hover:text-white"
                           >
                             <Video className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -2419,7 +2492,13 @@ export const WhatsAppWebInbox = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg })}
+                              onClick={() => {
+                                if (failedVideoIds.has(msg.id)) {
+                                  showToast('This video has expired on Meta WhatsApp servers and cannot be played. Please request the customer to resend.', 'warning');
+                                  return;
+                                }
+                                setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg });
+                              }}
                               className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded-md text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
                               title="Open Full Player"
                             >

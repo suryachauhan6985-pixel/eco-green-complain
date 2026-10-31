@@ -941,6 +941,8 @@ export function WhatsAppMediaLightbox({
     }
   };
 
+  const [loadError, setLoadError] = useState(false);
+
   if (!media || !media.url) return null;
 
   return (
@@ -1042,7 +1044,7 @@ export function WhatsAppMediaLightbox({
             </button>
           )}
 
-          {onDownload && (
+          {onDownload && !loadError && (
             <button
               type="button"
               onClick={() => onDownload(rotation)}
@@ -1080,12 +1082,35 @@ export function WhatsAppMediaLightbox({
           !isVideo && zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
         }`}
       >
-        {isVideo ? (
+        {loadError ? (
+          <div className="p-8 max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl text-center text-white flex flex-col items-center gap-3 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="font-bold text-base text-rose-200">
+              {isVideo ? 'WhatsApp Video Expired' : 'WhatsApp Media Expired'}
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago. Cloud API media retention is temporary.
+            </p>
+            <p className="text-xs text-emerald-400 font-semibold">
+              Please request the customer to resend this file on WhatsApp.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-2 px-5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              Close Lightbox
+            </button>
+          </div>
+        ) : isVideo ? (
           <video
             src={media.url}
             controls
             autoPlay
             playsInline
+            onError={() => setLoadError(true)}
             className="max-h-[76vh] sm:max-h-[82vh] max-w-full rounded-lg object-contain shadow-2xl bg-black"
           />
         ) : (
@@ -1093,6 +1118,7 @@ export function WhatsAppMediaLightbox({
             src={media.url}
             alt="WhatsApp Media"
             draggable={false}
+            onError={() => setLoadError(true)}
             style={{
               transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
               transition: isDragging ? 'none' : 'transform 0.15s ease-out',

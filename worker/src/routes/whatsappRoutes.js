@@ -327,7 +327,6 @@ export async function handleWebhookPost(c) {
               } catch (_) {}
             }
 
-            // Insert into whatsapp_messages (with media_caption, quoted_text, quoted_msg_id support)
             try {
               await query(
                 `INSERT INTO whatsapp_messages (
@@ -347,6 +346,14 @@ export async function handleWebhookPost(c) {
                 c.executionCtx
               ).catch(() => {});
             }
+
+            // Eagerly download & cache inbound WhatsApp media in Cloudflare R2
+            if (mediaId && c.env?.MEDIA_BUCKET) {
+              const cachePromise = eagerCacheWhatsAppMedia(mediaId, cleanPhone, c.env, msg);
+              if (c.executionCtx?.waitUntil) {
+                c.executionCtx.waitUntil(cachePromise);
+              }
+            }
           }
         }
       }
@@ -355,6 +362,53 @@ export async function handleWebhookPost(c) {
     return c.json({ status: 'EVENT_RECEIVED' });
   } catch (err) {
     return c.json({ status: 'ERROR', error: err.message }, 500);
+  }
+}
+
+async function eagerCacheWhatsAppMedia(mediaId, cleanPhone, env, rawMsg) {
+  if (!mediaId || !env?.MEDIA_BUCKET) return;
+  const token = env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+  const primaryR2Key = cleanPhone ? `whatsapp_media/${cleanPhone}/${mediaId}` : `whatsapp_media/${mediaId}`;
+
+  try {
+    const existing = await env.MEDIA_BUCKET.head(primaryR2Key).catch(() => null);
+    if (existing) return;
+
+    let downloadUrl = null;
+    let contentType = null;
+
+    const directUrl = rawMsg?.video?.url || rawMsg?.image?.url || rawMsg?.audio?.url || rawMsg?.document?.url || rawMsg?.voice?.url;
+    if (directUrl) {
+      downloadUrl = directUrl;
+      contentType = rawMsg?.video?.mime_type || rawMsg?.image?.mime_type || rawMsg?.audio?.mime_type || rawMsg?.document?.mime_type;
+    }
+
+    if (!downloadUrl) {
+      const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (metaRes.ok) {
+        const metaData = await metaRes.json();
+        downloadUrl = metaData.url;
+        contentType = contentType || metaData.mime_type;
+      }
+    }
+
+    if (!downloadUrl) return;
+
+    const fileRes = await fetch(downloadUrl, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!fileRes.ok) return;
+
+    contentType = contentType || fileRes.headers.get('content-type') || 'application/octet-stream';
+    const arrayBuffer = await fileRes.arrayBuffer();
+
+    await env.MEDIA_BUCKET.put(primaryR2Key, arrayBuffer, {
+      httpMetadata: { contentType }
+    });
+  } catch (err) {
+    console.warn('[WhatsApp Media Eager Cache Warning]', err.message);
   }
 }
 
@@ -834,7 +888,52 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
     if (!metaRes.ok) {
       const errText = await metaRes.text().catch(() => '');
       console.error('[WhatsApp Media] Meta error for ID', mediaId, errText);
-      return c.text('Failed to locate media on Meta: ' + errText, metaRes.status);
+
+      const isDownload = c.req.query('download') === '1' || c.req.query('dl') === '1';
+      const acceptHeader = c.req.header('Accept') || '';
+      const wantsHtml = acceptHeader.includes('text/html') || isDownload;
+
+      if (wantsHtml) {
+        return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Media Expired - Eco Green Solar</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b141a; color: #e9edef; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #111b21; border: 1px solid #222e35; border-radius: 16px; padding: 32px 24px; max-width: 440px; text-align: center; box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+    .icon { width: 56px; height: 56px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #ef4444; font-size: 26px; }
+    h2 { margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #fff; }
+    p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: #8696a0; }
+    .meta-badge { background: #202c33; border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #aebac1; margin-bottom: 20px; text-align: left; }
+    .tip { font-size: 13px; color: #00a884; margin-bottom: 24px; }
+    .btn { display: inline-block; background: #00a884; color: #111b21; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 10px; transition: opacity 0.2s; cursor: pointer; border: none; }
+    .btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h2>WhatsApp Media Expired</h2>
+    <p>This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago and was not cached.</p>
+    <div class="meta-badge">
+      <div><strong>Media ID:</strong> ${mediaId}</div>
+      <div style="margin-top: 4px;"><strong>Status:</strong> Ephemeral media expired on Meta Cloud API (Error 100/33).</div>
+    </div>
+    <div class="tip">Please request the customer to resend this video or photo on WhatsApp.</div>
+    <button onclick="window.close()" class="btn">Close Tab</button>
+  </div>
+</body>
+</html>`, 410);
+      }
+
+      return c.json({
+        success: false,
+        expired: true,
+        error: 'This media item has expired on Meta WhatsApp servers. Please request the customer to resend it.',
+        mediaId
+      }, 410);
     }
 
     const metaData = await metaRes.json();

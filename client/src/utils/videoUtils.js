@@ -314,7 +314,23 @@ export async function downloadFileSafely(url, filename = 'download', options = {
     }
 
     const res = await fetch(downloadUrl);
-    if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 410 || res.status === 404 || res.status === 400) {
+        let msg = 'This media file has expired on WhatsApp servers and is no longer available.';
+        try {
+          const ct = res.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const errJson = await res.json();
+            if (errJson.error) msg = errJson.error;
+          }
+        } catch (_) {}
+        const expiredErr = new Error(msg);
+        expiredErr.isExpired = true;
+        expiredErr.status = res.status;
+        throw expiredErr;
+      }
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
 
     const contentLength = Number(res.headers.get('content-length')) || 0;
     
@@ -368,6 +384,10 @@ export async function downloadFileSafely(url, filename = 'download', options = {
       return { success: true, rotated: false, filename };
     }
   } catch (err) {
+    if (err.isExpired || err.status === 410 || (err.message && err.message.toLowerCase().includes('expired'))) {
+      console.warn('[downloadFileSafely] File has expired:', err.message);
+      throw err;
+    }
     console.warn('[downloadFileSafely] Stream download error, invoking native browser fallback:', err.message);
     // Direct native browser navigation fallback
     triggerAnchorDownload(downloadUrl, filename, true);
