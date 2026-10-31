@@ -323,9 +323,19 @@ attachmentRoutes.post('/upload/complete', optionalAuth, async (c) => {
     const multipartUpload = bucket.resumeMultipartUpload(storageKey, uploadId);
     await multipartUpload.complete(sortedParts);
 
-    // Guardrail 5: Server-side size verification on complete
+    // Guardrail 5: Server-side size verification on complete - strictly reject on mismatch
     const headObj = await bucket.head(storageKey).catch(() => null);
-    const verifiedSize = headObj?.size || file_size || 0;
+    if (!headObj) {
+      return c.json({ error: 'R2 object verification failed: object not found in bucket after completion' }, 500);
+    }
+    const verifiedSize = headObj.size;
+    const expectedSize = file_size ? Number(file_size) : null;
+    if (expectedSize !== null && !isNaN(expectedSize) && expectedSize > 0 && verifiedSize !== expectedSize) {
+      await bucket.delete(storageKey).catch(() => {});
+      return c.json({
+        error: `R2 object size mismatch: expected ${expectedSize} bytes, but assembled R2 object is ${verifiedSize} bytes.`
+      }, 400);
+    }
 
     const publicServeUrl = `/api/attachments/r2/${storageKey}`;
 
