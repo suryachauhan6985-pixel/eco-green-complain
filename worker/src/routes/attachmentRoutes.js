@@ -465,13 +465,15 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
       if (fileUrl && fileUrl.includes('complaints/temp/') && bucket && ticketFolder) {
         const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
         const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${ticketFolder}/`);
-        try {
-          const moved = await moveR2Object(bucket, oldKey, newKey);
-          if (moved) {
-            fileUrl = `/api/attachments/r2/${newKey}`;
-          }
-        } catch (e) {
-          console.error('Failed to relocate temp attachment in R2:', e);
+        fileUrl = `/api/attachments/r2/${newKey}`;
+        if (c.executionCtx?.waitUntil) {
+          c.executionCtx.waitUntil(
+            moveR2Object(bucket, oldKey, newKey).catch(e => {
+              console.error('Failed to relocate temp attachment in R2:', e);
+            })
+          );
+        } else {
+          moveR2Object(bucket, oldKey, newKey).catch(() => {});
         }
       }
 
@@ -536,7 +538,7 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
   }
 });
 
-// GET /api/attachments/presign-download - Presigned Direct GET Download URL from R2
+// GET /api/attachments/presign-download - Presigned Direct GET Download URL from R2 (15-min expiry, ticket access check)
 attachmentRoutes.get('/attachments/presign-download', optionalAuth, async (c) => {
   try {
     const rawKey = c.req.query('key') || '';
@@ -547,6 +549,36 @@ attachmentRoutes.get('/attachments/presign-download', optionalAuth, async (c) =>
     // Path traversal defense
     if (cleanKey.includes('..') || cleanKey.includes('\\')) {
       return c.json({ error: 'Invalid object key' }, 400);
+    }
+
+    const user = c.get('user');
+
+    // Ticket access check for complaint attachments
+    if (cleanKey.startsWith('complaints/')) {
+      const parts = cleanKey.split('/');
+      const ticketFolder = parts[1];
+      if (ticketFolder && ticketFolder !== 'temp' && ticketFolder !== 'registration_draft' && ticketFolder !== 'registration_media') {
+        const compLookup = await query(
+          'SELECT id, ticket_id, customer_phone, assigned_technician_id, secondary_technician_id, status FROM complaints WHERE ticket_id = $1 OR id::text = $1 LIMIT 1',
+          [ticketFolder],
+          c.env,
+          c.executionCtx
+        ).catch(() => ({ rows: [] }));
+
+        if (compLookup.rows && compLookup.rows.length > 0) {
+          const comp = compLookup.rows[0];
+          if (user) {
+            const role = (user.role || '').toLowerCase();
+            if (role === 'technician') {
+              const techId = String(user.technician_id || user.id || '');
+              const isAssigned = String(comp.assigned_technician_id) === techId || String(comp.secondary_technician_id) === techId;
+              if (!isAssigned && comp.status !== 'Unassigned' && comp.status !== 'Open') {
+                return c.json({ error: 'Access restricted: Technician is not assigned to this complaint.' }, 403);
+              }
+            }
+          }
+        }
+      }
     }
 
     const accountId = c.env?.R2_ACCOUNT_ID;
@@ -562,6 +594,7 @@ attachmentRoutes.get('/attachments/presign-download', optionalAuth, async (c) =>
       });
     }
 
+    // 15-minute expiry (900 seconds) per enterprise security policy
     const presignedUrl = await getR2PresignedUrl({
       accountId,
       accessKeyId,
@@ -572,9 +605,10 @@ attachmentRoutes.get('/attachments/presign-download', optionalAuth, async (c) =>
       queryParams: {
         'response-content-disposition': `attachment; filename="${filename}"`
       },
-      expiresInSeconds: 1800
+      expiresInSeconds: 900
     });
 
+    // Zero URL logging: return directly in JSON payload
     return c.json({
       success: true,
       presigned: true,
@@ -661,7 +695,11 @@ attachmentRoutes.get('/attachments/r2/:key{.*}', optionalAuth, async (c) => {
       }
     }
 
-    const object = await getR2Object(bucket, cleanKey, getOptions);
+    let object = await getR2Object(bucket, cleanKey, getOptions);
+    if (!object && cleanKey.startsWith('complaints/') && !cleanKey.startsWith('complaints/temp/')) {
+      const tempKey = cleanKey.replace(/^complaints\/[^\/]+\//, 'complaints/temp/');
+      object = await getR2Object(bucket, tempKey, getOptions);
+    }
     if (!object) {
       // Check if this object belonged to a closed complaint older than 30 days
       const keyParts = cleanKey.split('/');

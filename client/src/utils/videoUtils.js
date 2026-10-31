@@ -219,210 +219,39 @@ export async function rotateVideoBlobOrUrl(source, rotationDegrees = 0, options 
       return {
         blob: new Blob([rotatedBuffer], { type: 'video/mp4' }),
         filename: rotatedFilename,
-        rotated: true
+        rotated: true,
+        isMp4: true
       };
     }
-  } catch (losslessErr) {
-    console.warn('[VideoRotation] Lossless path fallback to canvas re-encode:', losslessErr);
+
+    // Phase B: Non-MP4 Container (e.g. WebM)
+    // CRITICAL: Never re-encode via canvas or MediaRecorder (avoids 2x speed, frame judder, and bitrate loss).
+    // In-app player provides CSS rotation without modifying original bytes.
+    if (onProgress) onProgress({ percent: 100, stage: 'Original video bytes preserved intact.' });
+    return {
+      blob: new Blob([arrayBuffer], { type: 'video/webm' }),
+      filename,
+      rotated: false,
+      isWebM: true
+    };
+  } catch (err) {
+    console.warn('[VideoRotation] Lossless path error, returning original:', err);
+    let fallbackBlob;
+    if (source instanceof Blob) {
+      fallbackBlob = source;
+    } else {
+      const res = await fetch(source);
+      fallbackBlob = await res.blob();
+    }
+    return {
+      blob: fallbackBlob,
+      filename,
+      rotated: false,
+      error: err.message
+    };
   }
-
-  if (typeof document === 'undefined' || typeof MediaRecorder === 'undefined') {
-    throw new Error('Video re-encoding is only supported in modern browser environments with MediaRecorder.');
-  }
-
-  return new Promise(async (resolve, reject) => {
-    let isCleanedUp = false;
-    let animFrameId = null;
-    let audioContext = null;
-    let sourceNode = null;
-    let recorder = null;
-    let recordedChunks = [];
-    let videoUrl = null;
-
-    const cleanup = () => {
-      if (isCleanedUp) return;
-      isCleanedUp = true;
-      if (animFrameId) cancelAnimationFrame(animFrameId);
-      if (recorder && recorder.state !== 'inactive') {
-        try { recorder.stop(); } catch (_) {}
-      }
-      if (sourceNode) {
-        try { sourceNode.disconnect(); } catch (_) {}
-      }
-      if (audioContext && audioContext.state !== 'closed') {
-        try { audioContext.close(); } catch (_) {}
-      }
-      if (videoUrl && source instanceof Blob) {
-        try { URL.revokeObjectURL(videoUrl); } catch (_) {}
-      }
-      if (video) {
-        video.pause();
-        video.src = '';
-        video.load();
-      }
-    };
-
-    const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
-    video.playsInline = true;
-    video.muted = false; // Muted = false so AudioContext can capture tracks, but we won't connect to speaker destination
-    video.preload = 'auto';
-
-    videoUrl = source instanceof Blob ? URL.createObjectURL(source) : source;
-    // Add cache buster if remote URL to prevent stale non-CORS cached responses
-    const fetchSrc = (typeof videoUrl === 'string' && videoUrl.startsWith('http') && !videoUrl.includes('_cb='))
-      ? (videoUrl.includes('?') ? `${videoUrl}&_cb=${Date.now()}` : `${videoUrl}?_cb=${Date.now()}`)
-      : videoUrl;
-    video.src = fetchSrc;
-
-    video.onerror = (e) => {
-      cleanup();
-      reject(new Error('Failed to load video for rotation. If accessing via remote storage, please ensure CORS headers are active.'));
-    };
-
-    video.onloadedmetadata = async () => {
-      try {
-        const origWidth = video.videoWidth || 1280;
-        const origHeight = video.videoHeight || 720;
-        const isSwapped = angle === 90 || angle === 270;
-        const canvasWidth = isSwapped ? origHeight : origWidth;
-        const canvasHeight = isSwapped ? origWidth : origHeight;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = canvasWidth;
-        canvas.height = canvasHeight;
-        const ctx = canvas.getContext('2d', { alpha: false });
-
-        if (!ctx) {
-          cleanup();
-          return reject(new Error('Could not initialize 2D canvas context for rotation.'));
-        }
-
-        // Configure audio routing via Web Audio API without audible speaker playback
-        let audioDestination = null;
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-          try {
-            audioContext = new AudioContextClass();
-            if (audioContext.state === 'suspended') {
-              await audioContext.resume().catch(() => {});
-            }
-            sourceNode = audioContext.createMediaElementSource(video);
-            audioDestination = audioContext.createMediaStreamDestination();
-            sourceNode.connect(audioDestination);
-            // CRITICAL: We do NOT connect to audioContext.destination, keeping export completely silent!
-          } catch (audioErr) {
-            console.warn('[rotateVideoBlobOrUrl] AudioContext routing bypassed (video will rotate without audio track):', audioErr.message);
-          }
-        }
-
-        const fps = 30;
-        const canvasStream = canvas.captureStream(fps);
-        const combinedTracks = [...canvasStream.getVideoTracks()];
-
-        if (audioDestination && audioDestination.stream.getAudioTracks().length > 0) {
-          combinedTracks.push(audioDestination.stream.getAudioTracks()[0]);
-        }
-
-        const combinedStream = new MediaStream(combinedTracks);
-        const mimeType = getSupportedRecorderMimeType();
-
-        const recorderOptions = {
-          videoBitsPerSecond: 2_500_000, // 2.5 Mbps crisp 720p/1080p output
-          audioBitsPerSecond: 128_000
-        };
-        if (mimeType) {
-          recorderOptions.mimeType = mimeType;
-        }
-
-        try {
-          recorder = new MediaRecorder(combinedStream, recorderOptions);
-        } catch (_) {
-          // Fallback without explicit bitrate constraints if mobile browser rejects
-          recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
-        }
-
-        recordedChunks = [];
-        recorder.ondataavailable = (ev) => {
-          if (ev.data && ev.data.size > 0) {
-            recordedChunks.push(ev.data);
-          }
-        };
-
-        const ext = (mimeType && mimeType.includes('mp4')) ? 'mp4' : 'webm';
-        const cleanBase = filename.replace(/\.[^.]+$/, '');
-        const outFilename = `${cleanBase}_rotated_${angle}deg.${ext}`;
-
-        recorder.onstop = () => {
-          const finalMime = recorder.mimeType || mimeType || 'video/webm';
-          const finalBlob = new Blob(recordedChunks, { type: finalMime });
-          cleanup();
-          resolve({
-            blob: finalBlob,
-            filename: outFilename,
-            rotated: true,
-            mimeType: finalMime
-          });
-        };
-
-        // Smooth accelerated playback rate during export (2x on desktop, 1.5x on mobile)
-        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
-        video.playbackRate = isMobile ? 1.5 : 2.0;
-
-        recorder.start(500); // 500ms chunk intervals for continuous memory streaming
-
-        // Frame rendering loop with rotation transform
-        const rad = (angle * Math.PI) / 180;
-        const totalDuration = video.duration || 1;
-
-        const renderFrame = () => {
-          if (isCleanedUp) return;
-
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-          ctx.save();
-          ctx.translate(canvasWidth / 2, canvasHeight / 2);
-          ctx.rotate(rad);
-          ctx.drawImage(video, -origWidth / 2, -origHeight / 2, origWidth, origHeight);
-          ctx.restore();
-
-          const currentPct = Math.min(99, Math.round((video.currentTime / totalDuration) * 100));
-          if (onProgress) {
-            onProgress({
-              percent: currentPct,
-              stage: `Re-orienting video to ${angle}° (${currentPct}%)`
-            });
-          }
-
-          if (!video.paused && !video.ended && video.currentTime < totalDuration) {
-            animFrameId = requestAnimationFrame(renderFrame);
-          }
-        };
-
-        video.onended = () => {
-          if (onProgress) {
-            onProgress({
-              percent: 100,
-              stage: 'Finalizing rotated video file...'
-            });
-          }
-          setTimeout(() => {
-            if (recorder && recorder.state !== 'inactive') {
-              recorder.stop();
-            }
-          }, 300);
-        };
-
-        await video.play();
-        animFrameId = requestAnimationFrame(renderFrame);
-      } catch (err) {
-        cleanup();
-        reject(err);
-      }
-    };
-  });
 }
+
 
 /**
  * Resilient, chunk-safe file downloader
@@ -465,111 +294,43 @@ export async function downloadFileSafely(url, filename = 'download', options = {
   }
 
   // Case 2: Standard safe download (0° rotation or non-video document)
-  // If file is in Cloudflare R2, try direct presigned S3 SigV4 GET URL for unlimited bandwidth & zero Worker buffering
-  if (url.includes('/api/attachments/r2/') && angle === 0) {
+  // Try direct presigned S3 SigV4 GET URL for instantaneous native browser download with zero UI buffering
+  let storageKey = '';
+  if (url.includes('/api/attachments/r2/')) {
+    storageKey = url.replace(/^.*\/api\/attachments\/r2\//, '').replace(/\?.*$/, '');
+  } else if (url.includes('complaints/') || url.includes('whatsapp_media/')) {
+    const match = url.match(/((?:complaints|whatsapp_media)\/[^\s?#]+)/);
+    if (match) storageKey = match[1];
+  }
+
+  if (storageKey) {
     try {
-      const storageKey = url.replace(/^.*\/api\/attachments\/r2\//, '').replace(/\?.*$/, '');
-      const presignRes = await fetch(`/api/attachments/presign-download?key=${encodeURIComponent(storageKey)}&filename=${encodeURIComponent(filename)}`);
+      const token = typeof window !== 'undefined' ? (sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token')) : null;
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const presignRes = await fetch(
+        `/api/attachments/presign-download?key=${encodeURIComponent(storageKey)}&filename=${encodeURIComponent(filename)}`,
+        { headers }
+      );
       if (presignRes.ok) {
         const data = await presignRes.json();
         if (data.success && data.presigned && data.url) {
           triggerAnchorDownload(data.url, filename);
-          if (onProgress) onProgress({ percent: 100, stage: 'Direct cloud storage download started!' });
+          if (onProgress) onProgress({ percent: 100, stage: 'Direct cloud download initiated!' });
           return { success: true, direct: true, filename };
         }
       }
     } catch (e) {
-      console.warn('[Downloader] Direct presigned download fallback to stream:', e);
+      console.warn('[Downloader] Direct presigned download fallback to direct stream:', e);
     }
   }
 
+  // Fallback: Direct native browser download without loading monolithic file into JS RAM
   const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
-
-  try {
-    if (onProgress) {
-      onProgress({ percent: 10, stage: 'Connecting to storage server...' });
-    }
-
-    const res = await fetch(downloadUrl);
-    if (!res.ok) {
-      if (res.status === 410 || res.status === 404 || res.status === 400) {
-        let msg = 'This media file has expired on WhatsApp servers and is no longer available.';
-        try {
-          const ct = res.headers.get('content-type') || '';
-          if (ct.includes('application/json')) {
-            const errJson = await res.json();
-            if (errJson.error) msg = errJson.error;
-          }
-        } catch (_) {}
-        const expiredErr = new Error(msg);
-        expiredErr.isExpired = true;
-        expiredErr.status = res.status;
-        throw expiredErr;
-      }
-      throw new Error(`Server returned HTTP ${res.status}`);
-    }
-
-    const contentLength = Number(res.headers.get('content-length')) || 0;
-    
-    // If browser supports streaming response, stream chunks cleanly
-    if (res.body && typeof res.body.getReader === 'function') {
-      const reader = res.body.getReader();
-      const chunks = [];
-      let receivedBytes = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        receivedBytes += value.length;
-
-        if (contentLength > 0 && onProgress) {
-          const pct = Math.min(99, Math.round((receivedBytes / contentLength) * 100));
-          const mbLoaded = (receivedBytes / (1024 * 1024)).toFixed(1);
-          const mbTotal = (contentLength / (1024 * 1024)).toFixed(1);
-          onProgress({
-            percent: pct,
-            stage: `Downloading: ${mbLoaded} / ${mbTotal} MB (${pct}%)`
-          });
-        }
-      }
-
-      const mimeType = res.headers.get('content-type') || 'application/octet-stream';
-      const completeBlob = new Blob(chunks, { type: mimeType });
-      const blobUrl = URL.createObjectURL(completeBlob);
-
-      triggerAnchorDownload(blobUrl, filename);
-
-      // Keep Blob URL alive for 90s to guarantee OS background download completes fully
-      setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
-      }, 90000);
-
-      if (onProgress) {
-        onProgress({ percent: 100, stage: 'File downloaded successfully!' });
-      }
-
-      return { success: true, rotated: false, filename };
-    } else {
-      // Fallback for browsers without stream readers
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      triggerAnchorDownload(blobUrl, filename);
-      setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
-      }, 90000);
-      return { success: true, rotated: false, filename };
-    }
-  } catch (err) {
-    if (err.isExpired || err.status === 410 || (err.message && err.message.toLowerCase().includes('expired'))) {
-      console.warn('[downloadFileSafely] File has expired:', err.message);
-      throw err;
-    }
-    console.warn('[downloadFileSafely] Stream download error, invoking native browser fallback:', err.message);
-    // Direct native browser navigation fallback
-    triggerAnchorDownload(downloadUrl, filename, true);
-    return { success: true, rotated: false, fallback: true };
-  }
+  triggerAnchorDownload(downloadUrl, filename);
+  if (onProgress) onProgress({ percent: 100, stage: 'Download started!' });
+  return { success: true, rotated: false, filename };
 }
 
 /**

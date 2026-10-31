@@ -484,14 +484,19 @@ export const ComplaintDetailDrawer = ({
     if (!url) return;
     try {
       showToast(rotation ? `Preparing rotated download (${rotation}°)...` : 'Starting file download...', 'info');
-      await downloadFileSafely(url, filename || 'downloaded_file', {
+      const res = await downloadFileSafely(url, filename || 'downloaded_file', {
         rotation,
-        onProgress: (pct) => {
-          if (pct === 100) {
-            showToast('File downloaded successfully!', 'success');
+        onProgress: (info) => {
+          if (info && info.percent === 100) {
+            showToast(info.stage || 'File downloaded successfully!', 'success');
           }
         }
       });
+      if (res?.isWebM && rotation !== 0) {
+        showToast('WebM container preserved in 100% original quality. Rotation is applied in-app.', 'info');
+      } else if (res?.rotated) {
+        showToast(`Video rotated by ${rotation}° downloaded losslessly in original quality!`, 'success');
+      }
     } catch (err) {
       console.error('Safe download error:', err);
       const a = document.createElement('a');
@@ -503,6 +508,7 @@ export const ComplaintDetailDrawer = ({
       document.body.removeChild(a);
     }
   };
+
 
   const cachedUser = React.useMemo(() => {
     try {
