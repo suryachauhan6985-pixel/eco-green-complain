@@ -1,0 +1,15 @@
+{
+  "name": "eco-green-video-repair",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Offline script to inspect, remux, and repair uploaded videos using ffmpeg and Cloudflare R2",
+  "scripts": {
+    "repair": "node repair_videos.js",
+    "repair:dry": "node repair_videos.js --dry-run",
+    "repair:test": "node repair_videos.js --limit 2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.750.0",
+    "dotenv": "^16.4.7"
+  }
+}

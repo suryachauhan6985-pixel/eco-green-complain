@@ -78,56 +78,30 @@ export function VideoRecorderModal({
     }
   }, []);
 
-  // Pick optimal supported container format
-  const getOptimalMimeType = () => {
-    if (typeof MediaRecorder === 'undefined') return '';
-    const isSafariOrIOS = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '') || /iPad|iPhone|iPod/.test(navigator.userAgent || '');
-    const safariCandidates = [
-      'video/mp4;codecs=avc1,mp4a',
-      'video/mp4',
-      'video/webm'
-    ];
-    const standardCandidates = [
-      'video/webm;codecs=vp8,opus',
-      'video/webm;codecs=h264,opus',
-      'video/mp4;codecs=avc1,mp4a',
-      'video/mp4',
-      'video/webm;codecs=vp9,opus',
-      'video/webm'
-    ];
-    const candidates = isSafariOrIOS ? safariCandidates : standardCandidates;
-    for (const type of candidates) {
-      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
-    }
-    return '';
-  };
+  const isOpenRef = useRef(isOpen);
+  const recordedBlobRef = useRef(recordedBlob);
+  useEffect(() => {
+    recordedBlobRef.current = recordedBlob;
+  }, [recordedBlob]);
 
   // Safely stop all camera tracks
   const stopStream = useCallback(() => {
     if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach(track => {
-        try { track.stop(); } catch (_) {}
-      });
+      try {
+        activeStreamRef.current.getTracks().forEach(track => {
+          try { track.stop(); } catch (_) {}
+        });
+      } catch (_) {}
       activeStreamRef.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        try { track.stop(); } catch (_) {}
-      });
-      setStream(null);
-    }
-  }, [stream]);
+    setStream(null);
+  }, []);
 
   // Reset recording session
   const resetRecording = useCallback(() => {
     if (previewUrlRef.current) {
       try { URL.revokeObjectURL(previewUrlRef.current); } catch (_) {}
       previewUrlRef.current = null;
-    }
-    if (previewUrl) {
-      try { URL.revokeObjectURL(previewUrl); } catch (_) {}
     }
     setRecordedBlob(null);
     setRecordedParts([]);
@@ -155,11 +129,11 @@ export function VideoRecorderModal({
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-  }, [previewUrl]);
+  }, []);
 
   // Clean close handler
   const handleClose = useCallback(() => {
-    if (isRecording) {
+    if (isRecordingRef.current) {
       if (!window.confirm('A video recording is currently in progress. Do you want to cancel and exit?')) {
         return;
       }
@@ -167,7 +141,7 @@ export function VideoRecorderModal({
     stopStream();
     resetRecording();
     onClose();
-  }, [isRecording, onClose, stopStream, resetRecording]);
+  }, [onClose, stopStream, resetRecording]);
 
   useEscapeHandler(handleClose, isOpen, { priority: ESCAPE_PRIORITY.INNER_MODAL });
 
@@ -185,7 +159,6 @@ export function VideoRecorderModal({
       const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise.catch(() => {
-          // Retry on user interaction / metadata ready
           video.onloadedmetadata = () => {
             video.play().catch(() => {});
           };
@@ -196,30 +169,61 @@ export function VideoRecorderModal({
     }
   }, []);
 
+  // Track ended retry counter (max 3 retries, no infinite loop)
+  const trackEndedRetriesRef = useRef(0);
+  const isInitializingRef = useRef(false);
+  const facingModeRef = useRef(facingMode);
+  useEffect(() => {
+    facingModeRef.current = facingMode;
+  }, [facingMode]);
+
+  // Robust mimeType fallback chain (mp4 -> webm vp9 -> vp8 -> webm)
+  const getOptimalMimeType = useCallback(() => {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = [
+      'video/mp4;codecs=avc1,mp4a',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=h264,opus',
+      'video/webm'
+    ];
+    for (const type of candidates) {
+      try {
+        if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(type)) {
+          return type;
+        }
+      } catch (_) {}
+    }
+    return '';
+  }, []);
+
   // Initialize native camera feed
-  // Initialize native camera feed
-  const initializeCamera = useCallback(async (desiredFacing = facingMode, deviceId = null) => {
-    if (!isOpen) return null;
+  const initializeCamera = useCallback(async (desiredFacing = facingModeRef.current, deviceId = null) => {
+    if (!isOpenRef.current) return null;
+    if (isInitializingRef.current) return activeStreamRef.current;
+    isInitializingRef.current = true;
     setIsInitializing(true);
     setCameraError(null);
     setZoomLevel(1);
 
     // Release any previous tracks first
     if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach(t => {
-        try { t.stop(); } catch (_) {}
-      });
+      try {
+        activeStreamRef.current.getTracks().forEach(t => {
+          try { t.stop(); } catch (_) {}
+        });
+      } catch (_) {}
       activeStreamRef.current = null;
     }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setPermissionStatus('insecure_context');
+      isInitializingRef.current = false;
       setIsInitializing(false);
       return null;
     }
 
-    // Strict 720p maximum resolution & stable 30 FPS bounds:
-    // Prevents frame drops, lag, and viewfinder stuttering on mobile GPU/CPU.
     const videoConstraints = {
       ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: desiredFacing } }),
       width: { ideal: 1280, max: 1280 },
@@ -227,9 +231,6 @@ export function VideoRecorderModal({
       frameRate: { ideal: 30, max: 30 }
     };
 
-    // Full-fidelity voice configuration:
-    // Disable aggressive echoCancellation and noiseSuppression to prevent voice cutting/clipping
-    // when technicians speak near solar inverters and outdoor environmental sounds.
     const baseConstraints = {
       video: videoConstraints,
       audio: {
@@ -247,7 +248,6 @@ export function VideoRecorderModal({
     } catch (primaryErr) {
       console.warn('[VideoRecorder] Primary getUserMedia failed, trying fallback:', primaryErr);
       try {
-        // Fallback 1: basic video + audio with frameRate cap
         newStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: desiredFacing },
@@ -260,7 +260,6 @@ export function VideoRecorderModal({
       } catch (audioErr) {
         console.warn('[VideoRecorder] Audio request failed, trying video only:', audioErr);
         try {
-          // Fallback 2: video only with frameRate cap
           newStream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: desiredFacing },
@@ -271,7 +270,6 @@ export function VideoRecorderModal({
           });
         } catch (videoOnlyErr) {
           try {
-            // Fallback 3: generic video with frameRate cap
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
                 width: { ideal: 1280, max: 1280 },
@@ -281,6 +279,8 @@ export function VideoRecorderModal({
             });
           } catch (finalErr) {
             console.error('[VideoRecorder] All getUserMedia attempts failed:', finalErr);
+            isInitializingRef.current = false;
+            setIsInitializing(false);
             if (finalErr.name === 'NotAllowedError' || finalErr.name === 'PermissionDeniedError') {
               setPermissionStatus('denied');
             } else {
@@ -290,11 +290,20 @@ export function VideoRecorderModal({
               }
               setCameraError(msg);
             }
-            setIsInitializing(false);
             return null;
           }
         }
       }
+    }
+
+    if (!isOpenRef.current) {
+      // Modal was closed while getUserMedia was resolving
+      try {
+        newStream.getTracks().forEach(t => t.stop());
+      } catch (_) {}
+      isInitializingRef.current = false;
+      setIsInitializing(false);
+      return null;
     }
 
     activeStreamRef.current = newStream;
@@ -303,7 +312,7 @@ export function VideoRecorderModal({
     setCameraError(null);
     attachStreamToVideo(newStream);
 
-    // Track active device ID
+    // Track active device ID and guarded track onended (max 3 retries)
     const track = newStream.getVideoTracks()[0];
     if (track) {
       const settings = typeof track.getSettings === 'function' ? track.getSettings() : {};
@@ -311,21 +320,25 @@ export function VideoRecorderModal({
         setActiveDeviceId(settings.deviceId);
       }
       track.onended = () => {
-        if (isOpen && !recordedBlob) {
+        if (!isOpenRef.current || recordedBlobRef.current) return;
+        if (trackEndedRetriesRef.current < 3) {
+          trackEndedRetriesRef.current += 1;
+          console.warn(`[VideoRecorder] Camera track ended. Attempting reconnect (${trackEndedRetriesRef.current}/3)...`);
           initializeCamera(desiredFacing);
+        } else {
+          setCameraError('Camera connection was lost or disconnected by the system. Please reopen the recorder.');
         }
       };
     }
 
-    // Refresh devices list
     detectCameras();
+    isInitializingRef.current = false;
     setIsInitializing(false);
     return newStream;
-  }, [isOpen, facingMode, attachStreamToVideo, recordedBlob, detectCameras]);
+  }, [attachStreamToVideo, detectCameras]);
 
   // Check permission status and initialize if already granted
   const checkPermissionAndInit = useCallback(async () => {
-    // 1. Check if the environment is a secure context or localhost
     const isSecure = Boolean(
       window.isSecureContext ||
       window.location.hostname === 'localhost' ||
@@ -337,18 +350,16 @@ export function VideoRecorderModal({
       return;
     }
 
-    // 2. Query browser camera permission if supported
     if (navigator.permissions && navigator.permissions.query) {
       try {
         const queryRes = await navigator.permissions.query({ name: 'camera' });
         if (queryRes.state === 'granted') {
-          await initializeCamera(facingMode);
+          await initializeCamera(facingModeRef.current);
           return;
         } else if (queryRes.state === 'denied') {
           setPermissionStatus('denied');
           return;
         } else {
-          // 'prompt' state: show the native Android-style permission dialog
           setPermissionStatus('prompt');
           return;
         }
@@ -357,16 +368,15 @@ export function VideoRecorderModal({
       }
     }
 
-    // 3. Fallback: prompt dialog first
     setPermissionStatus('prompt');
-  }, [facingMode, initializeCamera]);
+  }, [initializeCamera]);
 
   // User explicitly clicks "Enable Camera" button from the Android permission card
   const handleRequestPermission = async () => {
     setIsInitializing(true);
     setCameraError(null);
     try {
-      const liveStream = await initializeCamera(facingMode);
+      const liveStream = await initializeCamera(facingModeRef.current);
       if (liveStream) {
         setPermissionStatus('granted');
       }
@@ -382,8 +392,12 @@ export function VideoRecorderModal({
     }
   };
 
-  // Initialize camera or check permission whenever modal opens
+  // Phase 1 Fix: Camera init effect triggers strictly on modal open/close.
+  // Cleanup runs only on unmount or when modal closes, NEVER on stream change.
   useEffect(() => {
+    isOpenRef.current = isOpen;
+    trackEndedRetriesRef.current = 0;
+
     if (isOpen) {
       checkPermissionAndInit();
     } else {
@@ -392,6 +406,7 @@ export function VideoRecorderModal({
       setPermissionStatus('checking');
       setCameraError(null);
     }
+
     return () => {
       stopStream();
     };
@@ -399,15 +414,16 @@ export function VideoRecorderModal({
 
   // Keep video preview attached if video element re-mounts
   useEffect(() => {
-    if (stream && videoPreviewRef.current && !recordedBlob) {
-      attachStreamToVideo(stream);
+    if (activeStreamRef.current && videoPreviewRef.current && !recordedBlob) {
+      attachStreamToVideo(activeStreamRef.current);
     }
-  }, [stream, recordedBlob, attachStreamToVideo]);
+  }, [recordedBlob, attachStreamToVideo]);
 
   // Flip camera between Rear (environment) and Front (user)
   const handleToggleFacingMode = async () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
+    facingModeRef.current = nextMode;
     await initializeCamera(nextMode);
   };
 
@@ -423,7 +439,6 @@ export function VideoRecorderModal({
     const hasHardwareZoom = Boolean(caps && caps.zoom);
 
     if (clampedZoom === 0.5) {
-      // 1. Try hardware zoom < 1 if supported
       if (hasHardwareZoom && caps.zoom?.min <= 0.5) {
         try {
           await track.applyConstraints({ advanced: [{ zoom: 0.5 }] });
@@ -431,8 +446,7 @@ export function VideoRecorderModal({
         } catch (_) {}
       }
 
-      // 2. Try switching to physical ultra-wide back camera
-      if (!isRecording && facingMode === 'environment') {
+      if (!isRecordingRef.current && facingMode === 'environment') {
         const cams = availableCameras.length > 0 ? availableCameras : await detectCameras();
         const backCams = cams.filter(c => {
           const lbl = (c.label || '').toLowerCase();
@@ -456,14 +470,12 @@ export function VideoRecorderModal({
         }
       }
 
-      // Ultra-wide lens not found on device
       setZoomNotification('Ultra-wide (0.5x) lens not detected on this phone. Standard wide active.');
       setTimeout(() => setZoomNotification(null), 2500);
       setZoomLevel(1);
       return;
     }
 
-    // Zoom from 1x up to 5x
     if (hasHardwareZoom) {
       const maxHw = caps.zoom?.max || 5;
       const minHw = caps.zoom?.min || 1;
@@ -474,12 +486,12 @@ export function VideoRecorderModal({
         console.warn('Failed to apply hardware zoom:', err);
       }
     }
-  }, [availableCameras, activeDeviceId, facingMode, isRecording, detectCameras, initializeCamera]);
+  }, [availableCameras, activeDeviceId, facingMode, detectCameras, initializeCamera]);
 
   const touchStartDistRef = useRef(null);
   const touchStartZoomRef = useRef(1);
 
-  // Pinch-to-zoom gesture handlers (supports 0.5x to 5.0x smooth scaling)
+  // Pinch-to-zoom gesture handlers
   const handleTouchStart = (e) => {
     if (e.touches.length === 2) {
       const dist = Math.hypot(
@@ -494,7 +506,7 @@ export function VideoRecorderModal({
   const handleTouchMove = (e) => {
     if (e.touches.length === 2 && touchStartDistRef.current) {
       const now = Date.now();
-      if (now - lastZoomUpdateRef.current < 120) return; // Prevent flooding camera track with constraints
+      if (now - lastZoomUpdateRef.current < 120) return;
       lastZoomUpdateRef.current = now;
 
       const currentDist = Math.hypot(
@@ -541,10 +553,36 @@ export function VideoRecorderModal({
     }, 'image/jpeg', 0.92);
   };
 
-  // Start recorder slice with continuous auto-split when nearing 46 MB
+  // Helper to construct a standalone playable video part File
+  const saveVideoPartFile = useCallback((chunks, mime, partNumber) => {
+    if (!chunks || chunks.length === 0) return null;
+    const finalMime = mime || 'video/webm';
+    const blob = new Blob(chunks, { type: finalMime });
+    const ext = finalMime.includes('mp4') ? 'mp4' : 'webm';
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const partFilename = `VID_${ts}_site_part${partNumber}.${ext}`;
+    const partFile = new File([blob], partFilename, {
+      type: finalMime,
+      lastModified: Date.now()
+    });
+
+    recordedPartsRef.current.push(partFile);
+    setRecordedParts([...recordedPartsRef.current]);
+
+    const url = URL.createObjectURL(partFile);
+    previewUrlRef.current = url;
+    setRecordedBlob(partFile);
+    recordedBlobRef.current = partFile;
+    setPreviewUrl(url);
+    return partFile;
+  }, []);
+
+  // Phase 2: Start recorder session with seamless Start-Before-Stop splitting
   const startRecorderSession = useCallback((partIndex = 1) => {
-    if (!activeStreamRef.current && !stream) return;
-    const liveStream = activeStreamRef.current || stream;
+    const liveStream = activeStreamRef.current;
+    if (!liveStream) return;
 
     try {
       recordedChunksRef.current = [];
@@ -552,81 +590,90 @@ export function VideoRecorderModal({
       setCurrentSizeBytes(0);
 
       const mimeType = getOptimalMimeType();
-      setRecordedMimeType(mimeType || 'video/webm');
+      if (!mimeType) {
+        alert('No supported video recording format (MP4 or WebM) was found on this device/browser.');
+        return;
+      }
+      setRecordedMimeType(mimeType);
 
       const recorderOptions = {
         videoBitsPerSecond: TARGET_VIDEO_BITRATE,
-        audioBitsPerSecond: TARGET_AUDIO_BITRATE
+        audioBitsPerSecond: TARGET_AUDIO_BITRATE,
+        mimeType
       };
-      if (mimeType) {
-        recorderOptions.mimeType = mimeType;
-      }
 
-      let recorder;
+      let newRecorder;
       try {
-        recorder = new MediaRecorder(liveStream, recorderOptions);
+        newRecorder = new MediaRecorder(liveStream, recorderOptions);
       } catch (_) {
-        // Fallback without explicit bitrate constraints if mobile hardware rejects
-        recorder = new MediaRecorder(liveStream, mimeType ? { mimeType } : undefined);
+        newRecorder = new MediaRecorder(liveStream, { mimeType });
       }
 
-      // Collect data every 1000ms (1 second) for smooth keyframe encoding and zero frame lag
-      recorder.ondataavailable = (e) => {
+      // Collect data every 1000ms for smooth keyframe encoding
+      newRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           recordedChunksRef.current.push(e.data);
           currentBytesAccumulatorRef.current += e.data.size;
           setCurrentSizeBytes(currentBytesAccumulatorRef.current);
 
           // Auto-split safety when approaching 46 MB:
-          // Smoothly rolls over to Part 2 without abruptly stopping or dropping recordings
+          // Phase 2 Rule: Start NAYA recorder first, THEN stop the old recorder
           if (currentBytesAccumulatorRef.current >= 46 * 1024 * 1024 && !isSplittingRef.current) {
             isSplittingRef.current = true;
-            recorder.stop();
+            const nextPartNum = currentPartIndexRef.current + 1;
+            setPartNotification(`Part ${currentPartIndexRef.current} reached 46 MB. Seamlessly recording Part ${nextPartNum}...`);
+            setTimeout(() => setPartNotification(null), 4000);
+
+            // 1. Snapshot previous recorder and its chunks
+            const oldRecorder = mediaRecorderRef.current;
+            const oldChunks = [...recordedChunksRef.current];
+            const oldPartNum = currentPartIndexRef.current;
+            const oldMime = oldRecorder?.mimeType || mimeType;
+
+            // 2. Advance part index and reset accumulator for the new recorder
+            currentPartIndexRef.current = nextPartNum;
+
+            // 3. Start the new recorder immediately on the same active stream
+            startRecorderSession(nextPartNum);
+
+            // 4. Stop the old recorder cleanly with requestData so all final bytes flush
+            if (oldRecorder && oldRecorder.state !== 'inactive') {
+              oldRecorder.onstop = () => {
+                saveVideoPartFile(oldChunks, oldMime, oldPartNum);
+                isSplittingRef.current = false;
+              };
+              try {
+                if (typeof oldRecorder.requestData === 'function') {
+                  oldRecorder.requestData();
+                }
+                oldRecorder.stop();
+              } catch (_) {
+                saveVideoPartFile(oldChunks, oldMime, oldPartNum);
+                isSplittingRef.current = false;
+              }
+            } else {
+              saveVideoPartFile(oldChunks, oldMime, oldPartNum);
+              isSplittingRef.current = false;
+            }
           }
         }
       };
 
-      recorder.onstop = () => {
-        const chunks = recordedChunksRef.current;
-        const finalMime = recorder.mimeType || mimeType || 'video/webm';
-        if (chunks.length > 0) {
-          const blob = new Blob(chunks, { type: finalMime });
-          const ext = finalMime.includes('mp4') ? 'mp4' : 'webm';
-          const now = new Date();
-          const pad = (n) => String(n).padStart(2, '0');
-          const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-          const currentPartNum = currentPartIndexRef.current;
-          const partFilename = `VID_${ts}_site_part${currentPartNum}.${ext}`;
-          const partFile = new File([blob], partFilename, {
-            type: finalMime,
-            lastModified: Date.now()
-          });
-
-          recordedPartsRef.current.push(partFile);
-          setRecordedParts([...recordedPartsRef.current]);
-
-          const url = URL.createObjectURL(partFile);
-          previewUrlRef.current = url;
-          setRecordedBlob(partFile);
-          setPreviewUrl(url);
-        }
-
-        // If auto-splitting to next part while recording is active
-        if (isSplittingRef.current && isRecordingRef.current) {
-          isSplittingRef.current = false;
-          currentPartIndexRef.current += 1;
-          setPartNotification(`Part ${currentPartIndexRef.current - 1} saved under 50MB. Now recording Part ${currentPartIndexRef.current}...`);
-          setTimeout(() => setPartNotification(null), 4000);
-
-          startRecorderSession(currentPartIndexRef.current);
-        } else {
+      newRecorder.onstop = () => {
+        // Only finalize the current part if it wasn't already handled by the split handoff
+        if (!isSplittingRef.current) {
+          saveVideoPartFile(
+            recordedChunksRef.current,
+            newRecorder.mimeType || mimeType,
+            currentPartIndexRef.current
+          );
           setIsRecording(false);
           isRecordingRef.current = false;
         }
       };
 
-      recorder.start(1000);
-      mediaRecorderRef.current = recorder;
+      newRecorder.start(1000);
+      mediaRecorderRef.current = newRecorder;
       setIsRecording(true);
       isRecordingRef.current = true;
     } catch (err) {
@@ -635,7 +682,7 @@ export function VideoRecorderModal({
       isRecordingRef.current = false;
       alert('Could not start recording: ' + err.message);
     }
-  }, [stream]);
+  }, [getOptimalMimeType, saveVideoPartFile]);
 
   // Start 720p HD recording with multi-part support
   const handleStartRecording = () => {
@@ -678,6 +725,11 @@ export function VideoRecorderModal({
     isRecordingRef.current = false;
     isSplittingRef.current = false;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        if (typeof mediaRecorderRef.current.requestData === 'function') {
+          mediaRecorderRef.current.requestData();
+        }
+      } catch (_) {}
       try {
         mediaRecorderRef.current.stop();
       } catch (_) {}
