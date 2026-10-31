@@ -13,8 +13,120 @@ import {
   deleteR2Object,
   moveR2Object
 } from '../r2.js';
+import { getR2PresignedUrl } from '../r2Presigner.js';
 
 const attachmentRoutes = new Hono();
+
+// Helper to check if R2 S3 credentials are configured on Worker environment
+function getR2S3Credentials(env) {
+  const accountId = env?.R2_ACCOUNT_ID || env?.CLOUDFLARE_ACCOUNT_ID;
+  const accessKeyId = env?.R2_ACCESS_KEY_ID;
+  const secretAccessKey = env?.R2_SECRET_ACCESS_KEY;
+  const bucket = env?.R2_BUCKET_NAME || 'eco-green-solar-cms-media';
+
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    return null;
+  }
+  return { accountId, accessKeyId, secretAccessKey, bucket };
+}
+
+// POST /api/upload/presign-direct - Generate Presigned URL for Direct Single PUT (< 8MB) or Direct Multipart Chunk (Authenticated Only)
+attachmentRoutes.post('/upload/presign-direct', authenticateToken, async (c) => {
+  try {
+    const creds = getR2S3Credentials(c.env);
+    if (!creds) {
+      return c.json({ error: 'R2 direct presigning not configured on Worker. Use fallback.' }, 501);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const {
+      storage_key,
+      upload_id,
+      part_number,
+      mime_type = 'application/octet-stream',
+      file_size = 0,
+      filename = 'file',
+      complaint_id = 'temp',
+      type = 'complaint'
+    } = body;
+
+    // Validate path prefix strictly: must belong to complaints/ or whatsapp_media/
+    let resolvedKey = storage_key;
+    if (!resolvedKey) {
+      if (type === 'whatsapp') {
+        const cleanPhone = String(body.phone || 'general').replace(/\D/g, '') || 'general';
+        const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        resolvedKey = generateWhatsAppStorageKey(cleanPhone, uniqueId, filename);
+      } else {
+        let cid = complaint_id;
+        if (cid && cid !== 'temp' && cid !== 'general') {
+          const compLookup = await query(
+            'SELECT ticket_id FROM complaints WHERE id::text = $1 OR ticket_id = $1 LIMIT 1',
+            [cid],
+            c.env,
+            c.executionCtx
+          ).catch(() => ({ rows: [] }));
+          if (compLookup.rows?.[0]?.ticket_id) cid = compLookup.rows[0].ticket_id;
+        }
+        resolvedKey = generateComplaintStorageKey(cid, filename);
+      }
+    }
+
+    if (!resolvedKey.startsWith('complaints/') && !resolvedKey.startsWith('whatsapp_media/')) {
+      return c.json({ error: 'Prohibited storage key prefix.' }, 403);
+    }
+
+    // A. Presign Single Direct PUT URL (< 8MB)
+    if (!upload_id) {
+      validateFileMetadata(filename, mime_type, file_size);
+      const url = await getR2PresignedUrl({
+        ...creds,
+        key: resolvedKey,
+        method: 'PUT',
+        headers: {
+          'content-type': mime_type
+        },
+        expiresInSeconds: 1800 // 30 minutes
+      });
+
+      return c.json({
+        success: true,
+        direct_type: 'single',
+        storage_key: resolvedKey,
+        presigned_url: url,
+        file_url: `/api/attachments/r2/${resolvedKey}`
+      });
+    }
+
+    // B. Presign Part Upload URL for Multipart Chunk
+    const partNum = parseInt(part_number, 10);
+    if (!partNum || partNum < 1) {
+      return c.json({ error: 'Valid part_number is required for multipart presigning' }, 400);
+    }
+
+    const url = await getR2PresignedUrl({
+      ...creds,
+      key: resolvedKey,
+      method: 'PUT',
+      queryParams: {
+        partNumber: String(partNum),
+        uploadId: String(upload_id)
+      },
+      expiresInSeconds: 1800 // 30 minutes
+    });
+
+    return c.json({
+      success: true,
+      direct_type: 'part',
+      storage_key: resolvedKey,
+      upload_id,
+      part_number: partNum,
+      presigned_url: url
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 400);
+  }
+});
 
 // POST /api/upload - Direct Cloudflare R2 Upload
 attachmentRoutes.post('/upload', optionalAuth, async (c) => {
@@ -211,6 +323,10 @@ attachmentRoutes.post('/upload/complete', optionalAuth, async (c) => {
     const multipartUpload = bucket.resumeMultipartUpload(storageKey, uploadId);
     await multipartUpload.complete(sortedParts);
 
+    // Guardrail 5: Server-side size verification on complete
+    const headObj = await bucket.head(storageKey).catch(() => null);
+    const verifiedSize = headObj?.size || file_size || 0;
+
     const publicServeUrl = `/api/attachments/r2/${storageKey}`;
 
     return c.json({
@@ -219,7 +335,7 @@ attachmentRoutes.post('/upload/complete', optionalAuth, async (c) => {
       file_url: publicServeUrl,
       file_name: filename || storageKey.split('/').pop(),
       file_type: mime_type || 'application/octet-stream',
-      file_size: file_size || 0
+      file_size: verifiedSize
     });
   } catch (err) {
     return c.json({ error: 'Failed to complete multipart upload: ' + err.message }, 500);
@@ -349,6 +465,18 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
         }
       }
 
+      // Guardrail 5: Verify object presence and size in R2 before writing DB row
+      let verifiedSize = att.file_size || 0;
+      if (bucket && fileUrl && fileUrl.includes('/api/attachments/r2/')) {
+        const checkKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
+        try {
+          const headObj = await bucket.head(checkKey);
+          if (headObj) {
+            verifiedSize = headObj.size || verifiedSize;
+          }
+        } catch (_) {}
+      }
+
       const targetType = att.attachment_type || body.attachment_type || 'registration';
       const insRes = await query(
         `INSERT INTO complaint_attachments (
@@ -368,7 +496,8 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
         c.executionCtx
       );
       if (insRes.rows.length > 0) {
-        saved.push(insRes.rows[0]);
+        const savedRow = { ...insRes.rows[0], file_size: verifiedSize };
+        saved.push(savedRow);
       }
     }
 

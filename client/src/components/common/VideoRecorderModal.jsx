@@ -4,6 +4,8 @@ import {
   FlipHorizontal, RefreshCw, Play, Pause
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
+import { screenWakeLock } from '../../utils/screenWakeLock';
+import { extractVideoThumbnail } from '../../utils/videoThumbnail';
 
 // High-Efficiency 720p HD Optimization with Zero Lag on Mobile:
 // Target: 3 Minutes (~180s) 720p HD Video guaranteed smooth, stutter-free, and under 50 MB.
@@ -14,6 +16,209 @@ const MAX_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB threshold per part
 const MAX_RECORDING_SECONDS = 300; // Up to 5 minutes total recording
 const TARGET_VIDEO_BITRATE = 2_500_000; // 2.5 Mbps crisp HD without frame drops
 const TARGET_AUDIO_BITRATE = 128_000; // 128 kbps full-fidelity voice
+
+/**
+ * Pipelined Multipart Upload Manager for Active Video Recording
+ * Buffers MediaRecorder chunks in strict FIFO order, uploads 8 MiB parts in the background
+ * during recording, and verifies R2 object size on completion.
+ */
+class PipelinedRecordingUpload {
+  constructor(partIndex, mimeType) {
+    this.partIndex = partIndex;
+    this.mimeType = mimeType || 'video/webm';
+    this.uploadId = null;
+    this.storageKey = null;
+    this.bufferedChunks = [];
+    this.bufferedBytes = 0;
+    this.partNumber = 1;
+    this.completedParts = [];
+    this.inFlight = [];
+    this.isAborted = false;
+    this.isFailed = false;
+    this.isSealed = false;
+    this.uploadedMeta = null;
+  }
+
+  async init(filename) {
+    try {
+      const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/upload/init', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          filename,
+          mime_type: this.mimeType,
+          file_size: 46 * 1024 * 1024,
+          complaint_id: 'temp',
+          type: 'complaint'
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        this.uploadId = data.upload_id;
+        this.storageKey = data.storage_key;
+      } else {
+        this.isFailed = true;
+      }
+    } catch (e) {
+      console.warn('[PipelinedUpload] Background init failed, falling back to post-recording upload:', e.message);
+      this.isFailed = true;
+    }
+  }
+
+  appendChunk(chunkData) {
+    if (this.isAborted || this.isFailed) return;
+    this.bufferedChunks.push(chunkData);
+    this.bufferedBytes += chunkData.size;
+
+    // Guardrail 3: 8 MiB buffer threshold
+    if (this.bufferedBytes >= 8 * 1024 * 1024 && this.uploadId && this.storageKey) {
+      this.flushPart();
+    }
+  }
+
+  flushPart() {
+    if (this.bufferedChunks.length === 0 || !this.uploadId || !this.storageKey || this.isAborted || this.isFailed) {
+      return;
+    }
+
+    const currentPartNum = this.partNumber++;
+    const partBlob = new Blob(this.bufferedChunks, { type: this.mimeType });
+    this.bufferedChunks = [];
+    this.bufferedBytes = 0;
+
+    const uploadPromise = (async () => {
+      try {
+        const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
+        let presignSucceeded = false;
+        if (token) {
+          try {
+            const presignRes = await fetch('/api/upload/presign-direct', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                storage_key: this.storageKey,
+                upload_id: this.uploadId,
+                part_number: currentPartNum
+              })
+            });
+
+            if (presignRes.ok) {
+              const { presigned_url } = await presignRes.json();
+              if (presigned_url) {
+                const xhrRes = await new Promise((resolve, reject) => {
+                  const xhr = new XMLHttpRequest();
+                  xhr.open('PUT', presigned_url);
+                  xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                      let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || `direct-${currentPartNum}`;
+                      resolve({ partNumber: currentPartNum, etag: etag.replace(/^"|"$/g, '') });
+                    } else reject(new Error(`HTTP ${xhr.status}`));
+                  };
+                  xhr.onerror = () => reject(new Error('Network error'));
+                  xhr.send(partBlob);
+                });
+                this.completedParts.push(xhrRes);
+                presignSucceeded = true;
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Fallback to Worker multipart chunk endpoint
+        if (!presignSucceeded) {
+          const chunkUrl = `/api/upload/chunk?upload_id=${encodeURIComponent(this.uploadId)}&storage_key=${encodeURIComponent(this.storageKey)}&part_number=${currentPartNum}`;
+          const chunkRes = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', chunkUrl);
+            if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const d = JSON.parse(xhr.responseText);
+                  resolve({ partNumber: currentPartNum, etag: d.etag });
+                } catch (pe) { reject(pe); }
+              } else reject(new Error(`HTTP ${xhr.status}`));
+            };
+            xhr.onerror = () => reject(new Error('Network error'));
+            xhr.send(partBlob);
+          });
+          this.completedParts.push(chunkRes);
+        }
+      } catch (err) {
+        console.warn(`[PipelinedUpload] Part ${currentPartNum} background upload failed:`, err.message);
+        this.isFailed = true;
+      }
+    })();
+
+    this.inFlight.push(uploadPromise);
+  }
+
+  async finalize(totalBytes, filename) {
+    if (this.isAborted || this.isFailed || !this.uploadId || !this.storageKey) {
+      return null;
+    }
+
+    if (this.bufferedChunks.length > 0) {
+      this.flushPart();
+    }
+
+    try {
+      await Promise.all(this.inFlight);
+      if (this.isFailed || this.completedParts.length === 0) return null;
+
+      const sortedParts = [...this.completedParts].sort((a, b) => a.partNumber - b.partNumber);
+      const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/upload/complete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          upload_id: this.uploadId,
+          storage_key: this.storageKey,
+          parts: sortedParts,
+          filename,
+          mime_type: this.mimeType,
+          file_size: totalBytes
+        })
+      });
+
+      if (res.ok) {
+        this.isSealed = true;
+        this.uploadedMeta = await res.json();
+        return this.uploadedMeta;
+      }
+    } catch (e) {
+      console.warn('[PipelinedUpload] Finalize error:', e.message);
+    }
+    return null;
+  }
+
+  async abort() {
+    this.isAborted = true;
+    if (this.uploadId && this.storageKey && !this.isSealed) {
+      try {
+        const token = sessionStorage.getItem('egs_token') || localStorage.getItem('egs_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch('/api/upload/abort', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ upload_id: this.uploadId, storage_key: this.storageKey })
+        });
+      } catch (_) {}
+    }
+  }
+}
 
 export function VideoRecorderModal({
   isOpen,
@@ -64,6 +269,7 @@ export function VideoRecorderModal({
   const timerIntervalRef = useRef(null);
   const fileFallbackInputRef = useRef(null);
   const previewUrlRef = useRef(null);
+  const activePipelineRef = useRef(null);
 
   // Detect camera devices to find potential ultra-wide rear camera
   const detectCameras = useCallback(async () => {
@@ -99,6 +305,13 @@ export function VideoRecorderModal({
 
   // Reset recording session
   const resetRecording = useCallback(() => {
+    // Guardrail 6: Abort any active multipart upload if recording is reset
+    if (activePipelineRef.current) {
+      activePipelineRef.current.abort();
+      activePipelineRef.current = null;
+    }
+    screenWakeLock.release();
+
     if (previewUrlRef.current) {
       try { URL.revokeObjectURL(previewUrlRef.current); } catch (_) {}
       previewUrlRef.current = null;
@@ -138,6 +351,12 @@ export function VideoRecorderModal({
         return;
       }
     }
+    // Guardrail 6: Abort any active multipart upload to prevent orphan parts in R2
+    if (activePipelineRef.current) {
+      activePipelineRef.current.abort();
+      activePipelineRef.current = null;
+    }
+    screenWakeLock.release();
     stopStream();
     resetRecording();
     onClose();
@@ -554,7 +773,7 @@ export function VideoRecorderModal({
   };
 
   // Helper to construct a standalone playable video part File
-  const saveVideoPartFile = useCallback((chunks, mime, partNumber) => {
+  const saveVideoPartFile = useCallback((chunks, mime, partNumber, pipelinePromise = null) => {
     if (!chunks || chunks.length === 0) return null;
     const finalMime = mime || 'video/webm';
     const blob = new Blob(chunks, { type: finalMime });
@@ -568,6 +787,14 @@ export function VideoRecorderModal({
       lastModified: Date.now()
     });
 
+    if (pipelinePromise) {
+      pipelinePromise.then(meta => {
+        if (meta) {
+          partFile._uploadedMeta = meta;
+        }
+      }).catch(() => {});
+    }
+
     recordedPartsRef.current.push(partFile);
     setRecordedParts([...recordedPartsRef.current]);
 
@@ -579,7 +806,7 @@ export function VideoRecorderModal({
     return partFile;
   }, []);
 
-  // Phase 2: Start recorder session with seamless Start-Before-Stop splitting
+  // Phase 2: Start recorder session with seamless Start-Before-Stop splitting & Pipelined R2 Upload
   const startRecorderSession = useCallback((partIndex = 1) => {
     const liveStream = activeStreamRef.current;
     if (!liveStream) return;
@@ -595,6 +822,17 @@ export function VideoRecorderModal({
         return;
       }
       setRecordedMimeType(mimeType);
+
+      // Guardrail 3: Initialize pipelined background multipart upload in R2
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const currentPartFilename = `VID_${ts}_site_part${partIndex}.${ext}`;
+
+      const pipeline = new PipelinedRecordingUpload(partIndex, mimeType);
+      activePipelineRef.current = pipeline;
+      pipeline.init(currentPartFilename);
 
       const recorderOptions = {
         videoBitsPerSecond: TARGET_VIDEO_BITRATE,
@@ -616,6 +854,9 @@ export function VideoRecorderModal({
           currentBytesAccumulatorRef.current += e.data.size;
           setCurrentSizeBytes(currentBytesAccumulatorRef.current);
 
+          // Pipelined upload: buffer chunks and upload 8 MiB parts in background
+          pipeline.appendChunk(e.data);
+
           // Auto-split safety when approaching 46 MB:
           // Phase 2 Rule: Start NAYA recorder first, THEN stop the old recorder
           if (currentBytesAccumulatorRef.current >= 46 * 1024 * 1024 && !isSplittingRef.current) {
@@ -629,6 +870,9 @@ export function VideoRecorderModal({
             const oldChunks = [...recordedChunksRef.current];
             const oldPartNum = currentPartIndexRef.current;
             const oldMime = oldRecorder?.mimeType || mimeType;
+            const oldPipeline = pipeline;
+            const oldBytes = currentBytesAccumulatorRef.current;
+            const oldFilename = currentPartFilename;
 
             // 2. Advance part index and reset accumulator for the new recorder
             currentPartIndexRef.current = nextPartNum;
@@ -639,7 +883,8 @@ export function VideoRecorderModal({
             // 4. Stop the old recorder cleanly with requestData so all final bytes flush
             if (oldRecorder && oldRecorder.state !== 'inactive') {
               oldRecorder.onstop = () => {
-                saveVideoPartFile(oldChunks, oldMime, oldPartNum);
+                const finalizePromise = oldPipeline.finalize(oldBytes, oldFilename);
+                saveVideoPartFile(oldChunks, oldMime, oldPartNum, finalizePromise);
                 isSplittingRef.current = false;
               };
               try {
@@ -648,11 +893,13 @@ export function VideoRecorderModal({
                 }
                 oldRecorder.stop();
               } catch (_) {
-                saveVideoPartFile(oldChunks, oldMime, oldPartNum);
+                const finalizePromise = oldPipeline.finalize(oldBytes, oldFilename);
+                saveVideoPartFile(oldChunks, oldMime, oldPartNum, finalizePromise);
                 isSplittingRef.current = false;
               }
             } else {
-              saveVideoPartFile(oldChunks, oldMime, oldPartNum);
+              const finalizePromise = oldPipeline.finalize(oldBytes, oldFilename);
+              saveVideoPartFile(oldChunks, oldMime, oldPartNum, finalizePromise);
               isSplittingRef.current = false;
             }
           }
@@ -662,10 +909,12 @@ export function VideoRecorderModal({
       newRecorder.onstop = () => {
         // Only finalize the current part if it wasn't already handled by the split handoff
         if (!isSplittingRef.current) {
+          const finalizePromise = pipeline.finalize(currentBytesAccumulatorRef.current, currentPartFilename);
           saveVideoPartFile(
             recordedChunksRef.current,
             newRecorder.mimeType || mimeType,
-            currentPartIndexRef.current
+            currentPartIndexRef.current,
+            finalizePromise
           );
           setIsRecording(false);
           isRecordingRef.current = false;
@@ -695,6 +944,7 @@ export function VideoRecorderModal({
       return;
     }
 
+    screenWakeLock.acquire();
     recordedPartsRef.current = [];
     setRecordedParts([]);
     currentPartIndexRef.current = 1;
@@ -718,6 +968,7 @@ export function VideoRecorderModal({
 
   // Stop recording
   const handleStopRecording = (reason = 'user') => {
+    screenWakeLock.release();
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -747,19 +998,31 @@ export function VideoRecorderModal({
   };
 
   // Confirm and finish recording session
-  const handleUseVideo = () => {
+  const handleUseVideo = async () => {
     const videoFiles = recordedPartsRef.current.length > 0
       ? recordedPartsRef.current
       : (recordedBlob ? [recordedBlob] : []);
     const photoFiles = capturedPhotos.map(p => p.file);
+
+    // Extract thumbnail from the primary video file without altering video bytes
+    let thumbnailFile = null;
+    if (videoFiles.length > 0) {
+      try {
+        thumbnailFile = await extractVideoThumbnail(videoFiles[0]);
+      } catch (_) {}
+    }
+
     const allFiles = [...videoFiles, ...photoFiles];
+    if (thumbnailFile) {
+      allFiles.push(thumbnailFile);
+    }
 
     if (allFiles.length === 0) return;
 
+    screenWakeLock.release();
     stopStream();
     resetRecording();
     onRecordingComplete(allFiles.length === 1 ? allFiles[0] : allFiles);
-    onClose();
   };
 
   // Native device file / camera fallback

@@ -13,11 +13,16 @@
  *    Automatically falls back to direct upload or Supabase storage if network disruption occurs.
  */
 
+import { saveUploadSession, getUploadSession, removeUploadSession } from './uploadQueue.js';
+import { screenWakeLock } from './screenWakeLock.js';
+
 const SUPABASE_STORAGE_URL = 'https://pirlkhjljjnwuunpqwbb.supabase.co/storage/v1/object/attachments';
 const SUPABASE_PUBLIC_URL = 'https://pirlkhjljjnwuunpqwbb.supabase.co/storage/v1/object/public/attachments';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBpcmxraGpsampud3V1bnBxd2JiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4OTA5NjAsImV4cCI6MjEwNTQ2Njk2MH0.A1_AoY2tR6i4Y9A4zw5jsRSXGg-4H7EKH2dA8Q2L8Wg';
 
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB standard chunk size for S3/R2 multipart uploads
+// Phase B: 8 MiB optimized part size (well above R2's 5 MiB minimum, reducing HTTP requests by ~38%)
+export const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB standard chunk size
+export const DIRECT_SINGLE_PUT_LIMIT = 8 * 1024 * 1024; // Files <= 8 MB use a single direct PUT request
 
 /**
  * Compress an image file in the browser using HTML Canvas before upload.
@@ -113,15 +118,84 @@ function isMobileOrSlowNetwork() {
 }
 
 /**
- * Upload an individual chunk via XMLHttpRequest with real-time byte progress and exponential backoff retry
+ * Upload chunk directly to R2 using a Presigned URL, falling back to /api/upload/chunk on CORS/error
+ */
+async function uploadPartWithPresignedUrl(presignedUrl, partNumber, chunkBlob, onChunkProgress = null) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', presignedUrl);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onChunkProgress) {
+        onChunkProgress(e.loaded);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag');
+        if (etag) {
+          etag = etag.replace(/^"|"$/g, '');
+        }
+        if (onChunkProgress) onChunkProgress(chunkBlob.size);
+        resolve({
+          partNumber,
+          etag: etag || `direct-part-${partNumber}`
+        });
+      } else {
+        reject(new Error(`Direct R2 upload returned HTTP ${xhr.status}: ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network/CORS error during direct R2 PUT'));
+    xhr.ontimeout = () => reject(new Error('Timeout during direct R2 PUT'));
+    xhr.timeout = 180000;
+    xhr.send(chunkBlob);
+  });
+}
+
+/**
+ * Upload an individual chunk via presigned direct R2 PUT first, with fallback to Worker chunk endpoint
  */
 async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob, onChunkProgress = null, maxRetries = 4) {
   const token = getAuthToken();
-  const chunkUrl = `/api/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&storage_key=${encodeURIComponent(storageKey)}&part_number=${partNumber}`;
-
   let lastError;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      // 1. Try Presigned Direct R2 PUT first
+      try {
+        const presignRes = await fetch('/api/upload/presign-direct', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            storage_key: storageKey,
+            upload_id: uploadId,
+            part_number: partNumber
+          })
+        });
+
+        if (presignRes.ok) {
+          const presignData = await presignRes.json();
+          if (presignData?.presigned_url) {
+            const directResult = await uploadPartWithPresignedUrl(
+              presignData.presigned_url,
+              partNumber,
+              chunkBlob,
+              onChunkProgress
+            );
+            return directResult;
+          }
+        }
+      } catch (presignErr) {
+        console.warn(`[Presigned direct upload unavailable for part ${partNumber}, using worker endpoint]:`, presignErr.message);
+      }
+
+      // 2. Fallback to Worker multipart chunk endpoint
+      const chunkUrl = `/api/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&storage_key=${encodeURIComponent(storageKey)}&part_number=${partNumber}`;
       const result = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', chunkUrl);
@@ -156,7 +230,7 @@ async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob,
 
         xhr.onerror = () => reject(new Error('Network error during chunk upload'));
         xhr.ontimeout = () => reject(new Error('Timeout during chunk upload'));
-        xhr.timeout = 180000; // 3 minutes timeout per 5MB chunk
+        xhr.timeout = 180000;
         xhr.send(chunkBlob);
       });
 
@@ -174,44 +248,82 @@ async function uploadChunkWithRetry(storageKey, uploadId, partNumber, chunkBlob,
 }
 
 /**
- * High-Speed Chunked Multipart Upload for large files (> 5MB)
- * Slices file into 5MB chunks and uploads with live byte-level streaming progress.
+ * High-Speed Chunked Multipart Upload for large files (> 8MB)
+ * Slices file into 8MB chunks, tracks progress with speed/time remaining, and auto-resumes via IndexedDB.
  */
 export async function uploadFileChunked(file, identifier = 'temp', uploadType = 'complaint', onProgress = null) {
   const token = getAuthToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  // 1. Initialize Multipart Upload in R2
-  const initRes = await fetch('/api/upload/init', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      filename: file.name,
-      mime_type: file.type || 'application/octet-stream',
-      file_size: file.size,
-      complaint_id: identifier,
-      type: uploadType
-    })
-  });
+  await screenWakeLock.acquire();
 
-  if (!initRes.ok) {
-    const errText = await initRes.text();
-    throw new Error(`Failed to initialize chunked upload: ${errText}`);
+  // Check if we have an existing resume session in IndexedDB
+  const resumeId = `resume_${identifier}_${file.name}_${file.size}`;
+  const existingSession = await getUploadSession(resumeId);
+
+  let upload_id = existingSession?.uploadId;
+  let storage_key = existingSession?.storageKey;
+  let completedParts = existingSession?.completedParts || [];
+
+  // 1. Initialize Multipart Upload in R2 if not already resumed
+  if (!upload_id || !storage_key) {
+    const initRes = await fetch('/api/upload/init', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        filename: file.name,
+        mime_type: file.type || 'application/octet-stream',
+        file_size: file.size,
+        complaint_id: identifier,
+        type: uploadType
+      })
+    });
+
+    if (!initRes.ok) {
+      const errText = await initRes.text();
+      screenWakeLock.release();
+      throw new Error(`Failed to initialize chunked upload: ${errText}`);
+    }
+
+    const initData = await initRes.json();
+    upload_id = initData.upload_id;
+    storage_key = initData.storage_key;
+    completedParts = [];
+
+    // Save session in IndexedDB for auto-resume
+    await saveUploadSession({
+      id: resumeId,
+      name: file.name,
+      size: file.size,
+      mimeType: file.type,
+      uploadId: upload_id,
+      storageKey: storage_key,
+      completedParts,
+      status: 'uploading',
+      identifier,
+      uploadType
+    });
   }
-
-  const initData = await initRes.json();
-  const { upload_id, storage_key } = initData;
 
   const totalSize = file.size;
   const totalParts = Math.ceil(totalSize / CHUNK_SIZE);
-  const completedParts = [];
   
   // Track loaded bytes across all parts for smooth live progress
   const partLoadedMap = new Map();
+  const completedPartNums = new Set(completedParts.map(p => p.partNumber));
+
   for (let i = 1; i <= totalParts; i++) {
-    partLoadedMap.set(i, 0);
+    const isAlreadyDone = completedPartNums.has(i);
+    const start = (i - 1) * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, totalSize);
+    partLoadedMap.set(i, isAlreadyDone ? (end - start) : 0);
   }
+
+  const startTime = Date.now();
+  let lastSpeedBytes = 0;
+  let lastSpeedTime = startTime;
+  let currentSpeedMBs = 0;
 
   const emitProgress = () => {
     if (!onProgress) return;
@@ -220,50 +332,97 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
       sumLoaded += b;
     }
     const percent = Math.min(99, Math.round((sumLoaded / totalSize) * 100));
-    onProgress(percent, sumLoaded, totalSize);
+
+    // Calculate real upload speed & time left
+    const now = Date.now();
+    const timeDelta = (now - lastSpeedTime) / 1000;
+    if (timeDelta >= 0.5) {
+      const bytesDelta = sumLoaded - lastSpeedBytes;
+      currentSpeedMBs = Math.max(0, Number(((bytesDelta / (1024 * 1024)) / timeDelta).toFixed(2)));
+      lastSpeedBytes = sumLoaded;
+      lastSpeedTime = now;
+    }
+
+    const remainingBytes = Math.max(0, totalSize - sumLoaded);
+    const secondsLeft = currentSpeedMBs > 0 ? Math.round((remainingBytes / (1024 * 1024)) / currentSpeedMBs) : null;
+
+    onProgress(percent, sumLoaded, totalSize, {
+      speedMBs: currentSpeedMBs,
+      secondsLeft,
+      loadedMB: (sumLoaded / (1024 * 1024)).toFixed(1),
+      totalMB: (totalSize / (1024 * 1024)).toFixed(1)
+    });
   };
 
   try {
     const partQueue = [];
     for (let i = 0; i < totalParts; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, totalSize);
-      partQueue.push({
-        partNumber: i + 1,
-        start,
-        end,
-        blob: file.slice(start, end)
-      });
+      const partNum = i + 1;
+      if (!completedPartNums.has(partNum)) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, totalSize);
+        partQueue.push({
+          partNumber: partNum,
+          start,
+          end,
+          blob: file.slice(start, end)
+        });
+      }
     }
 
-    // Adaptive concurrency: on mobile networks, 1 chunk at a time prevents TCP bufferbloat and socket stalls.
-    // On desktop/broadband, 2 concurrent chunks maximize throughput.
+    // Guardrail 2: Concurrency rules (mobile default 2, desktop 3, auto drop to 1 on failure)
     const isMobileNet = isMobileOrSlowNetwork();
-    const workerConcurrency = isMobileNet ? 1 : Math.min(2, totalParts);
+    let currentConcurrency = isMobileNet ? Math.min(2, partQueue.length || 1) : Math.min(3, partQueue.length || 1);
+    let consecutiveFailures = 0;
     let queueIndex = 0;
 
-    const worker = async () => {
+    const worker = async (workerId) => {
       while (queueIndex < partQueue.length) {
+        if (workerId >= currentConcurrency) {
+          // Scale down: this worker gracefully exits
+          break;
+        }
         const item = partQueue[queueIndex++];
         const handleChunkProgress = (chunkLoaded) => {
           partLoadedMap.set(item.partNumber, chunkLoaded);
           emitProgress();
         };
 
-        const partResult = await uploadChunkWithRetry(
-          storage_key,
-          upload_id,
-          item.partNumber,
-          item.blob,
-          handleChunkProgress
-        );
-        completedParts.push(partResult);
-        partLoadedMap.set(item.partNumber, item.blob.size);
-        emitProgress();
+        try {
+          const partResult = await uploadChunkWithRetry(
+            storage_key,
+            upload_id,
+            item.partNumber,
+            item.blob,
+            handleChunkProgress
+          );
+          completedParts.push(partResult);
+          partLoadedMap.set(item.partNumber, item.blob.size);
+          emitProgress();
+
+          // Save checkpoint in IndexedDB
+          await saveUploadSession({
+            id: resumeId,
+            uploadId: upload_id,
+            storageKey: storage_key,
+            completedParts,
+            status: 'uploading'
+          });
+
+          consecutiveFailures = 0;
+        } catch (partErr) {
+          consecutiveFailures++;
+          // Adaptive fallback: if any part fails twice consecutively, drop concurrency to 1
+          if (consecutiveFailures >= 2 && currentConcurrency > 1) {
+            console.warn('[Adaptive Concurrency] Falling back to 1 stream due to network instability.');
+            currentConcurrency = 1;
+          }
+          throw partErr;
+        }
       }
     };
 
-    const workers = Array.from({ length: workerConcurrency }, () => worker());
+    const workers = Array.from({ length: currentConcurrency }, (_, id) => worker(id));
     await Promise.all(workers);
 
     // 3. Complete and seal the multipart upload
@@ -289,6 +448,10 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
     const finalData = await completeRes.json();
     if (onProgress) onProgress(100, totalSize, totalSize);
 
+    // Clean up resume session on success
+    await removeUploadSession(resumeId);
+    screenWakeLock.release();
+
     return {
       file_name: finalData.file_name || file.name,
       file_type: finalData.file_type || file.type || 'application/octet-stream',
@@ -297,37 +460,105 @@ export async function uploadFileChunked(file, identifier = 'temp', uploadType = 
       storage_key: finalData.storage_key
     };
   } catch (chunkErr) {
-    // Abort incomplete upload in background
-    fetch('/api/upload/abort', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ upload_id, storage_key })
-    }).catch(() => {});
-
+    screenWakeLock.release();
+    // Guardrail 6: Abort multipart on permanent failure to prevent orphan parts in R2
+    try {
+      if (upload_id && storage_key) {
+        await fetch('/api/upload/abort', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ upload_id, storage_key })
+        });
+      }
+      await removeUploadSession(resumeId);
+    } catch (_) {}
     throw chunkErr;
   }
 }
 
 /**
+ * Direct Single-PUT Upload for files <= 8MB (Photos, single docs, short videos)
+ * Bypasses Vercel and Worker proxy hops completely with 1 direct PUT to R2.
+ */
+async function uploadDirectSinglePut(file, identifier = 'temp', uploadType = 'complaint', onProgress = null) {
+  const token = getAuthToken();
+  const presignRes = await fetch('/api/upload/presign-direct', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({
+      filename: file.name,
+      mime_type: file.type || 'application/octet-stream',
+      file_size: file.size,
+      complaint_id: identifier,
+      type: uploadType
+    })
+  });
+
+  if (!presignRes.ok) {
+    throw new Error('Presigned direct upload not supported by server');
+  }
+
+  const { presigned_url, storage_key, file_url } = await presignRes.json();
+
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', presigned_url);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        const percent = Math.min(99, Math.round((e.loaded / e.total) * 100));
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (onProgress) onProgress(100);
+        resolve();
+      } else {
+        reject(new Error(`Direct single PUT returned HTTP ${xhr.status}: ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during direct single PUT'));
+    xhr.ontimeout = () => reject(new Error('Timeout during direct single PUT'));
+    xhr.timeout = 120000;
+    xhr.send(file);
+  });
+
+  return {
+    file_name: file.name,
+    file_type: file.type || 'application/octet-stream',
+    file_size: file.size,
+    file_url,
+    storage_key
+  };
+}
+
+/**
  * Primary Upload Function for Single File
  * - Automatically pre-compresses photos
- * - For files > 5MB: routes through parallel chunked upload
- * - For files <= 5MB: routes through direct streaming XHR upload
- * - Automatically falls back to Supabase if R2 is unavailable
+ * - Non-destructive: Videos and documents pass 100% untouched
+ * - For files <= 8MB: Routes through Direct Single-PUT to R2 (bypasses Worker and Vercel)
+ * - For files > 8MB: Routes through High-Speed Presigned Multipart Chunked upload
+ * - Falls back to Worker proxy / Supabase if direct presigning fails
  */
 export async function uploadFileToSupabase(file, identifier = 'temp', uploadType = 'complaint', onProgress = null) {
   if (!file) return null;
 
-  // Files up to 50MB are supported (chunked multipart upload slices files > 5MB into 5MB parts)
   if (file.size > 50 * 1024 * 1024) {
     throw new Error(`File "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 50MB maximum limit.`);
   }
 
-  // Pre-compress smartphone camera photos (reduces 12MB -> 350KB in ~60ms)
+  // Pre-compress photos (non-images pass through 100% untouched)
   const optimizedFile = await compressImageFile(file);
 
-  // If optimized file is large (> 5MB, like a video or long site recording), use Chunked Upload
-  if (optimizedFile.size > CHUNK_SIZE) {
+  // A. Large Files (> 8 MB, e.g. site videos): High-Speed Multipart Upload
+  if (optimizedFile.size > DIRECT_SINGLE_PUT_LIMIT) {
     try {
       return await uploadFileChunked(optimizedFile, identifier, uploadType, onProgress);
     } catch (chunkErr) {
@@ -335,7 +566,14 @@ export async function uploadFileToSupabase(file, identifier = 'temp', uploadType
     }
   }
 
-  // Direct fast upload for files <= 5MB
+  // B. Small/Medium Files (<= 8 MB): Try Direct Single PUT to R2 first
+  try {
+    return await uploadDirectSinglePut(optimizedFile, identifier, uploadType, onProgress);
+  } catch (directPutErr) {
+    console.warn('[Direct single PUT unavailable, falling back to /api/upload]:', directPutErr.message);
+  }
+
+  // C. Standard Worker proxy fallback (/api/upload)
   try {
     const formData = new FormData();
     formData.append('file', optimizedFile);
@@ -582,11 +820,28 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
   const results = new Array(preOptimized.length);
   let queueIndex = 0;
 
+  // Concurrency rules: mobile default 2, desktop 3, adaptive drop to 1 on failures
+  const isMobileNet = isMobileOrSlowNetwork();
+  let currentBatchConcurrency = isMobileNet ? Math.min(2, preOptimized.length) : Math.min(concurrency || 3, preOptimized.length);
+  let batchConsecutiveFailures = 0;
+
   // Worker for execution
-  const worker = async () => {
+  const worker = async (workerId) => {
     while (queueIndex < preOptimized.length) {
+      if (workerId >= currentBatchConcurrency) {
+        break;
+      }
       const itemIndex = queueIndex++;
       const item = preOptimized[itemIndex];
+
+      // Check if file was already uploaded in background pipeline during recording
+      if (item.file?._uploadedMeta) {
+        item.loadedBytes = item.size;
+        activeCompletedFiles++;
+        results[itemIndex] = { success: true, uploaded: item.file._uploadedMeta, originalItem: item.originalItem };
+        updateAggregateProgress(item.name, item.index);
+        continue;
+      }
 
       const handleSingleProgress = (filePct, loadedBytes) => {
         if (typeof loadedBytes === 'number') {
@@ -606,23 +861,23 @@ export async function uploadMultipleFilesWithProgress(files, options = {}) {
         );
         item.loadedBytes = item.size;
         activeCompletedFiles++;
+        batchConsecutiveFailures = 0;
         results[itemIndex] = { success: true, uploaded, originalItem: item.originalItem };
         updateAggregateProgress(item.name, item.index);
       } catch (err) {
         console.warn(`[Batch upload warning on ${item.name}]:`, err.message);
+        batchConsecutiveFailures++;
+        if (batchConsecutiveFailures >= 2 && currentBatchConcurrency > 1) {
+          console.warn('[Adaptive Concurrency] Reducing batch concurrency to 1 due to failures.');
+          currentBatchConcurrency = 1;
+        }
         item.loadedBytes = item.size;
         results[itemIndex] = { success: false, file: item.file, error: err.message, originalItem: item.originalItem };
       }
     }
   };
 
-  // On mobile devices or when uploading large files (> 5MB, like videos),
-  // serialize file uploads (concurrency 1) to dedicate 100% of mobile uplink bandwidth to
-  // finishing each file without TCP packet collisions or connection timeouts.
-  const hasLargeFile = preOptimized.some(it => it.size > CHUNK_SIZE);
-  const isMobileNet = isMobileOrSlowNetwork();
-  const poolSize = (isMobileNet || hasLargeFile) ? 1 : Math.min(concurrency, preOptimized.length);
-  const workers = Array.from({ length: poolSize }, () => worker());
+  const workers = Array.from({ length: currentBatchConcurrency }, (_, id) => worker(id));
   await Promise.all(workers);
 
   if (onProgress) {
