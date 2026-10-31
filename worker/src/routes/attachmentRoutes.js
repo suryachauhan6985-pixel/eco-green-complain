@@ -465,15 +465,13 @@ attachmentRoutes.post('/complaints/:id/attachments', optionalAuth, async (c) => 
       if (fileUrl && fileUrl.includes('complaints/temp/') && bucket && ticketFolder) {
         const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
         const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${ticketFolder}/`);
-        fileUrl = `/api/attachments/r2/${newKey}`;
-        if (c.executionCtx?.waitUntil) {
-          c.executionCtx.waitUntil(
-            moveR2Object(bucket, oldKey, newKey).catch(e => {
-              console.error('Failed to relocate temp attachment in R2:', e);
-            })
-          );
-        } else {
-          moveR2Object(bucket, oldKey, newKey).catch(() => {});
+        try {
+          const moved = await moveR2Object(bucket, oldKey, newKey);
+          if (moved) {
+            fileUrl = `/api/attachments/r2/${newKey}`;
+          }
+        } catch (e) {
+          console.warn('Failed to relocate temp attachment in R2, retaining temp key:', e.message);
         }
       }
 

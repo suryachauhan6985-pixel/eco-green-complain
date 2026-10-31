@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { useEscapeHandler, ESCAPE_PRIORITY } from '../../utils/escapeManager';
 import { screenWakeLock } from '../../utils/screenWakeLock';
-import { extractVideoThumbnail } from '../../utils/videoThumbnail';
 
 // High-Efficiency 720p HD Optimization with Zero Lag on Mobile:
 // Target: 3 Minutes (~180s) 720p HD Video guaranteed smooth, stutter-free, and under 50 MB.
@@ -270,7 +269,6 @@ export function VideoRecorderModal({
   const fileFallbackInputRef = useRef(null);
   const previewUrlRef = useRef(null);
   const activePipelineRef = useRef(null);
-  const liveThumbnailRef = useRef(null);
   const recordedOrientationMetaRef = useRef(null);
   const orientationListenerRef = useRef(null);
 
@@ -341,7 +339,6 @@ export function VideoRecorderModal({
     setZoomLevel(1);
     setZoomNotification(null);
 
-    liveThumbnailRef.current = null;
     recordedOrientationMetaRef.current = null;
     if (orientationListenerRef.current && window.screen?.orientation) {
       try {
@@ -895,36 +892,6 @@ export function VideoRecorderModal({
       const randSuffix = Math.random().toString(36).substring(2, 6);
       const currentPartFilename = `VID_${ts}_${randSuffix}_site_part${partIndex}.${ext}`;
 
-      // Priority 3: Capture live camera frame directly from stream after 400ms (0ms latency at Use Video)
-      setTimeout(() => {
-        if (!isRecordingRef.current) return;
-        try {
-          const v = videoPreviewRef.current;
-          if (v && v.videoWidth > 0 && !liveThumbnailRef.current) {
-            const canvas = document.createElement('canvas');
-            const targetW = 480;
-            const scale = Math.min(1, targetW / v.videoWidth);
-            canvas.width = Math.round(v.videoWidth * scale);
-            canvas.height = Math.round(v.videoHeight * scale);
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-              canvas.toBlob((blob) => {
-                if (blob) {
-                  const thumbFilename = `THUMB_${currentPartFilename.replace(/\.[^/.]+$/, '')}.jpg`;
-                  liveThumbnailRef.current = new File([blob], thumbFilename, {
-                    type: 'image/jpeg',
-                    lastModified: Date.now()
-                  });
-                }
-              }, 'image/jpeg', 0.85);
-            }
-          }
-        } catch (e) {
-          console.warn('[VideoRecorder] Live thumbnail capture note:', e.message);
-        }
-      }, 400);
-
       const pipeline = new PipelinedRecordingUpload(partIndex, mimeType);
       activePipelineRef.current = pipeline;
       pipeline.init(currentPartFilename);
@@ -1099,19 +1066,7 @@ export function VideoRecorderModal({
       : (recordedBlob ? [recordedBlob] : []);
     const photoFiles = capturedPhotos.map(p => p.file);
 
-    // Priority 3: Zero-lag thumbnail from live camera stream (avoids 5-7s video seeking on mobile)
-    let thumbnailFile = liveThumbnailRef.current;
-    if (!thumbnailFile && videoFiles.length > 0) {
-      try {
-        thumbnailFile = await extractVideoThumbnail(videoFiles[0]);
-      } catch (_) {}
-    }
-
     const allFiles = [...videoFiles, ...photoFiles];
-    if (thumbnailFile) {
-      allFiles.push(thumbnailFile);
-    }
-
     if (allFiles.length === 0) return;
 
     screenWakeLock.release();

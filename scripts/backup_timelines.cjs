@@ -2,7 +2,7 @@ const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const connStr = process.env.DATABASE_URL || 'process.env.DATABASE_URL';
+const connStr = process.env.DATABASE_URL || 'postgresql://postgres.pirlkhjljjnwuunpqwbb:Ge%40286296ecogreen@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
 
 async function backup() {
   const c = new Client({ connectionString: connStr, ssl: { rejectUnauthorized: false } });
