@@ -270,6 +270,9 @@ export function VideoRecorderModal({
   const fileFallbackInputRef = useRef(null);
   const previewUrlRef = useRef(null);
   const activePipelineRef = useRef(null);
+  const liveThumbnailRef = useRef(null);
+  const recordedOrientationMetaRef = useRef(null);
+  const orientationListenerRef = useRef(null);
 
   // Detect camera devices to find potential ultra-wide rear camera
   const detectCameras = useCallback(async () => {
@@ -337,6 +340,15 @@ export function VideoRecorderModal({
     setPhotoFlash(false);
     setZoomLevel(1);
     setZoomNotification(null);
+
+    liveThumbnailRef.current = null;
+    recordedOrientationMetaRef.current = null;
+    if (orientationListenerRef.current && window.screen?.orientation) {
+      try {
+        window.screen.orientation.removeEventListener('change', orientationListenerRef.current);
+      } catch (_) {}
+      orientationListenerRef.current = null;
+    }
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -797,6 +809,10 @@ export function VideoRecorderModal({
       }).catch(() => {});
     }
 
+    if (recordedOrientationMetaRef.current) {
+      partFile._orientationMeta = { ...recordedOrientationMetaRef.current };
+    }
+
     recordedPartsRef.current.push(partFile);
     setRecordedParts([...recordedPartsRef.current]);
 
@@ -825,6 +841,52 @@ export function VideoRecorderModal({
       }
       setRecordedMimeType(mimeType);
 
+      // Priority 4: Capture track settings & orientation at start of recording
+      const vTrack = liveStream.getVideoTracks ? liveStream.getVideoTracks()[0] : null;
+      const trackSettings = vTrack && typeof vTrack.getSettings === 'function' ? vTrack.getSettings() : {};
+      const trackWidth = trackSettings.width || videoPreviewRef.current?.videoWidth || 1280;
+      const trackHeight = trackSettings.height || videoPreviewRef.current?.videoHeight || 720;
+      const initialScreenAngle = typeof window !== 'undefined' && window.screen?.orientation
+        ? (window.screen.orientation.angle || 0)
+        : (typeof window.orientation === 'number' ? window.orientation : 0);
+      const initialScreenType = typeof window !== 'undefined' && window.screen?.orientation
+        ? (window.screen.orientation.type || 'portrait-primary')
+        : 'unknown';
+      const initialOrientation = trackWidth >= trackHeight ? 'landscape' : 'portrait';
+
+      recordedOrientationMetaRef.current = {
+        orientation: initialOrientation,
+        width: trackWidth,
+        height: trackHeight,
+        screenAngle: initialScreenAngle,
+        screenType: initialScreenType
+      };
+
+      // Orientation lock attempt (supported in installed PWA / fullscreen)
+      try {
+        if (window.screen?.orientation?.lock && initialScreenType) {
+          window.screen.orientation.lock(initialScreenType).catch(() => {});
+        }
+      } catch (_) {}
+
+      // Steady-hold orientation change listener
+      if (orientationListenerRef.current && window.screen?.orientation) {
+        try {
+          window.screen.orientation.removeEventListener('change', orientationListenerRef.current);
+        } catch (_) {}
+      }
+      const handleOrientationChange = () => {
+        const curAngle = window.screen?.orientation?.angle ?? (typeof window.orientation === 'number' ? window.orientation : 0);
+        if (curAngle !== initialScreenAngle) {
+          setPartNotification('Phone rotated: keep phone in starting orientation to avoid recording glitch');
+          setTimeout(() => setPartNotification(null), 3500);
+        }
+      };
+      orientationListenerRef.current = handleOrientationChange;
+      if (window.screen?.orientation?.addEventListener) {
+        window.screen.orientation.addEventListener('change', handleOrientationChange);
+      }
+
       // Guardrail 3: Initialize pipelined background multipart upload in R2
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const now = new Date();
@@ -832,6 +894,36 @@ export function VideoRecorderModal({
       const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
       const randSuffix = Math.random().toString(36).substring(2, 6);
       const currentPartFilename = `VID_${ts}_${randSuffix}_site_part${partIndex}.${ext}`;
+
+      // Priority 3: Capture live camera frame directly from stream after 400ms (0ms latency at Use Video)
+      setTimeout(() => {
+        if (!isRecordingRef.current) return;
+        try {
+          const v = videoPreviewRef.current;
+          if (v && v.videoWidth > 0 && !liveThumbnailRef.current) {
+            const canvas = document.createElement('canvas');
+            const targetW = 480;
+            const scale = Math.min(1, targetW / v.videoWidth);
+            canvas.width = Math.round(v.videoWidth * scale);
+            canvas.height = Math.round(v.videoHeight * scale);
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob((blob) => {
+                if (blob) {
+                  const thumbFilename = `THUMB_${currentPartFilename.replace(/\.[^/.]+$/, '')}.jpg`;
+                  liveThumbnailRef.current = new File([blob], thumbFilename, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now()
+                  });
+                }
+              }, 'image/jpeg', 0.85);
+            }
+          }
+        } catch (e) {
+          console.warn('[VideoRecorder] Live thumbnail capture note:', e.message);
+        }
+      }, 400);
 
       const pipeline = new PipelinedRecordingUpload(partIndex, mimeType);
       activePipelineRef.current = pipeline;
@@ -1007,9 +1099,9 @@ export function VideoRecorderModal({
       : (recordedBlob ? [recordedBlob] : []);
     const photoFiles = capturedPhotos.map(p => p.file);
 
-    // Extract thumbnail from the primary video file without altering video bytes
-    let thumbnailFile = null;
-    if (videoFiles.length > 0) {
+    // Priority 3: Zero-lag thumbnail from live camera stream (avoids 5-7s video seeking on mobile)
+    let thumbnailFile = liveThumbnailRef.current;
+    if (!thumbnailFile && videoFiles.length > 0) {
       try {
         thumbnailFile = await extractVideoThumbnail(videoFiles[0]);
       } catch (_) {}

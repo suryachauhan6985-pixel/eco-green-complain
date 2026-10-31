@@ -1022,13 +1022,15 @@ async function handleUpdateDraftComplaint(c, existingRecord = null, preParsedBod
         if (fileUrl && fileUrl.includes('complaints/temp/') && c.env?.MEDIA_BUCKET && targetFolder) {
           const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
           const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${targetFolder}/`);
-          try {
-            const moved = await moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey);
-            if (moved) {
-              fileUrl = `/api/attachments/r2/${newKey}`;
-            }
-          } catch (e) {
-            console.error('Failed to relocate temp attachment in R2 during draft update:', e);
+          fileUrl = `/api/attachments/r2/${newKey}`;
+          if (c.executionCtx?.waitUntil) {
+            c.executionCtx.waitUntil(
+              moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey).catch(e => {
+                console.error('Failed to relocate temp attachment in R2 during draft update:', e);
+              })
+            );
+          } else {
+            moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey).catch(() => {});
           }
         }
 
@@ -1257,13 +1259,15 @@ async function handleCreateComplaint(c, isPublic = false) {
       if (fileUrl && fileUrl.includes('complaints/temp/') && c.env?.MEDIA_BUCKET && newComp.ticket_id) {
         const oldKey = fileUrl.replace(/^.*\/api\/attachments\/r2\//, '').replace(/^\/+/, '');
         const newKey = oldKey.replace(/^complaints\/temp\//, `complaints/${newComp.ticket_id}/`);
-        try {
-          const moved = await moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey);
-          if (moved) {
-            fileUrl = `/api/attachments/r2/${newKey}`;
-          }
-        } catch (e) {
-          console.error('Failed to relocate temp attachment in R2 during ticket creation:', e);
+        fileUrl = `/api/attachments/r2/${newKey}`;
+        if (c.executionCtx?.waitUntil) {
+          c.executionCtx.waitUntil(
+            moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey).catch(e => {
+              console.error('Failed to relocate temp attachment in R2 during ticket creation:', e);
+            })
+          );
+        } else {
+          moveR2Object(c.env.MEDIA_BUCKET, oldKey, newKey).catch(() => {});
         }
       }
 
