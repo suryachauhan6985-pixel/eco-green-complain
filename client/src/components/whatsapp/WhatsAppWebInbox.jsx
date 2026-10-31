@@ -342,6 +342,18 @@ export const WhatsAppWebInbox = ({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [contactInfo, setContactInfo] = useState(null);
 
+  const selectedContact = useMemo(() => {
+    if (!selectedPhone) return null;
+    const conv = conversations.find((c) => c.phone === selectedPhone);
+    const name = contactInfo?.sender_name || contactInfo?.name || conv?.sender_name || conv?.name || `+${selectedPhone}`;
+    return {
+      phone: selectedPhone,
+      name,
+      ...conv,
+      ...contactInfo,
+    };
+  }, [conversations, selectedPhone, contactInfo]);
+
   // Message compose state
   const [replyText, setReplyText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
