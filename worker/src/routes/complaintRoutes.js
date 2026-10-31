@@ -112,7 +112,7 @@ export function getComplaintMediaRetentionDays(complaintId) {
 export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
   if (!complaint) return false;
 
-  const isClosed = ['Closed', 'closed', 'Resolved', 'resolved'].includes(complaint.status);
+  const isClosed = ['Closed', 'closed'].includes(complaint.status);
   const closedDate = complaint.closed_at ? new Date(complaint.closed_at) : (complaint.updated_at ? new Date(complaint.updated_at) : null);
   if (!isClosed || !closedDate || isNaN(closedDate.getTime())) return false;
 
@@ -271,7 +271,7 @@ export async function runBatchExpiredDocumentsPurge(env, ctx) {
   const sql = `
     SELECT id, ticket_id, status, customer_phone, closed_at, updated_at, documents_purged, media_purged, closing_photo_url, retention_days
     FROM complaints
-    WHERE status IN ('Closed', 'closed', 'Resolved', 'resolved')
+    WHERE status IN ('Closed', 'closed')
       AND (closed_at IS NOT NULL OR updated_at IS NOT NULL)
       AND (closed_at < (NOW() - INTERVAL '10 days') OR updated_at < (NOW() - INTERVAL '10 days'))
       AND (documents_purged IS NULL OR documents_purged = 0 OR media_purged IS NULL OR media_purged = 0)

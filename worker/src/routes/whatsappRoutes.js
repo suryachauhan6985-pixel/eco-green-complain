@@ -882,7 +882,7 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
 
     if (purgeCheck.rows && purgeCheck.rows.length > 0) {
       const row = purgeCheck.rows[0];
-      const isClosed = ['Closed', 'closed', 'Resolved', 'resolved'].includes(row.comp_status);
+      const isClosed = ['Closed', 'closed'].includes(row.comp_status);
       const targetId = row.comp_id || row.msg_id;
       const retentionDays = row.retention_days || (10 + ((targetId * 13 + 7) % 6));
       const closedTimestamp = row.closed_at || row.updated_at;
