@@ -98,22 +98,31 @@ async function ensureRetentionSchema(env, ctx) {
 }
 
 /**
- * Purge all R2 media files for a complaint closed > 30 days ago
+ * Helper to compute deterministic pseudo-random retention duration between 10 and 15 days per complaint
+ */
+export function getComplaintMediaRetentionDays(complaintId) {
+  const idNum = typeof complaintId === 'number' ? complaintId : parseInt(String(complaintId).replace(/\D/g, '') || '0', 10);
+  return 10 + ((idNum * 13 + 7) % 6); // Yields an integer between 10 and 15 days
+}
+
+/**
+ * Purge all R2 media files for a complaint closed > 10–15 days ago
  * Preserves the complaint row, customer data, and attachment metadata in database.
  */
 export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
   if (!complaint) return false;
 
-  const isClosed = ['Closed', 'closed'].includes(complaint.status);
-  const closedDate = complaint.closed_at ? new Date(complaint.closed_at) : null;
+  const isClosed = ['Closed', 'closed', 'Resolved', 'resolved'].includes(complaint.status);
+  const closedDate = complaint.closed_at ? new Date(complaint.closed_at) : (complaint.updated_at ? new Date(complaint.updated_at) : null);
   if (!isClosed || !closedDate || isNaN(closedDate.getTime())) return false;
 
-  const msIn30Days = 30 * 24 * 60 * 60 * 1000;
-  const isPast30Days = (Date.now() - closedDate.getTime()) >= msIn30Days;
-  if (!isPast30Days) return false;
+  const retentionDays = complaint.retention_days || getComplaintMediaRetentionDays(complaint.id);
+  const msInRetention = retentionDays * 24 * 60 * 60 * 1000;
+  const isPastRetention = (Date.now() - closedDate.getTime()) >= msInRetention;
+  if (!isPastRetention) return false;
 
   // Already purged
-  if (Number(complaint.documents_purged) === 1) return true;
+  if (Number(complaint.documents_purged) === 1 && Number(complaint.media_purged) === 1) return true;
 
   await ensureRetentionSchema(env, ctx);
 
@@ -149,8 +158,8 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
 
     // Recursively delete all objects in Cloudflare R2 under complaints/${ticketId}/ and legacy complaints/${compId}/
     if (bucket) {
-      if (ticketId) await deleteR2Prefix(bucket, `complaints/${ticketId}/`);
-      if (compId) await deleteR2Prefix(bucket, `complaints/${compId}/`);
+      if (ticketId) await deleteR2Prefix(bucket, `complaints/${ticketId}/`).catch(() => {});
+      if (compId) await deleteR2Prefix(bucket, `complaints/${compId}/`).catch(() => {});
       for (const key of keysToDelete) {
         try {
           await deleteR2Object(bucket, key);
@@ -158,9 +167,59 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
       }
     }
 
+    // 2. Fetch and delete WhatsApp media for this complaint or customer's phone
+    const cleanPhone = (complaint.customer_phone || '').replace(/\D/g, '');
+    const last10 = cleanPhone.slice(-10);
+
+    let waMsgs = { rows: [] };
+    if (compId) {
+      waMsgs = await query(
+        `SELECT id, media_id, phone FROM whatsapp_messages WHERE complaint_id = $1 AND media_id IS NOT NULL`,
+        [compId],
+        env,
+        ctx
+      ).catch(() => ({ rows: [] }));
+    }
+    if ((!waMsgs.rows || waMsgs.rows.length === 0) && last10) {
+      waMsgs = await query(
+        `SELECT id, media_id, phone FROM whatsapp_messages 
+         WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 AND media_id IS NOT NULL`,
+        [last10],
+        env,
+        ctx
+      ).catch(() => ({ rows: [] }));
+    }
+
+    const msgIdsToMark = [];
+    for (const m of (waMsgs.rows || [])) {
+      if (m.media_id) {
+        msgIdsToMark.push(m.id);
+        const mPhone = (m.phone || cleanPhone || '').replace(/\D/g, '');
+        const mLast10 = mPhone.slice(-10);
+        if (bucket) {
+          if (mPhone) await deleteR2Object(bucket, `whatsapp_media/${mPhone}/${m.media_id}`).catch(() => {});
+          if (mLast10) await deleteR2Object(bucket, `whatsapp_media/91${mLast10}/${m.media_id}`).catch(() => {});
+          await deleteR2Object(bucket, `whatsapp_media/${m.media_id}`).catch(() => {});
+        }
+      }
+    }
+
+    if (msgIdsToMark.length > 0) {
+      await query(
+        `UPDATE whatsapp_messages 
+         SET media_purged = 1, purge_reason = 'complaint_closed_retention_expired' 
+         WHERE id = ANY($1)`,
+        [msgIdsToMark],
+        env,
+        ctx
+      ).catch(() => {});
+    }
+
     // Update database: mark attachments as purged while preserving file_name & upload info
     await query(
-      'UPDATE complaint_attachments SET is_purged = 1, file_url = NULL, file_data = NULL WHERE complaint_id = $1',
+      `UPDATE complaint_attachments 
+       SET is_purged = 1, purge_reason = 'complaint_closed_retention_expired', file_url = NULL, file_data = NULL 
+       WHERE complaint_id = $1`,
       [compId],
       env,
       ctx
@@ -170,10 +229,13 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
     await query(
       `UPDATE complaints 
        SET documents_purged = 1, 
+           media_purged = 1,
            documents_purged_at = CURRENT_TIMESTAMP, 
+           media_purged_at = CURRENT_TIMESTAMP,
+           retention_days = $2,
            closing_photo_url = NULL 
        WHERE id = $1`,
-      [compId],
+      [compId, retentionDays],
       env,
       ctx
     ).catch(() => {});
@@ -181,15 +243,18 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
     // Log in complaint timeline for full enterprise audit
     await query(
       `INSERT INTO complaint_timelines (complaint_id, action, notes, performed_by_name, performed_by_role, notify_customer)
-       VALUES ($1, 'Documents Purged', 'All attachments and closing media were automatically removed from Cloudflare R2 storage in accordance with the 30-day post-closure retention policy. Complaint details and records remain permanently archived.', 'Automated Lifecycle System', 'system', 0)`,
-      [compId],
+       VALUES ($1, 'Media Purged', $2, 'Automated Lifecycle System', 'system', 0)`,
+      [compId, `All audio, video, attachments, and closing media were permanently removed from Cloudflare R2 storage in accordance with the 10-15 day post-closure retention policy (${retentionDays} days elapsed). Complaint details and records remain permanently archived.`],
       env,
       ctx
     ).catch(() => {});
 
     complaint.documents_purged = 1;
+    complaint.media_purged = 1;
     complaint.documents_purged_at = new Date().toISOString();
+    complaint.media_purged_at = new Date().toISOString();
     complaint.closing_photo_url = null;
+    complaint.retention_days = retentionDays;
     return true;
   } catch (e) {
     console.error(`[Purge Expired Docs Error] Ticket ${complaint.ticket_id}:`, e);
@@ -198,19 +263,19 @@ export async function purgeComplaintDocumentsIfExpired(complaint, env, ctx) {
 }
 
 /**
- * Batch process all closed complaints older than 30 days
+ * Batch process all closed complaints older than 10-15 days
  */
 export async function runBatchExpiredDocumentsPurge(env, ctx) {
   await ensureRetentionSchema(env, ctx);
 
   const sql = `
-    SELECT id, ticket_id, status, closed_at, documents_purged, closing_photo_url
+    SELECT id, ticket_id, status, customer_phone, closed_at, updated_at, documents_purged, media_purged, closing_photo_url, retention_days
     FROM complaints
-    WHERE status IN ('Closed', 'closed')
-      AND closed_at IS NOT NULL
-      AND closed_at < (NOW() - INTERVAL '30 days')
-      AND (documents_purged IS NULL OR documents_purged = 0)
-    ORDER BY closed_at ASC
+    WHERE status IN ('Closed', 'closed', 'Resolved', 'resolved')
+      AND (closed_at IS NOT NULL OR updated_at IS NOT NULL)
+      AND (closed_at < (NOW() - INTERVAL '10 days') OR updated_at < (NOW() - INTERVAL '10 days'))
+      AND (documents_purged IS NULL OR documents_purged = 0 OR media_purged IS NULL OR media_purged = 0)
+    ORDER BY COALESCE(closed_at, updated_at) ASC
     LIMIT 100
   `;
   const res = await query(sql, [], env, ctx);
@@ -229,7 +294,7 @@ export async function runBatchExpiredDocumentsPurge(env, ctx) {
     success: true, 
     purgedCount, 
     purgedTickets, 
-    message: `Successfully purged expired documents for ${purgedCount} complaints older than 30 days.` 
+    message: `Successfully purged expired media and documents for ${purgedCount} closed complaints (10–15 day retention policy).` 
   };
 }
 

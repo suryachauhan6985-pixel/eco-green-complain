@@ -818,7 +818,25 @@ whatsappRoutes.get('/chats/:phone', authenticateToken, async (c) => {
   }
 });
 
-// GET /api/whatsapp/media/:mediaId - Secure Meta WhatsApp Media Stream Proxy
+// Helper for parsing HTTP Range header (e.g. bytes=1048576- or bytes=0-1000)
+function parseByteRange(rangeHdr, totalSize) {
+  if (!rangeHdr || typeof rangeHdr !== 'string' || !rangeHdr.startsWith('bytes=')) return null;
+  const parts = rangeHdr.replace('bytes=', '').split('-');
+  let start = parts[0] ? parseInt(parts[0], 10) : NaN;
+  let end = parts[1] ? parseInt(parts[1], 10) : NaN;
+  if (isNaN(start)) {
+    start = Math.max(0, totalSize - end);
+    end = totalSize - 1;
+  } else if (isNaN(end)) {
+    end = totalSize - 1;
+  }
+  if (start < 0) start = 0;
+  if (end >= totalSize) end = totalSize - 1;
+  if (start > end || isNaN(start)) return null;
+  return { start, end, length: end - start + 1 };
+}
+
+// GET /api/whatsapp/media/:mediaId - Secure Meta WhatsApp Media Stream Proxy with Range & Scrubbing Support
 whatsappRoutes.get('/media/:mediaId', async (c) => {
   const mediaId = c.req.param('mediaId');
   if (!mediaId) {
@@ -827,6 +845,7 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
   const filename = c.req.query('filename') || '';
   let queryPhone = (c.req.query('phone') || '').replace(/\D/g, '');
   const token = c.env?.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
+  const rangeHeader = c.req.header('range');
 
   // Resolve phone if not provided in query param
   if (!queryPhone) {
@@ -843,6 +862,96 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
     } catch (_) {}
   }
 
+  // 1. Check if media belongs to a closed complaint past its retention duration (10-15 days)
+  try {
+    const purgeCheck = await query(
+      `SELECT wm.id as msg_id, wm.complaint_id, wm.media_purged, wm.purge_reason, wm.phone,
+              c.id as comp_id, c.ticket_id, c.status as comp_status, c.closed_at, c.updated_at,
+              c.media_purged as comp_media_purged, c.retention_days
+       FROM whatsapp_messages wm
+       LEFT JOIN complaints c ON (
+         wm.complaint_id = c.id 
+         OR (c.customer_phone IS NOT NULL AND RIGHT(REPLACE(REPLACE(c.customer_phone, ' ', ''), '+', ''), 10) = RIGHT(REPLACE(REPLACE(wm.phone, ' ', ''), '+', ''), 10))
+       )
+       WHERE (wm.media_id = $1 OR wm.media_url LIKE $2)
+       ORDER BY c.id DESC LIMIT 1`,
+      [mediaId, `%${mediaId}%`],
+      c.env,
+      c.executionCtx
+    );
+
+    if (purgeCheck.rows && purgeCheck.rows.length > 0) {
+      const row = purgeCheck.rows[0];
+      const isClosed = ['Closed', 'closed', 'Resolved', 'resolved'].includes(row.comp_status);
+      const targetId = row.comp_id || row.msg_id;
+      const retentionDays = row.retention_days || (10 + ((targetId * 13 + 7) % 6));
+      const closedTimestamp = row.closed_at || row.updated_at;
+      const elapsedDays = (isClosed && closedTimestamp) ? (Date.now() - new Date(closedTimestamp).getTime()) / (1000 * 60 * 60 * 24) : 0;
+
+      if (row.media_purged === 1 || row.comp_media_purged === 1 || (isClosed && elapsedDays >= retentionDays)) {
+        // Trigger background cleanup if not yet deleted
+        if (row.media_purged !== 1 && c.env?.MEDIA_BUCKET) {
+          const cleanupPromise = purgeSingleClosedComplaintMedia(row.comp_id, row.ticket_id, row.phone, c.env, c.executionCtx);
+          if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(cleanupPromise);
+        }
+
+        const ticketLabel = row.ticket_id ? ` (Ticket: ${row.ticket_id})` : '';
+        const isDownload = c.req.query('download') === '1' || c.req.query('dl') === '1';
+        const acceptHeader = c.req.header('Accept') || '';
+        const wantsHtml = acceptHeader.includes('text/html') || isDownload;
+
+        if (wantsHtml) {
+          return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Deleted - Complaint Closed</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b141a; color: #e9edef; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #111b21; border: 1px solid #222e35; border-radius: 16px; padding: 32px 24px; max-width: 460px; text-align: center; box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+    .icon { width: 56px; height: 56px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #f59e0b; font-size: 26px; }
+    h2 { margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #fff; }
+    p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: #8696a0; }
+    .meta-badge { background: #202c33; border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #aebac1; margin-bottom: 20px; text-align: left; }
+    .tip { font-size: 13px; color: #00a884; margin-bottom: 24px; }
+    .btn { display: inline-block; background: #00a884; color: #111b21; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 10px; transition: opacity 0.2s; cursor: pointer; border: none; }
+    .btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📦</div>
+    <h2>Media Removed — Complaint Closed</h2>
+    <p>This complaint${ticketLabel} has already been resolved and closed. In accordance with system data retention policies, all associated audio, video, and media attachments were permanently deleted 10 to 15 days after ticket closure.</p>
+    <div class="meta-badge">
+      <div><strong>Status:</strong> Permanently Deleted from Storage</div>
+      <div style="margin-top: 4px;"><strong>Retention Policy:</strong> 10–15 Days Post-Closure Purge (${retentionDays} Days)</div>
+      ${row.ticket_id ? `<div style="margin-top: 4px;"><strong>Complaint Ticket:</strong> ${row.ticket_id}</div>` : ''}
+    </div>
+    <div class="tip">Complaint ticket records remain safely archived in the system.</div>
+    <button onclick="window.close()" class="btn">Close</button>
+  </div>
+</body>
+</html>`, 410);
+        }
+
+        return c.json({
+          success: false,
+          purged: true,
+          expired: true,
+          reason: 'complaint_closed_retention_expired',
+          ticket_id: row.ticket_id || null,
+          retention_days: retentionDays,
+          error: 'This complaint has been closed and the media file was permanently deleted by the system per the 10–15 day data retention policy.',
+          mediaId
+        }, 410);
+      }
+    }
+  } catch (checkErr) {
+    console.warn('[WhatsApp Media Purge Check Warn]', checkErr.message);
+  }
+
   const last10 = queryPhone.slice(-10);
   const possibleR2Keys = [];
   if (queryPhone) {
@@ -853,15 +962,22 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
   }
   possibleR2Keys.push(`whatsapp_media/${mediaId}`); // legacy fallback
 
-  // 1. Check Cloudflare R2 cache first for instant delivery
+  // 2. Check Cloudflare R2 cache first with HTTP Range support for scrubbing
   if (c.env?.MEDIA_BUCKET) {
     for (const key of possibleR2Keys) {
       try {
-        const cached = await c.env.MEDIA_BUCKET.get(key);
+        let cached = null;
+        if (rangeHeader) {
+          cached = await c.env.MEDIA_BUCKET.get(key, { range: c.req.raw.headers });
+        } else {
+          cached = await c.env.MEDIA_BUCKET.get(key);
+        }
+
         if (cached) {
           const headers = new Headers();
-          headers.set('Content-Type', cached.httpMetadata?.contentType || 'application/octet-stream');
-          if (cached.size) headers.set('Content-Length', String(cached.size));
+          const contentType = cached.httpMetadata?.contentType || 'video/mp4';
+          headers.set('Content-Type', contentType);
+          headers.set('Accept-Ranges', 'bytes');
           headers.set('Cache-Control', 'public, max-age=31536000, immutable');
           headers.set('Access-Control-Allow-Origin', '*');
           headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -872,7 +988,18 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
           } else {
             headers.set('Content-Disposition', dispositionType);
           }
-          return new Response(cached.body, { status: 200, headers });
+
+          if (cached.range) {
+            const start = cached.range.offset;
+            const end = cached.range.offset + cached.range.length - 1;
+            const total = cached.size;
+            headers.set('Content-Range', `bytes ${start}-${end}/${total}`);
+            headers.set('Content-Length', String(cached.range.length));
+            return new Response(cached.body, { status: 206, headers });
+          } else {
+            if (cached.size) headers.set('Content-Length', String(cached.size));
+            return new Response(cached.body, { status: 200, headers });
+          }
         }
       } catch (r2Err) {
         console.warn('[WhatsApp Media R2 Cache Read Warn]', r2Err.message);
@@ -949,10 +1076,10 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
       return c.text('Failed to download media binary from Meta CDN', fileRes.status);
     }
 
-    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
+    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'video/mp4';
     const arrayBuffer = await fileRes.arrayBuffer();
 
-    // 2. Cache in Cloudflare R2 inside whatsapp_media/{contact_phone}/{mediaId}
+    // Cache in Cloudflare R2 inside whatsapp_media/{contact_phone}/{mediaId}
     if (c.env?.MEDIA_BUCKET) {
       const primaryR2Key = queryPhone ? `whatsapp_media/${queryPhone}/${mediaId}` : `whatsapp_media/${mediaId}`;
       const r2Put = c.env.MEDIA_BUCKET.put(primaryR2Key, arrayBuffer, {
@@ -965,7 +1092,7 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
 
     const headers = new Headers();
     headers.set('Content-Type', contentType);
-    headers.set('Content-Length', String(arrayBuffer.byteLength));
+    headers.set('Accept-Ranges', 'bytes');
     headers.set('Cache-Control', 'public, max-age=31536000, immutable');
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -977,6 +1104,20 @@ whatsappRoutes.get('/media/:mediaId', async (c) => {
       headers.set('Content-Disposition', dispositionType);
     }
 
+    const totalLength = arrayBuffer.byteLength;
+    const parsedRange = parseByteRange(rangeHeader, totalLength);
+
+    if (parsedRange) {
+      const chunk = arrayBuffer.slice(parsedRange.start, parsedRange.end + 1);
+      headers.set('Content-Range', `bytes ${parsedRange.start}-${parsedRange.end}/${totalLength}`);
+      headers.set('Content-Length', String(chunk.byteLength));
+      return new Response(chunk, {
+        status: 206,
+        headers
+      });
+    }
+
+    headers.set('Content-Length', String(totalLength));
     return new Response(arrayBuffer, {
       status: 200,
       headers
@@ -1732,4 +1873,87 @@ export async function runBatchExpiredWhatsAppPurge(env, ctx) {
   }
 }
 
+/**
+ * Purge single closed complaint media from R2 and mark whatsapp_messages as purged
+ */
+export async function purgeSingleClosedComplaintMedia(complaintId, ticketId, phone, env, ctx) {
+  if (!env?.MEDIA_BUCKET) return;
+  const bucket = env.MEDIA_BUCKET;
+
+  try {
+    // 1. Delete R2 keys for complaint attachments
+    if (ticketId) await deleteR2Prefix(bucket, `complaints/${ticketId}/`).catch(() => {});
+    if (complaintId) await deleteR2Prefix(bucket, `complaints/${complaintId}/`).catch(() => {});
+
+    // 2. Fetch and delete WhatsApp media for this complaint/phone
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    const last10 = cleanPhone.slice(-10);
+
+    let msgsRes = { rows: [] };
+    if (complaintId) {
+      msgsRes = await query(
+        `SELECT id, media_id, phone FROM whatsapp_messages WHERE complaint_id = $1 AND media_id IS NOT NULL`,
+        [complaintId],
+        env,
+        ctx
+      ).catch(() => ({ rows: [] }));
+    }
+    if ((!msgsRes.rows || msgsRes.rows.length === 0) && last10) {
+      msgsRes = await query(
+        `SELECT id, media_id, phone FROM whatsapp_messages 
+         WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1 AND media_id IS NOT NULL`,
+        [last10],
+        env,
+        ctx
+      ).catch(() => ({ rows: [] }));
+    }
+
+    const msgRows = msgsRes?.rows || [];
+    const msgIdsToMark = [];
+
+    for (const msg of msgRows) {
+      msgIdsToMark.push(msg.id);
+      const mPhone = (msg.phone || cleanPhone || '').replace(/\D/g, '');
+      const mLast10 = mPhone.slice(-10);
+      if (mPhone) await deleteR2Object(bucket, `whatsapp_media/${mPhone}/${msg.media_id}`).catch(() => {});
+      if (mLast10) await deleteR2Object(bucket, `whatsapp_media/91${mLast10}/${msg.media_id}`).catch(() => {});
+      await deleteR2Object(bucket, `whatsapp_media/${msg.media_id}`).catch(() => {});
+    }
+
+    if (msgIdsToMark.length > 0) {
+      await query(
+        `UPDATE whatsapp_messages 
+         SET media_purged = 1, purge_reason = 'complaint_closed_retention_expired' 
+         WHERE id = ANY($1)`,
+        [msgIdsToMark],
+        env,
+        ctx
+      ).catch(() => {});
+    }
+
+    if (complaintId) {
+      await query(
+        `UPDATE complaint_attachments 
+         SET is_purged = 1, purge_reason = 'complaint_closed_retention_expired', file_url = NULL, file_data = NULL 
+         WHERE complaint_id = $1`,
+        [complaintId],
+        env,
+        ctx
+      ).catch(() => {});
+
+      await query(
+        `UPDATE complaints 
+         SET media_purged = 1, documents_purged = 1, media_purged_at = CURRENT_TIMESTAMP, closing_photo_url = NULL 
+         WHERE id = $1`,
+        [complaintId],
+        env,
+        ctx
+      ).catch(() => {});
+    }
+  } catch (err) {
+    console.error(`[Purge Single Closed Complaint Media Error] Comp ${complaintId}:`, err);
+  }
+}
+
 export default whatsappRoutes;
+

@@ -942,6 +942,41 @@ export function WhatsAppMediaLightbox({
   };
 
   const [loadError, setLoadError] = useState(false);
+  const [purgeInfo, setPurgeInfo] = useState(
+    media?.isPurged || media?.msg?.media_purged === 1 || media?.msg?.purge_reason === 'complaint_closed_retention_expired'
+      ? {
+          isPurged: true,
+          ticketId: media?.msg?.complaint_id || media?.ticket_id || null,
+        }
+      : null
+  );
+
+  const handleMediaError = async () => {
+    if (purgeInfo) {
+      setLoadError(true);
+      return;
+    }
+    try {
+      const res = await fetch(media.url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' }
+      });
+      if (res.status === 410) {
+        const data = await res.json().catch(() => ({}));
+        if (data.purged || data.reason === 'complaint_closed_retention_expired') {
+          setPurgeInfo({
+            isPurged: true,
+            ticketId: data.ticket_id || media?.msg?.complaint_id || null,
+            retentionDays: data.retention_days || 10,
+            message: data.error
+          });
+          setLoadError(true);
+          return;
+        }
+      }
+    } catch (_) {}
+    setLoadError(true);
+  };
 
   if (!media || !media.url) return null;
 
@@ -1083,42 +1118,79 @@ export function WhatsAppMediaLightbox({
         }`}
       >
         {loadError ? (
-          <div className="p-8 max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl text-center text-white flex flex-col items-center gap-3 shadow-2xl">
-            <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center">
-              <AlertCircle className="w-6 h-6" />
+          purgeInfo?.isPurged ? (
+            <div className="p-8 max-w-md bg-slate-900 border border-amber-500/40 rounded-2xl text-center text-white flex flex-col items-center gap-3.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+              <div className="w-14 h-14 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-inner">
+                <Archive className="w-7 h-7" />
+              </div>
+              <h3 className="font-bold text-lg text-amber-200">
+                Media Removed — Complaint Closed
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                This complaint has been closed and the media file has been permanently deleted by the system in accordance with our 10–15 day data retention policy.
+              </p>
+              {purgeInfo.ticketId && (
+                <div className="px-3.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 font-mono">
+                  Complaint Ticket: <span className="text-amber-300 font-semibold">{purgeInfo.ticketId}</span>
+                </div>
+              )}
+              <div className="text-[11px] text-amber-400/90 font-medium">
+                Retention expired • Media permanently deleted by system
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-2 px-6 py-2.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-lg ring-1 ring-amber-400/30"
+              >
+                Understood
+              </button>
             </div>
-            <h3 className="font-bold text-base text-rose-200">
-              {isVideo ? 'WhatsApp Video Expired' : 'WhatsApp Media Expired'}
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago. Cloud API media retention is temporary.
-            </p>
-            <p className="text-xs text-emerald-400 font-semibold">
-              Please request the customer to resend this file on WhatsApp.
-            </p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="mt-2 px-5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              Close Lightbox
-            </button>
-          </div>
+          ) : (
+            <div className="p-8 max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl text-center text-white flex flex-col items-center gap-3 shadow-2xl">
+              <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-rose-200">
+                {isVideo ? 'WhatsApp Video Expired' : 'WhatsApp Media Expired'}
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                This media file has expired on Meta WhatsApp servers because it was received more than 14 days ago. Cloud API media retention is temporary.
+              </p>
+              <p className="text-xs text-emerald-400 font-semibold">
+                Please request the customer to resend this file on WhatsApp.
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-2 px-5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Close Lightbox
+              </button>
+            </div>
+          )
         ) : isVideo ? (
           <video
             src={media.url}
             controls
             autoPlay
             playsInline
-            onError={() => setLoadError(true)}
-            className="max-h-[76vh] sm:max-h-[82vh] max-w-full rounded-lg object-contain shadow-2xl bg-black"
+            preload="auto"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseMove={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            onError={handleMediaError}
+            className="max-h-[76vh] sm:max-h-[82vh] max-w-full rounded-lg object-contain shadow-2xl bg-black select-auto pointer-events-auto"
           />
         ) : (
           <img
             src={media.url}
             alt="WhatsApp Media"
             draggable={false}
-            onError={() => setLoadError(true)}
+            onError={handleMediaError}
             style={{
               transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
               transition: isDragging ? 'none' : 'transform 0.15s ease-out',

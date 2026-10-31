@@ -2979,7 +2979,7 @@ export const ComplaintDetailDrawer = ({
                                 )}
                               </div>
                               <p className="text-[11px] text-amber-800 leading-relaxed mt-1">
-                                In accordance with data retention policy, all photo, video, and document files have been automatically removed from Cloudflare R2 storage because this complaint was closed more than 30 days ago.
+                                In accordance with data retention policy, all photo, video, and document files have been automatically removed from Cloudflare R2 storage 10 to 15 days after this complaint was closed.
                               </p>
                               <div className="mt-2 text-[10px] font-semibold text-emerald-800 bg-emerald-50/80 p-2 rounded-lg border border-emerald-200 flex items-center gap-2">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -3000,9 +3000,9 @@ export const ComplaintDetailDrawer = ({
                                     className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2.5 relative overflow-hidden"
                                   >
                                     <div 
-                                      onClick={() => showToast('Attachment was removed from cloud storage because this complaint has been closed for more than 30 days. Ticket records remain permanently saved.', 'warning')}
+                                      onClick={() => showToast('Attachment was removed from cloud storage in accordance with the 10–15 day post-closure retention policy. Ticket records remain permanently saved.', 'warning')}
                                       className="w-12 h-12 bg-amber-100 rounded-lg flex flex-col items-center justify-center shrink-0 border border-amber-300 cursor-pointer"
-                                      title="Attachment purged after 30 days of ticket closure"
+                                      title="Attachment purged 10–15 days after ticket closure"
                                     >
                                       <Archive className="w-5 h-5 text-amber-700" />
                                       <span className="text-[8px] font-bold uppercase tracking-wider text-amber-800">Purged</span>
@@ -3010,7 +3010,7 @@ export const ComplaintDetailDrawer = ({
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-center gap-1 mb-0.5">
                                         <span className="text-[9px] font-bold text-amber-900 bg-amber-200/80 border border-amber-300 px-1.5 py-0.5 rounded leading-none">
-                                          Purged from Cloud (30d+)
+                                          Purged from Cloud (10–15d)
                                         </span>
                                       </div>
                                       <p className="text-[11px] font-bold text-slate-700 truncate" title={att.file_name}>
@@ -3019,7 +3019,7 @@ export const ComplaintDetailDrawer = ({
                                       <div className="flex items-center gap-1.5 mt-1">
                                         <button
                                           type="button"
-                                          onClick={() => showToast('This file was automatically purged from cloud storage 30 days after complaint closure. Complaint records and details remain permanently archived.', 'warning')}
+                                          onClick={() => showToast('This file was automatically purged from cloud storage 10–15 days after complaint closure. Complaint records and details remain permanently archived.', 'warning')}
                                           className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer hover:bg-amber-200 transition-colors"
                                         >
                                           <Archive className="w-3 h-3 text-amber-700" /> Purged from Cloud
@@ -5258,6 +5258,11 @@ export const ComplaintDetailDrawer = ({
                         autoPlay 
                         playsInline
                         preload="auto"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onMouseUp={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchEnd={(e) => e.stopPropagation()}
                         onLoadedMetadata={(e) => {
                           const w = e.target.videoWidth || 0;
                           const h = e.target.videoHeight || 0;
@@ -5273,6 +5278,7 @@ export const ComplaintDetailDrawer = ({
                             setVideoPlaybackError(true);
                           }
                         }}
+                        className="select-auto pointer-events-auto"
                         style={{
                           width: isRotated90or270 && videoContainerSize.height > 0
                             ? `${videoContainerSize.height}px`

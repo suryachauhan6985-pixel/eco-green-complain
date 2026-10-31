@@ -7299,14 +7299,16 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/w
       return res.status(fileRes.status).send('Failed to download media binary from Meta CDN');
     }
 
-    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'image/jpeg';
-    const contentLength = metaData.file_size || fileRes.headers.get('content-length');
+    const contentType = metaData.mime_type || fileRes.headers.get('content-type') || 'video/mp4';
+    const arrayBuffer = await fileRes.arrayBuffer();
+    const totalLength = arrayBuffer.byteLength;
+    const rangeHeader = req.headers['range'];
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Type', contentType);
-    if (contentLength) res.setHeader('Content-Length', contentLength);
-    res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // Cache for 7 days
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
     res.removeHeader('X-Frame-Options');
     res.setHeader('Content-Security-Policy', "frame-ancestors *;");
 
@@ -7315,8 +7317,35 @@ app.get(['/api/whatsapp/media/:mediaId', '/whatsapp/media/:mediaId', '/api/api/w
     const filename = req.query.filename || `whatsapp_${mediaId}.${ext}`;
     res.setHeader('Content-Disposition', `${isDownload ? 'attachment' : 'inline'}; filename="${filename}"`);
 
-    const arrayBuffer = await fileRes.arrayBuffer();
-    return res.status(200).send(Buffer.from(arrayBuffer));
+    // Helper for Range parsing
+    function parseByteRange(rangeHdr, totalSize) {
+      if (!rangeHdr || typeof rangeHdr !== 'string' || !rangeHdr.startsWith('bytes=')) return null;
+      const parts = rangeHdr.replace('bytes=', '').split('-');
+      let start = parts[0] ? parseInt(parts[0], 10) : NaN;
+      let end = parts[1] ? parseInt(parts[1], 10) : NaN;
+      if (isNaN(start)) {
+        start = Math.max(0, totalSize - end);
+        end = totalSize - 1;
+      } else if (isNaN(end)) {
+        end = totalSize - 1;
+      }
+      if (start < 0) start = 0;
+      if (end >= totalSize) end = totalSize - 1;
+      if (start > end || isNaN(start)) return null;
+      return { start, end, length: end - start + 1 };
+    }
+
+    const parsedRange = parseByteRange(rangeHeader, totalLength);
+    if (parsedRange) {
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${parsedRange.start}-${parsedRange.end}/${totalLength}`);
+      res.setHeader('Content-Length', parsedRange.length);
+      return res.send(Buffer.from(arrayBuffer.slice(parsedRange.start, parsedRange.end + 1)));
+    }
+
+    res.status(200);
+    res.setHeader('Content-Length', totalLength);
+    return res.send(Buffer.from(arrayBuffer));
   } catch (err) {
     console.error('[WhatsApp Media Proxy Error]:', err.message);
     return res.status(500).send('Error streaming media: ' + err.message);

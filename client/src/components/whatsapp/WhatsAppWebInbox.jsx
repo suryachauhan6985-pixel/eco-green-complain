@@ -2443,6 +2443,11 @@ export const WhatsAppWebInbox = ({
                       <div className={`rounded-lg overflow-hidden relative group max-w-md bg-black shadow-xs ${hasCaptionOrText ? 'mb-2' : 'mb-0.5'}`}>
                         <div
                           onClick={() => {
+                            if (msg.media_purged === 1 || msg.purge_reason === 'complaint_closed_retention_expired') {
+                              showToast('This complaint is closed and its media was permanently removed by the system per the 10–15 day data retention policy.', 'info');
+                              setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg, isPurged: true });
+                              return;
+                            }
                             if (failedVideoIds.has(msg.id)) {
                               showToast('This video has expired on Meta WhatsApp servers and cannot be played. Please request the customer to resend.', 'warning');
                               return;
@@ -2470,6 +2475,11 @@ export const WhatsAppWebInbox = ({
                         <div className="px-2.5 py-1.5 bg-slate-900/90 flex items-center justify-between text-xs text-white">
                           <span
                             onClick={() => {
+                              if (msg.media_purged === 1 || msg.purge_reason === 'complaint_closed_retention_expired') {
+                                showToast('This complaint is closed and its media was permanently removed by the system per the 10–15 day data retention policy.', 'info');
+                                setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg, isPurged: true });
+                                return;
+                              }
                               if (failedVideoIds.has(msg.id)) {
                                 showToast('This video has expired on Meta WhatsApp servers and cannot be played. Please request the customer to resend.', 'warning');
                                 return;
@@ -2493,6 +2503,11 @@ export const WhatsAppWebInbox = ({
                             <button
                               type="button"
                               onClick={() => {
+                                if (msg.media_purged === 1 || msg.purge_reason === 'complaint_closed_retention_expired') {
+                                  showToast('This complaint is closed and its media was permanently removed by the system per the 10–15 day data retention policy.', 'info');
+                                  setPreviewMedia({ url: videoUrl, type: 'video', title: msg.media_caption || 'WhatsApp Video', caption: msg.media_caption, msg, isPurged: true });
+                                  return;
+                                }
                                 if (failedVideoIds.has(msg.id)) {
                                   showToast('This video has expired on Meta WhatsApp servers and cannot be played. Please request the customer to resend.', 'warning');
                                   return;
